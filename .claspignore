@@ -1,0 +1,12 @@
+**/**
+!appsscript.json
+!index.html
+!รหัส.js
+node_modules/**
+frontend/**
+dist/**
+python/**
+*.py
+*.docx
+*.spec
+build/**
