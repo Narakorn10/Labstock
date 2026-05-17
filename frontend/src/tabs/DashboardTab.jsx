@@ -21,20 +21,37 @@ const DashboardTab = ({ settings, showToast, activeDashboard, setActiveDashboard
     };
 
     const filteredData = useMemo(() => {
-        const terms = search.toLowerCase().trim().split(/\s+/).filter(Boolean);
+        const term = search.toLowerCase().trim();
+        if (!term) return activeDashboard;
+
+        const terms = term.split(/\s+/).filter(Boolean);
+        
         return activeDashboard.filter(i => {
-            if (terms.length > 0) {
-                const itemIdSafe = (i.itemId || '').toString().toLowerCase().trim();
-                const nameSafe = (i.name || '').toString().toLowerCase().trim();
-                const qrCodeSafe = (i.qrCode || '').toString().toLowerCase().trim();
-                
-                const txt = `${itemIdSafe} ${nameSafe} ${qrCodeSafe}`;
-                if (!terms.every(t => txt.includes(t))) return false;
-            }
-            if (!fReagent.includes('ALL') && !fReagent.includes(i.reagentType)) return false;
-            if (!fJob.includes('ALL') && !fJob.includes(i.jobType)) return false;
-            if (!fMachine.includes('ALL') && !fMachine.includes(i.machineType)) return false;
-            return true;
+            const itemId = (i.itemId || '').toString().toLowerCase();
+            const name = (i.name || '').toString().toLowerCase();
+            const qrCode = (i.qrCode || '').toString().toLowerCase();
+
+            // 1. ถ้าเป็นการแสกน (รหัสตรงเป๊ะ) ให้แสดงทันที
+            if (itemId === term || qrCode === term) return true;
+
+            // 2. ถ้าเป็นการพิมพ์ชื่อ ให้เช็คว่าทุกคำที่พิมพ์มีอยู่ในชื่อ หรือรหัส
+            const isMatch = terms.every(t => name.includes(t) || itemId.includes(t));
+            
+            // เพิ่มการเช็คตัวเลือก (Dropdown)
+            const matchReagent = fReagent.includes('ALL') || fReagent.includes(i.reagentType);
+            const matchJob = fJob.includes('ALL') || fJob.includes(i.jobType);
+            const matchMachine = fMachine.includes('ALL') || fMachine.includes(i.machineType);
+
+            return isMatch && matchReagent && matchJob && matchMachine;
+        }).sort((a, b) => {
+            // เรียงลำดับ: ให้ตัวที่ชื่อขึ้นต้นด้วยคำค้นหาอยู่บนสุด
+            const aName = (a.name || '').toLowerCase();
+            const bName = (b.name || '').toLowerCase();
+            const aStarts = aName.startsWith(term);
+            const bStarts = bName.startsWith(term);
+            if (aStarts && !bStarts) return -1;
+            if (!aStarts && bStarts) return 1;
+            return 0;
         });
     }, [activeDashboard, search, fReagent, fJob, fMachine]);
 
