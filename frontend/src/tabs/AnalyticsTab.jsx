@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import SummaryCards from '../components/dashboard/SummaryCards';
 
 const AnalyticsTab = ({ activeDashboard, onNavigate }) => {
     const lastUpdated = useMemo(() => {
@@ -55,41 +56,8 @@ const AnalyticsTab = ({ activeDashboard, onNavigate }) => {
                 </div>
             </div>
 
-            {/* Summary Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <button onClick={() => onNavigate('all')} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm text-left active-scale transition group">
-                    <div className="flex justify-between items-start mb-2">
-                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">น้ำยาทั้งหมด</div>
-                        <i className="fa-solid fa-layer-group text-slate-200 group-hover:text-blue-500 transition-colors"></i>
-                    </div>
-                    <div className="text-3xl font-bold text-slate-800">{stats.totalItems}</div>
-                    <div className="text-[10px] text-slate-500 mt-2 flex items-center gap-1">คลิกเพื่อดูทั้งหมด <i className="fa-solid fa-chevron-right text-[8px]"></i></div>
-                </button>
-                <button onClick={() => onNavigate('healthy')} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm text-left active-scale transition group border-l-4 border-l-emerald-500">
-                    <div className="flex justify-between items-start mb-2">
-                        <div className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">สต๊อกปกติ</div>
-                        <i className="fa-solid fa-circle-check text-emerald-100 group-hover:text-emerald-500 transition-colors"></i>
-                    </div>
-                    <div className="text-3xl font-bold text-emerald-700">{stats.healthyItems}</div>
-                    <div className="text-[10px] text-emerald-600 mt-2 flex items-center gap-1">สูงกว่าจุดเตือน <i className="fa-solid fa-chevron-right text-[8px]"></i></div>
-                </button>
-                <button onClick={() => onNavigate('low')} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm text-left active-scale transition group border-l-4 border-l-red-500">
-                    <div className="flex justify-between items-start mb-2">
-                        <div className="text-[10px] font-bold text-red-600 uppercase tracking-wider">ต้องสั่งเพิ่ม</div>
-                        <i className="fa-solid fa-triangle-exclamation text-red-100 group-hover:text-red-500 transition-colors"></i>
-                    </div>
-                    <div className="text-3xl font-bold text-red-700">{stats.lowStockItems}</div>
-                    <div className="text-[10px] text-red-600 mt-2 flex items-center gap-1">ต่ำกว่าจุดเตือน <i className="fa-solid fa-chevron-right text-[8px]"></i></div>
-                </button>
-                <button onClick={() => onNavigate('expired')} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm text-left active-scale transition group border-l-4 border-l-amber-500">
-                    <div className="flex justify-between items-start mb-2">
-                        <div className="text-[10px] font-bold text-amber-600 uppercase tracking-wider">Lot หมดอายุ</div>
-                        <i className="fa-solid fa-hourglass-end text-amber-100 group-hover:text-amber-500 transition-colors"></i>
-                    </div>
-                    <div className="text-3xl font-bold text-amber-700">{stats.expiredLotsCount}</div>
-                    <div className="text-[10px] text-amber-600 mt-2 flex items-center gap-1">รายการที่มีของเสีย <i className="fa-solid fa-chevron-right text-[8px]"></i></div>
-                </button>
-            </div>
+            {/* Reusable Summary Cards for Analytics */}
+            <SummaryCards stats={stats} activeFilter={null} onFilterClick={onNavigate} />
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Pie Chart */}

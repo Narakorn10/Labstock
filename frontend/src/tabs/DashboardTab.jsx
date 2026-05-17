@@ -6,6 +6,7 @@ import Badge from '../components/Badge';
 import DesktopTable from '../components/dashboard/DesktopTable';
 import MobileCards from '../components/dashboard/MobileCards';
 import ReportModal from '../components/dashboard/ReportModal';
+import SummaryCards from '../components/dashboard/SummaryCards';
 import useExport from '../hooks/useExport';
 
 const DashboardTab = ({ settings, showToast, activeDashboard, setActiveDashboard, externalFilter, clearExternalFilter }) => {
@@ -14,24 +15,46 @@ const DashboardTab = ({ settings, showToast, activeDashboard, setActiveDashboard
     const [fReagent, setFReagent] = useState(['ALL']);
     const [fJob, setFJob] = useState(['ALL']);
     const [fMachine, setFMachine] = useState(['ALL']);
+    const [localFilter, setLocalFilter] = useState('all');
     
     const [lotModalData, setLotModalData] = useState(null);
     const [reportModalOpen, setReportModalOpen] = useState(false);
     const [reportType, setReportType] = useState('order');
     const [reportJob, setReportJob] = useState(['ALL']);
 
-    const isFiltered = search !== "" || !fReagent.includes('ALL') || !fJob.includes('ALL') || !fMachine.includes('ALL') || !!externalFilter;
+    const stats = useMemo(() => {
+        const totalItems = activeDashboard.length;
+        const lowStockItems = activeDashboard.filter(i => i.quantity <= i.minThreshold).length;
+        const healthyItems = totalItems - lowStockItems;
+        let expiredLotsCount = 0;
+        const now = new Date();
+        activeDashboard.forEach(item => {
+            item.lots.forEach(lot => { if (new Date(lot.expDate) < now) expiredLotsCount++; });
+        });
+        return { totalItems, lowStockItems, healthyItems, expiredLotsCount };
+    }, [activeDashboard]);
+
+    const activeMainFilter = externalFilter || localFilter;
+
+    const isFiltered = search !== "" || !fReagent.includes('ALL') || !fJob.includes('ALL') || !fMachine.includes('ALL') || activeMainFilter !== 'all';
 
     const resetFilters = () => {
         setSearch("");
         setFReagent(['ALL']);
         setFJob(['ALL']);
         setFMachine(['ALL']);
+        setLocalFilter('all');
         if (clearExternalFilter) clearExternalFilter();
     };
 
     useEffect(() => {
-        if (externalFilter) resetFilters();
+        if (externalFilter) {
+            setLocalFilter(externalFilter);
+            setSearch("");
+            setFReagent(['ALL']);
+            setFJob(['ALL']);
+            setFMachine(['ALL']);
+        }
     }, [externalFilter]);
 
     useEffect(() => {
@@ -52,9 +75,9 @@ const DashboardTab = ({ settings, showToast, activeDashboard, setActiveDashboard
         let baseData = activeDashboard.filter(i => {
             if (!i.itemId || !i.name) return false; 
 
-            if (externalFilter === 'low' && i.quantity > i.minThreshold) return false;
-            if (externalFilter === 'healthy' && i.quantity <= i.minThreshold) return false;
-            if (externalFilter === 'expired') {
+            if (activeMainFilter === 'low' && i.quantity > i.minThreshold) return false;
+            if (activeMainFilter === 'healthy' && i.quantity <= i.minThreshold) return false;
+            if (activeMainFilter === 'expired') {
                 const hasExpired = i.lots.some(l => new Date(l.expDate) < now);
                 if (!hasExpired) return false;
             }
@@ -81,7 +104,7 @@ const DashboardTab = ({ settings, showToast, activeDashboard, setActiveDashboard
             if (!aStarts && bStarts) return 1;
             return aName.localeCompare(bName);
         });
-    }, [activeDashboard, search, fReagent, fJob, fMachine, externalFilter]);
+    }, [activeDashboard, search, fReagent, fJob, fMachine, activeMainFilter]);
 
     const reportData = useMemo(() => {
         let data = filteredData;
@@ -101,6 +124,8 @@ const DashboardTab = ({ settings, showToast, activeDashboard, setActiveDashboard
                     <button onClick={() => setReportModalOpen(true)} className="flex-1 sm:w-auto px-4 h-12 flex items-center justify-center gap-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 shadow-md shadow-blue-200 active-scale transition font-medium"><i className="fa-solid fa-file-invoice"></i> ออกรายงาน</button>
                 </div>
             </div>
+
+            <SummaryCards stats={stats} activeFilter={activeMainFilter} onFilterClick={setLocalFilter} />
 
             <div className="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-100 space-y-4">
                 <div className="relative">
