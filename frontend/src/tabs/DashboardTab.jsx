@@ -21,37 +21,40 @@ const DashboardTab = ({ settings, showToast, activeDashboard, setActiveDashboard
     };
 
     const filteredData = useMemo(() => {
-        const term = search.toLowerCase().trim();
-        if (!term) return activeDashboard;
-
-        const terms = term.split(/\s+/).filter(Boolean);
+        const query = search.toLowerCase().trim();
         
-        return activeDashboard.filter(i => {
-            const itemId = (i.itemId || '').toString().toLowerCase();
-            const name = (i.name || '').toString().toLowerCase();
-            const qrCode = (i.qrCode || '').toString().toLowerCase();
-
-            // 1. ถ้าเป็นการแสกน (รหัสตรงเป๊ะ) ให้แสดงทันที
-            if (itemId === term || qrCode === term) return true;
-
-            // 2. ถ้าเป็นการพิมพ์ชื่อ ให้เช็คว่าทุกคำที่พิมพ์มีอยู่ในชื่อ หรือรหัส
-            const isMatch = terms.every(t => name.includes(t) || itemId.includes(t));
+        // 1. กรองเบื้องต้นตาม Dropdown และตัดรายการที่ไม่มีชื่อ/ID ออก
+        let baseData = activeDashboard.filter(i => {
+            if (!i.itemId || !i.name) return false; // ป้องกันแถวว่าง
             
-            // เพิ่มการเช็คตัวเลือก (Dropdown)
             const matchReagent = fReagent.includes('ALL') || fReagent.includes(i.reagentType);
             const matchJob = fJob.includes('ALL') || fJob.includes(i.jobType);
             const matchMachine = fMachine.includes('ALL') || fMachine.includes(i.machineType);
+            return matchReagent && matchJob && matchMachine;
+        });
 
-            return isMatch && matchReagent && matchJob && matchMachine;
+        if (!query) return baseData;
+
+        // 2. ถ้ามีการค้นหา ให้กรองอย่างเข้มงวด (ชื่อ หรือ ID เท่านั้น)
+        return baseData.filter(i => {
+            const itemId = i.itemId.toString().toLowerCase();
+            const name = i.name.toString().toLowerCase();
+            const qrCode = (i.qrCode || '').toString().toLowerCase();
+
+            // ต้องมีคำที่ค้นหาอยู่ในชื่อ หรือ รหัสตรงเป๊ะ
+            return name.includes(query) || itemId.includes(query) || qrCode === query;
         }).sort((a, b) => {
-            // เรียงลำดับ: ให้ตัวที่ชื่อขึ้นต้นด้วยคำค้นหาอยู่บนสุด
-            const aName = (a.name || '').toLowerCase();
-            const bName = (b.name || '').toLowerCase();
-            const aStarts = aName.startsWith(term);
-            const bStarts = bName.startsWith(term);
+            const aName = a.name.toString().toLowerCase();
+            const bName = b.name.toString().toLowerCase();
+            
+            // Priority 1: ชื่อขึ้นต้นด้วยคำที่ค้นหา (เช่น FT4...)
+            const aStarts = aName.startsWith(query);
+            const bStarts = bName.startsWith(query);
             if (aStarts && !bStarts) return -1;
             if (!aStarts && bStarts) return 1;
-            return 0;
+
+            // Priority 2: เรียงตามตัวอักษรปกติ
+            return aName.localeCompare(bName);
         });
     }, [activeDashboard, search, fReagent, fJob, fMachine]);
 
