@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { gasRun } from '../api';
+import { SkeletonRow } from '../components/Skeleton';
 
 const LogsTab = ({ showToast }) => {
     const [logs, setLogs] = useState([]);
@@ -18,8 +19,16 @@ const LogsTab = ({ showToast }) => {
         showToast("กำลังเตรียมไฟล์...", "success");
         const data = await gasRun('getAllLogsForExport');
         if(!data || data.length === 0) return showToast("ไม่มีข้อมูล", "error");
+        
+        // Remove Item ID (index 1) from each row for export
+        const filteredExportData = data.map(row => {
+            const newRow = [...row];
+            newRow.splice(1, 1); // Remove the Item ID column (index 1)
+            return newRow;
+        });
+
         let csvContent = "\uFEFF"; 
-        data.forEach(row => csvContent += row.map(cell => `"${(cell||'').toString().replace(/"/g, '""')}"`).join(",") + "\n");
+        filteredExportData.forEach(row => csvContent += row.map(cell => `"${(cell||'').toString().replace(/"/g, '""')}"`).join(",") + "\n");
         const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }));
         link.download = `Logs_${new Date().toISOString().slice(0,10)}.csv`; link.click();
     };
@@ -38,21 +47,26 @@ const LogsTab = ({ showToast }) => {
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-100">
                 <div className="flex justify-between w-full sm:w-auto items-center">
                     <div><h2 className="text-xl font-bold text-slate-800">ประวัติการทำรายการ</h2><p className="text-xs text-slate-500 mt-1">100 รายการล่าสุด</p></div>
-                    <button onClick={loadLogs} className="sm:hidden w-10 h-10 flex items-center justify-center bg-slate-50 text-slate-600 rounded-full active-scale transition"><i className={`fa-solid fa-rotate-right ${loading?'fa-spin':''}`}></i></button>
+                    <button onClick={loadLogs} className="sm:hidden w-10 h-10 flex items-center justify-center bg-slate-50 text-slate-600 rounded-full active-scale transition border border-slate-100"><i className={`fa-solid fa-rotate-right ${loading?'fa-spin':''}`}></i></button>
                 </div>
                 <div className="flex gap-2 w-full sm:w-auto">
-                    <button onClick={loadLogs} className="hidden sm:flex w-10 h-10 items-center justify-center bg-slate-50 text-slate-600 rounded-full active-scale transition"><i className={`fa-solid fa-rotate-right ${loading?'fa-spin':''}`}></i></button>
-                    <button onClick={exportCSV} className="flex-1 sm:flex-none px-4 h-10 bg-emerald-50 text-emerald-700 font-medium text-xs rounded-xl active-scale transition border border-emerald-200"><i className="fa-solid fa-file-excel mr-1"></i> ดาวน์โหลด</button>
-                    <button onClick={clearLogs} className="flex-1 sm:flex-none px-4 h-10 bg-rose-50 text-rose-700 font-medium text-xs rounded-xl active-scale transition border border-rose-200"><i className="fa-solid fa-trash-can mr-1"></i> ล้างข้อมูล</button>
+                    <button onClick={loadLogs} className="hidden sm:flex w-10 h-10 items-center justify-center bg-slate-50 text-slate-600 rounded-full active-scale transition border border-slate-100"><i className={`fa-solid fa-rotate-right ${loading?'fa-spin':''}`}></i></button>
+                    <button onClick={exportCSV} className="flex-1 sm:flex-none px-4 h-10 bg-emerald-50 text-emerald-700 font-bold text-[10px] uppercase tracking-wider rounded-xl active-scale transition border border-emerald-200"><i className="fa-solid fa-file-excel mr-1.5"></i> ดาวน์โหลด</button>
+                    <button onClick={clearLogs} className="flex-1 sm:flex-none px-4 h-10 bg-rose-50 text-rose-700 font-bold text-[10px] uppercase tracking-wider rounded-xl active-scale transition border border-rose-200"><i className="fa-solid fa-trash-can mr-1.5"></i> ล้างข้อมูล</button>
                 </div>
             </div>
             <div className="space-y-3">
-                {loading ? <div className="text-center py-8 text-slate-400">กำลังโหลด...</div> : 
-                 logs.length === 0 ? <div className="text-center py-8 text-slate-400 bg-white rounded-xl border border-slate-100">ไม่มีประวัติ</div> :
+                {loading ? Array(5).fill(0).map((_, i) => <SkeletonRow key={i} />) : 
+                 logs.length === 0 ? (
+                    <div className="text-center py-20 text-slate-400 bg-white rounded-2xl border border-slate-100 animate-fade-in">
+                        <i className="fa-solid fa-clock-rotate-left text-4xl mb-4 opacity-20"></i>
+                        <p>ไม่มีประวัติการทำรายการ</p>
+                    </div>
+                 ) :
                  logs.map((i, idx) => {
                     const isRec = i.action.includes('รับ');
                     return (
-                        <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex items-center gap-4">
+                        <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex items-center gap-4 hover:border-slate-200 transition animate-fade-in">
                             <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${isRec?'bg-green-50 text-green-600':'bg-red-50 text-red-600'}`}><i className={`fa-solid ${isRec?'fa-arrow-down':'fa-arrow-up'}`}></i></div>
                             <div className="flex-1 overflow-hidden">
                                 <div className="font-bold text-slate-700 text-sm truncate">{i.name}</div>

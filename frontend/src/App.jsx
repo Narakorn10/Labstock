@@ -6,6 +6,7 @@ import TransactionTab from './tabs/TransactionTab';
 import CountTab from './tabs/CountTab';
 import MasterTab from './tabs/MasterTab';
 import LogsTab from './tabs/LogsTab';
+import AnalyticsTab from './tabs/AnalyticsTab';
 
 const NavItem = ({ id, icon, label, activeTab, setActiveTab }) => {
     const active = activeTab === id;
@@ -18,7 +19,7 @@ const NavItem = ({ id, icon, label, activeTab, setActiveTab }) => {
 };
 
 function App() {
-    const [activeTab, setActiveTab] = useState('dashboard');
+    const [activeTab, setActiveTab] = useState('analytics');
     const { toast, showToast } = useAppToast();
     const { settings, activeDashboard, setActiveDashboard, loadGlobalData } = useGlobalData();
     
@@ -26,6 +27,7 @@ function App() {
     const [receiveCart, setReceiveCart] = useState([]);
     const [dispenseCart, setDispenseCart] = useState([]);
     const [dispensedItems, setDispensedItems] = useState(new Set());
+    const [dashboardFilter, setDashboardFilter] = useState(null);
 
     const handleDispenseSuccess = (items) => {
         setDispensedItems(prev => {
@@ -36,9 +38,15 @@ function App() {
         loadGlobalData();
     };
 
+    const handleAnalyticsNavigate = (filterType) => {
+        setDashboardFilter(filterType);
+        setActiveTab('dashboard');
+    };
+
     const renderTab = () => {
         switch(activeTab) {
-            case 'dashboard': return <DashboardTab settings={settings} showToast={showToast} activeDashboard={activeDashboard} setActiveDashboard={setActiveDashboard} />;
+            case 'dashboard': return <DashboardTab settings={settings} showToast={showToast} activeDashboard={activeDashboard} setActiveDashboard={setActiveDashboard} externalFilter={dashboardFilter} clearExternalFilter={() => setDashboardFilter(null)} />;
+            case 'analytics': return <AnalyticsTab activeDashboard={activeDashboard} onNavigate={handleAnalyticsNavigate} />;
             case 'receive': return <TransactionTab type="receive" showToast={showToast} activeDashboard={activeDashboard} cart={receiveCart} setCart={setReceiveCart} />;
             case 'dispense': return <TransactionTab type="dispense" showToast={showToast} activeDashboard={activeDashboard} cart={dispenseCart} setCart={setDispenseCart} onSuccess={handleDispenseSuccess} />;
             case 'count': return <CountTab settings={settings} activeDashboard={activeDashboard} inputs={countInputs} setInputs={setCountInputs} dispenseCart={dispenseCart} setDispenseCart={setDispenseCart} dispensedItems={dispensedItems} onGoToDispense={() => setActiveTab('dispense')} showToast={showToast} />;
@@ -55,6 +63,7 @@ function App() {
                 <div className="flex items-center gap-3"><div className="w-8 h-8 bg-blue-600 text-white rounded-lg flex items-center justify-center shadow-md"><i className="fa-solid fa-layer-group"></i></div><h1 className="font-bold text-slate-800 tracking-tight text-lg">Main Stock Control</h1></div>
                 <div className="flex gap-1">
                     <button onClick={()=>setActiveTab('dashboard')} className={`px-4 py-2 rounded-xl text-sm font-bold transition ${activeTab==='dashboard'?'bg-blue-50 text-blue-600':'text-slate-500 hover:bg-slate-50'}`}>แดชบอร์ด</button>
+                    <button onClick={()=>setActiveTab('analytics')} className={`px-4 py-2 rounded-xl text-sm font-bold transition ${activeTab==='analytics'?'bg-indigo-50 text-indigo-600':'text-slate-500 hover:bg-slate-50'}`}>สถิติ</button>
                     <button onClick={()=>setActiveTab('receive')} className={`px-4 py-2 rounded-xl text-sm font-bold transition ${activeTab==='receive'?'bg-green-50 text-green-600':'text-slate-500 hover:bg-slate-50'}`}>รับเข้า</button>
                     <button onClick={()=>setActiveTab('count')} className={`px-4 py-2 rounded-xl text-sm font-bold transition ${activeTab==='count'?'bg-blue-50 text-blue-600':'text-slate-500 hover:bg-slate-50'}`}>นับหน้างาน</button>
                     <button onClick={()=>setActiveTab('dispense')} className={`relative px-4 py-2 rounded-xl text-sm font-bold transition ${activeTab==='dispense'?'bg-red-50 text-red-600':'text-slate-500 hover:bg-slate-50'}`}>เบิกไปใช้ {dispenseCart.length > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] w-5 h-5 flex items-center justify-center rounded-full border-2 border-white">{dispenseCart.length}</span>}</button>
@@ -71,6 +80,7 @@ function App() {
             {/* Mobile Bottom Navigation */}
             <nav className="md:hidden glass-nav fixed bottom-0 w-full z-40 flex justify-around items-end pb-safe pt-1 px-2 shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.1)]">
                 <NavItem id="dashboard" icon="fa-house" label="หน้าแรก" activeTab={activeTab} setActiveTab={setActiveTab} />
+                <NavItem id="analytics" icon="fa-chart-pie" label="สถิติ" activeTab={activeTab} setActiveTab={setActiveTab} />
                 <NavItem id="receive" icon="fa-box-open" label="รับเข้า" activeTab={activeTab} setActiveTab={setActiveTab} />
                 <NavItem id="count" icon="fa-clipboard-check" label="นับหน้างาน" activeTab={activeTab} setActiveTab={setActiveTab} />
                 <div className="relative w-full">

@@ -101,26 +101,37 @@ const TransactionTab = ({ type, showToast, activeDashboard, cart = [], setCart, 
     };
 
     return (
-        <div className="max-w-xl mx-auto space-y-6 animate-slide-up pb-24">
-            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
-                <div className="flex items-center gap-3 mb-6">
+        <div className="max-w-xl mx-auto space-y-6 animate-slide-up pb-32">
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 relative overflow-hidden">
+                <div className={`absolute top-0 right-0 w-24 h-24 -mr-8 -mt-8 rounded-full opacity-5 ${isRec ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                <div className="flex items-center gap-3 mb-6 relative z-10">
                     <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${isRec ? 'bg-green-50' : 'bg-red-50'}`}><i className={`fa-solid ${icon} text-2xl`}></i></div>
                     <div><h2 className="text-xl font-bold text-slate-800">{title}</h2><p className="text-xs text-slate-400">สแกนหรือค้นหาเพื่อทำรายการ</p></div>
                 </div>
                 
                 {scanMode ? <QRScanner onScan={(t) => { setScanMode(false); fetchItem(t); }} onCancel={() => setScanMode(false)} /> : 
-                    <button onClick={() => setScanMode(true)} className="w-full mb-6 bg-slate-900 text-white py-3.5 rounded-xl font-medium active-scale transition shadow-lg shadow-slate-200"><i className="fa-solid fa-camera mr-2"></i>เปิดกล้องสแกน Barcode</button>
+                    <button onClick={() => setScanMode(true)} className="hidden md:flex w-full mb-6 bg-slate-900 text-white py-3.5 rounded-xl font-medium items-center justify-center active-scale transition shadow-lg shadow-slate-200"><i className="fa-solid fa-camera mr-2"></i>เปิดกล้องสแกน Barcode</button>
                 }
 
-                <form onSubmit={handleAddCart} className="space-y-4 relative">
+                {/* Mobile FAB for Scan */}
+                {!scanMode && (
+                    <button 
+                        onClick={() => setScanMode(true)} 
+                        className="md:hidden fixed bottom-24 right-6 w-14 h-14 bg-slate-900 text-white rounded-full shadow-2xl z-50 flex items-center justify-center active-scale transition-transform"
+                    >
+                        <i className="fa-solid fa-barcode text-xl"></i>
+                    </button>
+                )}
+
+                <form onSubmit={handleAddCart} className="space-y-4 relative z-10">
                     <div className="relative">
                         <label className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">ค้นหาด้วยการพิมพ์</label>
                         <div className="flex gap-2 relative">
-                            <input type="text" value={search} onFocus={()=>setShowAuto(true)} onBlur={()=>setTimeout(()=>setShowAuto(false), 200)} onChange={e=>{setSearch(e.target.value); setShowAuto(true);}} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();fetchItem(search);}}} placeholder="ชื่อ รหัส หรือ Barcode..." className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-4 text-sm focus:ring-2 focus:ring-blue-500 transition" />
-                            <button type="button" onClick={()=>fetchItem(search)} className="w-14 bg-blue-50 text-blue-600 rounded-xl active-scale"><i className="fa-solid fa-magnifying-glass"></i></button>
+                            <input type="text" value={search} onFocus={()=>setShowAuto(true)} onBlur={()=>setTimeout(()=>setShowAuto(false), 200)} onChange={e=>{setSearch(e.target.value); setShowAuto(true);}} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();fetchItem(search);}}} placeholder="ชื่อ รหัส หรือ Barcode..." className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-4 text-sm focus:ring-2 focus:ring-blue-500 transition outline-none" />
+                            <button type="button" onClick={()=>fetchItem(search)} className="w-14 bg-blue-50 text-blue-600 rounded-xl active-scale transition"><i className="fa-solid fa-magnifying-glass"></i></button>
                         </div>
                         {showAuto && autoList.length > 0 && !item && (
-                            <div className="absolute z-50 w-full bg-white border border-slate-100 rounded-xl shadow-2xl overflow-hidden mt-2 max-h-60 overflow-y-auto">
+                            <div className="absolute z-50 w-full bg-white border border-slate-100 rounded-xl shadow-2xl overflow-hidden mt-2 max-h-60 overflow-y-auto animate-slide-up">
                                 {autoList.map(a => (
                                     <div key={a.itemId} onMouseDown={e=>{e.preventDefault(); setSearch(a.itemId); fetchItem(a.itemId); setShowAuto(false);}} className="p-4 hover:bg-blue-50 cursor-pointer border-b border-slate-50 last:border-0 transition">
                                         <div className="font-bold text-blue-700">{a.name}</div><div className="text-[10px] text-slate-500 mt-1">{a.itemId} | {a.qrCode}</div>
@@ -132,25 +143,31 @@ const TransactionTab = ({ type, showToast, activeDashboard, cart = [], setCart, 
 
                     {item && (
                         <div className="bg-blue-50/30 border border-blue-100 p-4 sm:p-5 rounded-2xl space-y-4 animate-fade-in mt-4">
-                            <div className="border-b border-blue-100/50 pb-3">
-                                <div className="font-bold text-blue-800 text-lg leading-tight">{item.name}</div>
-                                <div className="text-xs text-blue-500 font-mono mt-1">ID: {item.itemId}</div>
+                            <div className="flex justify-between items-start border-b border-blue-100/50 pb-3">
+                                <div>
+                                    <div className="font-bold text-blue-800 text-lg leading-tight">{item.name}</div>
+                                    <div className="text-xs text-blue-500 font-mono mt-1">ID: {item.itemId}</div>
+                                </div>
+                                <button type="button" onClick={() => setItem(null)} className="text-blue-400 hover:text-blue-600 p-1"><i className="fa-solid fa-xmark"></i></button>
                             </div>
                             
                             {isRec ? (
                                 <div className="grid grid-cols-2 gap-3">
                                     <div className="relative">
                                         <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Lot No.</label>
-                                        <input type="text" required value={form.lotNo} onChange={e=>setForm({...form, lotNo:e.target.value})} className="w-full border-none rounded-xl px-3 py-3 text-sm focus:ring-2 focus:ring-blue-500"/>
-                                        <button type="button" onClick={genAutoLot} className="absolute right-2 top-8 text-[10px] bg-slate-200 text-slate-600 px-2 py-1 rounded">Auto</button>
+                                        <input type="text" required value={form.lotNo} onChange={e=>setForm({...form, lotNo:e.target.value})} className="w-full border-none bg-white rounded-xl px-3 py-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"/>
+                                        <button type="button" onClick={genAutoLot} className="absolute right-2 top-8 text-[10px] bg-slate-100 text-slate-600 px-2 py-1 rounded border border-slate-200">Auto</button>
                                     </div>
-                                    <div><label className="block text-xs font-bold text-slate-500 mb-1 uppercase">EXP Date</label><input type="date" required value={form.expDate} onChange={e=>setForm({...form, expDate:e.target.value})} className="w-full border-none rounded-xl px-3 py-3 text-sm focus:ring-2 focus:ring-blue-500"/></div>
+                                    <div><label className="block text-xs font-bold text-slate-500 mb-1 uppercase">EXP Date</label><input type="date" required value={form.expDate} onChange={e=>setForm({...form, expDate:e.target.value})} className="w-full border-none bg-white rounded-xl px-3 py-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"/></div>
                                 </div>
                             ) : (
                                 <div>
                                     <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">เลือก Lot (เรียงตาม EXP)</label>
-                                    {item.lots.length === 0 ? <div className="text-red-500 text-sm font-bold p-3 bg-red-50 rounded-xl border border-red-100 text-center">-- สต๊อกหลักหมด --</div> :
-                                        <select required value={form.lotNo} onChange={e=>setForm({...form, lotNo:e.target.value})} className="w-full border-none rounded-xl px-3 py-3 text-sm bg-white focus:ring-2 focus:ring-blue-500">
+                                    {item.lots.length === 0 ? <div className="text-red-500 text-sm font-bold p-4 bg-red-50 rounded-xl border border-red-100 text-center flex flex-col items-center gap-2">
+                                        <i className="fa-solid fa-circle-exclamation text-xl"></i>
+                                        <span>สต๊อกหลักหมด - ไม่สามารถเบิกได้</span>
+                                    </div> :
+                                        <select required value={form.lotNo} onChange={e=>setForm({...form, lotNo:e.target.value})} className="w-full border-none rounded-xl px-3 py-3 text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none">
                                             {item.lots.map(l => {
                                                 const exp = new Date(l.expDate).toLocaleDateString('th-TH');
                                                 return <option key={l.rowIndex} value={`${l.rowIndex}|${l.lotNo}`}>Lot: {l.lotNo} (EXP: {exp}) | มี {l.qty}</option>
@@ -161,9 +178,9 @@ const TransactionTab = ({ type, showToast, activeDashboard, cart = [], setCart, 
                             )}
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">จำนวน <span className="normal-case font-medium">({item.unit} - ระบุจำนวนเต็ม)</span></label>
-                                <input type="number" step="1" min="1" required value={form.qty} onChange={e=>setForm({...form, qty:e.target.value.replace(/[^0-9]/g, '')})} placeholder={`ระบุจำนวนเต็ม`} className="w-full border-none rounded-xl px-4 py-3 font-bold text-lg text-slate-800 text-center focus:ring-2 focus:ring-blue-500"/>
+                                <input type="number" step="1" min="1" required value={form.qty} onChange={e=>setForm({...form, qty:e.target.value.replace(/[^0-9]/g, '')})} placeholder={`ระบุจำนวนเต็ม`} className="w-full border-none bg-white rounded-xl px-4 py-3 font-bold text-lg text-slate-800 text-center focus:ring-2 focus:ring-blue-500 outline-none"/>
                             </div>
-                            <button type="submit" disabled={!isRec && item.lots.length===0} className="w-full bg-blue-600 text-white py-3.5 rounded-xl font-medium active-scale shadow-md mt-2">เพิ่มลงรายการ</button>
+                            <button type="submit" disabled={!isRec && item.lots.length===0} className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold active-scale shadow-lg shadow-blue-100 transition disabled:opacity-50">เพิ่มลงรายการ</button>
                         </div>
                     )}
                 </form>
@@ -171,22 +188,22 @@ const TransactionTab = ({ type, showToast, activeDashboard, cart = [], setCart, 
 
             {cart.length > 0 && (
                 <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 animate-slide-up">
-                    <h3 className="font-bold text-slate-800 mb-4 flex justify-between items-center">ตะกร้าทำรายการ <span className="bg-slate-100 text-slate-600 px-3 py-1 rounded-full text-xs">{cart.length} รายการ</span></h3>
+                    <h3 className="font-bold text-slate-800 mb-4 flex justify-between items-center px-1">ตะกร้าทำรายการ <span className="bg-slate-100 text-slate-600 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider">{cart.length} รายการ</span></h3>
                     <div className="space-y-2 mb-6">
                         {cart.map((c, i) => (
-                            <div key={i} className="flex justify-between items-center p-3 sm:p-4 bg-slate-50 border border-slate-100 rounded-xl">
+                            <div key={i} className="flex justify-between items-center p-3 sm:p-4 bg-slate-50 border border-slate-100 rounded-xl animate-fade-in">
                                 <div className="overflow-hidden pr-2">
                                     <div className="font-bold text-slate-700 text-sm truncate">{c.name}</div>
-                                    <div className="text-[10px] text-slate-500 mt-0.5">{c.itemId} | Lot: {c.lotNo}</div>
+                                    <div className="text-[10px] text-slate-500 mt-0.5">{c.itemId} <span className="mx-1">•</span> Lot: {c.lotNo}</div>
                                 </div>
                                 <div className="flex items-center gap-3 sm:gap-4 flex-shrink-0">
-                                    <div className={`font-bold text-base sm:text-lg ${!isRec ? 'text-red-600' : 'text-green-600'}`}>{!isRec && '-'}{c.qty} <span className="text-[10px] text-slate-500 font-medium">{c.unit}</span></div>
-                                    <button onClick={()=>setCart(cart.filter((_,idx)=>idx!==i))} className="w-8 h-8 flex justify-center items-center bg-red-100 text-red-600 rounded-full active-scale transition"><i className="fa-solid fa-trash-can text-xs"></i></button>
+                                    <div className={`font-bold text-base sm:text-lg ${!isRec ? 'text-red-600' : 'text-green-600'}`}>{!isRec && '-'}{c.qty} <span className="text-[10px] font-normal text-slate-500">{c.unit}</span></div>
+                                    <button onClick={()=>setCart(cart.filter((_,idx)=>idx!==i))} className="w-9 h-9 flex justify-center items-center bg-white text-slate-400 hover:text-red-500 rounded-xl border border-slate-200 shadow-sm active-scale transition"><i className="fa-solid fa-trash-can text-xs"></i></button>
                                 </div>
                             </div>
                         ))}
                     </div>
-                    <button onClick={submitBatch} className={`w-full text-white py-4 rounded-xl font-bold active-scale shadow-lg ${btnColor}`}>ยืนยันการบันทึกทั้งหมด</button>
+                    <button onClick={submitBatch} className={`w-full text-white py-4 rounded-xl font-bold active-scale shadow-lg transition ${btnColor}`}>ยืนยันการบันทึกทั้งหมด</button>
                 </div>
             )}
         </div>
