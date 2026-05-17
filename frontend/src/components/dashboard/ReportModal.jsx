@@ -1,19 +1,18 @@
 import React from 'react';
 import Modal from '../Modal';
-import Select2 from '../Select2';
+import Select2 from '../components/Select2';
 
 const ReportModal = ({ 
     isOpen, onClose, reportType, setReportType, 
     settings, reportJob, setReportJob, 
     reportData, reportRef, 
-    exportCSV, exportImage, printPDF, copyLine 
+    exportCSV, printPDF, copyLine 
 }) => {
     return (
         <Modal isOpen={isOpen} onClose={onClose} title="สร้างรายงานส่งหัวหน้า" width="max-w-2xl" headerColor="bg-slate-50" 
             actions={
                 <React.Fragment>
                     <button onClick={exportCSV} className="w-full sm:w-auto py-3 px-4 bg-emerald-600 text-white rounded-xl text-sm font-medium active-scale shadow-sm transition"><i className="fa-solid fa-file-excel mr-2"></i>Excel</button>
-                    <button onClick={exportImage} className="w-full sm:w-auto py-3 px-4 bg-blue-600 text-white rounded-xl text-sm font-medium active-scale shadow-sm transition"><i className="fa-solid fa-image mr-2"></i>บันทึกรูป</button>
                     <button onClick={printPDF} className="w-full sm:w-auto py-3 px-4 bg-rose-600 text-white rounded-xl text-sm font-medium active-scale shadow-sm transition"><i className="fa-solid fa-file-pdf mr-2"></i>PDF/พิมพ์</button>
                     <button onClick={copyLine} className="w-full sm:w-auto py-3 px-4 bg-slate-800 text-white rounded-xl text-sm font-medium active-scale shadow-sm transition"><i className="fa-brands fa-line mr-2"></i>คัดลอกส่ง Line</button>
                 </React.Fragment>

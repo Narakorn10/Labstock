@@ -1,5 +1,4 @@
 import { useRef } from 'react';
-import { toPng } from 'html-to-image';
 
 const useExport = (reportData, reportType, reportJob, showToast) => {
     const reportRef = useRef(null);
@@ -37,23 +36,7 @@ const useExport = (reportData, reportType, reportJob, showToast) => {
         showToast("คัดลอกข้อความแล้ว นำไปวางใน Line ได้เลย");
     };
 
-    const exportImage = async () => {
-        if (!reportRef.current || reportData.length === 0) return;
-        showToast("กำลังสร้างรูปภาพ...");
-        try {
-            const dataUrl = await toPng(reportRef.current, { backgroundColor: '#f8fafc', cacheBust: true, style: { borderRadius: '0' } });
-            const link = document.createElement('a');
-            link.download = `Report_${new Date().getTime()}.png`;
-            link.href = dataUrl;
-            link.click();
-            showToast("บันทึกรูปภาพสำเร็จ");
-        } catch (err) {
-            console.error(err);
-            showToast("ไม่สามารถสร้างรูปภาพได้", "error");
-        }
-    };
-
-    return { reportRef, exportCSV, printPDF, copyLine, exportImage };
+    return { reportRef, exportCSV, printPDF, copyLine };
 };
 
 export default useExport;

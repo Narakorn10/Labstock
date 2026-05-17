@@ -90,7 +90,7 @@ const DashboardTab = ({ settings, showToast, activeDashboard, setActiveDashboard
         return data;
     }, [filteredData, reportType, reportJob]);
 
-    const { reportRef, exportCSV, printPDF, copyLine, exportImage } = useExport(reportData, reportType, reportJob, showToast);
+    const { reportRef, exportCSV, printPDF, copyLine } = useExport(reportData, reportType, reportJob, showToast);
 
     return (
         <div className="space-y-4 sm:space-y-6 animate-slide-up pb-24">
@@ -158,7 +158,6 @@ const DashboardTab = ({ settings, showToast, activeDashboard, setActiveDashboard
                 reportData={reportData}
                 reportRef={reportRef}
                 exportCSV={exportCSV}
-                exportImage={exportImage}
                 printPDF={printPDF}
                 copyLine={copyLine}
             />
