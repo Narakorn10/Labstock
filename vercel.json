@@ -2,6 +2,7 @@
   "version": 2,
   "public": false,
   "cleanUrls": true,
+  "outputDirectory": "frontend/dist",
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
   ]
