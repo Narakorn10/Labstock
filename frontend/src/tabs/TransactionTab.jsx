@@ -126,10 +126,10 @@ const TransactionTab = ({ type, showToast, dispensePrepData, clearPrepData, acti
                             <input type="text" value={search} onFocus={()=>setShowAuto(true)} onBlur={()=>setTimeout(()=>setShowAuto(false), 200)} onChange={e=>{setSearch(e.target.value); setShowAuto(true);}} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();fetchItem(search);}}} placeholder="ชื่อ รหัส หรือ Barcode..." className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-4 text-sm focus:ring-2 focus:ring-blue-500 transition" />
                             <button type="button" onClick={()=>fetchItem(search)} className="w-14 bg-blue-50 text-blue-600 rounded-xl active-scale"><i className="fa-solid fa-magnifying-glass"></i></button>
                         </div>
-                        {showAuto && autoList.length > 0 && (
+                        {showAuto && autoList.length > 0 && !item && (
                             <div className="absolute z-50 w-full bg-white border border-slate-100 rounded-xl shadow-2xl overflow-hidden mt-2 max-h-60 overflow-y-auto">
                                 {autoList.map(a => (
-                                    <div key={a.itemId} onMouseDown={e=>{e.preventDefault(); setSearch(a.itemId); fetchItem(a.itemId);}} className="p-4 hover:bg-blue-50 cursor-pointer border-b border-slate-50 last:border-0 transition">
+                                    <div key={a.itemId} onMouseDown={e=>{e.preventDefault(); setSearch(a.itemId); fetchItem(a.itemId); setShowAuto(false);}} className="p-4 hover:bg-blue-50 cursor-pointer border-b border-slate-50 last:border-0 transition">
                                         <div className="font-bold text-blue-700">{a.name}</div><div className="text-[10px] text-slate-500 mt-1">{a.itemId} | {a.qrCode}</div>
                                     </div>
                                 ))}
