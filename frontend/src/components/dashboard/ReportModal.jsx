@@ -1,6 +1,6 @@
 import React from 'react';
 import Modal from '../Modal';
-import Select2 from '../components/Select2';
+import Select2 from '../Select2';
 
 const ReportModal = ({ 
     isOpen, onClose, reportType, setReportType, 
