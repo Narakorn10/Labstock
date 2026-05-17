@@ -1,1 +1,1 @@
-# Labstock
+# LabReagentControl
