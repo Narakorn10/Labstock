@@ -22,15 +22,26 @@ function App() {
     const { toast, showToast } = useAppToast();
     const { settings, activeDashboard, setActiveDashboard, loadGlobalData } = useGlobalData();
     
-    const [dispensePrep, setDispensePrep] = useState(null);
     const [countInputs, setCountInputs] = useState({});
+    const [receiveCart, setReceiveCart] = useState([]);
+    const [dispenseCart, setDispenseCart] = useState([]);
+    const [dispensedItems, setDispensedItems] = useState(new Set());
+
+    const handleDispenseSuccess = (items) => {
+        setDispensedItems(prev => {
+            const next = new Set(prev);
+            items.forEach(i => next.add(i.itemId));
+            return next;
+        });
+        loadGlobalData();
+    };
 
     const renderTab = () => {
         switch(activeTab) {
             case 'dashboard': return <DashboardTab settings={settings} showToast={showToast} activeDashboard={activeDashboard} setActiveDashboard={setActiveDashboard} />;
-            case 'receive': return <TransactionTab type="receive" showToast={showToast} activeDashboard={activeDashboard} />;
-            case 'dispense': return <TransactionTab type="dispense" showToast={showToast} dispensePrepData={dispensePrep} clearPrepData={()=>setDispensePrep(null)} activeDashboard={activeDashboard} />;
-            case 'count': return <CountTab settings={settings} activeDashboard={activeDashboard} onJumpToDispense={(qr, q)=> { setDispensePrep({ qrCode: qr, qty: q }); setActiveTab('dispense'); }} inputs={countInputs} setInputs={setCountInputs} />;
+            case 'receive': return <TransactionTab type="receive" showToast={showToast} activeDashboard={activeDashboard} cart={receiveCart} setCart={setReceiveCart} />;
+            case 'dispense': return <TransactionTab type="dispense" showToast={showToast} activeDashboard={activeDashboard} cart={dispenseCart} setCart={setDispenseCart} onSuccess={handleDispenseSuccess} />;
+            case 'count': return <CountTab settings={settings} activeDashboard={activeDashboard} inputs={countInputs} setInputs={setCountInputs} dispenseCart={dispenseCart} setDispenseCart={setDispenseCart} dispensedItems={dispensedItems} onGoToDispense={() => setActiveTab('dispense')} showToast={showToast} />;
             case 'master': return <MasterTab settings={settings} showToast={showToast} activeDashboard={activeDashboard} refreshDashboard={loadGlobalData} />;
             case 'logs': return <LogsTab showToast={showToast} />;
             default: return null;
@@ -46,14 +57,14 @@ function App() {
                     <button onClick={()=>setActiveTab('dashboard')} className={`px-4 py-2 rounded-xl text-sm font-bold transition ${activeTab==='dashboard'?'bg-blue-50 text-blue-600':'text-slate-500 hover:bg-slate-50'}`}>แดชบอร์ด</button>
                     <button onClick={()=>setActiveTab('receive')} className={`px-4 py-2 rounded-xl text-sm font-bold transition ${activeTab==='receive'?'bg-green-50 text-green-600':'text-slate-500 hover:bg-slate-50'}`}>รับเข้า</button>
                     <button onClick={()=>setActiveTab('count')} className={`px-4 py-2 rounded-xl text-sm font-bold transition ${activeTab==='count'?'bg-blue-50 text-blue-600':'text-slate-500 hover:bg-slate-50'}`}>นับหน้างาน</button>
-                    <button onClick={()=>setActiveTab('dispense')} className={`px-4 py-2 rounded-xl text-sm font-bold transition ${activeTab==='dispense'?'bg-red-50 text-red-600':'text-slate-500 hover:bg-slate-50'}`}>เบิกไปใช้</button>
+                    <button onClick={()=>setActiveTab('dispense')} className={`relative px-4 py-2 rounded-xl text-sm font-bold transition ${activeTab==='dispense'?'bg-red-50 text-red-600':'text-slate-500 hover:bg-slate-50'}`}>เบิกไปใช้ {dispenseCart.length > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] w-5 h-5 flex items-center justify-center rounded-full border-2 border-white">{dispenseCart.length}</span>}</button>
                     <button onClick={()=>setActiveTab('master')} className={`px-4 py-2 rounded-xl text-sm font-bold transition ${activeTab==='master'?'bg-slate-100 text-slate-800':'text-slate-500 hover:bg-slate-50'}`}>Master</button>
                     <button onClick={()=>setActiveTab('logs')} className={`px-4 py-2 rounded-xl text-sm font-bold transition ${activeTab==='logs'?'bg-slate-100 text-slate-800':'text-slate-500 hover:bg-slate-50'}`}>ประวัติ</button>
                 </div>
             </header>
 
             {/* Main Content Area */}
-            <main className="flex-grow w-full max-w-6xl mx-auto p-4 md:p-6">
+            <main className="flex-grow w-full max-w-6xl mx-auto p-4 md:p-6 relative">
                 {renderTab()}
             </main>
 
@@ -62,7 +73,10 @@ function App() {
                 <NavItem id="dashboard" icon="fa-house" label="หน้าแรก" activeTab={activeTab} setActiveTab={setActiveTab} />
                 <NavItem id="receive" icon="fa-box-open" label="รับเข้า" activeTab={activeTab} setActiveTab={setActiveTab} />
                 <NavItem id="count" icon="fa-clipboard-check" label="นับหน้างาน" activeTab={activeTab} setActiveTab={setActiveTab} />
-                <NavItem id="dispense" icon="fa-hand-holding-droplet" label="เบิกจ่าย" activeTab={activeTab} setActiveTab={setActiveTab} />
+                <div className="relative w-full">
+                    <NavItem id="dispense" icon="fa-hand-holding-droplet" label="เบิกจ่าย" activeTab={activeTab} setActiveTab={setActiveTab} />
+                    {dispenseCart.length > 0 && <span className="absolute top-1 right-2 bg-red-500 text-white text-[9px] w-4 h-4 flex items-center justify-center rounded-full">{dispenseCart.length}</span>}
+                </div>
                 <NavItem id="master" icon="fa-database" label="ข้อมูล" activeTab={activeTab} setActiveTab={setActiveTab} />
                 <NavItem id="logs" icon="fa-clock-rotate-left" label="ประวัติ" activeTab={activeTab} setActiveTab={setActiveTab} />
             </nav>

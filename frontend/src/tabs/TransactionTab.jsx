@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { gasRun, parseGS1Lot } from '../api';
 import QRScanner from '../components/QRScanner';
 
-const TransactionTab = ({ type, showToast, dispensePrepData, clearPrepData, activeDashboard }) => {
+const TransactionTab = ({ type, showToast, activeDashboard, cart = [], setCart, onSuccess }) => {
     const isRec = type === 'receive';
     const title = isRec ? "รับเข้าคลังหลัก" : "เบิกไปหน้างาน";
     const icon = isRec ? "fa-box text-green-500" : "fa-hand-holding-droplet text-red-500";
@@ -11,7 +11,6 @@ const TransactionTab = ({ type, showToast, dispensePrepData, clearPrepData, acti
     const [scanMode, setScanMode] = useState(false);
     const [search, setSearch] = useState("");
     const [item, setItem] = useState(null);
-    const [cart, setCart] = useState([]);
     const [form, setForm] = useState({ lotNo: '', expDate: '', qty: '' });
     
     const [showAuto, setShowAuto] = useState(false);
@@ -60,15 +59,6 @@ const TransactionTab = ({ type, showToast, dispensePrepData, clearPrepData, acti
         setForm(f => ({...f, lotNo: "LOT-" + d}));
     };
 
-    useEffect(() => {
-        if (!isRec && dispensePrepData) {
-            fetchItem(dispensePrepData.qrCode).then(() => { 
-                setForm(f => ({ ...f, qty: dispensePrepData.qty })); 
-                clearPrepData(); 
-            });
-        }
-    }, [isRec, dispensePrepData]);
-
     const handleAddCart = (e) => {
         e.preventDefault();
         if(!item) return;
@@ -104,7 +94,10 @@ const TransactionTab = ({ type, showToast, dispensePrepData, clearPrepData, acti
         const method = isRec ? 'receiveBatch' : 'dispenseBatch';
         const res = await gasRun(method, cart);
         showToast(res.message, res.success ? 'success' : 'error');
-        if (res.success) setCart([]);
+        if (res.success) {
+            if (onSuccess) onSuccess(cart);
+            setCart([]);
+        }
     };
 
     return (

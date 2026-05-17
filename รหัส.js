@@ -341,13 +341,33 @@ function dispenseBatch(batchItems) {
         masterInfoMap[masterData[i][0]] = { name: masterData[i][2], unit: masterData[i][6], minAlert: parseInt(masterData[i][7], 10) || 0 };
     }
     
+    let failedItems = [];
+
     batchItems.forEach(item => {
-      const arrayIdx = item.rowIndex - 1;
-      let currentQty = parseInt(invData[arrayIdx][3], 10) || 0;
-      let qty = parseInt(item.qty, 10);
-      if (currentQty >= qty) {
-        invData[arrayIdx][3] = currentQty - qty;
-        logTransaction(item.itemId, masterInfoMap[item.itemId].name, item.lotNo, 'เบิกไปหน้างาน', qty);
+      let arrayIdx = item.rowIndex - 1;
+      
+      // 🛡️ Safety check: ตรวจสอบว่าแถวยังตรงกับรหัสและ Lot อยู่หรือไม่ (ป้องกันคนลบ/แทรกแถว)
+      if (!invData[arrayIdx] || invData[arrayIdx][0].toString() !== item.itemId.toString() || invData[arrayIdx][1].toString() !== item.lotNo.toString()) {
+        arrayIdx = -1;
+        // Fallback: ค้นหาแถวที่ถูกต้องใหม่
+        for(let i = 1; i < invData.length; i++) {
+          if (invData[i][0].toString() === item.itemId.toString() && invData[i][1].toString() === item.lotNo.toString()) {
+            arrayIdx = i; break;
+          }
+        }
+      }
+
+      if (arrayIdx >= 0) {
+        let currentQty = parseInt(invData[arrayIdx][3], 10) || 0;
+        let qty = parseInt(item.qty, 10);
+        if (currentQty >= qty) {
+          invData[arrayIdx][3] = currentQty - qty;
+          logTransaction(item.itemId, masterInfoMap[item.itemId].name, item.lotNo, 'เบิกไปหน้างาน', qty);
+        } else {
+          failedItems.push(`${masterInfoMap[item.itemId].name} (Lot: ${item.lotNo})`);
+        }
+      } else {
+        failedItems.push(`${masterInfoMap[item.itemId].name} (Lot: ${item.lotNo}) - ไม่พบข้อมูล`);
       }
     });
 
@@ -355,6 +375,10 @@ function dispenseBatch(batchItems) {
     
     // เรียกใช้ฟังก์ชันย่อยสำหรับการแจ้งเตือน
     processLowStockAlerts(batchItems, invData, masterInfoMap);
+    
+    if (failedItems.length > 0) {
+      return { success: false, message: `สต๊อกไม่พอเบิกสำหรับ:\n${failedItems.join('\n')}` };
+    }
     
     return { success: true, message: `เบิกจ่ายสำเร็จ` };
   } catch(error) {
