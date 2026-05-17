@@ -34,17 +34,20 @@ const DashboardTab = ({ settings, showToast, activeDashboard, setActiveDashboard
 
         if (!query) return baseData;
 
-        // 2. ค้นหาอย่างเข้มงวด
+        // 2. ค้นหาอย่างเข้มงวด (พิมพ์หาชื่อ / แสกนหารหัส)
         return baseData.filter(i => {
             const itemId = i.itemId.toString().toLowerCase();
             const name = i.name.toString().toLowerCase();
             const qrCode = (i.qrCode || "").toString().toLowerCase();
 
-            // กฎความแม่นยำ:
-            // - ถ้าแสกน: ต้องตรงเป๊ะ (id === query หรือ qrCode === query)
-            // - ถ้าพิมพ์ชื่อ: มีคำนั้นอยู่ในชื่อ (name.includes)
-            // - ถ้าพิมพ์รหัส: ต้องขึ้นต้นด้วยรหัสนั้น (itemId.startsWith) ป้องกันรหัส FT4 ไปโผล่ในรหัสอื่น
-            return name.includes(query) || itemId.startsWith(query) || qrCode === query;
+            // กฎใหม่:
+            // 1. ค้นหาจากชื่อ (พิมพ์ส่วนหนึ่งของชื่อได้)
+            const isNameMatch = name.includes(query);
+            
+            // 2. ค้นหาจากรหัส (ต้องตรงเป๊ะ 100% เท่านั้น - สำหรับแสกน)
+            const isCodeMatch = (itemId === query || qrCode === query);
+
+            return isNameMatch || isCodeMatch;
         }).sort((a, b) => {
             const aName = a.name.toString().toLowerCase();
             const bName = b.name.toString().toLowerCase();
