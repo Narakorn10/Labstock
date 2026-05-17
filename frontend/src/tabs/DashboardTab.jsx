@@ -23,12 +23,9 @@ const DashboardTab = ({ settings, showToast, activeDashboard, setActiveDashboard
     const filteredData = useMemo(() => {
         const query = search.toLowerCase().trim();
         
-        // 1. กรองเบื้องต้น: ตัดรายการที่ไม่มีข้อมูลสำคัญออก และกรองตาม Dropdown
+        // 1. กรองเบื้องต้นตาม Dropdown
         let baseData = activeDashboard.filter(i => {
-            const itemId = (i.itemId || "").toString().trim();
-            const name = (i.name || "").toString().trim();
-            if (!itemId || !name) return false; 
-
+            if (!i.itemId || !i.name) return false; 
             const matchReagent = fReagent.includes('ALL') || fReagent.includes(i.reagentType);
             const matchJob = fJob.includes('ALL') || fJob.includes(i.jobType);
             const matchMachine = fMachine.includes('ALL') || fMachine.includes(i.machineType);
@@ -37,39 +34,27 @@ const DashboardTab = ({ settings, showToast, activeDashboard, setActiveDashboard
 
         if (!query) return baseData;
 
-        // 2. ค้นหาอย่างเข้มงวด: เช็คเฉพาะ ชื่อ และ รหัส เท่านั้น
+        // 2. ค้นหาอย่างเข้มงวด
         return baseData.filter(i => {
             const itemId = i.itemId.toString().toLowerCase();
             const name = i.name.toString().toLowerCase();
             const qrCode = (i.qrCode || "").toString().toLowerCase();
 
-            // กฎ: ต้องมีคำที่ค้นหาอยู่ในชื่อ หรือ อยู่ใน ID หรือ ตรงกับ Barcode เป๊ะๆ
-            return name.includes(query) || itemId.includes(query) || qrCode === query;
+            // กฎความแม่นยำ:
+            // - ถ้าแสกน: ต้องตรงเป๊ะ (id === query หรือ qrCode === query)
+            // - ถ้าพิมพ์ชื่อ: มีคำนั้นอยู่ในชื่อ (name.includes)
+            // - ถ้าพิมพ์รหัส: ต้องขึ้นต้นด้วยรหัสนั้น (itemId.startsWith) ป้องกันรหัส FT4 ไปโผล่ในรหัสอื่น
+            return name.includes(query) || itemId.startsWith(query) || qrCode === query;
         }).sort((a, b) => {
             const aName = a.name.toString().toLowerCase();
             const bName = b.name.toString().toLowerCase();
-            
-            // เรียงให้ตัวที่ชื่อขึ้นต้นด้วยคำที่พิมพ์อยู่บนสุด
             const aStarts = aName.startsWith(query);
             const bStarts = bName.startsWith(query);
             if (aStarts && !bStarts) return -1;
             if (!aStarts && bStarts) return 1;
-
             return aName.localeCompare(bName);
         });
     }, [activeDashboard, search, fReagent, fJob, fMachine]);
-
-    // ฟังก์ชันตรวจสอบข้อมูลแฝง (Debug)
-    const inspectItem = (item) => {
-        const msg = `ตรวจสอบข้อมูลรายการ:\n` +
-                  `-------------------\n` +
-                  `ชื่อ: "${item.name}"\n` +
-                  `ID: "${item.itemId}"\n` +
-                  `Barcode: "${item.qrCode}"\n` +
-                  `แผนก: "${item.jobType}"\n` +
-                  `เครื่อง: "${item.machineType}"`;
-        alert(msg);
-    };
 
     const reportData = useMemo(() => {
         let data = filteredData;
