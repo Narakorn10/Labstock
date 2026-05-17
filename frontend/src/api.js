@@ -17,17 +17,20 @@ export const gasRun = (method, ...args) => {
             const gasUrl = import.meta.env.VITE_GAS_URL;
             
             if (gasUrl) {
-                // 🚀 [Vercel Support] เรียกผ่าน Web App URL
-                // ใช้ text/plain เพื่อเลี่ยง CORS Preflight (Simple Request)
+                console.log("Connecting to GAS at:", gasUrl.substring(0, 30) + "...");
                 fetch(gasUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                     body: JSON.stringify({ method, args })
                 })
-                .then(res => res.json())
+                .then(res => {
+                    if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+                    return res.json();
+                })
                 .then(resolve)
                 .catch(err => {
-                    console.error("Fetch Error:", err);
+                    console.error("❌ GAS Connection Error:", err);
+                    alert("ไม่สามารถเชื่อมต่อ Google Sheets ได้\nกรุณาตรวจสอบการตั้งค่า VITE_GAS_URL และการ Deploy ใน Google Script");
                     reject(err);
                 });
             } else {
