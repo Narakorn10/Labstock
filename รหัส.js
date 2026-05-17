@@ -110,42 +110,53 @@ function getDashboardData() {
     const masterData = masterSheet.getDataRange().getValues();
     if (masterData.length <= 1) return [];
     
+    const headers = masterData[0].map(h => h.toString().trim());
+    const col = {
+      id: headers.indexOf('รหัสน้ำยา (Item ID)'),
+      qr: headers.indexOf('รหัสสแกน (Barcode)'),
+      name: headers.indexOf('ชื่อน้ำยา'),
+      type: headers.indexOf('ประเภทน้ำยา'),
+      job: headers.indexOf('ประเภทงาน'),
+      machine: headers.indexOf('ประเภทเครื่อง'),
+      unit: headers.indexOf('หน่วย'),
+      min: headers.indexOf('จุดแจ้งเตือน(Min)'),
+      target: headers.indexOf('เป้าหมายหน้างานต่อสัปดาห์')
+    };
+    
     const invData = invSheet.getDataRange().getValues();
     const inventoryMap = {};
-    
     for (let i = 1; i < invData.length; i++) {
-      const itemId = invData[i][0].toString();
+      const itemId = invData[i][0].toString().trim();
       const qty = parseInt(invData[i][3], 10) || 0;
       if (!inventoryMap[itemId]) inventoryMap[itemId] = { totalQty: 0, lots: [] };
-      
       if (qty > 0) {
         inventoryMap[itemId].totalQty += qty;
         let expDateVal = invData[i][2];
         if (expDateVal instanceof Date) expDateVal = expDateVal.toISOString();
-        inventoryMap[itemId].lots.push({
-          rowIndex: i + 1,
-          lotNo: invData[i][1],
-          expDate: expDateVal,
-          qty: qty
-        });
+        inventoryMap[itemId].lots.push({ rowIndex: i + 1, lotNo: invData[i][1], expDate: expDateVal, qty: qty });
       }
     }
     
     const items = [];
     for (let i = 1; i < masterData.length; i++) {
-      const itemId = masterData[i][0].toString().trim();
-      if (!itemId) continue; // ป้องกันแถวว่าง
+      const itemId = masterData[i][col.id]?.toString().trim();
+      if (!itemId || itemId === "") continue; // ข้ามแถวที่ไม่มี ID
+      
       const invInfo = inventoryMap[itemId] || { totalQty: 0, lots: [] };
+      
+      // คลีนข้อมูลทุกช่องก่อนส่ง
+      const cleanCell = (val) => (val === null || val === undefined) ? "" : val.toString().trim();
+
       items.push({
         itemId: itemId,
-        qrCode: masterData[i][1],
-        name: masterData[i][2],
-        reagentType: masterData[i][3],
-        jobType: masterData[i][4],
-        machineType: masterData[i][5],
-        unit: masterData[i][6],
-        minThreshold: parseInt(masterData[i][7], 10) || 0,
-        weeklyTarget: parseInt(masterData[i][8], 10) || 0,
+        qrCode: cleanCell(masterData[i][col.qr]),
+        name: cleanCell(masterData[i][col.name]),
+        reagentType: cleanCell(masterData[i][col.type]),
+        jobType: cleanCell(masterData[i][col.job]),
+        machineType: cleanCell(masterData[i][col.machine]),
+        unit: cleanCell(masterData[i][col.unit]),
+        minThreshold: parseInt(masterData[i][col.min], 10) || 0,
+        weeklyTarget: parseInt(masterData[i][col.target], 10) || 0,
         quantity: invInfo.totalQty,
         lots: invInfo.lots
       });
@@ -158,65 +169,26 @@ function getDashboardData() {
 
 function getReagentWithLots(scannedQr) {
   try {
-    const masterSheet = getSheet(MASTER_SHEET);
-    const invSheet = getSheet(INV_SHEET);
-    
-    const masterData = masterSheet.getDataRange().getValues();
+    const data = getDashboardData();
     const searchKey = scannedQr.toString().trim().toLowerCase();
     if (!searchKey) return { success: false, message: 'กรุณากรอกคำค้นหา' };
-    
-    const searchTerms = searchKey.split(/\s+/).filter(t => t.length > 0);
-    
-    let exactMatchIdx = -1;
-    let gs1MatchIdx = -1;
-    let gs1MaxLen = -1;
-    let partialMatchIdx = -1;
-
-    for (let i = 1; i < masterData.length; i++) {
-      const dbItemId = masterData[i][0].toString().trim().toLowerCase();
-      if (!dbItemId) continue; // ป้องกันแถวว่าง
-      const dbBarcode = masterData[i][1].toString().trim().toLowerCase();
-      const dbName = masterData[i][2].toString().trim().toLowerCase();
-
-      if (searchKey === dbBarcode || searchKey === dbItemId || searchKey === dbName) {
-        exactMatchIdx = i; break; 
-      }
-      if (dbBarcode && searchKey.includes(dbBarcode)) {
-        if (dbBarcode.length > gs1MaxLen) { gs1MaxLen = dbBarcode.length; gs1MatchIdx = i; }
-      }
-      if (partialMatchIdx === -1) {
-          const textToSearch = `${dbItemId} ${dbBarcode} ${dbName}`;
-          if (searchTerms.every(term => textToSearch.includes(term))) { partialMatchIdx = i; }
-      }
-    }
 
     let bestMatch = null;
-    if (exactMatchIdx !== -1) bestMatch = exactMatchIdx;
-    else if (gs1MatchIdx !== -1) bestMatch = gs1MatchIdx;
-    else if (partialMatchIdx !== -1) bestMatch = partialMatchIdx;
+    let priority = -1;
 
-    if (bestMatch === null) return { success: false, message: 'ไม่พบรายการสินค้านี้ในฐานข้อมูล' };
-    
-    const i = bestMatch;
-    const item = { 
-      itemId: masterData[i][0], qrCode: masterData[i][1], name: masterData[i][2], 
-      reagentType: masterData[i][3], unit: masterData[i][6], 
-      weeklyTarget: parseInt(masterData[i][8], 10) || 0
-    };
-    
-    const lots = [];
-    const invData = invSheet.getDataRange().getValues();
-    for (let j = 1; j < invData.length; j++) {
-      if (invData[j][0].toString() == item.itemId.toString() && parseInt(invData[j][3], 10) > 0) {
-        let expDateVal = invData[j][2];
-        if (expDateVal instanceof Date) expDateVal = expDateVal.toISOString();
-        lots.push({ rowIndex: j + 1, lotNo: invData[j][1], expDate: expDateVal, qty: parseInt(invData[j][3], 10) });
-      }
+    for (let item of data) {
+      const id = (item.itemId || '').toLowerCase();
+      const qr = (item.qrCode || '').toLowerCase();
+      const name = (item.name || '').toLowerCase();
+
+      if (id === searchKey || qr === searchKey) { bestMatch = item; priority = 3; break; }
+      if (qr && qr.length > 4 && searchKey.includes(qr) && priority < 3) { bestMatch = item; priority = 3; }
+      if (name.startsWith(searchKey) && priority < 2) { bestMatch = item; priority = 2; }
+      if (name.includes(searchKey) && priority < 1) { bestMatch = item; priority = 1; }
     }
-    
-    lots.sort((a, b) => new Date(a.expDate) - new Date(b.expDate));
-    item.lots = lots;
-    return { success: true, data: item };
+
+    if (!bestMatch) return { success: false, message: 'ไม่พบรายการนี้ในระบบ' };
+    return { success: true, data: bestMatch };
   } catch (error) {
     return { success: false, message: error.message };
   }

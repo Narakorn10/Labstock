@@ -23,10 +23,12 @@ const DashboardTab = ({ settings, showToast, activeDashboard, setActiveDashboard
     const filteredData = useMemo(() => {
         const query = search.toLowerCase().trim();
         
-        // 1. กรองเบื้องต้นตาม Dropdown และตัดรายการที่ไม่มีชื่อ/ID ออก
+        // 1. กรองเบื้องต้น: ตัดรายการที่ไม่มีข้อมูลสำคัญออก และกรองตาม Dropdown
         let baseData = activeDashboard.filter(i => {
-            if (!i.itemId || !i.name) return false; // ป้องกันแถวว่าง
-            
+            const itemId = (i.itemId || "").toString().trim();
+            const name = (i.name || "").toString().trim();
+            if (!itemId || !name) return false; 
+
             const matchReagent = fReagent.includes('ALL') || fReagent.includes(i.reagentType);
             const matchJob = fJob.includes('ALL') || fJob.includes(i.jobType);
             const matchMachine = fMachine.includes('ALL') || fMachine.includes(i.machineType);
@@ -35,28 +37,39 @@ const DashboardTab = ({ settings, showToast, activeDashboard, setActiveDashboard
 
         if (!query) return baseData;
 
-        // 2. ถ้ามีการค้นหา ให้กรองอย่างเข้มงวด (ชื่อ หรือ ID เท่านั้น)
+        // 2. ค้นหาอย่างเข้มงวด: เช็คเฉพาะ ชื่อ และ รหัส เท่านั้น
         return baseData.filter(i => {
             const itemId = i.itemId.toString().toLowerCase();
             const name = i.name.toString().toLowerCase();
-            const qrCode = (i.qrCode || '').toString().toLowerCase();
+            const qrCode = (i.qrCode || "").toString().toLowerCase();
 
-            // ต้องมีคำที่ค้นหาอยู่ในชื่อ หรือ รหัสตรงเป๊ะ
+            // กฎ: ต้องมีคำที่ค้นหาอยู่ในชื่อ หรือ อยู่ใน ID หรือ ตรงกับ Barcode เป๊ะๆ
             return name.includes(query) || itemId.includes(query) || qrCode === query;
         }).sort((a, b) => {
             const aName = a.name.toString().toLowerCase();
             const bName = b.name.toString().toLowerCase();
             
-            // Priority 1: ชื่อขึ้นต้นด้วยคำที่ค้นหา (เช่น FT4...)
+            // เรียงให้ตัวที่ชื่อขึ้นต้นด้วยคำที่พิมพ์อยู่บนสุด
             const aStarts = aName.startsWith(query);
             const bStarts = bName.startsWith(query);
             if (aStarts && !bStarts) return -1;
             if (!aStarts && bStarts) return 1;
 
-            // Priority 2: เรียงตามตัวอักษรปกติ
             return aName.localeCompare(bName);
         });
     }, [activeDashboard, search, fReagent, fJob, fMachine]);
+
+    // ฟังก์ชันตรวจสอบข้อมูลแฝง (Debug)
+    const inspectItem = (item) => {
+        const msg = `ตรวจสอบข้อมูลรายการ:\n` +
+                  `-------------------\n` +
+                  `ชื่อ: "${item.name}"\n` +
+                  `ID: "${item.itemId}"\n` +
+                  `Barcode: "${item.qrCode}"\n` +
+                  `แผนก: "${item.jobType}"\n` +
+                  `เครื่อง: "${item.machineType}"`;
+        alert(msg);
+    };
 
     const reportData = useMemo(() => {
         let data = filteredData;
