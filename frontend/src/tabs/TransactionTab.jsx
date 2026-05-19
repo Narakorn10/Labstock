@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { gasRun, parseGS1Lot } from '../api';
+import { gasRun, decodeGS1 } from '../api';
 import QRScanner from '../components/QRScanner';
 
 const TransactionTab = ({ type, showToast, activeDashboard, cart = [], setCart, onSuccess }) => {
@@ -29,8 +29,12 @@ const TransactionTab = ({ type, showToast, activeDashboard, cart = [], setCart, 
 
     const fetchItem = async (qrOrSearch) => {
         if (!qrOrSearch) return;
-        const autoLot = parseGS1Lot(qrOrSearch);
-        const res = await gasRun('getReagentWithLots', qrOrSearch);
+        
+        // 🚀 Enhanced GS1 Logic
+        const decoded = decodeGS1(qrOrSearch);
+        const searchKey = decoded?.gtin || qrOrSearch;
+        
+        const res = await gasRun('getReagentWithLots', searchKey);
         setShowAuto(false);
         
         if (res.success) {
@@ -38,15 +42,19 @@ const TransactionTab = ({ type, showToast, activeDashboard, cart = [], setCart, 
             setItem(res.data);
             
             if (isRec) {
-                setForm(f => ({ ...f, lotNo: autoLot || '' }));
-                if(autoLot) showToast("ดึง Lot อัตโนมัติจากบาร์โค้ด GS1");
+                setForm(f => ({ 
+                    ...f, 
+                    lotNo: decoded?.lot || '', 
+                    expDate: decoded?.exp || '' 
+                }));
+                if(decoded?.lot) showToast("ดึง Lot และ EXP อัตโนมัติจาก GS1");
             } else {
                 let matchedLot = '';
                 if (res.data.lots.length > 0) {
-                    const foundIdx = autoLot ? res.data.lots.findIndex(l => l.lotNo === autoLot) : -1;
+                    const foundIdx = decoded?.lot ? res.data.lots.findIndex(l => l.lotNo === decoded.lot) : -1;
                     const targetLot = foundIdx >= 0 ? res.data.lots[foundIdx] : res.data.lots[0];
                     matchedLot = `${targetLot.rowIndex}|${targetLot.lotNo}`;
-                    if(foundIdx >= 0) showToast("เลือก Lot อัตโนมัติจากบาร์โค้ด GS1");
+                    if(foundIdx >= 0) showToast("เลือก Lot อัตโนมัติจาก GS1");
                 }
                 setForm(f => ({ ...f, lotNo: matchedLot }));
             }
@@ -86,6 +94,27 @@ const TransactionTab = ({ type, showToast, activeDashboard, cart = [], setCart, 
         }
         
         setForm({ lotNo: '', expDate: '', qty: '' }); setItem(null); setSearch(""); showToast("เพิ่มลงตะกร้าแล้ว");
+    };
+
+    const updateCartQty = (idx, newQty) => {
+        const nQty = parseInt(newQty, 10);
+        if (isNaN(nQty) || nQty <= 0) return;
+
+        const newCart = [...cart];
+        const target = newCart[idx];
+
+        if (!isRec) {
+            // Check stock for dispense
+            const masterItem = activeDashboard.find(i => i.itemId === target.itemId);
+            const lotInfo = masterItem?.lots.find(l => l.rowIndex == target.rowIndex);
+            if (lotInfo && nQty > lotInfo.qty) {
+                showToast(`สต๊อกมีเพียง ${lotInfo.qty}`, "error");
+                return;
+            }
+        }
+
+        newCart[idx].qty = nQty;
+        setCart(newCart);
     };
 
     const submitBatch = async () => {
@@ -192,12 +221,20 @@ const TransactionTab = ({ type, showToast, activeDashboard, cart = [], setCart, 
                     <div className="space-y-2 mb-6">
                         {cart.map((c, i) => (
                             <div key={i} className="flex justify-between items-center p-3 sm:p-4 bg-slate-50 border border-slate-100 rounded-xl animate-fade-in">
-                                <div className="overflow-hidden pr-2">
+                                <div className="overflow-hidden pr-2 flex-1">
                                     <div className="font-bold text-slate-700 text-sm truncate">{c.name}</div>
                                     <div className="text-[10px] text-slate-500 mt-0.5">{c.itemId} <span className="mx-1">•</span> Lot: {c.lotNo}</div>
                                 </div>
-                                <div className="flex items-center gap-3 sm:gap-4 flex-shrink-0">
-                                    <div className={`font-bold text-base sm:text-lg ${!isRec ? 'text-red-600' : 'text-green-600'}`}>{!isRec && '-'}{c.qty} <span className="text-[10px] font-normal text-slate-500">{c.unit}</span></div>
+                                <div className="flex items-center gap-2 flex-shrink-0">
+                                    <div className="relative">
+                                        <input 
+                                            type="number" 
+                                            value={c.qty} 
+                                            onChange={(e) => updateCartQty(i, e.target.value)}
+                                            className={`w-16 sm:w-20 text-center font-bold text-sm sm:text-base py-1 px-1 rounded-lg border-2 bg-white outline-none focus:border-blue-400 transition-colors ${!isRec ? 'text-red-600 border-red-100' : 'text-green-600 border-green-100'}`}
+                                        />
+                                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-slate-100 px-1 rounded text-[8px] font-bold text-slate-400 uppercase tracking-tighter whitespace-nowrap">จำนวน ({c.unit})</div>
+                                    </div>
                                     <button onClick={()=>setCart(cart.filter((_,idx)=>idx!==i))} className="w-9 h-9 flex justify-center items-center bg-white text-slate-400 hover:text-red-500 rounded-xl border border-slate-200 shadow-sm active-scale transition"><i className="fa-solid fa-trash-can text-xs"></i></button>
                                 </div>
                             </div>

@@ -45,10 +45,47 @@ export const gasRun = (method, ...args) => {
 };
 
 /**
- * Utility: Parse GS1 Barcode for Lot Number
+ * Utility: Parse GS1 Barcode/QR for GTIN, Lot, and Expiry
  */
-export const parseGS1Lot = (text) => {
+export const decodeGS1 = (text) => {
     if(!text) return null;
-    const match = text.match(/\(10\)([^()]+)/);
-    return match ? match[1].trim() : null;
+    const res = { gtin: null, lot: null, exp: null };
+    
+    // Support formats like (01)123(17)YYMMDD(10)LOT
+    // Or plain strings with GS1 AI prefixes
+    
+    // 1. Extract GTIN (01) - usually 14 digits
+    const gtinMatch = text.match(/\(01\)(\d{14})/);
+    if(gtinMatch) res.gtin = gtinMatch[1];
+    
+    // 2. Extract Lot (10) - variable length
+    const lotMatch = text.match(/\(10\)([^()]+)/);
+    if(lotMatch) res.lot = lotMatch[1].trim();
+    
+    // 3. Extract Expiry (17) - 6 digits (YYMMDD)
+    const expMatch = text.match(/\(17\)(\d{6})/);
+    if(expMatch) {
+        const yy = expMatch[1].substring(0, 2);
+        const mm = expMatch[1].substring(2, 4);
+        const dd = expMatch[1].substring(4, 6);
+        // Convert YYMMDD to YYYY-MM-DD
+        res.exp = `20${yy}-${mm}-${dd}`;
+    }
+
+    // Fallback for codes without parentheses if they follow standard fixed lengths
+    if (!res.gtin && !res.lot && !res.exp) {
+        // Very basic heuristic for some common reagent barcodes
+        if (text.startsWith('01') && text.length >= 16) {
+             res.gtin = text.substring(2, 16);
+             // This gets complex without delimiters, but let's stick to (AI) format for now as it's standard for GS1 QR
+        }
+    }
+    
+    return res;
+};
+
+// Keep for backward compatibility if needed by other parts, but use decodeGS1 primarily
+export const parseGS1Lot = (text) => {
+    const decoded = decodeGS1(text);
+    return decoded ? decoded.lot : null;
 };

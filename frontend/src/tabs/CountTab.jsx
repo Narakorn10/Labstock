@@ -124,9 +124,15 @@ const CountTab = ({ settings, activeDashboard, inputs, setInputs, dispenseCart, 
                                     <div className="font-bold text-slate-800 text-base leading-tight truncate">{highlightText(item.name, search)}</div>
                                     <div className="text-[10px] text-slate-400 font-mono mt-1">{highlightText(item.itemId, search)}</div>
                                 </div>
-                                <div className="bg-slate-50 px-3 py-1.5 rounded-lg text-center border border-slate-100 flex-shrink-0">
-                                    <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider mb-0.5">เป้าหมาย</div>
-                                    <div className="font-bold text-slate-700">{target} <span className="text-[10px] font-normal">{item.unit}</span></div>
+                                <div className="flex gap-2 flex-shrink-0">
+                                    <div className="bg-blue-50 px-3 py-1.5 rounded-lg text-center border border-blue-100">
+                                        <div className="text-[9px] text-blue-400 font-bold uppercase tracking-wider mb-0.5">ในระบบ</div>
+                                        <div className="font-bold text-blue-700">{item.quantity} <span className="text-[10px] font-normal">{item.unit}</span></div>
+                                    </div>
+                                    <div className="bg-slate-50 px-3 py-1.5 rounded-lg text-center border border-slate-100">
+                                        <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider mb-0.5">เป้าหมาย</div>
+                                        <div className="font-bold text-slate-700">{target} <span className="text-[10px] font-normal">{item.unit}</span></div>
+                                    </div>
                                 </div>
                             </div>
                             

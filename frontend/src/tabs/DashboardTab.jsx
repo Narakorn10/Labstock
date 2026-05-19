@@ -115,6 +115,34 @@ const DashboardTab = ({ settings, showToast, activeDashboard, setActiveDashboard
 
     const { reportRef, exportCSV, printPDF, copyLine } = useExport(reportData, reportType, reportJob, showToast);
 
+    const [editingLot, setEditingLot] = useState(null); // { rowIndex, lotNo, currentQty }
+    const [newLotQty, setNewLotQty] = useState("");
+
+    const handleAdjustQty = async (e) => {
+        e.preventDefault();
+        if (!editingLot || newLotQty === "") return;
+        
+        showToast("กำลังปรับปรุงยอด...");
+        const res = await gasRun('adjustLotQuantity', {
+            rowIndex: editingLot.rowIndex,
+            itemId: lotModalData.itemId,
+            lotNo: editingLot.lotNo,
+            newQty: newLotQty
+        });
+
+        showToast(res.message, res.success ? 'success' : 'error');
+        if (res.success) {
+            setEditingLot(null);
+            setNewLotQty("");
+            loadData(); // รีเฟรชข้อมูลทั้งหมด
+            // อัปเดตข้อมูลใน Modal ทันทีเพื่อความลื่นไหล
+            const updatedLots = lotModalData.lots.map(l => 
+                l.rowIndex === editingLot.rowIndex ? { ...l, qty: parseInt(newLotQty, 10) } : l
+            );
+            setLotModalData({ ...lotModalData, lots: updatedLots });
+        }
+    };
+
     return (
         <div className="space-y-4 sm:space-y-6 animate-slide-up pb-24">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-100">
@@ -149,7 +177,7 @@ const DashboardTab = ({ settings, showToast, activeDashboard, setActiveDashboard
             <DesktopTable loading={loading} filteredData={filteredData} search={search} setLotModalData={setLotModalData} />
             <MobileCards loading={loading} filteredData={filteredData} search={search} setLotModalData={setLotModalData} />
 
-            <Modal isOpen={!!lotModalData} onClose={() => setLotModalData(null)} title={lotModalData ? lotModalData.name : ''} icon="fa-box-open">
+            <Modal isOpen={!!lotModalData} onClose={() => { setLotModalData(null); setEditingLot(null); }} title={lotModalData ? lotModalData.name : ''} icon="fa-box-open">
                 {lotModalData && (
                     <div className="space-y-3">
                         {lotModalData.lots.length === 0 ? <div className="text-center p-8 text-slate-400">
@@ -158,13 +186,37 @@ const DashboardTab = ({ settings, showToast, activeDashboard, setActiveDashboard
                         </div> : 
                          [...lotModalData.lots].map((l, idx) => {
                             const isExp = new Date(l.expDate) < new Date();
+                            const isEditing = editingLot?.rowIndex === l.rowIndex;
+                            
                             return (
-                                <div key={idx} className={`p-4 rounded-xl border flex justify-between items-center ${isExp ? 'bg-red-50 border-red-100' : 'bg-white border-slate-200'} animate-fade-in`}>
-                                    <div>
+                                <div key={idx} className={`p-4 rounded-xl border transition-all ${isExp ? 'bg-red-50 border-red-100' : 'bg-white border-slate-200'} ${isEditing ? 'ring-2 ring-blue-500 border-transparent shadow-lg' : ''} animate-fade-in`}>
+                                    <div className="flex justify-between items-center mb-1">
                                         <div className="font-bold text-slate-800 text-sm">{l.lotNo} {isExp && <Badge color="red">EXP</Badge>}</div>
-                                        <div className="text-xs text-slate-500 mt-1">หมดอายุ: {new Date(l.expDate).toLocaleDateString('th-TH')}</div>
+                                        {!isEditing && (
+                                            <button onClick={() => { setEditingLot(l); setNewLotQty(l.qty); }} className="text-slate-400 hover:text-blue-600 transition p-1"><i className="fa-solid fa-pen-to-square text-xs"></i></button>
+                                        )}
                                     </div>
-                                    <div className="font-bold text-lg text-slate-800">{l.qty} <span className="text-[10px] font-normal text-slate-500">{lotModalData.unit}</span></div>
+                                    <div className="flex justify-between items-end">
+                                        <div className="text-xs text-slate-500">หมดอายุ: {new Date(l.expDate).toLocaleDateString('th-TH')}</div>
+                                        {isEditing ? (
+                                            <form onSubmit={handleAdjustQty} className="flex items-center gap-2 animate-fade-in">
+                                                <div className="relative">
+                                                    <input 
+                                                        autoFocus
+                                                        type="number" 
+                                                        value={newLotQty} 
+                                                        onChange={e => setNewLotQty(e.target.value)}
+                                                        className="w-20 text-center font-bold text-blue-700 bg-blue-50 border-2 border-blue-200 rounded-lg py-1 outline-none"
+                                                    />
+                                                    <div className="absolute -top-5 left-0 text-[8px] font-bold text-blue-500 uppercase">แก้เป็น</div>
+                                                </div>
+                                                <button type="submit" className="bg-blue-600 text-white w-8 h-8 rounded-lg shadow-md active-scale"><i className="fa-solid fa-check text-xs"></i></button>
+                                                <button type="button" onClick={() => setEditingLot(null)} className="bg-slate-100 text-slate-500 w-8 h-8 rounded-lg active-scale"><i className="fa-solid fa-xmark text-xs"></i></button>
+                                            </form>
+                                        ) : (
+                                            <div className="font-bold text-lg text-slate-800">{l.qty} <span className="text-[10px] font-normal text-slate-500">{lotModalData.unit}</span></div>
+                                        )}
+                                    </div>
                                 </div>
                             )
                         })}

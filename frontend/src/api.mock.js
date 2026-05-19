@@ -73,6 +73,13 @@ export const handleMockCall = (method, args) => {
                 case 'setupSystem': resolve({ success: true, message: 'ตั้งค่าระบบสำเร็จ' }); break;
                 case 'receiveBatch': 
                 case 'dispenseBatch': resolve({ success: true, message: `ทำรายการสำเร็จ` }); break;
+                case 'adjustLotQuantity': resolve({ success: true, message: `ปรับปรุงยอดสำเร็จ (Mock)` }); break;
+                case 'getUsageReport': 
+                    resolve([
+                        { itemId: 'CHEM-001', name: 'Ethanol 95%', dispensed: 50, adjusted: -2, received: 100 },
+                        { itemId: 'BIO-001', name: 'Taq Polymerase', dispensed: 5, adjusted: 0, received: 0 }
+                    ]); 
+                    break;
                 case 'addMasterItem': 
                 case 'updateMasterItem': resolve({ success: true, message: `อัปเดตข้อมูลสำเร็จ` }); break;
                 default: resolve({ success: true, message: `Success` });

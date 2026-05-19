@@ -419,6 +419,79 @@ function sendLineNotify(message) {
   try { UrlFetchApp.fetch('https://notify-api.line.me/api/notify', options); } catch (e) {}
 }
 
+function adjustLotQuantity(data) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const invSheet = getSheet(INV_SHEET);
+    const rowIndex = parseInt(data.rowIndex, 10);
+    const newQty = parseInt(data.newQty, 10);
+    
+    // ดึงข้อมูลแถวปัจจุบันมาเช็คความถูกต้อง
+    const currentRow = invSheet.getRange(rowIndex, 1, 1, 4).getValues()[0];
+    if (currentRow[0].toString() !== data.itemId.toString() || currentRow[1].toString() !== data.lotNo.toString()) {
+      return { success: false, message: 'ข้อมูลแถวไม่ตรงกัน กรุณารีเฟรชหน้าจอแล้วลองใหม่' };
+    }
+
+    const oldQty = parseInt(currentRow[3], 10) || 0;
+    const diff = newQty - oldQty;
+    
+    if (diff === 0) return { success: true, message: 'ไม่มีการเปลี่ยนแปลงจำนวน' };
+
+    // อัปเดตยอดใหม่
+    invSheet.getRange(rowIndex, 4).setValue(newQty);
+    
+    // บันทึก Log ส่วนต่าง
+    const masterData = getDashboardData();
+    const info = masterData.find(i => i.itemId === data.itemId);
+    logTransaction(data.itemId, info ? info.name : 'Unknown', data.lotNo, 'ปรับปรุงยอด (Adjustment)', Math.abs(diff), `ปรับปรุง (${diff > 0 ? '+' : ''}${diff})`);
+
+    return { success: true, message: 'ปรับปรุงยอดสำเร็จ' };
+  } catch(error) {
+    return { success: false, message: error.message };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function getUsageReport(startDate, endDate) {
+  try {
+    const logs = getSheetDataAsObjects(LOG_SHEET);
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    end.setHours(23, 59, 59, 999); // ให้ครอบคลุมทั้งวันสิ้นสุด
+
+    const summary = {};
+
+    logs.forEach(log => {
+      const ts = new Date(log['วันเวลา']);
+      if (ts >= start && ts <= end) {
+        const action = log['ทำรายการ'];
+        const itemId = log['รหัสน้ำยา (Item ID)'];
+        const name = log['ชื่อน้ำยา'];
+        const qty = parseInt(log['จำนวน'], 10) || 0;
+
+        if (!summary[itemId]) {
+          summary[itemId] = { itemId, name, dispensed: 0, adjusted: 0, received: 0 };
+        }
+
+        if (action === 'เบิกไปหน้างาน') {
+          summary[itemId].dispensed += qty;
+        } else if (action === 'รับเข้าสต๊อกหลัก') {
+          summary[itemId].received += qty;
+        } else if (action.includes('ปรับปรุงยอด')) {
+          summary[itemId].adjusted += qty; 
+        }
+      }
+    });
+
+    return Object.values(summary);
+  } catch (error) {
+    console.error("getUsageReport Error:", error);
+    return [];
+  }
+}
+
 /**
  * 🚀 [Vercel Support] รับการเรียกจากภายนอก (CORS-friendly)
  */
@@ -441,6 +514,8 @@ function doPost(e) {
       case 'updateMasterItem': result = updateMasterItem(args[0]); break;
       case 'receiveBatch': result = receiveBatch(args[0]); break;
       case 'dispenseBatch': result = dispenseBatch(args[0]); break;
+      case 'adjustLotQuantity': result = adjustLotQuantity(args[0]); break;
+      case 'getUsageReport': result = getUsageReport(args[0], args[1]); break;
       default: throw new Error(`ไม่พบ Method: ${method}`);
     }
     
