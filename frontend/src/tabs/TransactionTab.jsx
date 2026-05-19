@@ -44,10 +44,15 @@ const TransactionTab = ({ type, showToast, activeDashboard, cart = [], setCart, 
             if (isRec) {
                 setForm(f => ({ 
                     ...f, 
-                    lotNo: decoded?.lot || '', 
-                    expDate: decoded?.exp || '' 
+                    lotNo: decoded?.lot || f.lotNo, 
+                    expDate: decoded?.exp || f.expDate 
                 }));
-                if(decoded?.lot) showToast("ดึง Lot และ EXP อัตโนมัติจาก GS1");
+                if(decoded?.lot || decoded?.exp) {
+                    const fields = [];
+                    if(decoded.lot) fields.push("Lot");
+                    if(decoded.exp) fields.push("วันหมดอายุ");
+                    showToast(`ดึงข้อมูล ${fields.join(" และ ")} อัตโนมัติ`);
+                }
             } else {
                 let matchedLot = '';
                 if (res.data.lots.length > 0) {

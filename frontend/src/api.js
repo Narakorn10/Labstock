@@ -46,42 +46,56 @@ export const gasRun = (method, ...args) => {
 
 /**
  * Utility: Parse GS1 Barcode/QR for GTIN, Lot, and Expiry
+ * รองรับทั้งแบบมีวงเล็บ (01)GTIN(17)EXP(10)LOT และแบบ Raw 01GTIN17EXP10LOT
  */
 export const decodeGS1 = (text) => {
-    if(!text) return null;
+    if (!text) return null;
     const res = { gtin: null, lot: null, exp: null };
-    
-    // Support formats like (01)123(17)YYMMDD(10)LOT
-    // Or plain strings with GS1 AI prefixes
-    
-    // 1. Extract GTIN (01) - usually 14 digits
-    const gtinMatch = text.match(/\(01\)(\d{14})/);
-    if(gtinMatch) res.gtin = gtinMatch[1];
-    
-    // 2. Extract Lot (10) - variable length
-    const lotMatch = text.match(/\(10\)([^()]+)/);
-    if(lotMatch) res.lot = lotMatch[1].trim();
-    
-    // 3. Extract Expiry (17) - 6 digits (YYMMDD)
-    const expMatch = text.match(/\(17\)(\d{6})/);
-    if(expMatch) {
-        const yy = expMatch[1].substring(0, 2);
-        const mm = expMatch[1].substring(2, 4);
-        const dd = expMatch[1].substring(4, 6);
-        // Convert YYMMDD to YYYY-MM-DD
-        res.exp = `20${yy}-${mm}-${dd}`;
-    }
 
-    // Fallback for codes without parentheses if they follow standard fixed lengths
-    if (!res.gtin && !res.lot && !res.exp) {
-        // Very basic heuristic for some common reagent barcodes
+    // 1. ตรวจสอบรูปแบบที่มีวงเล็บ (Common in standardized QR)
+    const gtinP = text.match(/\(01\)(\d{14})/);
+    const lotP = text.match(/\(10\)([^()]+)/);
+    const expP = text.match(/\(17\)(\d{6})/);
+
+    if (gtinP || lotP || expP) {
+        if (gtinP) res.gtin = gtinP[1];
+        if (lotP) res.lot = lotP[1].trim();
+        if (expP) {
+            const d = expP[1];
+            res.exp = `20${d.substring(0, 2)}-${d.substring(2, 4)}-${d.substring(4, 6)}`;
+        }
+    } 
+    // 2. ตรวจสอบรูปแบบ Raw (ไม่มีวงเล็บ) - มักเจอในเครื่องสแกนบาร์โค้ดทั่วไป
+    else {
+        // รูปแบบยอดนิยม: 01 (14 หลัก) + 17 (6 หลัก) + 10 (ที่เหลือคือ Lot)
         if (text.startsWith('01') && text.length >= 16) {
-             res.gtin = text.substring(2, 16);
-             // This gets complex without delimiters, but let's stick to (AI) format for now as it's standard for GS1 QR
+            res.gtin = text.substring(2, 16);
+            
+            // ค้นหา AI (17) สำหรับวันหมดอายุ
+            const expIdx = text.indexOf('17', 16);
+            if (expIdx !== -1 && expIdx + 8 <= text.length) {
+                const datePart = text.substring(expIdx + 2, expIdx + 8);
+                if (/^\d{6}$/.test(datePart)) {
+                    res.exp = `20${datePart.substring(0, 2)}-${datePart.substring(2, 4)}-${datePart.substring(4, 6)}`;
+                    
+                    // ค้นหา AI (10) สำหรับ Lot หลังวันหมดอายุ
+                    const lotIdx = text.indexOf('10', expIdx + 8);
+                    if (lotIdx !== -1) {
+                        res.lot = text.substring(lotIdx + 2);
+                    }
+                }
+            } else {
+                // ถ้าไม่เจอ 17 อาจจะเป็น 01 + 10 (Lot) เลย
+                const lotIdx = text.indexOf('10', 16);
+                if (lotIdx !== -1) {
+                    res.lot = text.substring(lotIdx + 2);
+                }
+            }
         }
     }
     
-    return res;
+    // ถ้าดึงข้อมูลไม่ได้เลย ให้คืนค่า null
+    return (res.gtin || res.lot || res.exp) ? res : null;
 };
 
 // Keep for backward compatibility if needed by other parts, but use decodeGS1 primarily
