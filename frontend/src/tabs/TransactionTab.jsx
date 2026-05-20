@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { gasRun, decodeGS1 } from '../api';
+import { gasRun, processAnyBarcode } from '../api';
 import QRScanner from '../components/QRScanner';
 
 const TransactionTab = ({ type, showToast, activeDashboard, cart = [], setCart, onSuccess }) => {
@@ -30,9 +30,9 @@ const TransactionTab = ({ type, showToast, activeDashboard, cart = [], setCart, 
     const fetchItem = async (qrOrSearch) => {
         if (!qrOrSearch) return;
         
-        // 🚀 Enhanced GS1 Logic
-        const decoded = decodeGS1(qrOrSearch);
-        const searchKey = decoded?.gtin || qrOrSearch;
+        // 🚀 Robust Barcode Parsing
+        const barcodeData = processAnyBarcode(qrOrSearch);
+        const searchKey = barcodeData?.gtin || qrOrSearch;
         
         const res = await gasRun('getReagentWithLots', searchKey);
         setShowAuto(false);
@@ -42,29 +42,39 @@ const TransactionTab = ({ type, showToast, activeDashboard, cart = [], setCart, 
             setItem(res.data);
             
             if (isRec) {
+                // Pre-fill fields only if we got real data (not manual input placeholders)
+                const autoLot = barcodeData?.lot !== "NEED_MANUAL_INPUT" ? (barcodeData?.lot || "") : "";
+                const autoExp = barcodeData?.expDate !== "NEED_MANUAL_INPUT" ? (barcodeData?.expDate || "") : "";
+
                 setForm(f => ({ 
                     ...f, 
-                    lotNo: decoded?.lot || f.lotNo, 
-                    expDate: decoded?.exp || f.expDate 
+                    lotNo: autoLot || f.lotNo, 
+                    expDate: autoExp || f.expDate 
                 }));
-                if(decoded?.lot || decoded?.exp) {
+
+                if(barcodeData?.barcodeType === "GS1_COMPLIANT") {
                     const fields = [];
-                    if(decoded.lot) fields.push("Lot");
-                    if(decoded.exp) fields.push("วันหมดอายุ");
+                    if(barcodeData.lot) fields.push("Lot");
+                    if(barcodeData.expDate) fields.push("วันหมดอายุ");
                     showToast(`ดึงข้อมูล ${fields.join(" และ ")} อัตโนมัติ`);
+                } else if (barcodeData?.barcodeType === "STANDARD_1D") {
+                    showToast("Barcode ทั่วไป: กรุณาระบุ Lot และ EXP ด้วยตนเอง", "info");
                 }
             } else {
                 let matchedLot = '';
                 if (res.data.lots.length > 0) {
-                    const foundIdx = decoded?.lot ? res.data.lots.findIndex(l => l.lotNo === decoded.lot) : -1;
+                    // Try to match scanned lot if it exists
+                    const lotToFind = barcodeData?.lot !== "NEED_MANUAL_INPUT" ? barcodeData?.lot : null;
+                    const foundIdx = lotToFind ? res.data.lots.findIndex(l => l.lotNo === lotToFind) : -1;
                     const targetLot = foundIdx >= 0 ? res.data.lots[foundIdx] : res.data.lots[0];
                     matchedLot = `${targetLot.rowIndex}|${targetLot.lotNo}`;
-                    if(foundIdx >= 0) showToast("เลือก Lot อัตโนมัติจาก GS1");
+                    if(foundIdx >= 0) showToast("เลือก Lot อัตโนมัติจาก Barcode");
                 }
                 setForm(f => ({ ...f, lotNo: matchedLot }));
             }
         } else { showToast(res.message, "error"); setItem(null); }
     };
+
 
     const genAutoLot = () => {
         const now = new Date();

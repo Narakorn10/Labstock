@@ -1,4 +1,5 @@
 import { handleMockCall } from './api.mock';
+import { processAnyBarcode } from './utils/barcodeParser';
 
 /**
  * 🚀 Main API Bridge to Google Apps Script
@@ -45,61 +46,25 @@ export const gasRun = (method, ...args) => {
 };
 
 /**
- * Utility: Parse GS1 Barcode/QR for GTIN, Lot, and Expiry
- * รองรับทั้งแบบมีวงเล็บ (01)GTIN(17)EXP(10)LOT และแบบ Raw 01GTIN17EXP10LOT
+ * Utility: Parse Barcode/QR using the robust processAnyBarcode logic.
+ * Maintained for backward compatibility but enhanced with new parser.
  */
 export const decodeGS1 = (text) => {
-    if (!text) return null;
-    const res = { gtin: null, lot: null, exp: null };
-
-    // 1. ตรวจสอบรูปแบบที่มีวงเล็บ (Common in standardized QR)
-    const gtinP = text.match(/\(01\)(\d{14})/);
-    const lotP = text.match(/\(10\)([^()]+)/);
-    const expP = text.match(/\(17\)(\d{6})/);
-
-    if (gtinP || lotP || expP) {
-        if (gtinP) res.gtin = gtinP[1];
-        if (lotP) res.lot = lotP[1].trim();
-        if (expP) {
-            const d = expP[1];
-            res.exp = `20${d.substring(0, 2)}-${d.substring(2, 4)}-${d.substring(4, 6)}`;
-        }
-    } 
-    // 2. ตรวจสอบรูปแบบ Raw (ไม่มีวงเล็บ) - มักเจอในเครื่องสแกนบาร์โค้ดทั่วไป
-    else {
-        // รูปแบบยอดนิยม: 01 (14 หลัก) + 17 (6 หลัก) + 10 (ที่เหลือคือ Lot)
-        if (text.startsWith('01') && text.length >= 16) {
-            res.gtin = text.substring(2, 16);
-            
-            // ค้นหา AI (17) สำหรับวันหมดอายุ
-            const expIdx = text.indexOf('17', 16);
-            if (expIdx !== -1 && expIdx + 8 <= text.length) {
-                const datePart = text.substring(expIdx + 2, expIdx + 8);
-                if (/^\d{6}$/.test(datePart)) {
-                    res.exp = `20${datePart.substring(0, 2)}-${datePart.substring(2, 4)}-${datePart.substring(4, 6)}`;
-                    
-                    // ค้นหา AI (10) สำหรับ Lot หลังวันหมดอายุ
-                    const lotIdx = text.indexOf('10', expIdx + 8);
-                    if (lotIdx !== -1) {
-                        res.lot = text.substring(lotIdx + 2);
-                    }
-                }
-            } else {
-                // ถ้าไม่เจอ 17 อาจจะเป็น 01 + 10 (Lot) เลย
-                const lotIdx = text.indexOf('10', 16);
-                if (lotIdx !== -1) {
-                    res.lot = text.substring(lotIdx + 2);
-                }
-            }
-        }
-    }
+    const result = processAnyBarcode(text);
+    // If not a GS1 barcode or invalid, we return null to signal standard processing
+    if (!result || result.barcodeType !== "GS1_COMPLIANT") return null;
     
-    // ถ้าดึงข้อมูลไม่ได้เลย ให้คืนค่า null
-    return (res.gtin || res.lot || res.exp) ? res : null;
+    return {
+        gtin: result.gtin,
+        lot: result.lot,
+        exp: result.expDate
+    };
 };
 
-// Keep for backward compatibility if needed by other parts, but use decodeGS1 primarily
+// Keep for backward compatibility if needed by other parts
 export const parseGS1Lot = (text) => {
     const decoded = decodeGS1(text);
     return decoded ? decoded.lot : null;
 };
+
+export { processAnyBarcode };
