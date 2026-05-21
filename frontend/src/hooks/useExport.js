@@ -33,20 +33,9 @@ const useExport = (reportData, reportType, reportJob, showToast) => {
         
         let text = `${title}\n` + "=".repeat(20) + "\n";
 
-        // 📦 จัดกลุ่มข้อมูลตามประเภทงาน (Job Type)
-        const groupedData = reportData.reduce((acc, item) => {
-            const job = item.jobType || 'อื่นๆ';
-            if (!acc[job]) acc[job] = [];
-            acc[job].push(item);
-            return acc;
-        }, {});
-
-        // 📝 สร้างข้อความแยกตามหมวดหมู่
-        Object.keys(groupedData).forEach(job => {
-            text += `\n📌 หมวดงาน: ${job}\n`;
-            groupedData[job].forEach(i => {
-                text += `- ${i.name}: ${i.quantity} ${i.unit}\n`;
-            });
+        // 📝 รายการแบบเรียงต่อกันปกติ (Flat List) ตามคำขอ
+        reportData.forEach(i => {
+            text += `• ${i.name}: ${i.quantity} ${i.unit}\n`;
         });
 
         const ta = document.createElement("textarea"); 
@@ -56,7 +45,7 @@ const useExport = (reportData, reportType, reportJob, showToast) => {
         document.execCommand("copy"); 
         document.body.removeChild(ta);
         
-        showToast("คัดลอกข้อความแบบจัดกลุ่มแล้ว");
+        showToast("คัดลอกข้อความ (แบบปกติ) เรียบร้อยแล้ว");
     };
 
     return { reportRef, exportCSV, printPDF, copyLine };

@@ -24,8 +24,9 @@ const AnalyticsTab = ({ activeDashboard, onNavigate }) => {
         });
 
         // 🚨 จัดกลุ่มรายการที่ต้องสั่งซื้อ (Low Stock) ตามประเภทงาน
+        // เฉพาะรายการที่มีการตั้งจุดเตือน (minThreshold > 0)
         const lowStockGrouped = activeDashboard
-            .filter(i => i.quantity <= i.minThreshold)
+            .filter(i => i.minThreshold > 0 && i.quantity <= i.minThreshold)
             .reduce((acc, item) => {
                 const job = item.jobType || 'อื่นๆ';
                 if (!acc[job]) acc[job] = [];
@@ -89,7 +90,7 @@ const AnalyticsTab = ({ activeDashboard, onNavigate }) => {
                 <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex flex-col max-h-[500px]">
                     <h3 className="font-bold text-slate-800 mb-4 flex items-center justify-between">
                         <div className="flex items-center gap-2"><i className="fa-solid fa-triangle-exclamation text-amber-500"></i> รายการที่ต้องสั่งซื้อเพิ่ม</div>
-                        <span className="text-[10px] bg-red-50 text-red-600 px-2 py-1 rounded-full uppercase tracking-tighter">จัดกลุ่มตามงาน</span>
+                        <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-1 rounded-full uppercase tracking-tighter">ยอดจากสต๊อกหลัก</span>
                     </h3>
                     
                     <div className="flex-grow overflow-y-auto pr-1 hide-scroll space-y-6">
@@ -109,7 +110,7 @@ const AnalyticsTab = ({ activeDashboard, onNavigate }) => {
                                                     <div className="flex justify-between items-end mb-1.5">
                                                         <div className="text-sm font-bold text-slate-700 truncate pr-4 group-hover:text-blue-600 transition-colors">{item.name}</div>
                                                         <div className="text-[10px] font-mono font-bold text-slate-500 whitespace-nowrap">
-                                                            {item.quantity} <span className="font-normal opacity-60">/ {item.minThreshold} {item.unit}</span>
+                                                            <span className="text-blue-600">{item.quantity}</span> <span className="font-normal opacity-60">/ {item.minThreshold} {item.unit}</span>
                                                         </div>
                                                     </div>
                                                     <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden shadow-inner">
@@ -135,7 +136,7 @@ const AnalyticsTab = ({ activeDashboard, onNavigate }) => {
             </div>
             
             <div className="text-center">
-                <p className="text-[10px] text-slate-400 italic">* รายการแจ้งเตือนพิจารณาจากน้ำยาที่ยอดคงเหลือต่ำกว่าจุดเตือน (Min Alert) ที่ตั้งไว้ในข้อมูลหลัก</p>
+                <p className="text-[10px] text-slate-400 italic">* รายการแจ้งเตือนพิจารณาจากน้ำยาในสต๊อกหลักที่ยอดต่ำกว่าจุดเตือน (Min Alert) ที่ตั้งไว้</p>
             </div>
         </div>
     );
