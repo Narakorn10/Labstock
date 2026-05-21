@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { gasRun, processAnyBarcode } from '../api';
 import QRScanner from '../components/QRScanner';
+import { highlightText } from '../utils/text';
 
 const TransactionTab = ({ type, showToast, activeDashboard, cart = [], setCart, onSuccess }) => {
     const isRec = type === 'receive';
@@ -15,6 +16,7 @@ const TransactionTab = ({ type, showToast, activeDashboard, cart = [], setCart, 
     
     const [showAuto, setShowAuto] = useState(false);
     
+    // 🔍 Dynamic Search Logic: ค้นหาทันทีจากข้อมูลในเครื่อง
     const autoList = useMemo(() => {
         if(!search || search.length < 2) return [];
         const terms = search.toLowerCase().trim().split(/\s+/).filter(Boolean);
@@ -24,57 +26,80 @@ const TransactionTab = ({ type, showToast, activeDashboard, cart = [], setCart, 
             const qrCodeSafe = (i.qrCode || '').toString().toLowerCase().trim();
             const txt = `${itemIdSafe} ${nameSafe} ${qrCodeSafe}`;
             return terms.every(t => txt.includes(t));
-        }).slice(0, 5);
+        }).slice(0, 8); 
     }, [search, activeDashboard]);
+
+    /**
+     * 🛡️ ฟังก์ชันหลักในการเลือก Item และจัดการข้อมูล GS1
+     */
+    const handleSelectItem = (selectedItem, barcodeData = null) => {
+        setSearch(selectedItem.itemId);
+        setItem(selectedItem);
+        setShowAuto(false);
+
+        if (isRec) {
+            // --- ฝั่งรับเข้า (Receive) ---
+            const autoLot = barcodeData?.lot !== "NEED_MANUAL_INPUT" ? (barcodeData?.lot || "") : "";
+            const autoExp = barcodeData?.expDate !== "NEED_MANUAL_INPUT" ? (barcodeData?.expDate || "") : "";
+
+            setForm(f => ({ 
+                ...f, 
+                lotNo: autoLot || '', 
+                expDate: autoExp || '' 
+            }));
+
+            if(barcodeData?.barcodeType === "GS1_COMPLIANT") {
+                const fields = [];
+                if(barcodeData.lot) fields.push("Lot");
+                if(barcodeData.expDate) fields.push("วันหมดอายุ");
+                showToast(`ดึงข้อมูล ${fields.join(" และ ")} อัตโนมัติ`);
+            }
+        } else {
+            // --- ฝั่งเบิกจ่าย (Dispense) ---
+            let matchedLot = '';
+            if (selectedItem.lots.length > 0) {
+                const lotToFind = barcodeData?.lot !== "NEED_MANUAL_INPUT" ? barcodeData?.lot : null;
+                const foundIdx = lotToFind ? selectedItem.lots.findIndex(l => l.lotNo === lotToFind) : -1;
+                
+                // ถ้าสแกนเจอ Lot ตรงกันให้เลือกอันนั้น ถ้าไม่เจอเลือกอันที่ใกล้หมดอายุที่สุด (Index 0)
+                const targetLot = foundIdx >= 0 ? selectedItem.lots[foundIdx] : selectedItem.lots[0];
+                matchedLot = `${targetLot.rowIndex}|${targetLot.lotNo}`;
+                
+                if(foundIdx >= 0) showToast("เลือก Lot อัตโนมัติที่ตรงกับบาร์โค้ด");
+                else if (lotToFind) showToast(`ไม่พบ Lot ${lotToFind} ในคลัง ระบบเลือก Lot ที่ใกล้หมดอายุให้แทน`, "info");
+            }
+            setForm(f => ({ ...f, lotNo: matchedLot }));
+        }
+    };
 
     const fetchItem = async (qrOrSearch) => {
         if (!qrOrSearch) return;
         
-        // 🚀 Robust Barcode Parsing
         const barcodeData = processAnyBarcode(qrOrSearch);
         const searchKey = barcodeData?.gtin || qrOrSearch;
         
+        // 1. ตรวจสอบใน Local Data ก่อนเพื่อความเร็ว (Dynamic)
+        const localMatch = activeDashboard.find(i => 
+            (i.itemId||'').toLowerCase() === searchKey.toLowerCase() || 
+            (i.qrCode||'').toLowerCase() === searchKey.toLowerCase()
+        );
+
+        if (localMatch) {
+            handleSelectItem(localMatch, barcodeData);
+            return;
+        }
+
+        // 2. หากไม่พบใน Local ค่อยเรียก Server
         const res = await gasRun('getReagentWithLots', searchKey);
         setShowAuto(false);
         
         if (res.success) {
-            setSearch(res.data.itemId); 
-            setItem(res.data);
-            
-            if (isRec) {
-                // Pre-fill fields only if we got real data (not manual input placeholders)
-                const autoLot = barcodeData?.lot !== "NEED_MANUAL_INPUT" ? (barcodeData?.lot || "") : "";
-                const autoExp = barcodeData?.expDate !== "NEED_MANUAL_INPUT" ? (barcodeData?.expDate || "") : "";
-
-                setForm(f => ({ 
-                    ...f, 
-                    lotNo: autoLot || f.lotNo, 
-                    expDate: autoExp || f.expDate 
-                }));
-
-                if(barcodeData?.barcodeType === "GS1_COMPLIANT") {
-                    const fields = [];
-                    if(barcodeData.lot) fields.push("Lot");
-                    if(barcodeData.expDate) fields.push("วันหมดอายุ");
-                    showToast(`ดึงข้อมูล ${fields.join(" และ ")} อัตโนมัติ`);
-                } else if (barcodeData?.barcodeType === "STANDARD_1D") {
-                    showToast("Barcode ทั่วไป: กรุณาระบุ Lot และ EXP ด้วยตนเอง", "info");
-                }
-            } else {
-                let matchedLot = '';
-                if (res.data.lots.length > 0) {
-                    // Try to match scanned lot if it exists
-                    const lotToFind = barcodeData?.lot !== "NEED_MANUAL_INPUT" ? barcodeData?.lot : null;
-                    const foundIdx = lotToFind ? res.data.lots.findIndex(l => l.lotNo === lotToFind) : -1;
-                    const targetLot = foundIdx >= 0 ? res.data.lots[foundIdx] : res.data.lots[0];
-                    matchedLot = `${targetLot.rowIndex}|${targetLot.lotNo}`;
-                    if(foundIdx >= 0) showToast("เลือก Lot อัตโนมัติจาก Barcode");
-                }
-                setForm(f => ({ ...f, lotNo: matchedLot }));
-            }
-        } else { showToast(res.message, "error"); setItem(null); }
+            handleSelectItem(res.data, barcodeData);
+        } else { 
+            showToast(res.message, "error"); 
+            setItem(null); 
+        }
     };
-
 
     const genAutoLot = () => {
         const now = new Date();
@@ -119,7 +144,6 @@ const TransactionTab = ({ type, showToast, activeDashboard, cart = [], setCart, 
         const target = newCart[idx];
 
         if (!isRec) {
-            // Check stock for dispense
             const masterItem = activeDashboard.find(i => i.itemId === target.itemId);
             const lotInfo = masterItem?.lots.find(l => l.rowIndex == target.rowIndex);
             if (lotInfo && nQty > lotInfo.qty) {
@@ -157,7 +181,6 @@ const TransactionTab = ({ type, showToast, activeDashboard, cart = [], setCart, 
                     <button onClick={() => setScanMode(true)} className="hidden md:flex w-full mb-6 bg-slate-900 text-white py-3.5 rounded-xl font-medium items-center justify-center active-scale transition shadow-lg shadow-slate-200"><i className="fa-solid fa-camera mr-2"></i>เปิดกล้องสแกน Barcode</button>
                 }
 
-                {/* Mobile FAB for Scan */}
                 {!scanMode && (
                     <button 
                         onClick={() => setScanMode(true)} 
@@ -174,11 +197,28 @@ const TransactionTab = ({ type, showToast, activeDashboard, cart = [], setCart, 
                             <input type="text" value={search} onFocus={()=>setShowAuto(true)} onBlur={()=>setTimeout(()=>setShowAuto(false), 200)} onChange={e=>{setSearch(e.target.value); setShowAuto(true);}} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();fetchItem(search);}}} placeholder="ชื่อ รหัส หรือ Barcode..." className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-4 text-sm focus:ring-2 focus:ring-blue-500 transition outline-none" />
                             <button type="button" onClick={()=>fetchItem(search)} className="w-14 bg-blue-50 text-blue-600 rounded-xl active-scale transition"><i className="fa-solid fa-magnifying-glass"></i></button>
                         </div>
+                        
+                        {/* 📋 Dynamic Search Results Dropdown */}
                         {showAuto && autoList.length > 0 && !item && (
-                            <div className="absolute z-50 w-full bg-white border border-slate-100 rounded-xl shadow-2xl overflow-hidden mt-2 max-h-60 overflow-y-auto animate-slide-up">
+                            <div className="absolute z-50 w-full bg-white border border-slate-100 rounded-xl shadow-2xl overflow-hidden mt-2 max-h-80 overflow-y-auto animate-slide-up">
                                 {autoList.map(a => (
-                                    <div key={a.itemId} onMouseDown={e=>{e.preventDefault(); setSearch(a.itemId); fetchItem(a.itemId); setShowAuto(false);}} className="p-4 hover:bg-blue-50 cursor-pointer border-b border-slate-50 last:border-0 transition">
-                                        <div className="font-bold text-blue-700">{a.name}</div><div className="text-[10px] text-slate-500 mt-1">{a.itemId} | {a.qrCode}</div>
+                                    <div 
+                                        key={a.itemId} 
+                                        onMouseDown={e=>{e.preventDefault(); handleSelectItem(a);}} 
+                                        className="p-4 hover:bg-blue-50 cursor-pointer border-b border-slate-50 last:border-0 transition flex justify-between items-center"
+                                    >
+                                        <div className="overflow-hidden pr-2">
+                                            <div className="font-bold text-blue-700 truncate">{highlightText(a.name, search)}</div>
+                                            <div className="text-[10px] text-slate-500 mt-1">
+                                                {highlightText(a.itemId, search)} | {highlightText(a.qrCode || '-', search)}
+                                            </div>
+                                        </div>
+                                        <div className="text-right flex-shrink-0">
+                                            <div className={`font-bold text-sm ${a.quantity <= a.minThreshold ? 'text-red-500' : 'text-slate-700'}`}>
+                                                {a.quantity}
+                                            </div>
+                                            <div className="text-[8px] text-slate-400 uppercase tracking-tighter">{a.unit}</div>
+                                        </div>
                                     </div>
                                 ))}
                             </div>

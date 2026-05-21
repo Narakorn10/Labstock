@@ -8,10 +8,13 @@
 export const processAnyBarcode = (rawBarcode) => {
     if (!rawBarcode) return null;
 
-    // Remove any surrounding whitespace or parentheses (sometimes added by keyboard emulators)
-    const cleanBarcode = rawBarcode.trim();
+    // 1. Clean: Remove surrounding whitespace, AIM IDs (like ]C1), and parentheses ()
+    // PSA Calibrators often have (01)...(10) format which needs cleaning.
+    const cleanBarcode = rawBarcode.trim()
+        .replace(/^\]C1/, "") // Remove AIM ID prefix if present
+        .replace(/[()]/g, ""); // Remove ALL parentheses
 
-    // GS1 Classification Logic:
+    // 2. GS1 Classification Logic:
     // Clinical reagents typically follow GS1-128 or DataMatrix standards.
     // Standard check: Starts with Application Identifier (01) for GTIN and has minimum expected length.
     if (cleanBarcode.startsWith("01") && cleanBarcode.length >= 18) {
