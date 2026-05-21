@@ -9,127 +9,68 @@ export const processAnyBarcode = (rawBarcode) => {
     if (!rawBarcode) return null;
 
     // 1. Clean: Remove surrounding whitespace, AIM IDs (like ]C1, ]d2), parentheses, and spaces/newlines
-    // PSA Calibrators have multi-line labels which may introduce spaces or newlines in the scan.
     const cleanBarcode = rawBarcode.trim()
-        .replace(/^\][a-zA-Z0-9]{2}/, "") // Remove ANY 3-char AIM ID prefix (e.g., ]C1, ]d2)
-        .replace(/[()]/g, "")             // Remove parentheses
-        .replace(/\s/g, "");             // Remove ALL whitespace (spaces, tabs, newlines)
+        .replace(/^\][a-zA-Z0-9]{2}/, "") 
+        .replace(/[()]/g, "")             
+        .replace(/\s/g, "");             
 
-    // 2. GS1 Classification Logic:
-    // Clinical reagents typically follow GS1-128 or DataMatrix standards.
-    // Standard check: Starts with Application Identifier (01) for GTIN and has minimum expected length.
-    if (cleanBarcode.startsWith("01") && cleanBarcode.length >= 18) {
-        return parseGS1Barcode(cleanBarcode);
-    }
-
-    // Standard 1D Barcode Logic:
-    // General consumables usually have simple EAN-13 or Code 128 without AIs.
-    return {
+    // 2. Try Regex-based GS1 Extraction (Much more robust for multi-line labels)
+    // We look for patterns: 01(14 digits), 17(6 digits), 10(variable length)
+    const result = {
         barcodeType: "STANDARD_1D",
-        gtin: cleanBarcode,
+        gtin: "",
         ref: "NEED_MANUAL_INPUT",
         lot: "NEED_MANUAL_INPUT",
         expDate: "NEED_MANUAL_INPUT",
         mfgDate: "NEED_MANUAL_INPUT",
         rawString: cleanBarcode
     };
-};
 
-/**
- * Parses GS1 barcodes using Application Identifiers (AIs).
- * Handles fixed and variable length fields with <GS> delimiter.
- */
-const parseGS1Barcode = (raw) => {
-    const result = {
-        barcodeType: "GS1_COMPLIANT",
-        gtin: "",
-        ref: "",
-        lot: "",
-        expDate: "",
-        mfgDate: "",
-        rawString: raw
-    };
-
-    let i = 0;
-    const GS = String.fromCharCode(29); // ASCII 29 Group Separator delimiter
-    
-    // Iteration safety limit to prevent infinite loops in case of malformed data
-    let safetyCounter = 0;
-    const maxAIs = 20; 
-
-    while (i < raw.length && safetyCounter < maxAIs) {
-        safetyCounter++;
-        
-        // Peek at possible Application Identifiers (AIs)
-        const ai2 = raw.substring(i, i + 2);
-        const ai3 = raw.substring(i, i + 3);
-
-        // (01) GTIN: Global Trade Item Number - Fixed 14 digits
-        if (ai2 === "01") {
-            result.gtin = raw.substring(i + 2, i + 16);
-            i += 16;
-        } 
-        // (11) MFG Date: Production Date - Fixed 6 digits (YYMMDD)
-        else if (ai2 === "11") {
-            result.mfgDate = formatGS1Date(raw.substring(i + 2, i + 8));
-            i += 8;
-        } 
-        // (17) EXP Date: Expiry Date - Fixed 6 digits (YYMMDD)
-        else if (ai2 === "17") {
-            result.expDate = formatGS1Date(raw.substring(i + 2, i + 8));
-            i += 8;
-        } 
-        // (10) Lot Number: Batch or Lot Number - Variable length (up to 20)
-        else if (ai2 === "10") {
-            const part = raw.substring(i + 2);
-            const gsIndex = part.indexOf(GS);
-            
-            if (gsIndex !== -1) {
-                // If <GS> found, take everything up to it (max 20)
-                const lotValue = part.substring(0, gsIndex);
-                result.lot = lotValue.substring(0, 20);
-                i += 2 + gsIndex + 1; // Move past AI + value + GS
-            } else {
-                // No <GS>, take rest of string (max 20)
-                result.lot = part.substring(0, 20);
-                i = raw.length; // Consumed to the end
-            }
-        } 
-        // (240) REF: Additional Product Identification - Variable length (up to 30)
-        else if (ai3 === "240") {
-            const part = raw.substring(i + 3);
-            const gsIndex = part.indexOf(GS);
-            
-            if (gsIndex !== -1) {
-                const refValue = part.substring(0, gsIndex);
-                result.ref = refValue.substring(0, 30);
-                i += 3 + gsIndex + 1;
-            } else {
-                result.ref = part.substring(0, 30);
-                i = raw.length;
-            }
-        } 
-        else {
-            // Unknown AI encountered. To prevent infinite loops, 
-            // we move forward and log the event if necessary.
-            i++; 
-        }
+    // Extract GTIN (01) - 14 digits
+    const gtinMatch = cleanBarcode.match(/01(\d{14})/);
+    if (gtinMatch) {
+        result.gtin = gtinMatch[1];
+        result.barcodeType = "GS1_COMPLIANT";
     }
 
+    // Extract EXP (17) - 6 digits
+    const expMatch = cleanBarcode.match(/17(\d{6})/);
+    if (expMatch) {
+        result.expDate = formatGS1Date(expMatch[1]);
+        result.barcodeType = "GS1_COMPLIANT";
+    }
+
+    // Extract Lot (10) - Up to 20 chars, usually until another AI or end of string
+    // This is the trickiest part. We look for 10 followed by characters until we hit 
+    // another fixed-length AI like 17 (if it exists later) or the end.
+    const lotMatch = cleanBarcode.match(/10([a-zA-Z0-9]{1,20})/);
+    if (lotMatch) {
+        result.lot = lotMatch[1];
+        result.barcodeType = "GS1_COMPLIANT";
+    }
+
+    // Extract MFG (11) - 6 digits
+    const mfgMatch = cleanBarcode.match(/11(\d{6})/);
+    if (mfgMatch) {
+        result.mfgDate = formatGS1Date(mfgMatch[1]);
+    }
+
+    if (result.barcodeType === "GS1_COMPLIANT") {
+        return result;
+    }
+
+    // Fallback for simple barcodes
+    result.gtin = cleanBarcode;
     return result;
 };
 
 /**
  * Converts GS1 Date format (YYMMDD) to ISO format (YYYY-MM-DD).
- * @param {string} yymmdd 
- * @returns {string} YYYY-MM-DD
  */
 const formatGS1Date = (yymmdd) => {
     if (!yymmdd || yymmdd.length !== 6) return "INVALID_DATE";
-    
     const year = "20" + yymmdd.substring(0, 2);
     const month = yymmdd.substring(2, 4);
     const day = yymmdd.substring(4, 6);
-    
     return `${year}-${month}-${day}`;
 };
