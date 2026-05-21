@@ -86,14 +86,3 @@ const formatGS1Date = (yymmdd) => {
     const day = yymmdd.substring(4, 6);
     return `${year}-${month}-${day}`;
 };
-
-/**
- * Converts GS1 Date format (YYMMDD) to ISO format (YYYY-MM-DD).
- */
-const formatGS1Date = (yymmdd) => {
-    if (!yymmdd || yymmdd.length !== 6) return "INVALID_DATE";
-    const year = "20" + yymmdd.substring(0, 2);
-    const month = yymmdd.substring(2, 4);
-    const day = yymmdd.substring(4, 6);
-    return `${year}-${month}-${day}`;
-};

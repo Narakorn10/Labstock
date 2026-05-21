@@ -27,13 +27,36 @@ const useExport = (reportData, reportType, reportJob, showToast) => {
 
     const copyLine = () => {
         if (reportData.length === 0) return showToast("ไม่มีรายการให้คัดลอก", "error");
+        
         let title = reportType === 'order' ? "⚠️ ต้องสั่งซื้อเพิ่ม" : "📊 สรุปยอดคงเหลือ";
         if (!reportJob.includes('ALL')) title += `\n[แผนก: ${reportJob.join(', ')}]`;
+        
         let text = `${title}\n` + "=".repeat(20) + "\n";
-        reportData.forEach(i => text += `• ${i.name}\n  คงเหลือ: ${i.quantity} ${i.unit} (เตือน: ${i.minThreshold})\n`);
-        const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta);
-        ta.select(); document.execCommand("copy"); document.body.removeChild(ta);
-        showToast("คัดลอกข้อความแล้ว นำไปวางใน Line ได้เลย");
+
+        // 📦 จัดกลุ่มข้อมูลตามประเภทงาน (Job Type)
+        const groupedData = reportData.reduce((acc, item) => {
+            const job = item.jobType || 'อื่นๆ';
+            if (!acc[job]) acc[job] = [];
+            acc[job].push(item);
+            return acc;
+        }, {});
+
+        // 📝 สร้างข้อความแยกตามหมวดหมู่
+        Object.keys(groupedData).forEach(job => {
+            text += `\n📌 หมวดงาน: ${job}\n`;
+            groupedData[job].forEach(i => {
+                text += `- ${i.name}: ${i.quantity} ${i.unit}\n`;
+            });
+        });
+
+        const ta = document.createElement("textarea"); 
+        ta.value = text; 
+        document.body.appendChild(ta);
+        ta.select(); 
+        document.execCommand("copy"); 
+        document.body.removeChild(ta);
+        
+        showToast("คัดลอกข้อความแบบจัดกลุ่มแล้ว");
     };
 
     return { reportRef, exportCSV, printPDF, copyLine };
