@@ -8,25 +8,38 @@ const QRScanner = ({ onScan, onCancel }) => {
         
         const scanner = new Html5Qrcode("qr-reader-react");
         const config = { 
-            fps: 20, // เพิ่มเฟรมเรตเป็น 20 เพื่อให้แสกนไวขึ้น
+            fps: 25, // เพิ่มเฟรมเรตเพื่อให้จับภาพได้ไวขึ้น
+            // เลิกใช้ qrbox แบบระบุขนาดเพื่อให้สแกนได้ทั้งหน้าจอ (เหมาะกับ QR เล็กๆ)
+            // หรือใช้ qrbox ขนาดใหญ่เพื่อให้ผู้ใช้เล็งได้ง่ายขึ้น
             qrbox: (viewfinderWidth, viewHeight) => {
-                // ปรับขนาดกรอบแสกนให้พอดีกับมือถือที่สุด
                 const minEdge = Math.min(viewfinderWidth, viewHeight);
-                const size = Math.floor(minEdge * 0.7);
-                return { width: size, height: size * 0.6 }; // กรอบสี่เหลี่ยมผืนผ้าสำหรับบาร์โค้ดน้ำยา
+                return { width: minEdge * 0.8, height: minEdge * 0.8 }; 
             },
-            aspectRatio: 1.0
+            aspectRatio: 1.0,
+            videoConstraints: {
+                facingMode: "environment",
+                width: { ideal: 1920 }, // บังคับความละเอียดสูงเพื่อให้เห็นรายละเอียด QR เล็กๆ
+                height: { ideal: 1080 }
+            }
         };
 
         scanner.start(
             { facingMode: "environment" }, 
             config, 
             (txt) => { 
-                beep.play().catch(() => {}); // ส่งเสียงเตือน
+                beep.play().catch(() => {}); 
                 scanner.stop().then(() => onScan(txt)); 
             },
             (err) => {}
         ).catch(err => { console.error(err); });
+
+        // พยายามเปิด Zoom (สำหรับมือถือที่รองรับ) หลังจากกล้องเริ่มทำงาน
+        setTimeout(() => {
+            const track = scanner.getVideoTrack();
+            if (track && track.getCapabilities && track.getCapabilities().zoom) {
+                track.applyConstraints({ advanced: [{ zoom: 2.0 }] }).catch(e => console.warn("Zoom not supported", e));
+            }
+        }, 2000);
 
         return () => { if (scanner.isScanning) scanner.stop().catch(()=>{}); };
     }, [onScan]);

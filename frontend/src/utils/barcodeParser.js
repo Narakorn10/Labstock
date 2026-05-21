@@ -8,8 +8,8 @@
 export const processAnyBarcode = (rawBarcode) => {
     if (!rawBarcode) return null;
 
-    // 1. Aggressive Clean: Remove AIM IDs, parentheses, spaces, and newlines
-    const raw = rawBarcode.trim()
+    // 1. Aggressive Clean
+    let workingString = rawBarcode.trim()
         .replace(/^\][a-zA-Z0-9]{2}/, "") 
         .replace(/[()]/g, "")             
         .replace(/\s/g, "");             
@@ -21,52 +21,47 @@ export const processAnyBarcode = (rawBarcode) => {
         lot: "NEED_MANUAL_INPUT",
         expDate: "NEED_MANUAL_INPUT",
         mfgDate: "NEED_MANUAL_INPUT",
-        rawString: raw
+        rawString: workingString
     };
 
-    // 2. Sequential Pointer Parser (Industry Standard for GS1)
-    let i = 0;
+    // 2. High-Precision GS1 Consumption Logic
+    // We search and "CUT" known fixed-length patterns out of the string one by one
     let foundGS1 = false;
 
-    while (i < raw.length) {
-        const ai2 = raw.substring(i, i + 2);
-        const ai3 = raw.substring(i, i + 3);
+    // A. Consume GTIN (01) - Always 14 digits
+    const gtinMatch = workingString.match(/01(\d{14})/);
+    if (gtinMatch) {
+        result.gtin = gtinMatch[1];
+        workingString = workingString.replace(gtinMatch[0], ""); // Remove it
+        foundGS1 = true;
+    }
 
-        // (01) GTIN - 14 digits
-        if (ai2 === "01") {
-            result.gtin = raw.substring(i + 2, i + 16);
-            i += 16;
-            foundGS1 = true;
-        } 
-        // (17) EXP - 6 digits (YYMMDD)
-        else if (ai2 === "17") {
-            result.expDate = formatGS1Date(raw.substring(i + 2, i + 8));
-            i += 8;
-            foundGS1 = true;
-        } 
-        // (11) MFG - 6 digits (YYMMDD)
-        else if (ai2 === "11") {
-            result.mfgDate = formatGS1Date(raw.substring(i + 2, i + 8));
-            i += 8;
-            foundGS1 = true;
-        } 
-        // (10) Lot - Variable length (Usually to the end in clinical reagents)
-        else if (ai2 === "10") {
-            // Take the rest of the string as the Lot
-            result.lot = raw.substring(i + 2);
-            i = raw.length; // Consume everything
-            foundGS1 = true;
-        }
-        // (240) REF - Optional
-        else if (ai3 === "240") {
-            result.ref = raw.substring(i + 3, i + 13); // Simple 10-char take
-            i = raw.length; 
-            foundGS1 = true;
-        }
-        else {
-            // Move pointer forward if no AI matches to prevent infinite loop
-            i++;
-        }
+    // B. Consume EXP (17) - Always 6 digits
+    const expMatch = workingString.match(/17(\d{6})/);
+    if (expMatch) {
+        result.expDate = formatGS1Date(expMatch[1]);
+        workingString = workingString.replace(expMatch[0], ""); // Remove it
+        foundGS1 = true;
+    }
+
+    // C. Consume MFG (11) - Always 6 digits
+    const mfgMatch = workingString.match(/11(\d{6})/);
+    if (mfgMatch) {
+        result.mfgDate = formatGS1Date(mfgMatch[1]);
+        workingString = workingString.replace(mfgMatch[0], ""); // Remove it
+        foundGS1 = true;
+    }
+
+    // D. Extract Lot (10) - Whatever is left after removing fixed fields
+    // Many scanners/labels put Lot at the end or preceded by '10'
+    const lotMatch = workingString.match(/10([a-zA-Z0-9]+)/);
+    if (lotMatch) {
+        result.lot = lotMatch[1];
+        foundGS1 = true;
+    } else if (workingString.length > 2) {
+        // Fallback: If no '10' header but something is left, it's likely the Lot
+        result.lot = workingString;
+        foundGS1 = true;
     }
 
     if (foundGS1) {
@@ -74,9 +69,22 @@ export const processAnyBarcode = (rawBarcode) => {
         return result;
     }
 
-    // Fallback for simple barcodes (EAN, Code 128, etc.)
-    result.gtin = raw;
+    // Fallback for simple barcodes
+    result.gtin = rawBarcode.trim();
     return result;
+};
+
+/**
+ * Converts GS1 Date format (YYMMDD) to ISO format (YYYY-MM-DD).
+ * Handles the GS1 year rollover (70-99 = 19xx, 00-69 = 20xx)
+ */
+const formatGS1Date = (yymmdd) => {
+    if (!yymmdd || yymmdd.length !== 6) return "INVALID_DATE";
+    const yy = parseInt(yymmdd.substring(0, 2), 10);
+    const year = (yy >= 70 ? "19" : "20") + yymmdd.substring(0, 2);
+    const month = yymmdd.substring(2, 4);
+    const day = yymmdd.substring(4, 6);
+    return `${year}-${month}-${day}`;
 };
 
 /**
