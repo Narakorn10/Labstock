@@ -8,14 +8,12 @@
 export const processAnyBarcode = (rawBarcode) => {
     if (!rawBarcode) return null;
 
-    // 1. Clean: Remove surrounding whitespace, AIM IDs (like ]C1, ]d2), parentheses, and spaces/newlines
-    const cleanBarcode = rawBarcode.trim()
+    // 1. Aggressive Clean: Remove AIM IDs, parentheses, spaces, and newlines
+    const raw = rawBarcode.trim()
         .replace(/^\][a-zA-Z0-9]{2}/, "") 
         .replace(/[()]/g, "")             
         .replace(/\s/g, "");             
 
-    // 2. Try Regex-based GS1 Extraction (Much more robust for multi-line labels)
-    // We look for patterns: 01(14 digits), 17(6 digits), 10(variable length)
     const result = {
         barcodeType: "STANDARD_1D",
         gtin: "",
@@ -23,44 +21,61 @@ export const processAnyBarcode = (rawBarcode) => {
         lot: "NEED_MANUAL_INPUT",
         expDate: "NEED_MANUAL_INPUT",
         mfgDate: "NEED_MANUAL_INPUT",
-        rawString: cleanBarcode
+        rawString: raw
     };
 
-    // Extract GTIN (01) - 14 digits
-    const gtinMatch = cleanBarcode.match(/01(\d{14})/);
-    if (gtinMatch) {
-        result.gtin = gtinMatch[1];
+    // 2. Sequential Pointer Parser (Industry Standard for GS1)
+    let i = 0;
+    let foundGS1 = false;
+
+    while (i < raw.length) {
+        const ai2 = raw.substring(i, i + 2);
+        const ai3 = raw.substring(i, i + 3);
+
+        // (01) GTIN - 14 digits
+        if (ai2 === "01") {
+            result.gtin = raw.substring(i + 2, i + 16);
+            i += 16;
+            foundGS1 = true;
+        } 
+        // (17) EXP - 6 digits (YYMMDD)
+        else if (ai2 === "17") {
+            result.expDate = formatGS1Date(raw.substring(i + 2, i + 8));
+            i += 8;
+            foundGS1 = true;
+        } 
+        // (11) MFG - 6 digits (YYMMDD)
+        else if (ai2 === "11") {
+            result.mfgDate = formatGS1Date(raw.substring(i + 2, i + 8));
+            i += 8;
+            foundGS1 = true;
+        } 
+        // (10) Lot - Variable length (Usually to the end in clinical reagents)
+        else if (ai2 === "10") {
+            // Take the rest of the string as the Lot
+            result.lot = raw.substring(i + 2);
+            i = raw.length; // Consume everything
+            foundGS1 = true;
+        }
+        // (240) REF - Optional
+        else if (ai3 === "240") {
+            result.ref = raw.substring(i + 3, i + 13); // Simple 10-char take
+            i = raw.length; 
+            foundGS1 = true;
+        }
+        else {
+            // Move pointer forward if no AI matches to prevent infinite loop
+            i++;
+        }
+    }
+
+    if (foundGS1) {
         result.barcodeType = "GS1_COMPLIANT";
-    }
-
-    // Extract EXP (17) - 6 digits
-    const expMatch = cleanBarcode.match(/17(\d{6})/);
-    if (expMatch) {
-        result.expDate = formatGS1Date(expMatch[1]);
-        result.barcodeType = "GS1_COMPLIANT";
-    }
-
-    // Extract Lot (10) - Up to 20 chars, usually until another AI or end of string
-    // This is the trickiest part. We look for 10 followed by characters until we hit 
-    // another fixed-length AI like 17 (if it exists later) or the end.
-    const lotMatch = cleanBarcode.match(/10([a-zA-Z0-9]{1,20})/);
-    if (lotMatch) {
-        result.lot = lotMatch[1];
-        result.barcodeType = "GS1_COMPLIANT";
-    }
-
-    // Extract MFG (11) - 6 digits
-    const mfgMatch = cleanBarcode.match(/11(\d{6})/);
-    if (mfgMatch) {
-        result.mfgDate = formatGS1Date(mfgMatch[1]);
-    }
-
-    if (result.barcodeType === "GS1_COMPLIANT") {
         return result;
     }
 
-    // Fallback for simple barcodes
-    result.gtin = cleanBarcode;
+    // Fallback for simple barcodes (EAN, Code 128, etc.)
+    result.gtin = raw;
     return result;
 };
 
