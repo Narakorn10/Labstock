@@ -217,8 +217,8 @@ const TransactionTab = ({ type, showToast, activeDashboard, cart = [], setCart, 
 
     return (
         <div className="max-w-xl mx-auto space-y-6 animate-slide-up pb-32">
-            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 relative overflow-hidden">
-                <div className={`absolute top-0 right-0 w-24 h-24 -mr-8 -mt-8 rounded-full opacity-5 ${isRec ? 'bg-green-500' : 'bg-red-500'}`}></div>
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 relative">
+                <div className={`absolute top-0 right-0 w-24 h-24 -mr-8 -mt-8 rounded-full opacity-5 pointer-events-none ${isRec ? 'bg-green-500' : 'bg-red-500'}`} style={{ clipPath: 'circle(50% at 50% 50%)' }}></div>
                 <div className="flex items-center gap-3 mb-6 relative z-10">
                     <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${isRec ? 'bg-green-50' : 'bg-red-50'}`}><i className={`fa-solid ${icon} text-2xl`}></i></div>
                     <div><h2 className="text-xl font-bold text-slate-800">{title}</h2><p className="text-xs text-slate-400">สแกนหรือค้นหาเพื่อทำรายการ</p></div>

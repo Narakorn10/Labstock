@@ -203,6 +203,66 @@ function checkAccess(token, requiredRoles) {
   return session.user;
 }
 
+// 👤 User Management (Admin Only)
+function getUsers() {
+  try {
+    const data = getSheetDataAsObjects(USER_SHEET);
+    return data.map(u => ({
+      username: u.Username,
+      name: u.Name,
+      role: u.Role
+    }));
+  } catch (error) {
+    return [];
+  }
+}
+
+function addUser(userData) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const sheet = getSheet(USER_SHEET);
+    const existing = getSheetDataAsObjects(USER_SHEET);
+    if (existing.find(u => u.Username === userData.username)) {
+      return { success: false, message: 'ชื่อผู้ใช้นี้มีอยู่ในระบบแล้ว' };
+    }
+    
+    sheet.appendRow([
+      userData.username,
+      hashPassword(userData.password),
+      userData.role,
+      '', '', // Token, Expiry
+      userData.name
+    ]);
+    return { success: true, message: 'เพิ่มผู้ใช้สำเร็จ' };
+  } catch (error) {
+    return { success: false, message: error.message };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function deleteUser(targetUsername) {
+  if (targetUsername === 'admin') return { success: false, message: 'ไม่สามารถลบผู้ดูแลระบบหลักได้' };
+  
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const sheet = getSheet(USER_SHEET);
+    const data = getSheetDataAsObjects(USER_SHEET);
+    const user = data.find(u => u.Username === targetUsername);
+    if (user) {
+      sheet.deleteRow(user._rowIndex);
+      return { success: true, message: 'ลบผู้ใช้เรียบร้อยแล้ว' };
+    }
+    return { success: false, message: 'ไม่พบผู้ใช้ที่ต้องการลบ' };
+  } catch (error) {
+    return { success: false, message: error.message };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 // ==========================================
 // ส่วนที่ 2: ดึงข้อมูล (Read)
 // ==========================================
@@ -621,6 +681,20 @@ function doPost(e) {
       case 'dispenseBatch': result = dispenseBatch(args[0], token); break;
       case 'adjustLotQuantity': result = adjustLotQuantity(args[0], token); break;
       case 'clearLogs': result = clearLogs(token); break;
+
+      // 👤 User Management (Admin Only)
+      case 'getUsers': 
+        checkAccess(token, ['Admin']);
+        result = getUsers(); 
+        break;
+      case 'addUser': 
+        checkAccess(token, ['Admin']);
+        result = addUser(args[0]); 
+        break;
+      case 'deleteUser': 
+        checkAccess(token, ['Admin']);
+        result = deleteUser(args[0]); 
+        break;
         
       default: throw new Error(`ไม่พบ Method: ${method}`);
     }
