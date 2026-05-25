@@ -26,7 +26,6 @@ function doGet() {
   const template = HtmlService.createTemplateFromFile('index');
   
   // 🚀 [Performance Boost] ดึงข้อมูลเริ่มต้นจาก Server ทันที
-  // วิธีนี้จะทำให้หน้าเว็บเปิดมาพร้อมข้อมูลเลย ไม่ต้องรอเรียก API อีกครั้งหลังโหลดเสร็จ
   try {
     template.initialData = {
       settings: getSettings(),
@@ -46,7 +45,6 @@ function doGet() {
 function getSheet(sheetName) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
   if (!sheet) {
-    // 🛡️ [M2] Refactored: Robust Error Handling
     throw new Error(`ระบบขัดข้อง: ไม่พบแผ่นงานชื่อ "${sheetName}" กรุณา Setup DB ก่อนใช้งาน`);
   }
   return sheet;
@@ -62,7 +60,7 @@ function getSheetDataAsObjects(sheetName) {
   
   const headers = data[0].map(h => h.toString().trim());
   return data.slice(1).map((row, index) => {
-    const obj = { _rowIndex: index + 2 }; // เก็บ Row Index จริงไว้เผื่อใช้
+    const obj = { _rowIndex: index + 2 }; 
     headers.forEach((header, i) => {
       let val = row[i];
       if (val instanceof Date) val = val.toISOString();
@@ -72,8 +70,13 @@ function getSheetDataAsObjects(sheetName) {
   });
 }
 
-function setupSystem() {
+function setupSystem(token) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
+  
+  // ตรวจสอบสิทธิ์ (ถ้ามี User Sheet แล้วต้องเป็น Admin เท่านั้น)
+  if (ss.getSheetByName(USER_SHEET)) {
+    checkAccess(token, ['Admin']);
+  }
 
   function createSheetWithHeaders(name, headers) {
     let sheet = ss.getSheetByName(name);
@@ -109,7 +112,6 @@ function setupSystem() {
     'Username', 'PasswordHash', 'Role', 'Token', 'TokenExpiry', 'Name'
   ]);
 
-  // Create Default Admin if no users exist
   if (userSheet.getLastRow() === 1) {
     const defaultAdmin = ['admin', hashPassword('admin1234'), 'Admin', '', '', 'System Administrator'];
     userSheet.appendRow(defaultAdmin);
@@ -141,7 +143,7 @@ function login(username, password) {
     
     const token = generateToken();
     const expiry = new Date();
-    expiry.setHours(expiry.getHours() + 24); // Token valid for 24 hours
+    expiry.setHours(expiry.getHours() + 24); 
     
     const sheet = getSheet(USER_SHEET);
     sheet.getRange(user._rowIndex, 4, 1, 2).setValues([[token, expiry.toISOString()]]);
@@ -196,9 +198,9 @@ function validateSession(token) {
 
 function checkAccess(token, requiredRoles) {
   const session = validateSession(token);
-  if (!session.success) return { success: false, message: 'กรุณาเข้าสู่ระบบ' };
-  if (!requiredRoles.includes(session.user.role)) return { success: false, message: 'คุณไม่มีสิทธิ์ทำรายการนี้' };
-  return { success: true, user: session.user };
+  if (!session.success) throw new Error(session.message || 'กรุณาเข้าสู่ระบบ');
+  if (!requiredRoles.includes(session.user.role)) throw new Error('คุณไม่มีสิทธิ์ทำรายการนี้');
+  return session.user;
 }
 
 // ==========================================
@@ -223,7 +225,6 @@ function getDashboardData() {
     const masterData = getSheetDataAsObjects(MASTER_SHEET);
     const invData = getSheetDataAsObjects(INV_SHEET);
     
-    // สร้าง Map ของ Inventory เพื่อให้ค้นหาได้เร็ว (Group by Item ID)
     const inventoryMap = invData.reduce((map, item) => {
       const id = item['รหัสน้ำยา (Item ID)'];
       const qty = parseInt(item['ยอดคงเหลือใน Lot'], 10) || 0;
@@ -255,7 +256,7 @@ function getDashboardData() {
         quantity: invInfo.totalQty,
         lots: invInfo.lots
       };
-    }).filter(item => item.itemId !== ""); // กรองแถวว่าง
+    }).filter(item => item.itemId !== ""); 
   } catch (error) {
     console.error("getDashboardData Error:", error);
     return [];
@@ -295,7 +296,7 @@ function getLogs() {
     const data = sheet.getDataRange().getValues();
     const logs = [];
     for (let i = data.length - 1; i >= 1 && logs.length <= 100; i--) {
-      if (!data[i][0] || !data[i][1]) continue; // ป้องกันแถวว่าง
+      if (!data[i][0] || !data[i][1]) continue; 
       let tsVal = data[i][0];
       if (tsVal instanceof Date) tsVal = tsVal.toISOString();
       logs.push({ timestamp: tsVal, itemId: data[i][1], name: data[i][2], lotNo: data[i][3], action: data[i][4], qty: parseInt(data[i][5], 10) || 0, user: data[i][6] });
@@ -319,8 +320,9 @@ function getAllLogsForExport() {
   }
 }
 
-function clearLogs() {
+function clearLogs(token) {
   try {
+    checkAccess(token, ['Admin']);
     const sheet = getSheet(LOG_SHEET);
     const lastRow = sheet.getLastRow();
     if (lastRow > 1) sheet.deleteRows(2, lastRow - 1);
@@ -334,10 +336,11 @@ function clearLogs() {
 // ส่วนที่ 3: จัดการข้อมูล (Write)
 // ==========================================
 
-function addMasterItem(data) {
+function addMasterItem(data, token) {
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
+    checkAccess(token, ['Admin', 'Manager']);
     const sheet = getSheet(MASTER_SHEET);
     const existing = sheet.getDataRange().getValues();
     for (let i = 1; i < existing.length; i++) {
@@ -356,10 +359,11 @@ function addMasterItem(data) {
   }
 }
 
-function updateMasterItem(data) {
+function updateMasterItem(data, token) {
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
+    checkAccess(token, ['Admin', 'Manager']);
     const sheet = getSheet(MASTER_SHEET);
     const existing = sheet.getDataRange().getValues();
     let rowIndex = -1;
@@ -382,20 +386,21 @@ function updateMasterItem(data) {
   }
 }
 
-function receiveBatch(batchItems, userName = 'เจ้าหน้าที่') {
+function receiveBatch(batchItems, token) {
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
+    const user = checkAccess(token, ['Admin', 'Manager', 'User']);
+    const userName = user.name;
     const invSheet = getSheet(INV_SHEET);
     const invData = invSheet.getDataRange().getValues(); 
-    const masterData = getDashboardData(); // ใช้ฟังก์ชันเดิมที่ refactor แล้วเพื่อเอาชื่อน้ำยาได้ง่ายๆ
+    const masterData = getDashboardData(); 
     const nameMap = masterData.reduce((map, item) => ({...map, [item.itemId]: item.name}), {});
 
     batchItems.forEach(item => {
       let qty = parseInt(item.qty, 10);
       let foundRow = -1;
       
-      // ค้นหาแถวที่มี Item ID และ Lot ตรงกัน
       for (let i = 1; i < invData.length; i++) {
         if (invData[i][0].toString() === item.itemId.toString() && invData[i][1].toString() === item.lotNo.toString()) {
           foundRow = i; break;
@@ -419,10 +424,12 @@ function receiveBatch(batchItems, userName = 'เจ้าหน้าที่'
   }
 }
 
-function dispenseBatch(batchItems, userName = 'เจ้าหน้าที่') {
+function dispenseBatch(batchItems, token) {
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
+    const user = checkAccess(token, ['Admin', 'Manager', 'User']);
+    const userName = user.name;
     const invSheet = getSheet(INV_SHEET);
     const invData = invSheet.getDataRange().getValues();
     const masterData = getDashboardData();
@@ -433,7 +440,6 @@ function dispenseBatch(batchItems, userName = 'เจ้าหน้าที่
     batchItems.forEach(item => {
       let arrayIdx = item.rowIndex - 1;
       
-      // 🛡️ Safety check: ตรวจสอบว่าแถวยังตรงกับรหัสและ Lot อยู่หรือไม่
       const rowValid = invData[arrayIdx] && 
                        invData[arrayIdx][0].toString() === item.itemId.toString() && 
                        invData[arrayIdx][1].toString() === item.lotNo.toString();
@@ -462,8 +468,6 @@ function dispenseBatch(batchItems, userName = 'เจ้าหน้าที่
     });
 
     invSheet.getRange(1, 1, invData.length, 4).setValues(invData);
-    
-    // เรียกใช้ฟังก์ชันย่อยสำหรับการแจ้งเตือน
     processLowStockAlerts(batchItems, invData, masterInfoMap);
     
     if (failedItems.length > 0) {
@@ -478,7 +482,6 @@ function dispenseBatch(batchItems, userName = 'เจ้าหน้าที่
   }
 }
 
-// 🛡️ [L2] Refactored: แยกฟังก์ชันเช็คสต๊อกต่ำกว่าเกณฑ์ออกมา เพื่อให้โค้ดอ่านง่าย (Clean Code)
 function processLowStockAlerts(batchItems, invData, masterInfoMap) {
   const checkedItems = new Set();
   batchItems.forEach(item => {
@@ -516,15 +519,15 @@ function sendLineNotify(message) {
   try { UrlFetchApp.fetch('https://notify-api.line.me/api/notify', options); } catch (e) {}
 }
 
-function adjustLotQuantity(data) {
+function adjustLotQuantity(data, token) {
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
+    const user = checkAccess(token, ['Admin', 'Manager']);
     const invSheet = getSheet(INV_SHEET);
     const rowIndex = parseInt(data.rowIndex, 10);
     const newQty = parseInt(data.newQty, 10);
     
-    // ดึงข้อมูลแถวปัจจุบันมาเช็คความถูกต้อง
     const currentRow = invSheet.getRange(rowIndex, 1, 1, 4).getValues()[0];
     if (currentRow[0].toString() !== data.itemId.toString() || currentRow[1].toString() !== data.lotNo.toString()) {
       return { success: false, message: 'ข้อมูลแถวไม่ตรงกัน กรุณารีเฟรชหน้าจอแล้วลองใหม่' };
@@ -535,13 +538,11 @@ function adjustLotQuantity(data) {
     
     if (diff === 0) return { success: true, message: 'ไม่มีการเปลี่ยนแปลงจำนวน' };
 
-    // อัปเดตยอดใหม่
     invSheet.getRange(rowIndex, 4).setValue(newQty);
     
-    // บันทึก Log ส่วนต่าง
     const masterData = getDashboardData();
     const info = masterData.find(i => i.itemId === data.itemId);
-    logTransaction(data.itemId, info ? info.name : 'Unknown', data.lotNo, 'ปรับปรุงยอด (Adjustment)', Math.abs(diff), `ปรับปรุง (${diff > 0 ? '+' : ''}${diff})`);
+    logTransaction(data.itemId, info ? info.name : 'Unknown', data.lotNo, 'ปรับปรุงยอด (Adjustment)', Math.abs(diff), `ปรับปรุง (${diff > 0 ? '+' : ''}${diff}) [โดย ${user.name}]`);
 
     return { success: true, message: 'ปรับปรุงยอดสำเร็จ' };
   } catch(error) {
@@ -551,12 +552,13 @@ function adjustLotQuantity(data) {
   }
 }
 
-function getUsageReport(startDate, endDate) {
+function getUsageReport(startDate, endDate, token) {
   try {
+    checkAccess(token, ['Admin', 'Manager', 'User']);
     const logs = getSheetDataAsObjects(LOG_SHEET);
     const start = new Date(startDate);
     const end = new Date(endDate);
-    end.setHours(23, 59, 59, 999); // ให้ครอบคลุมทั้งวันสิ้นสุด
+    end.setHours(23, 59, 59, 999); 
 
     const summary = {};
 
@@ -593,20 +595,13 @@ function getUsageReport(startDate, endDate) {
  * 🚀 [Vercel Support] รับการเรียกจากภายนอก (CORS-friendly)
  */
 function doPost(e) {
-  let result;
   try {
     const postData = JSON.parse(e.postData.contents);
     const method = postData.method;
     const args = postData.args || [];
-    const token = postData.token; // รับ Token จาก Frontend
-    
-    // 🛡️ Helper สำหรับเช็คสิทธิ์ใน doPost
-    const verify = (roles) => {
-      const access = checkAccess(token, roles);
-      if (!access.success) throw new Error(access.message);
-      return access.user;
-    };
+    const token = postData.token; 
 
+    let result;
     switch(method) {
       case 'login': result = login(args[0], args[1]); break;
       case 'logout': result = logout(token); break;
@@ -617,37 +612,15 @@ function doPost(e) {
       case 'getReagentWithLots': result = getReagentWithLots(args[0]); break;
       case 'getLogs': result = getLogs(); break;
       case 'getAllLogsForExport': result = getAllLogsForExport(); break;
-      case 'getUsageReport': result = getUsageReport(args[0], args[1]); break;
+      case 'getUsageReport': result = getUsageReport(args[0], args[1], token); break;
 
-      // 🔐 Protected Operations
-      case 'setupSystem': 
-        verify(['Admin']);
-        result = setupSystem(); 
-        break;
-      case 'addMasterItem': 
-        verify(['Admin', 'Manager']);
-        result = addMasterItem(args[0]); 
-        break;
-      case 'updateMasterItem': 
-        verify(['Admin', 'Manager']);
-        result = updateMasterItem(args[0]); 
-        break;
-      case 'receiveBatch': 
-        const userRec = verify(['Admin', 'Manager', 'User']);
-        result = receiveBatch(args[0], userRec.name); 
-        break;
-      case 'dispenseBatch': 
-        const userDisp = verify(['Admin', 'Manager', 'User']);
-        result = dispenseBatch(args[0], userDisp.name); 
-        break;
-      case 'adjustLotQuantity': 
-        const userAdj = verify(['Admin', 'Manager']);
-        result = adjustLotQuantity(args[0], userAdj.name); 
-        break;
-      case 'clearLogs': 
-        verify(['Admin']);
-        result = clearLogs(); 
-        break;
+      case 'setupSystem': result = setupSystem(token); break;
+      case 'addMasterItem': result = addMasterItem(args[0], token); break;
+      case 'updateMasterItem': result = updateMasterItem(args[0], token); break;
+      case 'receiveBatch': result = receiveBatch(args[0], token); break;
+      case 'dispenseBatch': result = dispenseBatch(args[0], token); break;
+      case 'adjustLotQuantity': result = adjustLotQuantity(args[0], token); break;
+      case 'clearLogs': result = clearLogs(token); break;
         
       default: throw new Error(`ไม่พบ Method: ${method}`);
     }

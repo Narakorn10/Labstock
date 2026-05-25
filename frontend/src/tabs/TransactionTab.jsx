@@ -16,24 +16,43 @@ const TransactionTab = ({ type, showToast, activeDashboard, cart = [], setCart, 
     
     const [showAuto, setShowAuto] = useState(false);
     
-    // 🔍 Dynamic Search Logic: ค้นหาทันทีจากข้อมูลในเครื่อง (รองรับ GS1 Barcode เบื้องต้น)
+    // 🔍 Dynamic Search Logic: ค้นหาทันทีจากข้อมูลในเครื่อง (ปรับปรุงการจัดลำดับและความแม่นยำ)
     const autoList = useMemo(() => {
         if(!search || search.length < 2) return [];
         
         const barcodeData = processAnyBarcode(search);
         const terms = search.toLowerCase().trim().split(/\s+/).filter(Boolean);
         
-        return activeDashboard.filter(i => {
+        const filtered = activeDashboard.filter(i => {
             const itemIdSafe = (i.itemId || '').toString().toLowerCase();
             const nameSafe = (i.name || '').toString().toLowerCase();
             const qrCodeSafe = (i.qrCode || '').toString().toLowerCase();
+            const machineSafe = (i.machineType || '').toString().toLowerCase();
+            const jobSafe = (i.jobType || '').toString().toLowerCase();
             
             // 1. ตรวจสอบจาก GTIN (ถ้าเป็น Barcode)
             if (barcodeData?.gtin && qrCodeSafe === barcodeData.gtin.toLowerCase()) return true;
             
-            // 2. ตรวจสอบจากการพิมพ์ทั่วไป
-            const txt = `${itemIdSafe} ${nameSafe} ${qrCodeSafe}`;
+            // 2. ตรวจสอบจากการพิมพ์ทั่วไป (ค้นหาใน ชื่อ, รหัส, เครื่องมือ, และแผนก)
+            const txt = `${itemIdSafe} ${nameSafe} ${qrCodeSafe} ${machineSafe} ${jobSafe}`;
             return terms.every(t => txt.includes(t));
+        });
+
+        // 3. จัดลำดับความสำคัญ (Relevance Sorting)
+        return filtered.sort((a, b) => {
+            const aName = (a.name || '').toLowerCase();
+            const bName = (b.name || '').toLowerCase();
+            const firstTerm = terms[0];
+
+            // ให้รายการที่ขึ้นต้นด้วยคำค้นหาอยู่บนสุด
+            const aStarts = aName.startsWith(firstTerm);
+            const bStarts = bName.startsWith(firstTerm);
+
+            if (aStarts && !bStarts) return -1;
+            if (!aStarts && bStarts) return 1;
+            
+            // ถ้าขึ้นต้นเหมือนกัน ให้เรียงตามตัวอักษร
+            return aName.localeCompare(bName);
         }).slice(0, 8); 
     }, [search, activeDashboard]);
 
@@ -235,17 +254,21 @@ const TransactionTab = ({ type, showToast, activeDashboard, cart = [], setCart, 
                                         onMouseDown={e=>{e.preventDefault(); handleSelectItem(a);}} 
                                         className="p-4 hover:bg-blue-50 cursor-pointer border-b border-slate-50 last:border-0 transition flex justify-between items-center"
                                     >
-                                        <div className="overflow-hidden pr-2">
-                                            <div className="font-bold text-blue-700 truncate">{highlightText(a.name, search)}</div>
-                                            <div className="text-[10px] text-slate-500 mt-1">
+                                        <div className="overflow-hidden pr-2 flex-1">
+                                            <div className="font-bold text-blue-700 truncate mb-1">{highlightText(a.name, search)}</div>
+                                            <div className="flex flex-wrap gap-1 mb-1">
+                                                <span className="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[8px] font-bold uppercase">{a.jobType}</span>
+                                                <span className="px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded text-[8px] font-bold uppercase">{a.machineType}</span>
+                                            </div>
+                                            <div className="text-[9px] text-slate-400 font-mono">
                                                 {highlightText(a.itemId, search)} | {highlightText(a.qrCode || '-', search)}
                                             </div>
                                         </div>
-                                        <div className="text-right flex-shrink-0">
-                                            <div className={`font-bold text-sm ${a.quantity <= a.minThreshold ? 'text-red-500' : 'text-slate-700'}`}>
+                                        <div className="text-right flex-shrink-0 ml-3">
+                                            <div className={`font-bold text-base ${a.quantity <= a.minThreshold ? 'text-red-500' : 'text-slate-700'}`}>
                                                 {a.quantity}
                                             </div>
-                                            <div className="text-[8px] text-slate-400 uppercase tracking-tighter">{a.unit}</div>
+                                            <div className="text-[9px] text-slate-400 uppercase tracking-tighter">{a.unit}</div>
                                         </div>
                                     </div>
                                 ))}
@@ -260,7 +283,7 @@ const TransactionTab = ({ type, showToast, activeDashboard, cart = [], setCart, 
                                     <div className="font-bold text-blue-800 text-lg leading-tight">{item.name}</div>
                                     <div className="text-xs text-blue-500 font-mono mt-1">ID: {item.itemId}</div>
                                 </div>
-                                <button type="button" onClick={() => setItem(null)} className="text-blue-400 hover:text-blue-600 p-1"><i className="fa-solid fa-xmark"></i></button>
+                                <button type="button" onClick={() => { setItem(null); setSearch(""); }} className="text-blue-400 hover:text-blue-600 p-1"><i className="fa-solid fa-xmark"></i></button>
                             </div>
                             
                             {isRec ? (
