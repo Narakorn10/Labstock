@@ -1,4 +1,3 @@
-import React from 'react';
 import Modal from './Modal';
 
 const ConfirmModal = ({ isOpen, onClose, onConfirm, title, message, isDanger }) => {

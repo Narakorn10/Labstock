@@ -58,7 +58,7 @@ export const handleMockCall = (method, args) => {
             switch(method) {
                 case 'getSettings': resolve(MOCK_DATA.settings); break;
                 case 'getDashboardData': resolve(MOCK_DATA.master); break;
-                case 'getReagentWithLots': 
+                case 'getReagentWithLots': {
                     const qr = args[0] ? args[0].toLowerCase() : '';
                     const found = MOCK_DATA.master.find(m => 
                         (m.qrCode||'').toLowerCase().includes(qr) || 
@@ -67,6 +67,7 @@ export const handleMockCall = (method, args) => {
                     );
                     resolve(found ? { success: true, data: found } : { success: false, message: 'ไม่พบข้อมูลในระบบ' });
                     break;
+                }
                 case 'getLogs': resolve(MOCK_DATA.logs); break;
                 case 'getAllLogsForExport': resolve([[new Date().toLocaleString(), 'CHEM-001', 'Ethanol 95%', 'L01', 'รับเข้า', 800, 'Admin']]); break;
                 case 'clearLogs': MOCK_DATA.logs = []; resolve({ success: true, message: 'ล้างประวัติสำเร็จ' }); break;

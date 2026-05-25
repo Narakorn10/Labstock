@@ -1,4 +1,3 @@
-import React from 'react';
 
 export const Skeleton = ({ className, width, height, rounded = "rounded-lg" }) => {
     return (

@@ -1,5 +1,3 @@
-import React from 'react';
-
 /**
  * Highlights parts of a text that match the search query.
  * @param {string} text - The original text to display

@@ -1,5 +1,3 @@
-import React from 'react';
-
 const SummaryCards = ({ stats, activeFilter, onFilterClick }) => {
     const cards = [
         { id: 'all', label: 'น้ำยาทั้งหมด', value: stats.totalItems, sub: 'รายการทั้งหมด', icon: 'fa-layer-group', color: 'slate' },

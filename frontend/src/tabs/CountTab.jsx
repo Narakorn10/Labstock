@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import Select2 from '../components/Select2';
 import { highlightText } from '../utils/text';
 

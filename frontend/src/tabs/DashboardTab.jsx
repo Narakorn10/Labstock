@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { gasRun } from '../api';
 import Modal from '../components/Modal';
 import Select2 from '../components/Select2';
@@ -9,13 +9,13 @@ import ReportModal from '../components/dashboard/ReportModal';
 import SummaryCards from '../components/dashboard/SummaryCards';
 import useExport from '../hooks/useExport';
 
-const DashboardTab = ({ settings, showToast, activeDashboard, setActiveDashboard, externalFilter, clearExternalFilter }) => {
+const DashboardTab = ({ settings, showToast, activeDashboard, setActiveDashboard, externalFilter, clearExternalFilter, user }) => {
     const [loading, setLoading] = useState(false);
     const [search, setSearch] = useState("");
     const [fReagent, setFReagent] = useState(['ALL']);
     const [fJob, setFJob] = useState(['ALL']);
     const [fMachine, setFMachine] = useState(['ALL']);
-    const [localFilter, setLocalFilter] = useState('all');
+    const [localFilter, setLocalFilter] = useState(externalFilter || 'all');
     
     const [lotModalData, setLotModalData] = useState(null);
     const [reportModalOpen, setReportModalOpen] = useState(false);
@@ -49,17 +49,20 @@ const DashboardTab = ({ settings, showToast, activeDashboard, setActiveDashboard
 
     useEffect(() => {
         if (externalFilter) {
-            setLocalFilter(externalFilter);
-            setSearch("");
-            setFReagent(['ALL']);
-            setFJob(['ALL']);
-            setFMachine(['ALL']);
+            const syncFilters = async () => {
+                setLocalFilter(externalFilter);
+                setSearch("");
+                setFReagent(['ALL']);
+                setFJob(['ALL']);
+                setFMachine(['ALL']);
+            };
+            syncFilters();
         }
     }, [externalFilter]);
 
     useEffect(() => {
         return () => { if (clearExternalFilter) clearExternalFilter(); };
-    }, []);
+    }, [clearExternalFilter]);
 
     const loadData = async () => {
         setLoading(true);
@@ -187,12 +190,13 @@ const DashboardTab = ({ settings, showToast, activeDashboard, setActiveDashboard
                          [...lotModalData.lots].map((l, idx) => {
                             const isExp = new Date(l.expDate) < new Date();
                             const isEditing = editingLot?.rowIndex === l.rowIndex;
+                            const canEdit = user?.role === 'Manager' || user?.role === 'Admin';
                             
                             return (
                                 <div key={idx} className={`p-4 rounded-xl border transition-all ${isExp ? 'bg-red-50 border-red-100' : 'bg-white border-slate-200'} ${isEditing ? 'ring-2 ring-blue-500 border-transparent shadow-lg' : ''} animate-fade-in`}>
                                     <div className="flex justify-between items-center mb-1">
                                         <div className="font-bold text-slate-800 text-sm">{l.lotNo} {isExp && <Badge color="red">EXP</Badge>}</div>
-                                        {!isEditing && (
+                                        {!isEditing && canEdit && (
                                             <button onClick={() => { setEditingLot(l); setNewLotQty(l.qty); }} className="text-slate-400 hover:text-blue-600 transition p-1"><i className="fa-solid fa-pen-to-square text-xs"></i></button>
                                         )}
                                     </div>

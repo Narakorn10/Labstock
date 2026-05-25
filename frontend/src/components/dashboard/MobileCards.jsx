@@ -1,4 +1,3 @@
-import React from 'react';
 import Badge from '../Badge';
 import { SkeletonRow } from '../Skeleton';
 import { highlightText } from '../../utils/text';

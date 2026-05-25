@@ -1,12 +1,12 @@
-import React, { useMemo } from 'react';
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { useMemo } from 'react';
+import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import SummaryCards from '../components/dashboard/SummaryCards';
 
 const AnalyticsTab = ({ activeDashboard, onNavigate }) => {
     const lastUpdated = useMemo(() => {
         const now = new Date();
         return now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
-    }, [activeDashboard]);
+    }, []);
 
     const stats = useMemo(() => {
         const totalItems = activeDashboard.length;

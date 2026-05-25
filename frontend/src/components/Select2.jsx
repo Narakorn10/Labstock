@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 const Select2 = ({ label, options, selected, onChange, placeholder = "เลือกรายการ..." }) => {
     const [isOpen, setIsOpen] = useState(false);

@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { gasRun } from '../api';
 import { SkeletonRow } from '../components/Skeleton';
 
-const LogsTab = ({ showToast }) => {
+const LogsTab = ({ showToast, isAdmin }) => {
     const [logs, setLogs] = useState([]);
     const [loading, setLoading] = useState(true);
     
@@ -18,7 +18,12 @@ const LogsTab = ({ showToast }) => {
         setLoading(false); 
     };
 
-    useEffect(() => { loadLogs(); }, []);
+    useEffect(() => { 
+        const fetchLogs = async () => {
+            await loadLogs();
+        };
+        fetchLogs();
+    }, []);
 
     const filteredLogs = useMemo(() => {
         return logs.filter(log => {
@@ -84,7 +89,7 @@ const LogsTab = ({ showToast }) => {
                 <div className="flex flex-wrap gap-2 w-full sm:w-auto">
                     <button onClick={exportUsageSummary} className="flex-1 sm:flex-none px-4 h-10 bg-indigo-50 text-indigo-700 font-bold text-[10px] uppercase tracking-wider rounded-xl active-scale transition border border-indigo-200"><i className="fa-solid fa-chart-line mr-1.5"></i> สรุปยอดการใช้</button>
                     <button onClick={exportCSV} className="flex-1 sm:flex-none px-4 h-10 bg-emerald-50 text-emerald-700 font-bold text-[10px] uppercase tracking-wider rounded-xl active-scale transition border border-emerald-200"><i className="fa-solid fa-file-excel mr-1.5"></i> ประวัติละเอียด</button>
-                    <button onClick={clearLogs} className="flex-1 sm:flex-none px-4 h-10 bg-rose-50 text-rose-700 font-bold text-[10px] uppercase tracking-wider rounded-xl active-scale transition border border-rose-200"><i className="fa-solid fa-trash-can mr-1.5"></i> ล้าง</button>
+                    {isAdmin && <button onClick={clearLogs} className="flex-1 sm:flex-none px-4 h-10 bg-rose-50 text-rose-700 font-bold text-[10px] uppercase tracking-wider rounded-xl active-scale transition border border-rose-200"><i className="fa-solid fa-trash-can mr-1.5"></i> ล้าง</button>}
                 </div>
             </div>
 

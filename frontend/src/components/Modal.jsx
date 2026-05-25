@@ -1,4 +1,3 @@
-import React from 'react';
 
 const Modal = ({ isOpen, onClose, title, children, width = "max-w-md", icon = null, headerColor = "bg-white", titleColor = "text-slate-800", actions = null }) => {
     if (!isOpen) return null;

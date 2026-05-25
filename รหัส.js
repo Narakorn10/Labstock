@@ -5,10 +5,21 @@ const MASTER_SHEET = 'MasterData';
 const INV_SHEET = 'Inventory'; 
 const LOG_SHEET = 'Logs';
 const SETTING_SHEET = 'Settings';
+const USER_SHEET = 'Users';
 
 // 🛡️ [C1] Security Fix: ดึง Token จาก Script Properties แทนการ Hardcode ในไฟล์
 function getLineToken() {
   return PropertiesService.getScriptProperties().getProperty('LINE_TOKEN') || '';
+}
+
+// 🛡️ Security Utilities
+function hashPassword(password) {
+  const digest = Uint8Array.from(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, password));
+  return digest.map(byte => ('0' + (byte & 0xFF).toString(16)).slice(-2)).join('');
+}
+
+function generateToken() {
+  return Utilities.getUuid();
 }
 
 function doGet() {
@@ -72,6 +83,7 @@ function setupSystem() {
       sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold").setBackground("#f3f4f6");
       sheet.setFrozenRows(1); 
     }
+    return sheet;
   }
 
   createSheetWithHeaders(MASTER_SHEET, [
@@ -93,6 +105,16 @@ function setupSystem() {
     'ประเภทน้ำยา', 'ประเภทงาน', 'ประเภทเครื่อง'
   ]);
 
+  const userSheet = createSheetWithHeaders(USER_SHEET, [
+    'Username', 'PasswordHash', 'Role', 'Token', 'TokenExpiry', 'Name'
+  ]);
+
+  // Create Default Admin if no users exist
+  if (userSheet.getLastRow() === 1) {
+    const defaultAdmin = ['admin', hashPassword('admin1234'), 'Admin', '', '', 'System Administrator'];
+    userSheet.appendRow(defaultAdmin);
+  }
+
   const settingSheet = ss.getSheetByName(SETTING_SHEET);
   if (settingSheet.getLastRow() === 1) {
     settingSheet.appendRow(['สารเคมีทั่วไป', 'เคมีคลินิก', 'เครื่อง Auto A']);
@@ -102,6 +124,81 @@ function setupSystem() {
   }
 
   return { success: true, message: 'สร้างแผ่นงานและหัวคอลัมน์สำเร็จเรียบร้อย!' };
+}
+
+// ==========================================
+// ส่วนที่ 1.5: ระบบความปลอดภัย (Authentication)
+// ==========================================
+
+function login(username, password) {
+  try {
+    const data = getSheetDataAsObjects(USER_SHEET);
+    const user = data.find(u => u.Username === username);
+    
+    if (!user || user.PasswordHash !== hashPassword(password)) {
+      return { success: false, message: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' };
+    }
+    
+    const token = generateToken();
+    const expiry = new Date();
+    expiry.setHours(expiry.getHours() + 24); // Token valid for 24 hours
+    
+    const sheet = getSheet(USER_SHEET);
+    sheet.getRange(user._rowIndex, 4, 1, 2).setValues([[token, expiry.toISOString()]]);
+    
+    return { 
+      success: true, 
+      token: token, 
+      user: { username: user.Username, name: user.Name, role: user.Role } 
+    };
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+}
+
+function logout(token) {
+  try {
+    if (!token) return { success: true };
+    const sheet = getSheet(USER_SHEET);
+    const data = getSheetDataAsObjects(USER_SHEET);
+    const user = data.find(u => u.Token === token);
+    if (user) {
+      sheet.getRange(user._rowIndex, 4, 1, 1).setValue('');
+    }
+    return { success: true };
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+}
+
+function validateSession(token) {
+  try {
+    if (!token) return { success: false };
+    const data = getSheetDataAsObjects(USER_SHEET);
+    const user = data.find(u => u.Token === token);
+    
+    if (!user) return { success: false };
+    
+    const expiry = new Date(user.TokenExpiry);
+    if (expiry < new Date()) {
+      logout(token);
+      return { success: false, message: 'Session หมดอายุ' };
+    }
+    
+    return { 
+      success: true, 
+      user: { username: user.Username, name: user.Name, role: user.Role } 
+    };
+  } catch (error) {
+    return { success: false };
+  }
+}
+
+function checkAccess(token, requiredRoles) {
+  const session = validateSession(token);
+  if (!session.success) return { success: false, message: 'กรุณาเข้าสู่ระบบ' };
+  if (!requiredRoles.includes(session.user.role)) return { success: false, message: 'คุณไม่มีสิทธิ์ทำรายการนี้' };
+  return { success: true, user: session.user };
 }
 
 // ==========================================
@@ -285,7 +382,7 @@ function updateMasterItem(data) {
   }
 }
 
-function receiveBatch(batchItems) {
+function receiveBatch(batchItems, userName = 'เจ้าหน้าที่') {
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
@@ -310,7 +407,7 @@ function receiveBatch(batchItems) {
       } else {
         invData.push([item.itemId, item.lotNo, item.expDate, qty]);
       }
-      logTransaction(item.itemId, nameMap[item.itemId] || 'Unknown', item.lotNo, 'รับเข้าสต๊อกหลัก', qty);
+      logTransaction(item.itemId, nameMap[item.itemId] || 'Unknown', item.lotNo, 'รับเข้าสต๊อกหลัก', qty, userName);
     });
 
     invSheet.getRange(1, 1, invData.length, 4).setValues(invData);
@@ -322,7 +419,7 @@ function receiveBatch(batchItems) {
   }
 }
 
-function dispenseBatch(batchItems) {
+function dispenseBatch(batchItems, userName = 'เจ้าหน้าที่') {
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
@@ -355,7 +452,7 @@ function dispenseBatch(batchItems) {
         let qty = parseInt(item.qty, 10);
         if (currentQty >= qty) {
           invData[arrayIdx][3] = currentQty - qty;
-          logTransaction(item.itemId, masterInfoMap[item.itemId]?.name || 'Unknown', item.lotNo, 'เบิกไปหน้างาน', qty);
+          logTransaction(item.itemId, masterInfoMap[item.itemId]?.name || 'Unknown', item.lotNo, 'เบิกไปหน้างาน', qty, userName);
         } else {
           failedItems.push(`${masterInfoMap[item.itemId]?.name} (Lot: ${item.lotNo})`);
         }
@@ -501,21 +598,57 @@ function doPost(e) {
     const postData = JSON.parse(e.postData.contents);
     const method = postData.method;
     const args = postData.args || [];
+    const token = postData.token; // รับ Token จาก Frontend
     
+    // 🛡️ Helper สำหรับเช็คสิทธิ์ใน doPost
+    const verify = (roles) => {
+      const access = checkAccess(token, roles);
+      if (!access.success) throw new Error(access.message);
+      return access.user;
+    };
+
     switch(method) {
+      case 'login': result = login(args[0], args[1]); break;
+      case 'logout': result = logout(token); break;
+      case 'validateSession': result = validateSession(token); break;
+      
       case 'getSettings': result = getSettings(); break;
       case 'getDashboardData': result = getDashboardData(); break;
       case 'getReagentWithLots': result = getReagentWithLots(args[0]); break;
       case 'getLogs': result = getLogs(); break;
       case 'getAllLogsForExport': result = getAllLogsForExport(); break;
-      case 'clearLogs': result = clearLogs(); break;
-      case 'setupSystem': result = setupSystem(); break;
-      case 'addMasterItem': result = addMasterItem(args[0]); break;
-      case 'updateMasterItem': result = updateMasterItem(args[0]); break;
-      case 'receiveBatch': result = receiveBatch(args[0]); break;
-      case 'dispenseBatch': result = dispenseBatch(args[0]); break;
-      case 'adjustLotQuantity': result = adjustLotQuantity(args[0]); break;
       case 'getUsageReport': result = getUsageReport(args[0], args[1]); break;
+
+      // 🔐 Protected Operations
+      case 'setupSystem': 
+        verify(['Admin']);
+        result = setupSystem(); 
+        break;
+      case 'addMasterItem': 
+        verify(['Admin', 'Manager']);
+        result = addMasterItem(args[0]); 
+        break;
+      case 'updateMasterItem': 
+        verify(['Admin', 'Manager']);
+        result = updateMasterItem(args[0]); 
+        break;
+      case 'receiveBatch': 
+        const userRec = verify(['Admin', 'Manager', 'User']);
+        result = receiveBatch(args[0], userRec.name); 
+        break;
+      case 'dispenseBatch': 
+        const userDisp = verify(['Admin', 'Manager', 'User']);
+        result = dispenseBatch(args[0], userDisp.name); 
+        break;
+      case 'adjustLotQuantity': 
+        const userAdj = verify(['Admin', 'Manager']);
+        result = adjustLotQuantity(args[0], userAdj.name); 
+        break;
+      case 'clearLogs': 
+        verify(['Admin']);
+        result = clearLogs(); 
+        break;
+        
       default: throw new Error(`ไม่พบ Method: ${method}`);
     }
     

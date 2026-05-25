@@ -15,7 +15,10 @@ const useGlobalData = () => {
     // ไม่ต้องรัน loadGlobalData ใน useEffect ครั้งแรกถ้ามีข้อมูลแล้ว
     useEffect(() => { 
         if (!window.INITIAL_DATA?.success) {
-            loadGlobalData(); 
+            const fetchData = async () => {
+                await loadGlobalData();
+            };
+            fetchData();
         }
     }, []);
 

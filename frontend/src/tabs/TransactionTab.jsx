@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { gasRun, processAnyBarcode } from '../api';
 import QRScanner from '../components/QRScanner';
 import { highlightText } from '../utils/text';
@@ -16,14 +16,22 @@ const TransactionTab = ({ type, showToast, activeDashboard, cart = [], setCart, 
     
     const [showAuto, setShowAuto] = useState(false);
     
-    // 🔍 Dynamic Search Logic: ค้นหาทันทีจากข้อมูลในเครื่อง
+    // 🔍 Dynamic Search Logic: ค้นหาทันทีจากข้อมูลในเครื่อง (รองรับ GS1 Barcode เบื้องต้น)
     const autoList = useMemo(() => {
         if(!search || search.length < 2) return [];
+        
+        const barcodeData = processAnyBarcode(search);
         const terms = search.toLowerCase().trim().split(/\s+/).filter(Boolean);
+        
         return activeDashboard.filter(i => {
-            const itemIdSafe = (i.itemId || '').toString().toLowerCase().trim();
-            const nameSafe = (i.name || '').toString().toLowerCase().trim();
-            const qrCodeSafe = (i.qrCode || '').toString().toLowerCase().trim();
+            const itemIdSafe = (i.itemId || '').toString().toLowerCase();
+            const nameSafe = (i.name || '').toString().toLowerCase();
+            const qrCodeSafe = (i.qrCode || '').toString().toLowerCase();
+            
+            // 1. ตรวจสอบจาก GTIN (ถ้าเป็น Barcode)
+            if (barcodeData?.gtin && qrCodeSafe === barcodeData.gtin.toLowerCase()) return true;
+            
+            // 2. ตรวจสอบจากการพิมพ์ทั่วไป
             const txt = `${itemIdSafe} ${nameSafe} ${qrCodeSafe}`;
             return terms.every(t => txt.includes(t));
         }).slice(0, 8); 
@@ -32,7 +40,7 @@ const TransactionTab = ({ type, showToast, activeDashboard, cart = [], setCart, 
     /**
      * 🛡️ ฟังก์ชันหลักในการเลือก Item และจัดการข้อมูล GS1
      */
-    const handleSelectItem = (selectedItem, barcodeData = null) => {
+    const handleSelectItem = useCallback((selectedItem, barcodeData = null) => {
         setSearch(selectedItem.itemId);
         setItem(selectedItem);
         setShowAuto(false);
@@ -70,7 +78,27 @@ const TransactionTab = ({ type, showToast, activeDashboard, cart = [], setCart, 
             }
             setForm(f => ({ ...f, lotNo: matchedLot }));
         }
-    };
+    }, [isRec, showToast]);
+
+    // ⚡ Auto-Select Logic: ถ้าพิมพ์/สแกนแล้วเจอตัวที่ตรงเป๊ะๆ ให้เลือกทันที
+    useEffect(() => {
+        if (!search || item || search.length < 3) return;
+        
+        const barcodeData = processAnyBarcode(search);
+        const searchKey = (barcodeData?.gtin || search).toLowerCase().trim();
+
+        const exactMatch = activeDashboard.find(i => 
+            (i.itemId || '').toLowerCase() === searchKey ||
+            (i.qrCode || '').toLowerCase() === searchKey
+        );
+        
+        if (exactMatch) {
+            const autoSelect = async () => {
+                handleSelectItem(exactMatch, barcodeData);
+            };
+            autoSelect();
+        }
+    }, [search, activeDashboard, item, handleSelectItem]);
 
     const fetchItem = async (qrOrSearch) => {
         if (!qrOrSearch) return;

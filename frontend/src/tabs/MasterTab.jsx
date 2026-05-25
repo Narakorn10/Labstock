@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { gasRun } from '../api';
 import Modal from '../components/Modal';
 

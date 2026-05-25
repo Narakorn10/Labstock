@@ -5,12 +5,14 @@ import { processAnyBarcode } from './utils/barcodeParser';
  * 🚀 Main API Bridge to Google Apps Script
  */
 export const gasRun = (method, ...args) => {
+    const token = localStorage.getItem('auth_token');
+    
     return new Promise((resolve, reject) => {
         // 1. Try native Google Script Run (if running inside GAS iframe)
         if (typeof google !== 'undefined' && google.script && google.script.run) {
             google.script.run
                 .withSuccessHandler(resolve)
-                .withFailureHandler(reject)[method](...args);
+                .withFailureHandler(reject)[method](...args, token); // Pass token as last arg for GAS native
             return;
         }
 
@@ -20,7 +22,7 @@ export const gasRun = (method, ...args) => {
             fetch(gasUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify({ method, args })
+                body: JSON.stringify({ method, args, token })
             })
             .then(res => {
                 if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
@@ -29,7 +31,6 @@ export const gasRun = (method, ...args) => {
             .then(resolve)
             .catch(err => {
                 console.error("❌ GAS Connection Error:", err);
-                // alert("ไม่สามารถเชื่อมต่อ Google Sheets ได้\nกรุณาตรวจสอบการตั้งค่า VITE_GAS_URL");
                 reject(err);
             });
             return;

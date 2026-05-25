@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import { useEffect } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 
 const QRScanner = ({ onScan, onCancel }) => {
@@ -30,7 +30,7 @@ const QRScanner = ({ onScan, onCancel }) => {
                 beep.play().catch(() => {}); 
                 scanner.stop().then(() => onScan(txt)); 
             },
-            (err) => {}
+            () => {}
         ).catch(err => { console.error(err); });
 
         // พยายามเปิด Zoom (สำหรับมือถือที่รองรับ) หลังจากกล้องเริ่มทำงาน
