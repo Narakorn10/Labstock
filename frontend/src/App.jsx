@@ -27,7 +27,7 @@ function App() {
     const { user, loading: authLoading, login, logout: authLogout } = useAuth(showToast);
     const { settings, activeDashboard, setActiveDashboard, loadGlobalData } = useGlobalData();
     
-    const [activeTab, setActiveTab] = useState('analytics');
+    const [activeTab, setActiveTab] = useState('dashboard');
     const [loginModalOpen, setLoginModalOpen] = useState(false);
     
     const [countInputs, setCountInputs] = useState({});
@@ -61,8 +61,10 @@ function App() {
     const [dashboardFilter, setDashboardFilter] = useState(null);
 
     const isUser = !!user;
+    const isFullUser = user?.role === 'User' || user?.role === 'Manager' || user?.role === 'Admin';
     const isManager = user?.role === 'Manager' || user?.role === 'Admin';
     const isAdmin = user?.role === 'Admin';
+    // Operator: Only Dashboard & Dispense (Role manage in Backend/Users Tab)
 
     const handleDispenseSuccess = (items) => {
         setDispensedItems(prev => {
@@ -83,15 +85,17 @@ function App() {
 
         switch(activeTab) {
             case 'dashboard': return <DashboardTab settings={settings} showToast={showToast} activeDashboard={activeDashboard} setActiveDashboard={setActiveDashboard} externalFilter={dashboardFilter} clearExternalFilter={() => setDashboardFilter(null)} user={user} />;
-            case 'analytics': return <AnalyticsTab activeDashboard={activeDashboard} onNavigate={handleAnalyticsNavigate} />;
+            case 'analytics': 
+                if (!isFullUser) { setActiveTab('dashboard'); return null; }
+                return <AnalyticsTab activeDashboard={activeDashboard} onNavigate={handleAnalyticsNavigate} />;
             case 'receive': 
-                if (!isUser) { setActiveTab('dashboard'); return null; }
+                if (!isFullUser) { setActiveTab('dashboard'); return null; }
                 return <TransactionTab type="receive" showToast={showToast} activeDashboard={activeDashboard} cart={receiveCart} setCart={setReceiveCart} />;
             case 'dispense': 
                 if (!isUser) { setActiveTab('dashboard'); return null; }
                 return <TransactionTab type="dispense" showToast={showToast} activeDashboard={activeDashboard} cart={dispenseCart} setCart={setDispenseCart} onSuccess={handleDispenseSuccess} />;
             case 'count': 
-                if (!isUser) { setActiveTab('dashboard'); return null; }
+                if (!isFullUser) { setActiveTab('dashboard'); return null; }
                 return <CountTab settings={settings} activeDashboard={activeDashboard} inputs={countInputs} setInputs={setCountInputs} dispenseCart={dispenseCart} setDispenseCart={setDispenseCart} dispensedItems={dispensedItems} onGoToDispense={() => setActiveTab('dispense')} showToast={showToast} />;
             case 'master': 
                 if (!isManager) { setActiveTab('dashboard'); return null; }
@@ -100,7 +104,7 @@ function App() {
                 if (!isAdmin) { setActiveTab('dashboard'); return null; }
                 return <UsersTab showToast={showToast} />;
             case 'logs': 
-                if (!isUser) { setActiveTab('dashboard'); return null; }
+                if (!isFullUser) { setActiveTab('dashboard'); return null; }
                 return <LogsTab showToast={showToast} isAdmin={isAdmin} />;
             default: return null;
         }
@@ -116,19 +120,22 @@ function App() {
                 </div>
                 <div className="flex items-center gap-1">
                     <button onClick={()=>setActiveTab('dashboard')} className={`px-4 py-2 rounded-xl text-sm font-bold transition ${activeTab==='dashboard'?'bg-blue-50 text-blue-600':'text-slate-500 hover:bg-slate-50'}`}>แดชบอร์ด</button>
-                    <button onClick={()=>setActiveTab('analytics')} className={`px-4 py-2 rounded-xl text-sm font-bold transition ${activeTab==='analytics'?'bg-indigo-50 text-indigo-600':'text-slate-500 hover:bg-slate-50'}`}>สถิติ</button>
+                    
+                    {isFullUser && (
+                        <button onClick={()=>setActiveTab('analytics')} className={`px-4 py-2 rounded-xl text-sm font-bold transition ${activeTab==='analytics'?'bg-indigo-50 text-indigo-600':'text-slate-500 hover:bg-slate-50'}`}>สถิติ</button>
+                    )}
                     
                     {isUser && (
                         <>
-                            <button onClick={()=>setActiveTab('receive')} className={`px-4 py-2 rounded-xl text-sm font-bold transition ${activeTab==='receive'?'bg-green-50 text-green-600':'text-slate-500 hover:bg-slate-50'}`}>รับเข้า</button>
-                            <button onClick={()=>setActiveTab('count')} className={`px-4 py-2 rounded-xl text-sm font-bold transition ${activeTab==='count'?'bg-blue-50 text-blue-600':'text-slate-500 hover:bg-slate-50'}`}>นับหน้างาน</button>
+                            {isFullUser && <button onClick={()=>setActiveTab('receive')} className={`px-4 py-2 rounded-xl text-sm font-bold transition ${activeTab==='receive'?'bg-green-50 text-green-600':'text-slate-500 hover:bg-slate-50'}`}>รับเข้า</button>}
+                            {isFullUser && <button onClick={()=>setActiveTab('count')} className={`px-4 py-2 rounded-xl text-sm font-bold transition ${activeTab==='count'?'bg-blue-50 text-blue-600':'text-slate-500 hover:bg-slate-50'}`}>นับหน้างาน</button>}
                             <button onClick={()=>setActiveTab('dispense')} className={`relative px-4 py-2 rounded-xl text-sm font-bold transition ${activeTab==='dispense'?'bg-red-50 text-red-600':'text-slate-500 hover:bg-slate-50'}`}>เบิกไปใช้ {dispenseCart.length > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] w-5 h-5 flex items-center justify-center rounded-full border-2 border-white">{dispenseCart.length}</span>}</button>
                         </>
                     )}
                     
                     {isManager && <button onClick={()=>setActiveTab('master')} className={`px-4 py-2 rounded-xl text-sm font-bold transition ${activeTab==='master'?'bg-slate-100 text-slate-800':'text-slate-500 hover:bg-slate-50'}`}>Master</button>}
                     {isAdmin && <button onClick={()=>setActiveTab('users')} className={`px-4 py-2 rounded-xl text-sm font-bold transition ${activeTab==='users'?'bg-blue-100 text-blue-800':'text-slate-500 hover:bg-slate-50'}`}>จัดการผู้ใช้</button>}
-                    {isUser && <button onClick={()=>setActiveTab('logs')} className={`px-4 py-2 rounded-xl text-sm font-bold transition ${activeTab==='logs'?'bg-slate-100 text-slate-800':'text-slate-500 hover:bg-slate-50'}`}>ประวัติ</button>}
+                    {isFullUser && <button onClick={()=>setActiveTab('logs')} className={`px-4 py-2 rounded-xl text-sm font-bold transition ${activeTab==='logs'?'bg-slate-100 text-slate-800':'text-slate-500 hover:bg-slate-50'}`}>ประวัติ</button>}
                     
                     <div className="w-px h-6 bg-slate-200 mx-2"></div>
                     
@@ -154,15 +161,15 @@ function App() {
             {/* Mobile Bottom Navigation */}
             <nav className="md:hidden glass-nav fixed bottom-0 w-full z-40 flex justify-around items-end pb-safe pt-1 px-2 shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.1)]">
                 <NavItem id="dashboard" icon="fa-house" label="หน้าแรก" activeTab={activeTab} setActiveTab={setActiveTab} />
-                <NavItem id="analytics" icon="fa-chart-pie" label="สถิติ" activeTab={activeTab} setActiveTab={setActiveTab} />
-                <NavItem id="receive" icon="fa-box-open" label="รับเข้า" activeTab={activeTab} setActiveTab={setActiveTab} disabled={!isUser} />
-                <NavItem id="count" icon="fa-clipboard-check" label="นับหน้างาน" activeTab={activeTab} setActiveTab={setActiveTab} disabled={!isUser} />
+                {isFullUser && <NavItem id="analytics" icon="fa-chart-pie" label="สถิติ" activeTab={activeTab} setActiveTab={setActiveTab} />}
+                {isFullUser && <NavItem id="receive" icon="fa-box-open" label="รับเข้า" activeTab={activeTab} setActiveTab={setActiveTab} disabled={!isUser} />}
+                {isFullUser && <NavItem id="count" icon="fa-clipboard-check" label="นับหน้างาน" activeTab={activeTab} setActiveTab={setActiveTab} disabled={!isUser} />}
                 <div className="relative w-full">
                     <NavItem id="dispense" icon="fa-hand-holding-droplet" label="เบิกจ่าย" activeTab={activeTab} setActiveTab={setActiveTab} disabled={!isUser} />
                     {isUser && dispenseCart.length > 0 && <span className="absolute top-1 right-2 bg-red-500 text-white text-[9px] w-4 h-4 flex items-center justify-center rounded-full">{dispenseCart.length}</span>}
                 </div>
-                <NavItem id="master" icon="fa-database" label="ข้อมูล" activeTab={activeTab} setActiveTab={setActiveTab} disabled={!isManager} />
-                <NavItem id="logs" icon="fa-clock-rotate-left" label="ประวัติ" activeTab={activeTab} setActiveTab={setActiveTab} disabled={!isUser} />
+                {isManager && <NavItem id="master" icon="fa-database" label="ข้อมูล" activeTab={activeTab} setActiveTab={setActiveTab} disabled={!isManager} />}
+                {isFullUser && <NavItem id="logs" icon="fa-clock-rotate-left" label="ประวัติ" activeTab={activeTab} setActiveTab={setActiveTab} disabled={!isUser} />}
                 
                 {!user && (
                     <button onClick={() => setLoginModalOpen(true)} className="flex flex-col items-center justify-center w-full py-2 text-slate-400">

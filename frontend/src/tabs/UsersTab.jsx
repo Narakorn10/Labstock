@@ -142,7 +142,8 @@ const UsersTab = ({ showToast }) => {
                             value={form.role} onChange={e => setForm({...form, role: e.target.value})}
                             className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                         >
-                            <option value="User">User (เบิก/รับ/นับ)</option>
+                            <option value="User">User (เบิก/รับ/นับ/ประวัติ)</option>
+                            <option value="Operator">Operator (เฉพาะเบิกจ่าย + แดชบอร์ด)</option>
                             <option value="Manager">Manager (จัดการน้ำยา + รายการ)</option>
                             <option value="Admin">Admin (จัดการผู้ใช้ + ทุกอย่าง)</option>
                         </select>
