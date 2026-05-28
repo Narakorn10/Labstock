@@ -738,6 +738,9 @@ function handleTelegramUpdate(update) {
       const text = msg.text.trim();
       if (text === '/start') {
         sendTelegramMessage(chatId, "ยินดีต้อนรับสู่ระบบ Lab Smart System! 🧪\n\nกรุณาส่งรูปภาพใบ Invoice น้ำยา เพื่อให้ Gemini AI ช่วยประมวลผลรับเข้าสต๊อกครับ");
+      } else {
+        // 💬 ฟีเจอร์ใหม่: พิมพ์เพื่อแก้ไขข้อมูลที่ AI อ่านผิด
+        handleTelegramTextFeedback(chatId, text);
       }
     }
   } else if (update.callback_query) {
@@ -777,12 +780,100 @@ function processTelegramImage(photoArray, chatId) {
       };
     });
 
+    // 💾 เก็บข้อมูลไว้ใน Cache เพื่อรอการแก้ไขหรือยืนยัน
+    savePendingInvoice(chatId, processedItems);
+
     // 5. Send Summary and Confirmation Buttons
     sendTelegramInvoiceSummary(chatId, processedItems);
 
   } catch (e) {
     sendTelegramMessage(chatId, "❌ เกิดข้อผิดพลาด: " + e.message);
   }
+}
+
+/**
+ * 💬 จัดการการพิมพ์ข้อความเพื่อแก้ไขข้อมูล (Chat-to-Fix)
+ */
+function handleTelegramTextFeedback(chatId, userText) {
+  const pendingData = getPendingInvoice(chatId);
+  if (!pendingData) {
+    sendTelegramMessage(chatId, "💡 คุณสามารถส่งรูปภาพใบ Invoice เพื่อเริ่มการประมวลผลได้ครับ");
+    return;
+  }
+
+  try {
+    sendTelegramMessage(chatId, "⏳ กำลังปรับปรุงข้อมูลตามที่คุณบอก...");
+    
+    const correctedData = callGeminiCorrection(pendingData, userText);
+    
+    if (correctedData) {
+      const masterData = getDashboardData();
+      const processedItems = correctedData.map(item => {
+        const match = matchReagentName(item.name, masterData);
+        return {
+          ...item,
+          itemId: match ? match.itemId : 'NEW_ITEM',
+          masterName: match ? match.name : item.name,
+          isNew: !match
+        };
+      });
+
+      savePendingInvoice(chatId, processedItems);
+      sendTelegramInvoiceSummary(chatId, processedItems, true);
+    }
+  } catch (e) {
+    sendTelegramMessage(chatId, "❌ ไม่สามารถแก้ไขข้อมูลได้: " + e.message);
+  }
+}
+
+function callGeminiCorrection(oldJson, correctionText) {
+  const apiKey = getGeminiApiKey();
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  
+  const payload = {
+    contents: [{
+      parts: [{
+        text: "You are a medical inventory assistant. I will provide a JSON array of items and a user's correction instruction in Thai. " +
+              "Apply the correction to the JSON data and return the UPDATED JSON array ONLY. " +
+              "\n\nJSON: " + JSON.stringify(oldJson) + 
+              "\n\nInstruction: " + correctionText
+      }]
+    }],
+    generationConfig: { response_mime_type: "application/json" }
+  };
+
+  const options = {
+    method: "post",
+    contentType: "application/json",
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  };
+
+  const res = UrlFetchApp.fetch(url, options);
+  const json = JSON.parse(res.getContentText());
+  
+  try {
+    const text = json.candidates[0].content.parts[0].text;
+    return JSON.parse(text);
+  } catch (e) {
+    return null;
+  }
+}
+
+function savePendingInvoice(chatId, items) {
+  const cache = PropertiesService.getUserProperties();
+  cache.setProperty('PENDING_INV_' + chatId, JSON.stringify(items));
+}
+
+function getPendingInvoice(chatId) {
+  const cache = PropertiesService.getUserProperties();
+  const data = cache.getProperty('PENDING_INV_' + chatId);
+  return data ? JSON.parse(data) : null;
+}
+
+function clearPendingInvoice(chatId) {
+  const cache = PropertiesService.getUserProperties();
+  cache.deleteProperty('PENDING_INV_' + chatId);
 }
 
 function callGeminiOCR(base64Image) {
@@ -861,8 +952,8 @@ function sendTelegramMessage(chatId, text, replyMarkup = null) {
   UrlFetchApp.fetch(url, options);
 }
 
-function sendTelegramInvoiceSummary(chatId, items) {
-  let message = "<b>📑 สรุปรายการจาก Invoice</b>\n\n";
+function sendTelegramInvoiceSummary(chatId, items, isUpdate = false) {
+  let message = isUpdate ? "✅ <b>ปรับปรุงข้อมูลเรียบร้อยแล้ว</b>\n\n" : "<b>📑 สรุปรายการจาก Invoice</b>\n\n";
   const validItems = items.filter(i => !i.isNew);
   const newItems = items.filter(i => i.isNew);
 
@@ -874,13 +965,15 @@ function sendTelegramInvoiceSummary(chatId, items) {
   });
 
   if (newItems.length > 0) {
-    message += "⚠️ <i>พบรายการใหม่ที่ไม่อยู่ในระบบ (ตัวอักษรสีแดง) รายการเหล่านี้จะไม่ถูกบันทึกโดยอัตโนมัติ</i>\n\n";
+    message += "⚠️ <i>พบรายการใหม่ที่ไม่อยู่ในระบบ (สีแดง) รายการเหล่านี้จะไม่ถูกบันทึก</i>\n\n";
   }
+  
+  message += "💡 <i>หากข้อมูลผิด พิมพ์บอกให้บอทแก้ได้เลย เช่น \"รายการที่ 1 แก้เป็น 50\"</i>";
 
   const keyboard = {
     inline_keyboard: [
       [
-        { text: "📥 ยืนยันรับเข้าสต๊อก", callback_data: JSON.stringify({ a: "rec", ids: validItems.map(i => ({ id: i.itemId, l: i.lotNo, e: i.expDate, q: i.qty })) }) }
+        { text: "📥 ยืนยันรับเข้าสต๊อก (" + validItems.length + " รายการ)", callback_data: JSON.stringify({ a: "rec" }) }
       ],
       [
         { text: "❌ ยกเลิก", callback_data: JSON.stringify({ a: "can" }) }
@@ -894,33 +987,41 @@ function sendTelegramInvoiceSummary(chatId, items) {
 function handleTelegramCallback(callback) {
   const chatId = callback.message.chat.id;
   const messageId = callback.message.message_id;
-  const data = JSON.parse(callback.callback_data);
+  const callbackData = JSON.parse(callback.callback_data);
   const token = getTelegramBotToken();
 
   // Answer callback to stop loading state in Telegram
   UrlFetchApp.fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery?callback_query_id=${callback.id}`);
 
-  if (data.a === 'rec') {
+  if (callbackData.a === 'rec') {
     try {
-      const batchItems = data.ids.map(i => ({
-        itemId: i.id,
-        lotNo: i.l,
-        expDate: i.e,
-        qty: i.q
+      const items = getPendingInvoice(chatId);
+      if (!items) {
+        sendTelegramMessage(chatId, "❌ ข้อมูลหมดอายุหรือถูกลบไปแล้ว กรุณาส่งรูปใหม่");
+        return;
+      }
+
+      const batchItems = items.filter(i => !i.isNew).map(i => ({
+        itemId: i.itemId,
+        lotNo: i.lotNo,
+        expDate: i.expDate,
+        qty: i.qty
       }));
 
       const res = receiveBatch(batchItems, "SYSTEM_BOT");
       
       if (res.success) {
         editTelegramMessage(chatId, messageId, `✅ <b>บันทึกสำเร็จ!</b>\nรับเข้าทั้งหมด ${batchItems.length} รายการ เรียบร้อยแล้ว`);
+        clearPendingInvoice(chatId);
       } else {
         sendTelegramMessage(chatId, `❌ บันทึกไม่สำเร็จ: ${res.message}`);
       }
     } catch (e) {
       sendTelegramMessage(chatId, `❌ Error: ${e.message}`);
     }
-  } else if (data.a === 'can') {
+  } else if (callbackData.a === 'can') {
     editTelegramMessage(chatId, messageId, "❌ ยกเลิกการทำรายการแล้ว");
+    clearPendingInvoice(chatId);
   }
 }
 
