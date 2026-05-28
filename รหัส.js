@@ -8,12 +8,8 @@ const SETTING_SHEET = 'Settings';
 const USER_SHEET = 'Users';
 
 // 🛡️ [C1] Security Fix: ดึง Token จาก Script Properties แทนการ Hardcode ในไฟล์
-function getLineToken() {
-  return PropertiesService.getScriptProperties().getProperty('LINE_TOKEN') || '';
-}
-
-function getLineChannelToken() {
-  return PropertiesService.getScriptProperties().getProperty('LINE_CHANNEL_ACCESS_TOKEN') || '';
+function getTelegramBotToken() {
+  return PropertiesService.getScriptProperties().getProperty('TELEGRAM_BOT_TOKEN') || '';
 }
 
 function getGeminiApiKey() {
@@ -660,7 +656,7 @@ function getUsageReport(startDate, endDate, token) {
 }
 
 /**
- * 🚀 [Universal Entry Point] Handles Vercel Web App (JSON) and LINE Webhook
+ * 🚀 [Universal Entry Point] Handles Vercel Web App (JSON) and Telegram Webhook
  */
 function doPost(e) {
   try {
@@ -668,9 +664,9 @@ function doPost(e) {
     
     // --- 1. Detect Request Type ---
     
-    // A. LINE Webhook
-    if (postData.events && postData.events.length > 0) {
-      postData.events.forEach(event => handleLineEvent(event));
+    // A. Telegram Webhook (Update)
+    if (postData.update_id) {
+      handleTelegramUpdate(postData);
       return ContentService.createTextOutput(JSON.stringify({ success: true }))
         .setMimeType(ContentService.MimeType.JSON);
     }
@@ -728,47 +724,48 @@ function doPost(e) {
 }
 
 // ==========================================
-// ส่วนที่ 4: ระบบ LINE Bot & Gemini OCR
+// ส่วนที่ 4: ระบบ Telegram Bot & Gemini OCR
 // ==========================================
 
-function handleLineEvent(event) {
-  const token = getLineChannelToken();
-  if (!token) return;
+function handleTelegramUpdate(update) {
+  if (update.message) {
+    const msg = update.message;
+    const chatId = msg.chat.id;
 
-  const replyToken = event.replyToken;
-  const type = event.type;
-  const userId = event.source.userId;
-
-  if (type === 'message') {
-    const msg = event.message;
-    if (msg.type === 'image') {
-      processLineImage(msg.id, replyToken, userId);
-    } else if (msg.type === 'text') {
+    if (msg.photo) {
+      processTelegramImage(msg.photo, chatId);
+    } else if (msg.text) {
       const text = msg.text.trim();
-      if (text === 'เมนู') sendLineMenu(replyToken);
+      if (text === '/start') {
+        sendTelegramMessage(chatId, "ยินดีต้อนรับสู่ระบบ Lab Smart System! 🧪\n\nกรุณาส่งรูปภาพใบ Invoice น้ำยา เพื่อให้ Gemini AI ช่วยประมวลผลรับเข้าสต๊อกครับ");
+      }
     }
-  } else if (type === 'postback') {
-    handleLinePostback(event);
+  } else if (update.callback_query) {
+    handleTelegramCallback(update.callback_query);
   }
 }
 
-function processLineImage(messageId, replyToken, userId) {
+function processTelegramImage(photoArray, chatId) {
   try {
-    replyLineText(replyToken, "กำลังประมวดผลรูปภาพด้วย Gemini AI... กรุณารอสักครู่ (ประมาณ 5-10 วินาที)");
+    sendTelegramMessage(chatId, "⏳ กำลังประมวลผลรูปภาพด้วย Gemini AI... กรุณารอสักครู่");
     
-    // 1. Download image from LINE
-    const imageBlob = getLineContent(messageId);
-    const base64Image = Utilities.base64Encode(imageBlob.getBytes());
+    // 1. Get high-res photo file info
+    const fileId = photoArray[photoArray.length - 1].file_id;
+    const fileUrl = getTelegramFileUrl(fileId);
+    
+    // 2. Download and convert to Base64
+    const response = UrlFetchApp.fetch(fileUrl);
+    const base64Image = Utilities.base64Encode(response.getContentBlob().getBytes());
 
-    // 2. Call Gemini API
+    // 3. Call Gemini API
     const extractedData = callGeminiOCR(base64Image);
     
     if (!extractedData || extractedData.length === 0) {
-      sendLineMessage(userId, "❌ ไม่พบข้อมูลน้ำยาในรูปภาพนี้ หรือรูปภาพไม่ชัดเจน กรุณาลองใหม่อีกครั้ง");
+      sendTelegramMessage(chatId, "❌ ไม่พบข้อมูลน้ำยาในรูปภาพนี้ หรือรูปภาพไม่ชัดเจน กรุณาลองใหม่อีกครั้ง");
       return;
     }
 
-    // 3. Match with MasterData
+    // 4. Match with MasterData
     const masterData = getDashboardData();
     const processedItems = extractedData.map(item => {
       const match = matchReagentName(item.name, masterData);
@@ -780,11 +777,11 @@ function processLineImage(messageId, replyToken, userId) {
       };
     });
 
-    // 4. Send Summary Flex Message
-    sendLineInvoiceSummary(userId, processedItems);
+    // 5. Send Summary and Confirmation Buttons
+    sendTelegramInvoiceSummary(chatId, processedItems);
 
   } catch (e) {
-    sendLineMessage(userId, "❌ เกิดข้อผิดพลาด: " + e.message);
+    sendTelegramMessage(chatId, "❌ เกิดข้อผิดพลาด: " + e.message);
   }
 }
 
@@ -816,161 +813,148 @@ function callGeminiOCR(base64Image) {
   const res = UrlFetchApp.fetch(url, options);
   const json = JSON.parse(res.getContentText());
   
-  if (json.candidates && json.contents && json.candidates[0].content.parts) {
-     // For normal text response
-     const text = json.candidates[0].content.parts[0].text;
-     return JSON.parse(text);
-  } else if (json.candidates && json.candidates[0].content && json.candidates[0].content.parts) {
-     const text = json.candidates[0].content.parts[0].text;
-     return JSON.parse(text);
+  try {
+    if (json.candidates && json.candidates[0].content && json.candidates[0].content.parts) {
+      const text = json.candidates[0].content.parts[0].text;
+      return JSON.parse(text);
+    }
+  } catch (e) {
+    console.error("Gemini Parse Error:", e);
   }
-  
   return null;
 }
 
 function matchReagentName(extractedName, masterData) {
   const cleanName = extractedName.toLowerCase().trim();
-  
-  // 1. Exact Match
   let match = masterData.find(m => m.name.toLowerCase().trim() === cleanName || (m.qrCode && m.qrCode.toLowerCase() === cleanName));
   if (match) return match;
-
-  // 2. Fuzzy/Includes Match
   match = masterData.find(m => cleanName.includes(m.name.toLowerCase().trim()) || m.name.toLowerCase().trim().includes(cleanName));
   return match || null;
 }
 
-function getLineContent(messageId) {
-  const token = getLineChannelToken();
-  const url = `https://api-data.line.me/v2/bot/message/${messageId}/content`;
-  const options = { headers: { Authorization: `Bearer ${token}` } };
-  return UrlFetchApp.fetch(url, options).getBlob();
+function getTelegramFileUrl(fileId) {
+  const token = getTelegramBotToken();
+  const url = `https://api.telegram.org/bot${token}/getFile?file_id=${fileId}`;
+  const res = UrlFetchApp.fetch(url);
+  const fileData = JSON.parse(res.getContentText());
+  if (fileData.ok) {
+    return `https://api.telegram.org/file/bot${token}/${fileData.result.file_path}`;
+  }
+  throw new Error("Failed to get file path from Telegram");
 }
 
-function replyLineText(replyToken, text) {
-  const token = getLineChannelToken();
-  const url = "https://api.line.me/v2/bot/message/reply";
-  const payload = { replyToken: replyToken, messages: [{ type: "text", text: text }] };
-  const options = { method: "post", contentType: "application/json", headers: { Authorization: `Bearer ${token}` }, payload: JSON.stringify(payload) };
-  UrlFetchApp.fetch(url, options);
-}
-
-function sendLineMessage(userId, text) {
-  const token = getLineChannelToken();
-  const url = "https://api.line.me/v2/bot/message/push";
-  const payload = { to: userId, messages: [{ type: "text", text: text }] };
-  const options = { method: "post", contentType: "application/json", headers: { Authorization: `Bearer ${token}` }, payload: JSON.stringify(payload) };
-  UrlFetchApp.fetch(url, options);
-}
-
-function sendLineInvoiceSummary(userId, items) {
-  const token = getLineChannelToken();
-  const url = "https://api.line.me/v2/bot/message/push";
+function sendTelegramMessage(chatId, text, replyMarkup = null) {
+  const token = getTelegramBotToken();
+  const url = `https://api.telegram.org/bot${token}/sendMessage`;
+  const payload = {
+    chat_id: chatId,
+    text: text,
+    parse_mode: "HTML"
+  };
+  if (replyMarkup) payload.reply_markup = JSON.stringify(replyMarkup);
   
-  const contents = items.map(item => ({
-    type: "box",
-    layout: "vertical",
-    margin: "md",
-    spacing: "sm",
-    contents: [
-      {
-        type: "text",
-        text: item.masterName,
-        weight: "bold",
-        size: "sm",
-        wrap: true,
-        color: item.isNew ? "#ff4d4f" : "#1890ff"
-      },
-      {
-        type: "box",
-        layout: "horizontal",
-        contents: [
-          { type: "text", text: `Lot: ${item.lotNo}`, size: "xs", color: "#8c8c8c", flex: 3 },
-          { type: "text", text: `EXP: ${item.expDate}`, size: "xs", color: "#8c8c8c", flex: 3 },
-          { type: "text", text: `x${item.qty}`, size: "sm", weight: "bold", align: "end", flex: 2 }
-        ]
-      },
-      { type: "separator", margin: "sm" }
-    ]
-  }));
+  const options = {
+    method: "post",
+    contentType: "application/json",
+    payload: JSON.stringify(payload)
+  };
+  UrlFetchApp.fetch(url, options);
+}
 
-  const flex = {
-    type: "flex",
-    altText: "สรุปรายการจาก Invoice",
-    contents: {
-      type: "bubble",
-      header: {
-        type: "box",
-        layout: "vertical",
-        backgroundColor: "#f0f2f5",
-        contents: [{ type: "text", text: "📑 สรุปรายการจาก Invoice", weight: "bold", size: "lg", color: "#1f1f1f" }]
-      },
-      body: {
-        type: "box",
-        layout: "vertical",
-        contents: contents
-      },
-      footer: {
-        type: "box",
-        layout: "vertical",
-        spacing: "sm",
-        contents: [
-          {
-            type: "button",
-            style: "primary",
-            color: "#52c41a",
-            action: {
-              type: "postback",
-              label: "📥 ยืนยันรับเข้าสต๊อก",
-              data: JSON.stringify({ action: "confirm_receive", items: items.filter(i => !i.isNew) })
-            }
-          },
-          {
-            type: "button",
-            style: "secondary",
-            action: {
-              type: "postback",
-              label: "❌ ยกเลิก",
-              data: JSON.stringify({ action: "cancel" })
-            }
-          }
-        ]
-      }
-    }
+function sendTelegramInvoiceSummary(chatId, items) {
+  let message = "<b>📑 สรุปรายการจาก Invoice</b>\n\n";
+  const validItems = items.filter(i => !i.isNew);
+  const newItems = items.filter(i => i.isNew);
+
+  items.forEach((item, index) => {
+    const status = item.isNew ? "🔴 [ใหม่]" : "🔵 [ตรงสต๊อก]";
+    message += `${index + 1}. ${status} <b>${item.masterName}</b>\n`;
+    message += `   Lot: <code>${item.lotNo}</code> | EXP: <code>${item.expDate}</code>\n`;
+    message += `   จำนวน: <b>${item.qty}</b>\n\n`;
+  });
+
+  if (newItems.length > 0) {
+    message += "⚠️ <i>พบรายการใหม่ที่ไม่อยู่ในระบบ (ตัวอักษรสีแดง) รายการเหล่านี้จะไม่ถูกบันทึกโดยอัตโนมัติ</i>\n\n";
+  }
+
+  const keyboard = {
+    inline_keyboard: [
+      [
+        { text: "📥 ยืนยันรับเข้าสต๊อก", callback_data: JSON.stringify({ a: "rec", ids: validItems.map(i => ({ id: i.itemId, l: i.lotNo, e: i.expDate, q: i.qty })) }) }
+      ],
+      [
+        { text: "❌ ยกเลิก", callback_data: JSON.stringify({ a: "can" }) }
+      ]
+    ]
   };
 
-  const payload = { to: userId, messages: [flex] };
-  const options = { method: "post", contentType: "application/json", headers: { Authorization: `Bearer ${token}` }, payload: JSON.stringify(payload) };
+  sendTelegramMessage(chatId, message, keyboard);
+}
+
+function handleTelegramCallback(callback) {
+  const chatId = callback.message.chat.id;
+  const messageId = callback.message.message_id;
+  const data = JSON.parse(callback.callback_data);
+  const token = getTelegramBotToken();
+
+  // Answer callback to stop loading state in Telegram
+  UrlFetchApp.fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery?callback_query_id=${callback.id}`);
+
+  if (data.a === 'rec') {
+    try {
+      const batchItems = data.ids.map(i => ({
+        itemId: i.id,
+        lotNo: i.l,
+        expDate: i.e,
+        qty: i.q
+      }));
+
+      const res = receiveBatch(batchItems, "SYSTEM_BOT");
+      
+      if (res.success) {
+        editTelegramMessage(chatId, messageId, `✅ <b>บันทึกสำเร็จ!</b>\nรับเข้าทั้งหมด ${batchItems.length} รายการ เรียบร้อยแล้ว`);
+      } else {
+        sendTelegramMessage(chatId, `❌ บันทึกไม่สำเร็จ: ${res.message}`);
+      }
+    } catch (e) {
+      sendTelegramMessage(chatId, `❌ Error: ${e.message}`);
+    }
+  } else if (data.a === 'can') {
+    editTelegramMessage(chatId, messageId, "❌ ยกเลิกการทำรายการแล้ว");
+  }
+}
+
+function editTelegramMessage(chatId, messageId, text) {
+  const token = getTelegramBotToken();
+  const url = `https://api.telegram.org/bot${token}/editMessageText`;
+  const payload = {
+    chat_id: chatId,
+    message_id: messageId,
+    text: text,
+    parse_mode: "HTML"
+  };
+  const options = {
+    method: "post",
+    contentType: "application/json",
+    payload: JSON.stringify(payload)
+  };
   UrlFetchApp.fetch(url, options);
 }
 
-function handleLinePostback(event) {
-  const data = JSON.parse(event.postback.data);
-  const userId = event.source.userId;
-
-  if (data.action === 'confirm_receive') {
-    try {
-      // Mock a token-less call since this is internal trusted GAS
-      // We pass a dummy token and handle role check if needed, 
-      // but here we can call receiveBatch directly if we trust the postback.
-      
-      const res = receiveBatch(data.items, "SYSTEM_BOT"); 
-      if (res.success) {
-        sendLineMessage(userId, `✅ บันทึกสำเร็จ!\nรับเข้าทั้งหมด ${data.items.length} รายการ เรียบร้อยแล้ว`);
-      } else {
-        sendLineMessage(userId, `❌ บันทึกไม่สำเร็จ: ${res.message}`);
-      }
-    } catch (e) {
-      sendLineMessage(userId, `❌ Error: ${e.message}`);
-    }
-  } else if (data.action === 'cancel') {
-    sendLineMessage(userId, "ยกเลิกรายการแล้ว");
-  }
+/**
+ * 🛠️ [One-time Setup] Run this function once from GAS IDE to link your bot to this script
+ */
+function setTelegramWebhook() {
+  const token = getTelegramBotToken();
+  const url = `https://api.telegram.org/bot${token}/setWebhook?url=${ScriptApp.getService().getUrl()}`;
+  const res = UrlFetchApp.fetch(url);
+  Logger.log(res.getContentText());
+  return res.getContentText();
 }
 
 // Modify checkAccess to support internal SYSTEM_BOT token
 function checkAccess(token, requiredRoles) {
-  if (token === "SYSTEM_BOT") return { name: "LINE Bot (Gemini AI)", role: "Admin" }; // Trusted bot
+  if (token === "SYSTEM_BOT") return { name: "Telegram Bot (Gemini AI)", role: "Admin" }; // Trusted bot
   
   const session = validateSession(token);
   if (!session.success) throw new Error(session.message || 'กรุณาเข้าสู่ระบบ');
