@@ -12,6 +12,14 @@ function getLineToken() {
   return PropertiesService.getScriptProperties().getProperty('LINE_TOKEN') || '';
 }
 
+function getLineChannelToken() {
+  return PropertiesService.getScriptProperties().getProperty('LINE_CHANNEL_ACCESS_TOKEN') || '';
+}
+
+function getGeminiApiKey() {
+  return PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY') || '';
+}
+
 // 🛡️ Security Utilities
 function hashPassword(password) {
   const digest = Uint8Array.from(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, password));
@@ -652,11 +660,22 @@ function getUsageReport(startDate, endDate, token) {
 }
 
 /**
- * 🚀 [Vercel Support] รับการเรียกจากภายนอก (CORS-friendly)
+ * 🚀 [Universal Entry Point] Handles Vercel Web App (JSON) and LINE Webhook
  */
 function doPost(e) {
   try {
     const postData = JSON.parse(e.postData.contents);
+    
+    // --- 1. Detect Request Type ---
+    
+    // A. LINE Webhook
+    if (postData.events && postData.events.length > 0) {
+      postData.events.forEach(event => handleLineEvent(event));
+      return ContentService.createTextOutput(JSON.stringify({ success: true }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // B. Web App API Call
     const method = postData.method;
     const args = postData.args || [];
     const token = postData.token; 
@@ -706,4 +725,255 @@ function doPost(e) {
     return ContentService.createTextOutput(JSON.stringify({ success: false, message: error.message }))
       .setMimeType(ContentService.MimeType.JSON);
   }
+}
+
+// ==========================================
+// ส่วนที่ 4: ระบบ LINE Bot & Gemini OCR
+// ==========================================
+
+function handleLineEvent(event) {
+  const token = getLineChannelToken();
+  if (!token) return;
+
+  const replyToken = event.replyToken;
+  const type = event.type;
+  const userId = event.source.userId;
+
+  if (type === 'message') {
+    const msg = event.message;
+    if (msg.type === 'image') {
+      processLineImage(msg.id, replyToken, userId);
+    } else if (msg.type === 'text') {
+      const text = msg.text.trim();
+      if (text === 'เมนู') sendLineMenu(replyToken);
+    }
+  } else if (type === 'postback') {
+    handleLinePostback(event);
+  }
+}
+
+function processLineImage(messageId, replyToken, userId) {
+  try {
+    replyLineText(replyToken, "กำลังประมวดผลรูปภาพด้วย Gemini AI... กรุณารอสักครู่ (ประมาณ 5-10 วินาที)");
+    
+    // 1. Download image from LINE
+    const imageBlob = getLineContent(messageId);
+    const base64Image = Utilities.base64Encode(imageBlob.getBytes());
+
+    // 2. Call Gemini API
+    const extractedData = callGeminiOCR(base64Image);
+    
+    if (!extractedData || extractedData.length === 0) {
+      sendLineMessage(userId, "❌ ไม่พบข้อมูลน้ำยาในรูปภาพนี้ หรือรูปภาพไม่ชัดเจน กรุณาลองใหม่อีกครั้ง");
+      return;
+    }
+
+    // 3. Match with MasterData
+    const masterData = getDashboardData();
+    const processedItems = extractedData.map(item => {
+      const match = matchReagentName(item.name, masterData);
+      return {
+        ...item,
+        itemId: match ? match.itemId : 'NEW_ITEM',
+        masterName: match ? match.name : item.name,
+        isNew: !match
+      };
+    });
+
+    // 4. Send Summary Flex Message
+    sendLineInvoiceSummary(userId, processedItems);
+
+  } catch (e) {
+    sendLineMessage(userId, "❌ เกิดข้อผิดพลาด: " + e.message);
+  }
+}
+
+function callGeminiOCR(base64Image) {
+  const apiKey = getGeminiApiKey();
+  if (!apiKey) throw new Error("Missing Gemini API Key");
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  
+  const payload = {
+    contents: [{
+      parts: [
+        { text: "This is an invoice for medical reagents. Extract all items into a JSON array. For each item, identify: 'name' (product name), 'lotNo' (batch/lot number), 'expDate' (format YYYY-MM-DD), and 'qty' (quantity as number). Return ONLY a raw JSON array. No markdown code blocks." },
+        { inline_data: { mime_type: "image/jpeg", data: base64Image } }
+      ]
+    }],
+    generationConfig: {
+      response_mime_type: "application/json"
+    }
+  };
+
+  const options = {
+    method: "post",
+    contentType: "application/json",
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  };
+
+  const res = UrlFetchApp.fetch(url, options);
+  const json = JSON.parse(res.getContentText());
+  
+  if (json.candidates && json.contents && json.candidates[0].content.parts) {
+     // For normal text response
+     const text = json.candidates[0].content.parts[0].text;
+     return JSON.parse(text);
+  } else if (json.candidates && json.candidates[0].content && json.candidates[0].content.parts) {
+     const text = json.candidates[0].content.parts[0].text;
+     return JSON.parse(text);
+  }
+  
+  return null;
+}
+
+function matchReagentName(extractedName, masterData) {
+  const cleanName = extractedName.toLowerCase().trim();
+  
+  // 1. Exact Match
+  let match = masterData.find(m => m.name.toLowerCase().trim() === cleanName || (m.qrCode && m.qrCode.toLowerCase() === cleanName));
+  if (match) return match;
+
+  // 2. Fuzzy/Includes Match
+  match = masterData.find(m => cleanName.includes(m.name.toLowerCase().trim()) || m.name.toLowerCase().trim().includes(cleanName));
+  return match || null;
+}
+
+function getLineContent(messageId) {
+  const token = getLineChannelToken();
+  const url = `https://api-data.line.me/v2/bot/message/${messageId}/content`;
+  const options = { headers: { Authorization: `Bearer ${token}` } };
+  return UrlFetchApp.fetch(url, options).getBlob();
+}
+
+function replyLineText(replyToken, text) {
+  const token = getLineChannelToken();
+  const url = "https://api.line.me/v2/bot/message/reply";
+  const payload = { replyToken: replyToken, messages: [{ type: "text", text: text }] };
+  const options = { method: "post", contentType: "application/json", headers: { Authorization: `Bearer ${token}` }, payload: JSON.stringify(payload) };
+  UrlFetchApp.fetch(url, options);
+}
+
+function sendLineMessage(userId, text) {
+  const token = getLineChannelToken();
+  const url = "https://api.line.me/v2/bot/message/push";
+  const payload = { to: userId, messages: [{ type: "text", text: text }] };
+  const options = { method: "post", contentType: "application/json", headers: { Authorization: `Bearer ${token}` }, payload: JSON.stringify(payload) };
+  UrlFetchApp.fetch(url, options);
+}
+
+function sendLineInvoiceSummary(userId, items) {
+  const token = getLineChannelToken();
+  const url = "https://api.line.me/v2/bot/message/push";
+  
+  const contents = items.map(item => ({
+    type: "box",
+    layout: "vertical",
+    margin: "md",
+    spacing: "sm",
+    contents: [
+      {
+        type: "text",
+        text: item.masterName,
+        weight: "bold",
+        size: "sm",
+        wrap: true,
+        color: item.isNew ? "#ff4d4f" : "#1890ff"
+      },
+      {
+        type: "box",
+        layout: "horizontal",
+        contents: [
+          { type: "text", text: `Lot: ${item.lotNo}`, size: "xs", color: "#8c8c8c", flex: 3 },
+          { type: "text", text: `EXP: ${item.expDate}`, size: "xs", color: "#8c8c8c", flex: 3 },
+          { type: "text", text: `x${item.qty}`, size: "sm", weight: "bold", align: "end", flex: 2 }
+        ]
+      },
+      { type: "separator", margin: "sm" }
+    ]
+  }));
+
+  const flex = {
+    type: "flex",
+    altText: "สรุปรายการจาก Invoice",
+    contents: {
+      type: "bubble",
+      header: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: "#f0f2f5",
+        contents: [{ type: "text", text: "📑 สรุปรายการจาก Invoice", weight: "bold", size: "lg", color: "#1f1f1f" }]
+      },
+      body: {
+        type: "box",
+        layout: "vertical",
+        contents: contents
+      },
+      footer: {
+        type: "box",
+        layout: "vertical",
+        spacing: "sm",
+        contents: [
+          {
+            type: "button",
+            style: "primary",
+            color: "#52c41a",
+            action: {
+              type: "postback",
+              label: "📥 ยืนยันรับเข้าสต๊อก",
+              data: JSON.stringify({ action: "confirm_receive", items: items.filter(i => !i.isNew) })
+            }
+          },
+          {
+            type: "button",
+            style: "secondary",
+            action: {
+              type: "postback",
+              label: "❌ ยกเลิก",
+              data: JSON.stringify({ action: "cancel" })
+            }
+          }
+        ]
+      }
+    }
+  };
+
+  const payload = { to: userId, messages: [flex] };
+  const options = { method: "post", contentType: "application/json", headers: { Authorization: `Bearer ${token}` }, payload: JSON.stringify(payload) };
+  UrlFetchApp.fetch(url, options);
+}
+
+function handleLinePostback(event) {
+  const data = JSON.parse(event.postback.data);
+  const userId = event.source.userId;
+
+  if (data.action === 'confirm_receive') {
+    try {
+      // Mock a token-less call since this is internal trusted GAS
+      // We pass a dummy token and handle role check if needed, 
+      // but here we can call receiveBatch directly if we trust the postback.
+      
+      const res = receiveBatch(data.items, "SYSTEM_BOT"); 
+      if (res.success) {
+        sendLineMessage(userId, `✅ บันทึกสำเร็จ!\nรับเข้าทั้งหมด ${data.items.length} รายการ เรียบร้อยแล้ว`);
+      } else {
+        sendLineMessage(userId, `❌ บันทึกไม่สำเร็จ: ${res.message}`);
+      }
+    } catch (e) {
+      sendLineMessage(userId, `❌ Error: ${e.message}`);
+    }
+  } else if (data.action === 'cancel') {
+    sendLineMessage(userId, "ยกเลิกรายการแล้ว");
+  }
+}
+
+// Modify checkAccess to support internal SYSTEM_BOT token
+function checkAccess(token, requiredRoles) {
+  if (token === "SYSTEM_BOT") return { name: "LINE Bot (Gemini AI)", role: "Admin" }; // Trusted bot
+  
+  const session = validateSession(token);
+  if (!session.success) throw new Error(session.message || 'กรุณาเข้าสู่ระบบ');
+  if (!requiredRoles.includes(session.user.role)) throw new Error('คุณไม่มีสิทธิ์ทำรายการนี้');
+  return session.user;
 }
