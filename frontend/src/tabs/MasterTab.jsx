@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { gasRun } from '../api';
 import Modal from '../components/Modal';
 
-const MasterTab = ({ settings, showToast, activeDashboard, refreshDashboard }) => {
+const MasterTab = ({ settings, showToast, activeDashboard, refreshDashboard, setLoading }) => {
     const [search, setSearch] = useState("");
     const [modalOpen, setModalOpen] = useState(false);
     const [isEdit, setIsEdit] = useState(false);
@@ -22,17 +22,31 @@ const MasterTab = ({ settings, showToast, activeDashboard, refreshDashboard }) =
     }, [activeDashboard, search]);
 
     const submitForm = async (e) => {
-        e.preventDefault(); setModalOpen(false); showToast("กำลังบันทึกข้อมูล...");
-        const res = await gasRun(isEdit ? 'updateMasterItem' : 'addMasterItem', form);
-        showToast(res.message, res.success ? 'success' : 'error');
-        if(res.success) refreshDashboard();
+        e.preventDefault(); 
+        setModalOpen(false); 
+        setLoading(true);
+        try {
+            const res = await gasRun(isEdit ? 'updateMasterItem' : 'addMasterItem', form);
+            showToast(res.message, res.success ? 'success' : 'error');
+            if(res.success) refreshDashboard();
+        } catch (error) {
+            showToast("เกิดข้อผิดพลาดในการบันทึก", "error");
+        } finally {
+            setLoading(false);
+        }
     };
 
     const setupDB = async () => {
         if(confirm("ระบบจะทำการสร้าง Sheet เริ่มต้น\nยืนยันหรือไม่?")) {
-            showToast("กำลังสร้างฐานข้อมูล...");
-            const res = await gasRun('setupSystem');
-            showToast(res.message, res.success ? 'success' : 'error');
+            setLoading(true);
+            try {
+                const res = await gasRun('setupSystem');
+                showToast(res.message, res.success ? 'success' : 'error');
+            } catch (error) {
+                showToast("เกิดข้อผิดพลาดในการสร้างฐานข้อมูล", "error");
+            } finally {
+                setLoading(false);
+            }
         }
     };
 
@@ -47,9 +61,24 @@ const MasterTab = ({ settings, showToast, activeDashboard, refreshDashboard }) =
             </div>
             
             <div className="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-100">
-                <div className="relative">
-                    <i className="fa-solid fa-magnifying-glass absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400"></i>
-                    <input type="text" value={search} onChange={e=>setSearch(e.target.value)} placeholder="ค้นหา รหัส, ชื่อ หรือ Barcode..." className="w-full bg-slate-50 text-sm border border-slate-200 rounded-xl pl-10 pr-4 py-3.5 focus:ring-2 focus:ring-slate-900 transition" />
+                <div className="relative group">
+                    <i className="fa-solid fa-magnifying-glass absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400 group-focus-within:text-slate-900 transition-colors"></i>
+                    <input 
+                        type="text" 
+                        value={search} 
+                        onChange={e=>setSearch(e.target.value)} 
+                        placeholder="ค้นหา รหัส, ชื่อ หรือ Barcode..." 
+                        className="w-full bg-slate-50 text-sm border border-slate-200 rounded-xl pl-10 pr-10 py-3.5 focus:ring-2 focus:ring-slate-900 transition outline-none" 
+                    />
+                    {search && (
+                        <button 
+                            type="button" 
+                            onClick={() => setSearch("")}
+                            className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+                        >
+                            <i className="fa-solid fa-circle-xmark"></i>
+                        </button>
+                    )}
                 </div>
             </div>
 

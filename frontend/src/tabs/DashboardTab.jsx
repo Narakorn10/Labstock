@@ -159,9 +159,24 @@ const DashboardTab = ({ settings, showToast, activeDashboard, setActiveDashboard
             <SummaryCards stats={stats} activeFilter={activeMainFilter} onFilterClick={setLocalFilter} />
 
             <div className="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-100 space-y-4">
-                <div className="relative">
-                    <i className="fa-solid fa-magnifying-glass absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400"></i>
-                    <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="พิมพ์รหัส ชื่อ หรือ Barcode เพื่อค้นหา..." className="w-full bg-slate-50 text-sm border border-slate-200 rounded-xl pl-10 pr-4 py-3.5 focus:ring-2 focus:ring-blue-500 transition outline-none" />
+                <div className="relative group">
+                    <i className="fa-solid fa-magnifying-glass absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400 group-focus-within:text-blue-600 transition-colors"></i>
+                    <input 
+                        type="text" 
+                        value={search} 
+                        onChange={e => setSearch(e.target.value)} 
+                        placeholder="พิมพ์รหัส ชื่อ หรือ Barcode เพื่อค้นหา..." 
+                        className="w-full bg-slate-50 text-sm border border-slate-200 rounded-xl pl-10 pr-10 py-3.5 focus:ring-2 focus:ring-blue-500 transition outline-none" 
+                    />
+                    {search && (
+                        <button 
+                            type="button" 
+                            onClick={() => setSearch("")}
+                            className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+                        >
+                            <i className="fa-solid fa-circle-xmark"></i>
+                        </button>
+                    )}
                 </div>
                 <div className="flex flex-col md:flex-row gap-4">
                     <Select2 label="ประเภทน้ำยา" options={settings.reagentTypes} selected={fReagent} onChange={setFReagent} />

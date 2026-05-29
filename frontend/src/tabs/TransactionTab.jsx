@@ -3,7 +3,7 @@ import { gasRun, processAnyBarcode } from '../api';
 import QRScanner from '../components/QRScanner';
 import { highlightText } from '../utils/text';
 
-const TransactionTab = ({ type, showToast, activeDashboard, cart = [], setCart, onSuccess }) => {
+const TransactionTab = ({ type, showToast, activeDashboard, cart = [], setCart, onSuccess, setLoading }) => {
     const isRec = type === 'receive';
     const title = isRec ? "รับเข้าคลังหลัก" : "เบิกไปหน้างาน";
     const icon = isRec ? "fa-box text-green-500" : "fa-hand-holding-droplet text-red-500";
@@ -15,6 +15,14 @@ const TransactionTab = ({ type, showToast, activeDashboard, cart = [], setCart, 
     const [form, setForm] = useState({ lotNo: '', expDate: '', qty: '' });
     
     const [showAuto, setShowAuto] = useState(false);
+
+    // 🧹 Reset All Search/Item States
+    const clearSearch = () => {
+        setSearch("");
+        setItem(null);
+        setForm({ lotNo: '', expDate: '', qty: '' });
+        setShowAuto(false);
+    };
     
     // 🔍 Dynamic Search Logic: ค้นหาทันทีจากข้อมูลในเครื่อง (ปรับปรุงการจัดลำดับและความแม่นยำ)
     const autoList = useMemo(() => {
@@ -205,13 +213,19 @@ const TransactionTab = ({ type, showToast, activeDashboard, cart = [], setCart, 
 
     const submitBatch = async () => {
         if (cart.length === 0) return;
-        showToast("กำลังบันทึก...");
-        const method = isRec ? 'receiveBatch' : 'dispenseBatch';
-        const res = await gasRun(method, cart);
-        showToast(res.message, res.success ? 'success' : 'error');
-        if (res.success) {
-            if (onSuccess) onSuccess(cart);
-            setCart([]);
+        setLoading(true);
+        try {
+            const method = isRec ? 'receiveBatch' : 'dispenseBatch';
+            const res = await gasRun(method, cart);
+            showToast(res.message, res.success ? 'success' : 'error');
+            if (res.success) {
+                if (onSuccess) onSuccess(cart);
+                setCart([]);
+            }
+        } catch (error) {
+            showToast("เกิดข้อผิดพลาดในการบันทึก", "error");
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -241,7 +255,27 @@ const TransactionTab = ({ type, showToast, activeDashboard, cart = [], setCart, 
                     <div className="relative">
                         <label className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">ค้นหาด้วยการพิมพ์</label>
                         <div className="flex gap-2 relative">
-                            <input type="text" value={search} onFocus={()=>setShowAuto(true)} onBlur={()=>setTimeout(()=>setShowAuto(false), 200)} onChange={e=>{setSearch(e.target.value); setShowAuto(true);}} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();fetchItem(search);}}} placeholder="ชื่อ รหัส หรือ Barcode..." className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-4 text-sm focus:ring-2 focus:ring-blue-500 transition outline-none" />
+                            <div className="relative flex-1">
+                                <input 
+                                    type="text" 
+                                    value={search} 
+                                    onFocus={()=>setShowAuto(true)} 
+                                    onBlur={()=>setTimeout(()=>setShowAuto(false), 200)} 
+                                    onChange={e=>{setSearch(e.target.value); setShowAuto(true);}} 
+                                    onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();fetchItem(search);}}} 
+                                    placeholder="ชื่อ รหัส หรือ Barcode..." 
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-4 pr-10 text-sm focus:ring-2 focus:ring-blue-500 transition outline-none" 
+                                />
+                                {search && (
+                                    <button 
+                                        type="button" 
+                                        onClick={clearSearch}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+                                    >
+                                        <i className="fa-solid fa-circle-xmark"></i>
+                                    </button>
+                                )}
+                            </div>
                             <button type="button" onClick={()=>fetchItem(search)} className="w-14 bg-blue-50 text-blue-600 rounded-xl active-scale transition"><i className="fa-solid fa-magnifying-glass"></i></button>
                         </div>
                         

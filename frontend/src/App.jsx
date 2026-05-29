@@ -29,6 +29,7 @@ function App() {
     
     const [activeTab, setActiveTab] = useState('dashboard');
     const [loginModalOpen, setLoginModalOpen] = useState(false);
+    const [globalLoading, setGlobalLoading] = useState(false);
     
     const [countInputs, setCountInputs] = useState({});
     
@@ -90,16 +91,16 @@ function App() {
                 return <AnalyticsTab activeDashboard={activeDashboard} onNavigate={handleAnalyticsNavigate} />;
             case 'receive': 
                 if (!isFullUser) { setActiveTab('dashboard'); return null; }
-                return <TransactionTab type="receive" showToast={showToast} activeDashboard={activeDashboard} cart={receiveCart} setCart={setReceiveCart} />;
+                return <TransactionTab type="receive" showToast={showToast} activeDashboard={activeDashboard} cart={receiveCart} setCart={setReceiveCart} setLoading={setGlobalLoading} />;
             case 'dispense': 
                 if (!isUser) { setActiveTab('dashboard'); return null; }
-                return <TransactionTab type="dispense" showToast={showToast} activeDashboard={activeDashboard} cart={dispenseCart} setCart={setDispenseCart} onSuccess={handleDispenseSuccess} />;
+                return <TransactionTab type="dispense" showToast={showToast} activeDashboard={activeDashboard} cart={dispenseCart} setCart={setDispenseCart} onSuccess={handleDispenseSuccess} setLoading={setGlobalLoading} />;
             case 'count': 
                 if (!isFullUser) { setActiveTab('dashboard'); return null; }
                 return <CountTab settings={settings} activeDashboard={activeDashboard} inputs={countInputs} setInputs={setCountInputs} dispenseCart={dispenseCart} setDispenseCart={setDispenseCart} dispensedItems={dispensedItems} onGoToDispense={() => setActiveTab('dispense')} showToast={showToast} />;
             case 'master': 
                 if (!isManager) { setActiveTab('dashboard'); return null; }
-                return <MasterTab settings={settings} showToast={showToast} activeDashboard={activeDashboard} refreshDashboard={loadGlobalData} />;
+                return <MasterTab settings={settings} showToast={showToast} activeDashboard={activeDashboard} refreshDashboard={loadGlobalData} setLoading={setGlobalLoading} />;
             case 'users':
                 if (!isAdmin) { setActiveTab('dashboard'); return null; }
                 return <UsersTab showToast={showToast} />;
@@ -181,6 +182,24 @@ function App() {
 
             {/* Login Modal */}
             <LoginModal isOpen={loginModalOpen} onClose={() => setLoginModalOpen(false)} onLogin={login} />
+
+            {/* Global Loading Overlay */}
+            {globalLoading && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-[2px] animate-fade-in">
+                    <div className="bg-white p-8 rounded-3xl shadow-2xl flex flex-col items-center gap-4 animate-scale-in">
+                        <div className="relative">
+                            <div className="w-16 h-16 border-4 border-slate-100 border-t-blue-600 rounded-full animate-spin"></div>
+                            <div className="absolute inset-0 flex items-center justify-center text-blue-600">
+                                <i className="fa-solid fa-cloud-arrow-up animate-pulse"></i>
+                            </div>
+                        </div>
+                        <div className="text-center">
+                            <h3 className="font-bold text-slate-800">กำลังบันทึกข้อมูล</h3>
+                            <p className="text-xs text-slate-400 mt-1">กรุณารอสักครู่ ระบบกำลังประมวลผล...</p>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Toast Notification */}
             <div className={`fixed top-4 md:top-auto md:bottom-20 left-1/2 transform -translate-x-1/2 md:translate-x-0 md:left-auto md:right-6 bg-slate-800 text-white px-5 py-3 rounded-full shadow-2xl transition duration-300 z-50 flex items-center gap-3 ${toast.show ? 'translate-y-0 opacity-100' : '-translate-y-20 md:translate-y-20 opacity-0'}`}>
