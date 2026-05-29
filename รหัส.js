@@ -7,15 +7,6 @@ const LOG_SHEET = 'Logs';
 const SETTING_SHEET = 'Settings';
 const USER_SHEET = 'Users';
 
-// 🛡️ [C1] Security Fix: ดึง Token จาก Script Properties แทนการ Hardcode ในไฟล์
-function getTelegramBotToken() {
-  return PropertiesService.getScriptProperties().getProperty('TELEGRAM_BOT_TOKEN') || '';
-}
-
-function getGeminiApiKey() {
-  return PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY') || '';
-}
-
 // 🛡️ Security Utilities
 function hashPassword(password) {
   const digest = Uint8Array.from(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, password));
@@ -662,14 +653,6 @@ function doPost(e) {
   try {
     const postData = JSON.parse(e.postData.contents);
     
-    // --- 1. Detect Request Type ---
-    
-    // A. Telegram Webhook (Update)
-    if (postData.update_id) {
-      handleTelegramUpdate(postData);
-      return ContentService.createTextOutput(JSON.stringify({ success: true }))
-        .setMimeType(ContentService.MimeType.JSON);
-    }
 
     // B. Web App API Call
     const method = postData.method;
@@ -758,7 +741,7 @@ function processTelegramImage(photoArray, chatId) {
     
     // 2. Download and convert to Base64
     const response = UrlFetchApp.fetch(fileUrl);
-    const base64Image = Utilities.base64Encode(response.getContentBlob().getBytes());
+    const base64Image = Utilities.base64Encode(response.getBlob().getBytes());
 
     // 3. Call Gemini API
     const extractedData = callGeminiOCR(base64Image);
@@ -1046,16 +1029,25 @@ function editTelegramMessage(chatId, messageId, text) {
  * 🛠️ [One-time Setup] Run this function once from GAS IDE to link your bot to this script
  */
 function setTelegramWebhook() {
-  const token = getTelegramBotToken();
-  const url = `https://api.telegram.org/bot${token}/setWebhook?url=${ScriptApp.getService().getUrl()}`;
-  const res = UrlFetchApp.fetch(url);
-  Logger.log(res.getContentText());
-  return res.getContentText();
+  const token = "8976064149:AAGtOWK-YvwJJvCqOPYZ8bQoEt9BtvFiKiw";
+  const webAppUrl = "https://script.google.com/macros/s/AKfycbwW_ekShYsT3HLtLLYDvW-jUnwdU4xlJGCVFoVlGvIHCYBRHRfFAQg1ScaN2mcDp2LV/exec";
+  
+  const url = "https://api.telegram.org/bot" + token + "/setWebhook?url=" + webAppUrl;
+  
+  Logger.log("กำลังส่งคำขอไปที่: " + url);
+  
+  try {
+    const res = UrlFetchApp.fetch(url);
+    Logger.log("ผลลัพธ์จาก Telegram: " + res.getContentText());
+    return res.getContentText();
+  } catch (e) {
+    Logger.log("Error: " + e.message);
+    return e.message;
+  }
 }
 
 // Modify checkAccess to support internal SYSTEM_BOT token
 function checkAccess(token, requiredRoles) {
-  if (token === "SYSTEM_BOT") return { name: "Telegram Bot (Gemini AI)", role: "Admin" }; // Trusted bot
   
   const session = validateSession(token);
   if (!session.success) throw new Error(session.message || 'กรุณาเข้าสู่ระบบ');
