@@ -21,6 +21,8 @@ export const processAnyBarcode = (rawBarcode) => {
         lot: "NEED_MANUAL_INPUT",
         expDate: "NEED_MANUAL_INPUT",
         mfgDate: "NEED_MANUAL_INPUT",
+        serial: "NEED_MANUAL_INPUT",
+        origin: "NEED_MANUAL_INPUT",
         rawString: workingString
     };
 
@@ -44,6 +46,16 @@ export const processAnyBarcode = (rawBarcode) => {
         foundGS1 = true;
     }
 
+    // B.2 Consume Best Before (15) - Always 6 digits (Fallback for EXP)
+    const bestBeforeMatch = workingString.match(/15(\d{6})/);
+    if (bestBeforeMatch) {
+        if (result.expDate === "NEED_MANUAL_INPUT") {
+            result.expDate = formatGS1Date(bestBeforeMatch[1]);
+        }
+        workingString = workingString.replace(bestBeforeMatch[0], ""); // Remove it
+        foundGS1 = true;
+    }
+
     // C. Consume MFG (11) - Always 6 digits
     const mfgMatch = workingString.match(/11(\d{6})/);
     if (mfgMatch) {
@@ -52,16 +64,61 @@ export const processAnyBarcode = (rawBarcode) => {
         foundGS1 = true;
     }
 
-    // D. Extract Lot (10) - Whatever is left after removing fixed fields
-    // Many scanners/labels put Lot at the end or preceded by '10'
-    const lotMatch = workingString.match(/10([a-zA-Z0-9]+)/);
-    if (lotMatch) {
-        result.lot = lotMatch[1];
+    // New: Consume Origin (422) - Always 3 digits
+    const originMatch = workingString.match(/422(\d{3})/);
+    if (originMatch) {
+        result.origin = originMatch[1];
+        workingString = workingString.replace(originMatch[0], "");
         foundGS1 = true;
-    } else if (workingString.length > 2) {
-        // Fallback: If no '10' header but something is left, it's likely the Lot
-        result.lot = workingString;
-        foundGS1 = true;
+    }
+
+    // --- Variable Length Fields Handling ---
+    // We use a non-greedy approach or split by GS if available
+    const splitByGS = workingString.split(/\x1d/);
+    
+    const consumeVariable = (str) => {
+        // AI (240) Material / Ref
+        const rMatch = str.match(/240([a-zA-Z0-9/\-_.]+)/);
+        if (rMatch) { result.ref = rMatch[1]; foundGS1 = true; return; }
+
+        // AI (21) Serial
+        const sMatch = str.match(/21([a-zA-Z0-9/\-_.]+)/);
+        if (sMatch) { result.serial = sMatch[1]; foundGS1 = true; return; }
+
+        // AI (10) Lot
+        const lMatch = str.match(/10([a-zA-Z0-9/\-_.]+)/);
+        if (lMatch) { result.lot = lMatch[1]; foundGS1 = true; return; }
+    };
+
+    if (splitByGS.length > 1) {
+        splitByGS.forEach(part => consumeVariable(part));
+    } else {
+        // If no GS, we have to be careful. Let's try to match them individually 
+        // by searching for the AI headers and taking content until the next known AI header or end.
+        // For the specific case: 10, 21, 240
+        const varFields = [
+            { ai: '240', key: 'ref' },
+            { ai: '21', key: 'serial' },
+            { ai: '10', key: 'lot' }
+        ];
+
+        varFields.forEach(f => {
+            const regex = new RegExp(`${f.ai}([a-zA-Z0-9/\\-_.]+)`);
+            const match = workingString.match(regex);
+            if (match) {
+                // To avoid greedily consuming other AIs, we check if other AIs are inside the match
+                let content = match[1];
+                varFields.forEach(other => {
+                    if (other.ai !== f.ai && content.includes(other.ai)) {
+                        const parts = content.split(other.ai);
+                        content = parts[0]; // Take only before the next AI
+                    }
+                });
+                result[f.key] = content;
+                workingString = workingString.replace(f.ai + content, "");
+                foundGS1 = true;
+            }
+        });
     }
 
     if (foundGS1) {

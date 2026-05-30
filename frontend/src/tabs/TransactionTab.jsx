@@ -85,9 +85,13 @@ const TransactionTab = ({ type, showToast, activeDashboard, cart = [], setCart, 
 
             if(barcodeData?.barcodeType === "GS1_COMPLIANT") {
                 const fields = [];
-                if(barcodeData.lot) fields.push("Lot");
-                if(barcodeData.expDate) fields.push("วันหมดอายุ");
-                showToast(`ดึงข้อมูล ${fields.join(" และ ")} อัตโนมัติ`);
+                if(barcodeData.lot !== "NEED_MANUAL_INPUT") fields.push("Lot");
+                if(barcodeData.expDate !== "NEED_MANUAL_INPUT") fields.push("วันหมดอายุ");
+                if(barcodeData.ref !== "NEED_MANUAL_INPUT") fields.push("REF");
+                
+                if (fields.length > 0) {
+                    showToast(`ดึงข้อมูล ${fields.join(", ")} อัตโนมัติ`);
+                }
             }
         } else {
             // --- ฝั่งเบิกจ่าย (Dispense) ---

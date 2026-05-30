@@ -522,14 +522,17 @@ function dispenseBatch(batchItems, token) {
       }
     });
 
-    invSheet.getRange(1, 1, invData.length, 4).setValues(invData);
-    processLowStockAlerts(batchItems, invData, masterInfoMap);
+    const finalInvData = invData.filter((row, idx) => idx === 0 || (parseInt(row[3], 10) || 0) > 0);
+    invSheet.clearContents();
+    invSheet.getRange(1, 1, finalInvData.length, 4).setValues(finalInvData);
+
+    processLowStockAlerts(batchItems, finalInvData, masterInfoMap);
     
     if (failedItems.length > 0) {
       return { success: false, message: `สต๊อกไม่พอเบิกสำหรับ:\n${failedItems.join('\n')}` };
     }
     
-    return { success: true, message: `เบิกจ่ายสำเร็จ` };
+    return { success: true, message: `เบิกจ่ายสำเร็จ (ทำความสะอาด Ghost data แล้ว)` };
   } catch(error) {
     return { success: false, message: error.message };
   } finally {
@@ -593,7 +596,11 @@ function adjustLotQuantity(data, token) {
     
     if (diff === 0) return { success: true, message: 'ไม่มีการเปลี่ยนแปลงจำนวน' };
 
-    invSheet.getRange(rowIndex, 4).setValue(newQty);
+    if (newQty === 0) {
+      invSheet.deleteRow(rowIndex);
+    } else {
+      invSheet.getRange(rowIndex, 4).setValue(newQty);
+    }
     
     const masterData = getDashboardData();
     const info = masterData.find(i => i.itemId === data.itemId);

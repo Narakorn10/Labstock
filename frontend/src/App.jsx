@@ -73,6 +73,7 @@ function App() {
             items.forEach(i => next.add(i.itemId));
             return next;
         });
+        setCountInputs({}); // 🧹 ล้าง Ghost data จากการนับสต๊อก
         loadGlobalData();
     };
 

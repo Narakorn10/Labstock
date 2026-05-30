@@ -111,6 +111,13 @@ const CountTab = ({ settings, activeDashboard, inputs, setInputs, dispenseCart, 
                     <Select2 label="ประเภทน้ำยา" options={settings.reagentTypes} selected={fReagent} onChange={setFReagent} />
                     <Select2 label="ประเภทงาน" options={settings.jobTypes} selected={fJob} onChange={setFJob} />
                 </div>
+                {Object.keys(inputs).length > 0 && (
+                    <div className="flex justify-end animate-fade-in">
+                        <button onClick={() => setInputs({})} className="text-[10px] font-bold text-slate-400 hover:text-red-500 transition-colors uppercase tracking-widest flex items-center gap-2">
+                            <i className="fa-solid fa-trash-can"></i> ล้างการนับทั้งหมด
+                        </button>
+                    </div>
+                )}
             </div>
 
             <div className="space-y-4">
