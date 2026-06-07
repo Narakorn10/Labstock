@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --color-airtable-blue: #166ee1;
+  --color-airtable-bg: #f2f4f7;
+  --color-airtable-border: #d1d5db;
+}
+
+:root {
+  --background: #f2f4f7; /* Light gray-blue */
+  --foreground: #111827; /* Near black */
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Airtable UI: Friendly Rounded Corners */
+* {
+  border-radius: 8px; /* Standard Airtable roundedness */
+}
+
+/* Override for inputs and specific elements if needed */
+input, select, textarea {
+  border-radius: 6px !important;
+}
+
+/* Custom Scrollbar for Airtable */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #f2f4f7;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 10px !important;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Airtable Helper Classes */
+.air-card {
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  padding: 1.25rem;
+}
+
+.air-pill {
+  display: inline-flex;
+  items-center: center;
+  padding: 2px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 9999px !important;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+
+.air-btn-primary {
+  background-color: #166ee1;
+  color: #ffffff;
+  padding: 8px 16px;
+  font-weight: 600;
+  border-radius: 6px !important;
+  transition: background-color 0.2s;
+}
+.air-btn-primary:hover {
+  background-color: #1256b5;
+}
