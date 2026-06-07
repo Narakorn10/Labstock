@@ -53,7 +53,7 @@ export async function GET(request: Request) {
       });
     });
 
-    let data = masterData.map(item => {
+    let data: any[] = masterData.map(item => {
       const inv = inventoryMap[item.itemId] || { totalQty: 0, lots: [] };
       return {
         ...item,
