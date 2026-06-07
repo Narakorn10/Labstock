@@ -7,9 +7,10 @@ export async function POST(request: Request) {
     const user = await getAuthenticatedUser(request);
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const isPowerUser = user.role === 'Admin' || user.role === 'Manager';
+    const isVendor = user.role === 'Vendor';
+    const isPowerUser = user.role === 'Admin' || user.role === 'Manager' || isVendor;
     if (!isPowerUser) {
-      return NextResponse.json({ error: 'Permission denied: Admin or Manager only' }, { status: 403 });
+      return NextResponse.json({ error: 'Permission denied: Admin, Manager or Vendor only' }, { status: 403 });
     }
 
     const data = await request.json();
