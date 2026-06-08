@@ -1,8 +1,8 @@
-require('dotenv').config({ path: '.env.local' });
-const { neon } = require('@neondatabase/serverless');
-const bcrypt = require('bcryptjs');
+import 'dotenv/config';
+import { neon } from '@neondatabase/serverless';
+import bcrypt from 'bcryptjs';
 
-const sql = neon(process.env.DATABASE_URL);
+const sql = neon(process.env.DATABASE_URL || '');
 
 async function resetAdmin() {
   console.log('🔐 Resetting Admin Password in Neon Database...');

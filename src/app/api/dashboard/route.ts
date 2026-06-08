@@ -39,21 +39,42 @@ export async function GET(request: Request) {
     `;
 
     // Map inventory to master data
-    const inventoryMap: Record<string, { totalQty: number, lots: any[] }> = {};
+    interface DashboardLot {
+      lotNo: string;
+      expDate: string;
+      qty: number;
+    }
+
+    interface DashboardItem {
+      itemId: string;
+      qrCode: string;
+      name: string;
+      reagentType: string;
+      jobType: string;
+      machineType: string;
+      unit: string;
+      minThreshold: number;
+      weeklyTarget: number;
+      vendor: string;
+      quantity?: number;
+      lots?: DashboardLot[];
+    }
+
+    const inventoryMap: Record<string, { totalQty: number, lots: DashboardLot[] }> = {};
     inventoryData.forEach(inv => {
-      const id = inv.item_id;
+      const id = inv.item_id as string;
       if (!inventoryMap[id]) {
         inventoryMap[id] = { totalQty: 0, lots: [] };
       }
-      inventoryMap[id].totalQty += parseFloat(inv.qty);
+      inventoryMap[id].totalQty += parseFloat(inv.qty as string);
       inventoryMap[id].lots.push({
-        lotNo: inv.lotNo,
-        expDate: inv.expDate,
-        qty: parseFloat(inv.qty)
+        lotNo: inv.lotNo as string,
+        expDate: inv.expDate as string,
+        qty: parseFloat(inv.qty as string)
       });
     });
 
-    let data: any[] = masterData.map(item => {
+    let data: DashboardItem[] = (masterData as unknown as DashboardItem[]).map(item => {
       const inv = inventoryMap[item.itemId] || { totalQty: 0, lots: [] };
       return {
         ...item,
@@ -68,8 +89,9 @@ export async function GET(request: Request) {
     }
 
     return NextResponse.json(data);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Dashboard API Error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const message = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

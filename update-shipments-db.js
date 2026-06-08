@@ -1,7 +1,7 @@
-require('dotenv').config({ path: '.env.local' });
-const { neon } = require('@neondatabase/serverless');
+import 'dotenv/config';
+import { neon } from '@neondatabase/serverless';
 
-const sql = neon(process.env.DATABASE_URL);
+const sql = neon(process.env.DATABASE_URL || '');
 
 async function updateSchema() {
   console.log('🚀 Updating database schema for Shipments...');

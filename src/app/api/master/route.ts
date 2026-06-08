@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import sql from '@/lib/db';
-import { getAuthenticatedUser, isAdmin } from '@/lib/auth-utils';
+import { getAuthenticatedUser } from '@/lib/auth-utils';
 
 export async function POST(request: Request) {
   try {
@@ -84,9 +84,10 @@ export async function POST(request: Request) {
 
       return NextResponse.json({ success: true, message: 'ขึ้นทะเบียนรายการใหม่สำเร็จ' });
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Master API Error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const message = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 

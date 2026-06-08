@@ -2,14 +2,13 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { apiClient, Reagent } from '@/lib/api-client';
-import { processAnyBarcode, BarcodeData } from '@/lib/barcode-parser';
+import { processAnyBarcode } from '@/lib/barcode-parser';
 import QRScanner from '@/components/qr-scanner';
 import { 
   PackagePlus, 
   Camera, 
   Search, 
   Trash2, 
-  Plus, 
   Loader2, 
   CheckCircle,
   XCircle,
@@ -127,13 +126,14 @@ export default function ReceivePage() {
     setSubmitting(true);
     try {
       await apiClient.receiveBatch(validItems);
-      setFeedback({ type: 'success', msg: 'บันทึกรายการรับเข้าเรียบร้อยแล้ว' });
+      setFeedback({ type: 'success', msg: 'บันทึกรายการรับน้ำยาเข้าคลังเรียบร้อยแล้ว' });
       setCart([]);
-    } catch (err: any) {
-      setFeedback({ type: 'error', msg: 'เกิดข้อผิดพลาด: ' + (err.response?.data?.error || err.message) });
-    } finally {
+      } catch (err: unknown) {
+      const error = err as { response?: { data?: { error?: string } }, message: string };
+      setFeedback({ type: 'error', msg: 'เกิดข้อผิดพลาด: ' + (error.response?.data?.error || error.message) });
+      } finally {
       setSubmitting(false);
-    }
+      }
   };
 
   if (loading) {

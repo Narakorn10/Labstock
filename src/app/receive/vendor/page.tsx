@@ -1,41 +1,59 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { useAuth } from '@/components/auth-provider';
 import { Truck, CheckCircle2, XCircle, Loader2, Package, Search } from 'lucide-react';
 
+interface Shipment {
+  id: number;
+  vendor: string;
+  reference_no: string;
+  reagent_name: string;
+  lot_no: string;
+  exp_date: string;
+  quantity: number;
+  unit: string;
+  status: 'In Transit' | 'Received' | 'Cancelled';
+}
+
 export default function LabVendorReceiptPage() {
-  const { user } = useAuth();
-  const [shipments, setShipments] = useState<any[]>([]);
+  const [shipments, setShipments] = useState<Shipment[]>([]);
   const [loading, setLoading] = useState(true);
   const [processingId, setProcessingId] = useState<number | null>(null);
   const [search, setSearch] = useState('');
 
-  useEffect(() => {
-    fetchShipments();
-  }, []);
-
-  const fetchShipments = async () => {
+  const fetchShipments = useCallback(async () => {
     try {
       setLoading(true);
       const data = await apiClient.getShipments();
       
       if (Array.isArray(data)) {
         // Only show 'In Transit' items for receipt
-        setShipments(data.filter((s: any) => s.status === 'In Transit'));
+        setShipments(data.filter((s: Shipment) => s.status === 'In Transit'));
       } else {
         console.error('Expected array but got:', data);
         setShipments([]);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      const msg = err.response?.data?.error || 'ไม่สามารถดึงข้อมูลรายการส่งมอบได้';
+      const error = err as { response?: { data?: { error?: string } } };
+      const msg = error.response?.data?.error || 'ไม่สามารถดึงข้อมูลรายการส่งมอบได้';
       alert(msg);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    const load = async () => {
+      if (isMounted) {
+        await fetchShipments();
+      }
+    };
+    load();
+    return () => { isMounted = false; };
+  }, [fetchShipments]);
 
   const handleAction = async (id: number, action: 'receive' | 'cancel') => {
     if (!confirm(`ยืนยันการ${action === 'receive' ? 'รับเข้าสต๊อก' : 'ยกเลิกรายการ'} ใช่หรือไม่?`)) return;
@@ -50,8 +68,9 @@ export default function LabVendorReceiptPage() {
       } else {
         alert(result.error || 'เกิดข้อผิดพลาด');
       }
-    } catch (err: any) {
-      const msg = err.response?.data?.error || 'ดำเนินการไม่สำเร็จ';
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { error?: string } } };
+      const msg = error.response?.data?.error || 'ดำเนินการไม่สำเร็จ';
       alert(msg);
     } finally {
       setProcessingId(null);

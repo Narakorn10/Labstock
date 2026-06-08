@@ -80,22 +80,38 @@ export async function GET(request: Request) {
         `
       ]);
 
-      const dailyStats: Record<string, any> = {};
+      interface DailyStatInternal {
+        date: string;
+        totalDispensed: number;
+        items: Record<string, number>;
+      }
+
+      const dailyStats: Record<string, DailyStatInternal> = {};
       dailyRows.forEach(r => {
-        if (!dailyStats[r.date]) {
-          dailyStats[r.date] = { date: r.date, totalDispensed: 0, items: {} };
+        const date = r.date as string;
+        if (!dailyStats[date]) {
+          dailyStats[date] = { date, totalDispensed: 0, items: {} };
         }
-        const qty = parseFloat(r.qty) || 0;
-        dailyStats[r.date].totalDispensed += qty;
-        dailyStats[r.date].items[r.itemId] = (dailyStats[r.date].items[r.itemId] || 0) + qty;
+        const qty = parseFloat(r.qty as string) || 0;
+        dailyStats[date].totalDispensed += qty;
+        const itemId = r.itemId as string;
+        dailyStats[date].items[itemId] = (dailyStats[date].items[itemId] || 0) + qty;
       });
 
+      interface SummaryItem {
+        itemId: string;
+        name: string;
+        dispensed: string | number;
+        received: string | number;
+        adjusted: string | number;
+      }
+
       return NextResponse.json({
-        summary: summaryRows.map((r: any) => ({
+        summary: (summaryRows as unknown as SummaryItem[]).map((r) => ({
           ...r,
-          dispensed: parseFloat(r.dispensed) || 0,
-          received: parseFloat(r.received) || 0,
-          adjusted: parseFloat(r.adjusted) || 0
+          dispensed: parseFloat(r.dispensed as string) || 0,
+          received: parseFloat(r.received as string) || 0,
+          adjusted: parseFloat(r.adjusted as string) || 0
         })),
         dailyStats: Object.values(dailyStats),
         weeklyStats,
@@ -105,16 +121,24 @@ export async function GET(request: Request) {
     }
 
     const summaryRows = await summaryPromise;
+    interface SummaryItemShort {
+      itemId: string;
+      name: string;
+      dispensed: string | number;
+      received: string | number;
+      adjusted: string | number;
+    }
     return NextResponse.json({
-      summary: summaryRows.map(r => ({
+      summary: (summaryRows as unknown as SummaryItemShort[]).map(r => ({
         ...r,
-        dispensed: parseFloat(r.dispensed) || 0,
-        received: parseFloat(r.received) || 0,
-        adjusted: parseFloat(r.adjusted) || 0
+        dispensed: parseFloat(r.dispensed as string) || 0,
+        received: parseFloat(r.received as string) || 0,
+        adjusted: parseFloat(r.adjusted as string) || 0
       }))
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Usage API Error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const message = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -2,8 +2,9 @@
 
 import { useRef } from 'react';
 import { toPng } from 'html-to-image';
+import { Reagent } from '@/lib/api-client';
 
-export const useExport = (reportData: any[], reportType: string, reportJob: string) => {
+export const useExport = (reportData: Reagent[], reportType: string, reportJob: string) => {
     const reportRef = useRef<HTMLDivElement>(null);
 
     const exportCSV = () => {

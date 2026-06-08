@@ -1,9 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { 
-  History, 
   Search, 
   Download, 
   Loader2,
@@ -14,15 +13,26 @@ import {
   Activity
 } from 'lucide-react';
 
+interface LogEntry {
+  id?: number;
+  timestamp: string;
+  itemId: string;
+  name: string;
+  lotNo: string;
+  action: string;
+  qty: number;
+  user: string;
+}
+
 export default function LogsPage() {
-  const [logs, setLogs] = useState<any[]>([]);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [actionFilter, setActionFilter] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
-  const fetchLogs = async () => {
+  const fetchLogs = useCallback(async () => {
     setLoading(true);
     try {
       const data = await apiClient.getLogs(500, {
@@ -37,14 +47,14 @@ export default function LogsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [searchTerm, actionFilter, startDate, endDate]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
       fetchLogs();
     }, 500); // Debounce search
     return () => clearTimeout(timer);
-  }, [searchTerm, actionFilter, startDate, endDate]);
+  }, [fetchLogs]);
 
   const exportCSV = () => {
     if (logs.length === 0) return;
@@ -79,7 +89,7 @@ export default function LogsPage() {
         
         <div className="flex items-center gap-2">
            <button 
-            onClick={fetchLogs}
+            onClick={() => fetchLogs()}
             className="p-3 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 transition-colors"
             title="รีเฟรชข้อมูล"
           >
@@ -165,7 +175,7 @@ export default function LogsPage() {
                   const isReceive = log.action === 'รับเข้าสต๊อกหลัก';
                   const isReconcile = log.action.includes('ปรับปรุงยอด');
                   return (
-                    <tr key={log.id || idx} className="hover:bg-blue-50/30 transition-colors group">
+                    <tr key={idx} className="hover:bg-blue-50/30 transition-colors group">
                       <td className="px-8 py-4 whitespace-nowrap">
                         <p className="font-bold text-gray-900 text-xs">{new Date(log.timestamp).toLocaleString('th-TH', { 
                           day: '2-digit', month: '2-digit', year: '2-digit', 
@@ -204,7 +214,7 @@ export default function LogsPage() {
             </table>
             {!loading && logs.length === 0 && (
               <div className="p-20 text-center flex flex-col items-center gap-3">
-                <Search className="text-gray-200" size={48} />
+                <Activity className="text-gray-200" size={48} />
                 <p className="text-gray-400 font-bold text-sm italic">ไม่พบประวัติรายการที่ตรงตามเงื่อนไขการค้นหา</p>
               </div>
             )}

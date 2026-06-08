@@ -9,7 +9,6 @@ import {
   BarChart3, 
   TrendingUp, 
   AlertTriangle, 
-  CheckCircle2, 
   Loader2,
   Calendar,
   Filter,
@@ -20,17 +19,15 @@ import {
 import { apiClient, Reagent, UsageData, DailyStat } from '@/lib/api-client';
 import { useAuth } from '@/components/auth-provider';
 
-const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
-
 export default function AnalysisPage() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [reagents, setReagents] = useState<Reagent[]>([]);
   const [usage, setUsage] = useState<UsageData[]>([]);
   const [dailyStats, setDailyStats] = useState<DailyStat[]>([]);
-  const [weeklyStats, setWeeklyStats] = useState<any[]>([]);
-  const [expiringSoon, setExpiringSoon] = useState<any[]>([]);
-  const [slowMoving, setSlowMoving] = useState<any[]>([]);
+  const [weeklyStats, setWeeklyStats] = useState<{ week: string; totalDispensed: number }[]>([]);
+  const [expiringSoon, setExpiringSoon] = useState<{ itemId: string; name: string; lotNo: string; expDate: string; quantity: number }[]>([]);
+  const [slowMoving, setSlowMoving] = useState<{ itemId: string; name: string; stock: number }[]>([]);
   const [selectedItemId, setSelectedItemId] = useState<string>('TOTAL');
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
@@ -39,27 +36,27 @@ export default function AnalysisPage() {
   });
   const [endDate, setEndDate] = useState(() => new Date().toISOString().split('T')[0]);
 
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-      const [dashboardData, usageResponse] = await Promise.all([
-        apiClient.getDashboard(),
-        apiClient.getUsage(startDate, endDate)
-      ]);
-      setReagents(dashboardData);
-      setUsage(usageResponse.summary);
-      setDailyStats(usageResponse.dailyStats || []);
-      setWeeklyStats(usageResponse.weeklyStats || []);
-      setExpiringSoon(usageResponse.expiringSoon || []);
-      setSlowMoving(usageResponse.slowMoving || []);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        const [dashboardData, usageResponse] = await Promise.all([
+          apiClient.getDashboard(),
+          apiClient.getUsage(startDate, endDate)
+        ]);
+        setReagents(dashboardData);
+        setUsage(usageResponse.summary);
+        setDailyStats(usageResponse.dailyStats || []);
+        setWeeklyStats(usageResponse.weeklyStats || []);
+        setExpiringSoon(usageResponse.expiringSoon || []);
+        setSlowMoving(usageResponse.slowMoving || []);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
     fetchData();
   }, [startDate, endDate]);
 

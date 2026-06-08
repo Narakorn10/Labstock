@@ -28,9 +28,10 @@ export async function GET(request: Request) {
     }
 
     return NextResponse.json(shipments);
-  } catch (error: any) {
-    console.error('Shipments GET Error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    console.error('Shipments error:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }
 
@@ -61,8 +62,9 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({ success: true, message: `แจ้งส่งสินค้าสำเร็จ ${added} รายการ` });
-  } catch (error: any) {
-    console.error('Shipments POST Error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    console.error('Shipments error:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }

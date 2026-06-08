@@ -47,9 +47,10 @@ export async function PUT(
     }
 
     return NextResponse.json({ success: true, message: 'อัปเดตข้อมูลสำเร็จ' });
-  } catch (error: any) {
-    console.error('User PUT Error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    console.error('User error:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }
 
@@ -80,8 +81,9 @@ export async function DELETE(
       return NextResponse.json({ error: 'ไม่พบผู้ใช้ที่ต้องการลบ' }, { status: 404 });
     }
 
-  } catch (error: any) {
-    console.error('User DELETE Error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    console.error('User error:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }

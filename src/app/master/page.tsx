@@ -1,10 +1,23 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { apiClient, Reagent } from '@/lib/api-client';
 import Modal from '@/components/modal';
 import { Plus, Edit2, Search, Package, AlertTriangle, Cpu, FileUp } from 'lucide-react';
 import { useAuth } from '@/components/auth-provider';
+
+interface MasterDataImportItem {
+  itemId: string;
+  barcode: string;
+  name: string;
+  reagentType: string;
+  jobType: string;
+  machineType: string;
+  unit: string;
+  minThreshold: number;
+  weeklyTarget: number;
+  vendor: string;
+}
 
 export default function MasterDataPage() {
   const { user } = useAuth();
@@ -15,11 +28,7 @@ export default function MasterDataPage() {
   const [editingReagent, setEditingReagent] = useState<Partial<Reagent> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    fetchReagents();
-  }, []);
-
-  const fetchReagents = async () => {
+  const fetchReagents = useCallback(async () => {
     try {
       setLoading(true);
       const data = await apiClient.getDashboard();
@@ -29,7 +38,18 @@ export default function MasterDataPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    const load = async () => {
+      if (isMounted) {
+        await fetchReagents();
+      }
+    };
+    load();
+    return () => { isMounted = false; };
+  }, [fetchReagents]);
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -40,23 +60,22 @@ export default function MasterDataPage() {
       try {
         const text = event.target?.result as string;
         const rows = text.split('\n').filter(line => line.trim());
-        const header = rows[0].split(',');
+        if (rows.length < 2) return;
         
         const items = rows.slice(1).map(row => {
           const values = row.split(',').map(s => s.trim());
-          const item: any = {};
-          // Map values based on expected CSV structure
-          // itemId, barcode, name, reagentType, jobType, machineType, unit, minThreshold, weeklyTarget, vendor
-          item.itemId = values[0];
-          item.barcode = values[1];
-          item.name = values[2];
-          item.reagentType = values[3];
-          item.jobType = values[4];
-          item.machineType = values[5];
-          item.unit = values[6];
-          item.minThreshold = Number(values[7]) || 0;
-          item.weeklyTarget = Number(values[8]) || 0;
-          item.vendor = values[9] || (user?.role === 'Vendor' ? user.company : '');
+          const item: Partial<MasterDataImportItem> = {
+            itemId: values[0],
+            barcode: values[1],
+            name: values[2],
+            reagentType: values[3],
+            jobType: values[4],
+            machineType: values[5],
+            unit: values[6],
+            minThreshold: Number(values[7]) || 0,
+            weeklyTarget: Number(values[8]) || 0,
+            vendor: values[9] || (user?.role === 'Vendor' ? user.company : '')
+          };
           return item;
         }).filter(item => item.itemId);
 
@@ -65,8 +84,9 @@ export default function MasterDataPage() {
         const res = await apiClient.saveMaster({ action: 'bulk_add', items });
         alert(res.message);
         fetchReagents();
-      } catch (err: any) {
-        alert(err.message || 'นำเข้าข้อมูลไม่สำเร็จ');
+      } catch (err: unknown) {
+        const error = err as { message: string };
+        alert(error.message || 'นำเข้าข้อมูลไม่สำเร็จ');
       }
     };
     reader.readAsText(file);
@@ -77,17 +97,17 @@ export default function MasterDataPage() {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     const data = {
-      action: editingReagent?.itemId ? 'update' : 'add',
-      itemId: formData.get('itemId'),
-      qrCode: formData.get('qrCode'),
-      name: formData.get('name'),
-      reagentType: formData.get('reagentType'),
-      jobType: formData.get('jobType'),
-      machineType: formData.get('machineType'),
-      unit: formData.get('unit'),
+      action: (editingReagent?.itemId ? 'update' : 'add') as 'update' | 'add',
+      itemId: String(formData.get('itemId') || ''),
+      qrCode: String(formData.get('qrCode') || ''),
+      name: String(formData.get('name') || ''),
+      reagentType: String(formData.get('reagentType') || ''),
+      jobType: String(formData.get('jobType') || ''),
+      machineType: String(formData.get('machineType') || ''),
+      unit: String(formData.get('unit') || ''),
       minThreshold: Number(formData.get('minThreshold')),
       weeklyTarget: Number(formData.get('weeklyTarget')),
-      vendor: formData.get('vendor'),
+      vendor: String(formData.get('vendor') || ''),
     };
 
     try {
@@ -99,7 +119,8 @@ export default function MasterDataPage() {
       } else {
         alert(res.message);
       }
-    } catch (error: any) {
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { message?: string } } };
       alert(error.response?.data?.message || 'เกิดข้อผิดพลาด');
     }
   };
@@ -199,9 +220,9 @@ export default function MasterDataPage() {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {loading ? (
-                <tr><td colSpan={5} className="px-6 py-10 text-center text-gray-400">กำลังโหลดข้อมูล...</td></tr>
+                <tr><td colSpan={6} className="px-6 py-10 text-center text-gray-400">กำลังโหลดข้อมูล...</td></tr>
               ) : filteredReagents.length === 0 ? (
-                <tr><td colSpan={5} className="px-6 py-10 text-center text-gray-400">ไม่พบข้อมูล</td></tr>
+                <tr><td colSpan={6} className="px-6 py-10 text-center text-gray-400">ไม่พบข้อมูล</td></tr>
               ) : filteredReagents.map((reagent) => (
                 <tr key={reagent.itemId} className="hover:bg-gray-50/50 transition-colors group">
                   <td className="px-6 py-4">

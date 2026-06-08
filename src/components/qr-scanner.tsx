@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
-import { Camera, X, RotateCcw } from 'lucide-react';
+import { X, RotateCcw } from 'lucide-react';
 
 interface QRScannerProps {
   onScan: (text: string) => void;
@@ -42,15 +42,16 @@ export default function QRScanner({ onScan, onClose }: QRScannerProps) {
             // Optionally stop after first scan
             // scanner.stop().then(() => setIsScannerStarted(false));
           },
-          (errorMessage) => {
+          () => {
             // Successively ignored errors to keep scanner running
           }
         );
 
         setIsScannerStarted(true);
-      } catch (err: any) {
-        console.error("Scanner Error:", err);
-        setError("ไม่สามารถเปิดกล้องได้: " + err.message);
+      } catch (err) {
+        const error = err as Error;
+        console.error("Scanner Error:", error);
+        setError("ไม่สามารถเปิดกล้องได้: " + error.message);
       }
     };
 

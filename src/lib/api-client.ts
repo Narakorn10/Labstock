@@ -29,6 +29,7 @@ export interface Reagent {
   vendor?: string;
   quantity: number;
   lots: Lot[];
+  [key: string]: unknown;
 }
 
 export interface Lot {
@@ -60,19 +61,100 @@ export interface UsageResponse {
   slowMoving?: { itemId: string; name: string; stock: number }[];
 }
 
+export interface BatchItem {
+  itemId: string;
+  lotNo: string;
+  qty: number;
+  name?: string;
+  unit?: string;
+  expDate?: string;
+  note?: string;
+}
+
+export interface User {
+  username: string;
+  name: string;
+  role: string;
+  company?: string;
+  password?: string;
+}
+
+export interface ApiResponse<T = unknown> {
+  success: boolean;
+  message?: string;
+  error?: string;
+  data?: T;
+  user?: User;
+  token?: string;
+}
+
+export interface ShipmentItem {
+  itemId: string;
+  lotNo: string;
+  expDate: string;
+  qty: number;
+}
+
+export interface LogEntry {
+  id: number;
+  timestamp: string;
+  itemId: string;
+  name: string;
+  lotNo: string;
+  action: string;
+  qty: number;
+  user: string;
+}
+
+export interface SettingsResponse {
+  reagentTypes: string[];
+  jobTypes: string[];
+  machineTypes: string[];
+}
+
+export interface Shipment {
+  id: number;
+  reference_no: string;
+  vendor: string;
+  item_id: string;
+  lot_no: string;
+  exp_date: string;
+  quantity: number;
+  status: 'In Transit' | 'Received' | 'Cancelled';
+  created_at: string;
+  reagent_name: string;
+  unit: string;
+}
+
+export interface MasterReagentData {
+  itemId?: string;
+  qrCode?: string;
+  barcode?: string;
+  name?: string;
+  reagentType?: string;
+  jobType?: string;
+  machineType?: string;
+  unit?: string;
+  minThreshold?: number | string;
+  weeklyTarget?: number | string;
+  vendor?: string;
+  action?: 'add' | 'update' | 'bulk_add';
+  items?: unknown[]; // For bulk_add
+}
+
 export const apiClient = {
   getDashboard: async () => {
     const res = await instance.get<Reagent[]>('/api/dashboard');
     return res.data;
   },
 
-  receiveBatch: async (batchItems: any[]) => {
-    const res = await instance.post('/api/receive', { batchItems });
+  receiveBatch: async (batchItems: BatchItem[]) => {
+    const res = await instance.post<ApiResponse>('/api/receive', { batchItems });
     return res.data;
   },
 
-  dispenseBatch: async (batchItems: any[]) => {
-    const res = await instance.post('/api/dispense', { batchItems });
+  dispenseBatch: async (batchItems: BatchItem[]) => {
+    const res = await instance.post<ApiResponse>('/api/dispense', { batchItems });
     return res.data;
   },
 
@@ -84,7 +166,7 @@ export const apiClient = {
       if (filters.startDate) url += `&startDate=${filters.startDate}`;
       if (filters.endDate) url += `&endDate=${filters.endDate}`;
     }
-    const res = await instance.get(url);
+    const res = await instance.get<LogEntry[]>(url);
     return res.data;
   },
 
@@ -94,69 +176,69 @@ export const apiClient = {
   },
 
   // Auth & Users
-  login: async (credentials: any) => {
-    const res = await instance.post('/api/auth/login', credentials);
+  login: async (credentials: Partial<User>) => {
+    const res = await instance.post<ApiResponse>('/api/auth/login', credentials);
     return res.data;
   },
 
   getUsers: async () => {
-    const res = await instance.get('/api/users');
+    const res = await instance.get<User[]>('/api/users');
     return res.data;
   },
 
-  addUser: async (userData: any) => {
-    const res = await instance.post('/api/users', userData);
+  addUser: async (userData: User) => {
+    const res = await instance.post<ApiResponse>('/api/users', userData);
     return res.data;
   },
 
-  updateUser: async (username: string, userData: any) => {
-    const res = await instance.put(`/api/users/${username}`, userData);
+  updateUser: async (username: string, userData: Partial<User>) => {
+    const res = await instance.put<ApiResponse>(`/api/users/${username}`, userData);
     return res.data;
   },
 
   deleteUser: async (username: string) => {
-    const res = await instance.delete(`/api/users/${username}`);
+    const res = await instance.delete<ApiResponse>(`/api/users/${username}`);
     return res.data;
   },
 
-  saveMaster: async (data: any) => {
-    const res = await instance.post('/api/master', data);
+  saveMaster: async (data: MasterReagentData) => {
+    const res = await instance.post<ApiResponse>('/api/master', data);
     return res.data;
   },
 
   getSettings: async () => {
-    const res = await instance.get('/api/settings');
+    const res = await instance.get<SettingsResponse>('/api/settings');
     return res.data;
   },
 
   updateSettings: async (data: { action: 'add' | 'delete', type: 'reagent' | 'job' | 'machine', value: string }) => {
-    const res = await instance.post('/api/settings', data);
+    const res = await instance.post<ApiResponse>('/api/settings', data);
     return res.data;
   },
 
   reconcileInventory: async (data: { itemId: string, lotNo: string, newQty: number }) => {
-    const res = await instance.post('/api/inventory/reconcile', data);
+    const res = await instance.post<ApiResponse>('/api/inventory/reconcile', data);
     return res.data;
   },
 
   // Vendor Supply Chain
   getShipments: async () => {
-    const res = await instance.get('/api/vendor/shipments');
+    const res = await instance.get<Shipment[]>('/api/vendor/shipments');
     return res.data;
   },
 
   updateShipment: async (id: number, action: 'receive' | 'cancel') => {
-    const res = await instance.patch(`/api/vendor/shipments/${id}`, { action });
+    const res = await instance.patch<ApiResponse>(`/api/vendor/shipments/${id}`, { action });
     return res.data;
   },
 
-  uploadShipments: async (items: any[], referenceNo: string) => {
-    const res = await instance.post('/api/vendor/shipments', { items, referenceNo });
+  uploadShipments: async (items: ShipmentItem[], referenceNo: string) => {
+    const res = await instance.post<ApiResponse>('/api/vendor/shipments', { items, referenceNo });
     return res.data;
   },
 
-  runRawQuery: async (query: string, params?: any[]) => {
-    const res = await instance.post('/api/raw-query', { query, params });
+  runRawQuery: async (query: string, params?: unknown[]) => {
+    const res = await instance.post<ApiResponse<Record<string, unknown>[]>>('/api/raw-query', { query, params });
     return res.data;
   }
 };

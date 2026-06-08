@@ -17,8 +17,9 @@ export default function LoginPage() {
     setError('');
     try {
       await login({ username, password });
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
+    } catch (err: unknown) {
+      const axiosError = err as { response?: { data?: { error?: string } }, message: string };
+      setError(axiosError.response?.data?.error || 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
     } finally {
       setLoading(false);
     }

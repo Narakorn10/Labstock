@@ -15,9 +15,10 @@ export async function GET(request: Request) {
     `;
 
     return NextResponse.json(data);
-  } catch (error: any) {
-    console.error('Users GET Error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    console.error('Users error:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }
 
@@ -47,8 +48,9 @@ export async function POST(request: Request) {
     `;
 
     return NextResponse.json({ success: true, message: 'เพิ่มผู้ใช้สำเร็จ' });
-  } catch (error: any) {
-    console.error('Users POST Error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    console.error('Users error:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }

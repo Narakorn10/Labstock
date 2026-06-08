@@ -1,31 +1,28 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { apiClient } from '@/lib/api-client';
+import React, { useState, useEffect, useCallback } from 'react';
+import { apiClient, User as ApiUser } from '@/lib/api-client';
 import Modal from '@/components/modal';
 import { 
   UserPlus, 
   User, 
   Trash2, 
-  Shield, 
   Loader2, 
   CheckCircle, 
-  AlertCircle,
   XCircle,
-  KeyRound,
   ChevronDown,
   Pencil
 } from 'lucide-react';
 
 export default function UsersPage() {
-  const [users, setUsers] = useState<any[]>([]);
+  const [users, setUsers] = useState<ApiUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [isEdit, setIsEdit] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error', msg: string } | null>(null);
   
-  const [form, setForm] = useState({ 
+  const [form, setForm] = useState<ApiUser>({ 
     username: '', 
     password: '', 
     name: '', 
@@ -33,7 +30,7 @@ export default function UsersPage() {
     company: ''
   });
 
-  const loadUsers = async () => {
+  const loadUsers = useCallback(async () => {
     setLoading(true);
     try {
       const data = await apiClient.getUsers();
@@ -43,11 +40,18 @@ export default function UsersPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    loadUsers();
-  }, []);
+    let isMounted = true;
+    const load = async () => {
+      if (isMounted) {
+        await loadUsers();
+      }
+    };
+    load();
+    return () => { isMounted = false; };
+  }, [loadUsers]);
 
   const openAddModal = () => {
     setIsEdit(false);
@@ -55,7 +59,7 @@ export default function UsersPage() {
     setModalOpen(true);
   };
 
-  const openEditModal = (user: any) => {
+  const openEditModal = (user: ApiUser) => {
     setIsEdit(true);
     setForm({ 
       username: user.username, 
@@ -80,8 +84,9 @@ export default function UsersPage() {
       }
       setModalOpen(false);
       loadUsers();
-    } catch (err: any) {
-      setFeedback({ type: 'error', msg: err.response?.data?.error || 'เกิดข้อผิดพลาด' });
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { error?: string } } };
+      setFeedback({ type: 'error', msg: error.response?.data?.error || 'เกิดข้อผิดพลาด' });
     } finally {
       setSubmitting(false);
     }
@@ -95,7 +100,7 @@ export default function UsersPage() {
       await apiClient.deleteUser(username);
       setFeedback({ type: 'success', msg: 'ลบผู้ใช้สำเร็จ' });
       loadUsers();
-    } catch (err: any) {
+    } catch {
       setFeedback({ type: 'error', msg: 'ลบไม่สำเร็จ' });
     }
   };

@@ -1,37 +1,29 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
-  LayoutDashboard, 
   AlertTriangle, 
-  CheckCircle2, 
   Package, 
   FileText,
   Loader2,
   RefreshCw,
   Search,
-  ChevronRight,
   ClipboardList,
   Database,
   ArrowRightLeft,
   Clock,
   XCircle,
-  TrendingUp,
   Boxes,
   Activity
 } from 'lucide-react';
 import { 
   AreaChart, 
   Area, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
   Tooltip, 
   ResponsiveContainer 
 } from 'recharts';
 import { apiClient, Reagent, UsageResponse } from '@/lib/api-client';
 import ReportModal from '@/components/report-modal';
-import MultiSelect from '@/components/multi-select';
 import { useAuth } from '@/components/auth-provider';
 import Link from 'next/link';
 
@@ -42,10 +34,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterType, setFilterType] = useState<string[]>(['ALL']);
-  const [filterJob, setFilterJob] = useState<string[]>(['ALL']);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const today = new Date().toISOString().split('T')[0];
@@ -64,11 +54,18 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    let isMounted = true;
+    const load = async () => {
+      if (isMounted) {
+        await fetchData();
+      }
+    };
+    load();
+    return () => { isMounted = false; };
+  }, [fetchData]);
 
   const stats = useMemo(() => {
     const total = reagents.length;
@@ -100,27 +97,13 @@ export default function Dashboard() {
     return Array.from(new Set(reagents.map(r => r.jobType)));
   }, [reagents]);
 
-  const categories = useMemo(() => {
-    const types = new Set(reagents.map(r => r.reagentType));
-    const jobs = new Set(reagents.map(r => r.jobType));
-    return {
-      types: Array.from(types).sort(),
-      jobs: Array.from(jobs).sort()
-    };
-  }, [reagents]);
-
   const filteredItems = useMemo(() => {
     return reagents.filter(item => {
       const terms = searchTerm.toLowerCase().trim().split(/\s+/).filter(Boolean);
       const text = `${item.itemId} ${item.name}`.toLowerCase();
-      const matchSearch = terms.length === 0 || terms.every(t => text.includes(t));
-      
-      const matchType = filterType.includes('ALL') || filterType.includes(item.reagentType);
-      const matchJob = filterJob.includes('ALL') || filterJob.includes(item.jobType);
-      
-      return matchSearch && matchType && matchJob;
+      return terms.length === 0 || terms.every(t => text.includes(t));
     });
-  }, [reagents, searchTerm, filterType, filterJob]);
+  }, [reagents, searchTerm]);
 
   const totalUsedThisWeek = useMemo(() => {
     if (!usageData?.summary) return 0;

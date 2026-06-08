@@ -16,9 +16,9 @@ export async function GET() {
       jobTypes: jobRows.map(r => r.name),
       machineTypes: machineRows.map(r => r.name)
     });
-  } catch (error: any) {
-    console.error('Settings GET Error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }
 
@@ -67,8 +67,9 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Settings POST Error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }

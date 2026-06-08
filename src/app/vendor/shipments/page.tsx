@@ -1,22 +1,30 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { useAuth } from '@/components/auth-provider';
-import { FileUp, Truck, CheckCircle2, Clock, AlertCircle, Loader2 } from 'lucide-react';
+import { FileUp, Truck, CheckCircle2, Clock, Loader2 } from 'lucide-react';
+
+interface Shipment {
+  created_at: string;
+  reference_no: string;
+  reagent_name: string;
+  lot_no: string;
+  exp_date: string;
+  quantity: number;
+  unit: string;
+  status: 'In Transit' | 'Received' | 'Cancelled';
+  received_by?: string;
+}
 
 export default function VendorShipmentsPage() {
   const { user } = useAuth();
-  const [shipments, setShipments] = useState<any[]>([]);
+  const [shipments, setShipments] = useState<Shipment[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    fetchShipments();
-  }, []);
-
-  const fetchShipments = async () => {
+  const fetchShipments = useCallback(async () => {
     try {
       setLoading(true);
       const data = await apiClient.getShipments();
@@ -31,7 +39,18 @@ export default function VendorShipmentsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    const load = async () => {
+      if (isMounted) {
+        await fetchShipments();
+      }
+    };
+    load();
+    return () => { isMounted = false; };
+  }, [fetchShipments]);
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -68,8 +87,9 @@ export default function VendorShipmentsPage() {
         } else {
           alert(result.error || 'เกิดข้อผิดพลาด');
         }
-      } catch (err: any) {
-        alert(err.message || 'นำเข้าข้อมูลไม่สำเร็จ');
+      } catch (err: unknown) {
+        const error = err as { message: string };
+        alert(error.message || 'นำเข้าข้อมูลไม่สำเร็จ');
       } finally {
         setUploading(false);
       }

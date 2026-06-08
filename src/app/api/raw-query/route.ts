@@ -29,11 +29,12 @@ export async function POST(request: Request) {
       rowCount: result.length
     });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Raw Query Error:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ 
       success: false, 
-      error: error.message 
+      error: errorMessage 
     }, { status: 500 });
   }
 }

@@ -16,24 +16,6 @@ export async function GET(request: Request) {
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
     
-    // Base Query
-    let query = sql`
-      SELECT 
-        id,
-        timestamp,
-        item_id as "itemId",
-        name,
-        lot_no as "lotNo",
-        action,
-        quantity as qty,
-        username as user
-      FROM logs
-      WHERE 1=1
-    `;
-
-    // Add Filters dynamically (Note: for neon-serverless we can append to the template or use conditions)
-    // To keep it simple and safe, we'll construct the query with conditional logic
-    
     const data = await sql`
       SELECT 
         id,
@@ -54,8 +36,9 @@ export async function GET(request: Request) {
     `;
 
     return NextResponse.json(data);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Logs API Error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const message = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

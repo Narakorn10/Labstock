@@ -41,8 +41,9 @@ export async function POST(request: Request) {
     // But for now, I'll stick to the current schema.
 
     return NextResponse.json({ success: true, message: 'ปรับยอดสต๊อกสำเร็จ' });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Reconcile API Error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }

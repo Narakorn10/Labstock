@@ -81,8 +81,9 @@ export async function PATCH(
 
     return NextResponse.json({ success: true, message: 'รับเข้าสต๊อกสำเร็จ' });
 
-  } catch (error: any) {
-    console.error('Shipment PATCH Error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    console.error('Shipment error:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }

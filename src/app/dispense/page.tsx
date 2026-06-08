@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { apiClient, Reagent, Lot } from '@/lib/api-client';
+import { apiClient, Reagent } from '@/lib/api-client';
 import { processAnyBarcode } from '@/lib/barcode-parser';
 import QRScanner from '@/components/qr-scanner';
 import { 
@@ -151,8 +151,9 @@ export default function DispensePage() {
       await apiClient.dispenseBatch(validItems);
       setFeedback({ type: 'success', msg: 'บันทึกรายการเบิกจ่ายเรียบร้อยแล้ว' });
       setCart([]);
-    } catch (err: any) {
-      setFeedback({ type: 'error', msg: 'เกิดข้อผิดพลาด: ' + (err.response?.data?.error || err.message) });
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { error?: string } }, message: string };
+      setFeedback({ type: 'error', msg: 'เกิดข้อผิดพลาด: ' + (error.response?.data?.error || error.message) });
     } finally {
       setSubmitting(false);
     }

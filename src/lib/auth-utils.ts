@@ -14,7 +14,9 @@ export async function comparePassword(password: string, hash: string) {
     if (hash.startsWith('$2')) {
       return await bcrypt.compare(password, hash);
     }
-  } catch (e) {}
+  } catch {
+    // Bcrypt comparison failed, likely not a bcrypt hash
+  }
 
   // 2. Try SHA-256 (Legacy fallback for migration)
   const sha256Hash = crypto.createHash('sha256').update(password).digest('hex');

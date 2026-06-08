@@ -9,11 +9,12 @@ interface User {
   name: string;
   role: string;
   company?: string;
+  password?: string;
 }
 
 interface AuthContextType {
   user: User | null;
-  login: (credentials: any) => Promise<void>;
+  login: (credentials: Partial<User>) => Promise<void>;
   logout: () => void;
   loading: boolean;
   isAuthorized: (allowedRoles: string[]) => boolean;
@@ -69,9 +70,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [user, loading, pathname, router]);
 
-  const login = async (credentials: any) => {
+  const login = async (credentials: Partial<User>) => {
     const res = await apiClient.login(credentials);
-    if (res.success) {
+    if (res.success && res.user && res.token) {
       setUser(res.user);
       localStorage.setItem('labstock_user', JSON.stringify(res.user));
       localStorage.setItem('labstock_token', res.token);

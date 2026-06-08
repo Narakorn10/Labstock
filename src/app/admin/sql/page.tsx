@@ -6,7 +6,7 @@ import { Database, Play, AlertCircle, CheckCircle2, Copy } from 'lucide-react';
 
 export default function SqlExplorerPage() {
   const [query, setQuery] = useState('SELECT * FROM master_data LIMIT 10;');
-  const [results, setResults] = useState<any[]>([]);
+  const [results, setResults] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rowCount, setRowCount] = useState(0);
@@ -16,14 +16,15 @@ export default function SqlExplorerPage() {
     setError(null);
     try {
       const response = await apiClient.runRawQuery(query);
-      if (response.success) {
+      if (response.success && response.data) {
         setResults(response.data);
-        setRowCount(response.rowCount);
+        setRowCount(response.data.length);
       } else {
-        setError(response.error);
+        setError(response.error || "เกิดข้อผิดพลาดในการรัน Query");
       }
-    } catch (err: any) {
-      setError(err.response?.data?.error || err.message);
+    } catch (err: unknown) {
+      const axiosError = err as { response?: { data?: { error?: string } }, message: string };
+      setError(axiosError.response?.data?.error || axiosError.message);
     } finally {
       setLoading(false);
     }

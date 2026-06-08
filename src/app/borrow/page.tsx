@@ -12,7 +12,6 @@ import {
   Loader2, 
   CheckCircle,
   XCircle,
-  AlertCircle,
   Building2,
   Calendar
 } from 'lucide-react';
@@ -114,8 +113,9 @@ export default function BorrowPage() {
       await apiClient.receiveBatch(cart.map(i => ({ ...i, note: `BORROW FROM: ${globalOrigin}` })));
       setFeedback({ type: 'success', msg: 'บันทึกรายการยืมน้ำยาสำเร็จ' });
       setCart([]);
-    } catch (err: any) {
-      setFeedback({ type: 'error', msg: 'เกิดข้อผิดพลาด: ' + (err.response?.data?.error || err.message) });
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { error?: string } }, message: string };
+      setFeedback({ type: 'error', msg: 'เกิดข้อผิดพลาด: ' + (error.response?.data?.error || error.message) });
     } finally {
       setSubmitting(false);
     }

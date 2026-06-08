@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { apiClient, Reagent, Lot } from '@/lib/api-client';
 import Modal from '@/components/modal';
-import { Search, Package, AlertTriangle, Edit2, Loader2, Database, Calendar, XCircle } from 'lucide-react';
+import { Search, Edit2, Loader2, Database, Calendar, XCircle, AlertTriangle } from 'lucide-react';
 import MultiSelect from '@/components/multi-select';
 
 interface LotWithInfo extends Lot {
@@ -24,11 +24,7 @@ export default function InventoryManagementPage() {
   const [editingLot, setEditingLot] = useState<LotWithInfo | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       setLoading(true);
       const data = await apiClient.getDashboard();
@@ -38,7 +34,18 @@ export default function InventoryManagementPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    const load = async () => {
+      if (isMounted) {
+        await fetchData();
+      }
+    };
+    load();
+    return () => { isMounted = false; };
+  }, [fetchData]);
 
   const categories = useMemo(() => {
     const types = new Set(reagents.map(r => r.reagentType));
@@ -100,8 +107,9 @@ export default function InventoryManagementPage() {
       } else {
         alert(res.error || 'เกิดข้อผิดพลาด');
       }
-    } catch (error: any) {
-      alert(error.response?.data?.error || 'เกิดข้อผิดพลาด');
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { error?: string } }, message: string };
+      alert(error.response?.data?.error || error.message || 'เกิดข้อผิดพลาด');
     } finally {
       setSubmitting(false);
     }

@@ -4,13 +4,13 @@ import { useState, useMemo } from 'react';
 import Modal from './modal';
 import { useExport } from '@/hooks/use-export';
 import MultiSelect from './multi-select';
+import { apiClient, Reagent } from '@/lib/api-client';
 import { 
   FileSpreadsheet, 
   FileText, 
   Share2, 
   Image as ImageIcon, 
   ChevronDown,
-  AlertTriangle,
   LayoutList,
   Database
 } from 'lucide-react';
@@ -18,7 +18,7 @@ import {
 interface ReportModalProps {
   isOpen: boolean;
   onClose: () => void;
-  data: any[];
+  data: Reagent[];
   jobTypes: string[];
 }
 

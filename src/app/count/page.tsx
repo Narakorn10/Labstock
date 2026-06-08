@@ -1,19 +1,17 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { apiClient, Reagent } from '@/lib/api-client';
+import { apiClient, Reagent, BatchItem } from '@/lib/api-client';
 import { 
   Search, 
   Loader2, 
   CheckCircle, 
   AlertCircle,
   ArrowRightLeft,
-  ChevronDown,
   ClipboardList,
   ShoppingCart,
   Smile,
   XCircle,
-  Filter,
   Trash2
 } from 'lucide-react';
 import MultiSelect from '@/components/multi-select';
@@ -107,14 +105,13 @@ export default function CountPage() {
     if (syncItems.length === 0) return;
     setSubmittingAll(true);
     
-    const batchToDispense: any[] = [];
-    let insufficientItems: string[] = [];
+    const batchToDispense: BatchItem[] = [];
+    const insufficientItems: string[] = [];
 
     syncItems.forEach(item => {
       let remainingToDispense = item.weeklyTarget - (item.actual as number);
       const sortedLots = [...item.lots].sort((a, b) => new Date(a.expDate).getTime() - new Date(b.expDate).getTime());
       
-      let taken = 0;
       for (const lot of sortedLots) {
         if (remainingToDispense <= 0) break;
         const available = lot.qty;
@@ -130,7 +127,6 @@ export default function CountPage() {
             note: "เบิกเติมหน้างาน (Sync รวม)"
           });
           remainingToDispense -= take;
-          taken += take;
         }
       }
       
@@ -157,8 +153,9 @@ export default function CountPage() {
           return i;
         }));
       }
-    } catch (err: any) {
-      setFeedback({ type: 'error', msg: 'Sync ไม่สำเร็จ: ' + (err.response?.data?.error || err.message) });
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { error?: string } }, message: string };
+      setFeedback({ type: 'error', msg: 'Sync ไม่สำเร็จ: ' + (error.response?.data?.error || error.message) });
     } finally {
       setSubmittingAll(false);
     }
@@ -181,7 +178,7 @@ export default function CountPage() {
 
     setReagents(prev => prev.map(i => i.itemId === itemId ? { ...i, submitting: true } : i));
     
-    const batchToDispense: any[] = [];
+    const batchToDispense: BatchItem[] = [];
     const sortedLots = [...item.lots].sort((a, b) => new Date(a.expDate).getTime() - new Date(b.expDate).getTime());
     
     let remainingToDispense = needed;
@@ -223,8 +220,9 @@ export default function CountPage() {
         setFeedback({ type: 'error', msg: 'สต๊อกในคลังใหญ่ไม่มีรายการนี้เหลืออยู่' });
         setReagents(prev => prev.map(i => i.itemId === itemId ? { ...i, submitting: false } : i));
       }
-    } catch (err: any) {
-      setFeedback({ type: 'error', msg: 'Sync ไม่สำเร็จ: ' + (err.response?.data?.error || err.message) });
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { error?: string } }, message: string };
+      setFeedback({ type: 'error', msg: 'Sync ไม่สำเร็จ: ' + (error.response?.data?.error || error.message) });
       setReagents(prev => prev.map(i => i.itemId === itemId ? { ...i, submitting: false } : i));
     }
   };
