@@ -30,7 +30,7 @@ export default function QRScanner({ onScan, onClose }: QRScannerProps) {
             Html5QrcodeSupportedFormats.CODE_128,
             Html5QrcodeSupportedFormats.EAN_13,
             Html5QrcodeSupportedFormats.EAN_8,
-            Html5QrcodeSupportedFormats.DATAMATRIX
+            Html5QrcodeSupportedFormats.DATA_MATRIX
           ]
         };
 
