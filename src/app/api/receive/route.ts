@@ -11,6 +11,10 @@ export async function POST(request: Request) {
 
     const { batchItems } = await request.json();
     
+    // Capture Audit Info
+    const userAgent = request.headers.get('user-agent') || 'Unknown';
+    const ipAddress = request.headers.get('x-forwarded-for') || 'Unknown';
+
     // Get item names for logging
     const masterData = await sql`SELECT item_id, name FROM master_data`;
     const itemNameMap: Record<string, string> = {};
@@ -40,8 +44,8 @@ export async function POST(request: Request) {
             exp_date = EXCLUDED.exp_date
           RETURNING item_id, lot_no
         )
-        INSERT INTO logs (item_id, name, lot_no, action, quantity, username)
-        SELECT item_id, ${itemName}, lot_no, 'รับเข้าสต๊อกหลัก', ${qty}, ${actor}
+        INSERT INTO logs (item_id, name, lot_no, action, quantity, username, user_agent, ip_address)
+        SELECT item_id, ${itemName}, lot_no, 'รับเข้าสต๊อกหลัก', ${qty}, ${actor}, ${userAgent}, ${ipAddress}
         FROM upserted
       `;
     }

@@ -16,6 +16,13 @@ export async function POST(request: Request) {
     const data = await request.json();
     const newItemId = data.itemId?.toString().trim();
 
+    // Helper to ensure categories exist in settings tables
+    const ensureCategories = async (rType: string, jType: string, mType: string) => {
+      if (rType) await sql`INSERT INTO reagent_types (name) VALUES (${rType}) ON CONFLICT (name) DO NOTHING`;
+      if (jType) await sql`INSERT INTO job_types (name) VALUES (${jType}) ON CONFLICT (name) DO NOTHING`;
+      if (mType) await sql`INSERT INTO machine_types (name) VALUES (${mType}) ON CONFLICT (name) DO NOTHING`;
+    };
+
     // Check for existing ID (Case-insensitive)
     const existing = await sql`
       SELECT item_id, vendor FROM master_data 
@@ -30,6 +37,8 @@ export async function POST(request: Request) {
       if (isVendor && existing[0].vendor !== user.company) {
         return NextResponse.json({ error: 'Permission denied for this item' }, { status: 403 });
       }
+
+      await ensureCategories(data.reagentType, data.jobType, data.machineType);
 
       await sql`
         UPDATE master_data 
@@ -55,12 +64,20 @@ export async function POST(request: Request) {
         // Enforce vendor check for each item in bulk if vendor role
         if (isVendor && item.vendor !== user.company) continue;
 
+        await ensureCategories(item.reagentType, item.jobType, item.machineType);
+
         await sql`
           INSERT INTO master_data (item_id, barcode, name, reagent_type, job_type, machine_type, unit, min_threshold, weekly_target, vendor)
           VALUES (${item.itemId}, ${item.barcode}, ${item.name}, ${item.reagentType}, ${item.jobType}, ${item.machineType}, ${item.unit}, ${item.minThreshold || 0}, ${item.weeklyTarget || 0}, ${item.vendor})
           ON CONFLICT (item_id) DO UPDATE SET
             barcode = EXCLUDED.barcode,
             name = EXCLUDED.name,
+            reagent_type = EXCLUDED.reagent_type,
+            job_type = EXCLUDED.job_type,
+            machine_type = EXCLUDED.machine_type,
+            unit = EXCLUDED.unit,
+            min_threshold = EXCLUDED.min_threshold,
+            weekly_target = EXCLUDED.weekly_target,
             vendor = EXCLUDED.vendor
         `;
         added++;
@@ -69,6 +86,8 @@ export async function POST(request: Request) {
     } else {
       // Add single
       if (exists) return NextResponse.json({ success: false, message: 'ID นี้มีอยู่แล้วในระบบ' }, { status: 400 });
+
+      await ensureCategories(data.reagentType, data.jobType, data.machineType);
 
       await sql`
         INSERT INTO master_data (

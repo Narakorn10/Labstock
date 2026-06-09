@@ -7,6 +7,10 @@ export async function POST(request: Request) {
     const user = await getAuthenticatedUser(request);
     const { batchItems } = await request.json();
     
+    // Capture Audit Info
+    const userAgent = request.headers.get('user-agent') || 'Unknown';
+    const ipAddress = request.headers.get('x-forwarded-for') || 'Unknown';
+
     // Get master info for logging
     const masterData = await sql`SELECT item_id, name FROM master_data`;
     const masterMap: Record<string, string> = {};
@@ -34,8 +38,8 @@ export async function POST(request: Request) {
             AND quantity >= ${qtyToSubtract}
           RETURNING item_id, lot_no
         )
-        INSERT INTO logs (item_id, name, lot_no, action, quantity, username)
-        SELECT item_id, ${itemName}, lot_no, 'เบิกไปหน้างาน', ${qtyToSubtract}, ${actor}
+        INSERT INTO logs (item_id, name, lot_no, action, quantity, username, user_agent, ip_address)
+        SELECT item_id, ${itemName}, lot_no, 'เบิกไปหน้างาน', ${qtyToSubtract}, ${actor}, ${userAgent}, ${ipAddress}
         FROM updated
         RETURNING id
       `;

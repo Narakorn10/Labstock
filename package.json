@@ -12,6 +12,7 @@
     "@neondatabase/serverless": "^1.1.0",
     "axios": "^1.16.0",
     "bcryptjs": "^3.0.3",
+    "csv-parse": "^6.2.1",
     "dotenv": "^17.4.2",
     "html-to-image": "^1.11.13",
     "html5-qrcode": "^2.3.8",
