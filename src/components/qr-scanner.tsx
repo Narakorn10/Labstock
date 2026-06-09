@@ -12,6 +12,7 @@ interface QRScannerProps {
 export default function QRScanner({ onScan, onClose }: QRScannerProps) {
   const [isScannerStarted, setIsScannerStarted] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false); // New state to prevent duplicate scans
   const [error, setError] = useState<string | null>(null);
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const scannerId = "qr-reader";
@@ -23,7 +24,7 @@ export default function QRScanner({ onScan, onClose }: QRScannerProps) {
         scannerRef.current = scanner;
 
         const config = {
-          fps: 60, // Maximum frame rate for better focus tracking
+          fps: 60, // Keep 60fps for focus, but we'll debounce the result
           qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
             const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
             // Increase box size to 80% to give more room for small codes
@@ -64,14 +65,21 @@ export default function QRScanner({ onScan, onClose }: QRScannerProps) {
           { facingMode: "environment" },
           config,
           (decodedText) => {
-            setIsSuccess(true);
-            playBeep();
-            if (navigator.vibrate) navigator.vibrate(100); // Haptic feedback
-            
-            // Brief delay to show success state before callback
-            setTimeout(() => {
-              onScan(decodedText);
-            }, 300);
+            // Prevent multiple scans of the same item in rapid succession
+            setIsProcessing(prev => {
+              if (prev) return true; // Already processing, ignore this frame
+              
+              setIsSuccess(true);
+              playBeep();
+              if (navigator.vibrate) navigator.vibrate(100);
+              
+              // Brief delay to show success state before callback
+              setTimeout(() => {
+                onScan(decodedText);
+              }, 500); // Increased slightly for clarity
+              
+              return true;
+            });
           },
           () => {
             // Successively ignored errors to keep scanner running
