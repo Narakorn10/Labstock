@@ -23,13 +23,15 @@ export default function QRScanner({ onScan, onClose }: QRScannerProps) {
         scannerRef.current = scanner;
 
         const config = {
-          fps: 30, // Increased for smoother capture
+          fps: 60, // Maximum frame rate for better focus tracking
           qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
             const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
-            const boxSize = Math.floor(minEdge * 0.7);
+            // Increase box size to 80% to give more room for small codes
+            const boxSize = Math.floor(minEdge * 0.8);
             return { width: boxSize, height: boxSize };
           },
           aspectRatio: 1.0,
+          disableFlip: true, // Speed up processing
           formatsToSupport: [
             Html5QrcodeSupportedFormats.QR_CODE,
             Html5QrcodeSupportedFormats.CODE_128,

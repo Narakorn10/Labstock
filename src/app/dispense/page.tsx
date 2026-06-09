@@ -89,12 +89,21 @@ export default function DispensePage() {
     const data = processAnyBarcode(decodedText);
     if (!data) return;
 
+    // Standardize GTIN for lookup (remove leading zeros)
+    const cleanGtin = data.gtin.replace(/^0+/, '');
+    const cleanRaw = data.rawString.replace(/^0+/, '');
+
     // Lookup item
-    const match = reagents.find(r => 
-      r.itemId.toLowerCase() === data.gtin.toLowerCase() || 
-      r.qrCode?.toLowerCase() === data.gtin.toLowerCase() ||
-      r.itemId.toLowerCase() === data.rawString.toLowerCase()
-    );
+    const match = reagents.find(r => {
+      const dbBarcode = r.qrCode?.replace(/^0+/, '') || '';
+      const dbItemId = r.itemId.replace(/^0+/, '');
+
+      return (
+        dbItemId.toLowerCase() === cleanGtin.toLowerCase() || 
+        dbBarcode.toLowerCase() === cleanGtin.toLowerCase() ||
+        dbItemId.toLowerCase() === cleanRaw.toLowerCase()
+      );
+    });
 
     if (match) {
       addToCart(match, data.lot === 'NEED_MANUAL_INPUT' ? undefined : data.lot);
