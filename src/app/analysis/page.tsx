@@ -25,7 +25,17 @@ export default function AnalysisPage() {
   const [error, setError] = useState<string | null>(null);
   const [reagents, setReagents] = useState<Reagent[]>([]);
   const [usage, setUsage] = useState<UsageData[]>([]);
-  // ... (rest of states)
+  const [dailyStats, setDailyStats] = useState<DailyStat[]>([]);
+  const [weeklyStats, setWeeklyStats] = useState<any[]>([]);
+  const [expiringSoon, setExpiringSoon] = useState<any[]>([]);
+  const [slowMoving, setSlowMoving] = useState<any[]>([]);
+  const [selectedItemId, setSelectedItemId] = useState<string>('TOTAL');
+
+  const [startDate, setStartDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return d.toISOString().split('T')[0];
+  });
   const [endDate, setEndDate] = useState(() => new Date().toISOString().split('T')[0]);
 
   useEffect(() => {
@@ -133,7 +143,25 @@ export default function AnalysisPage() {
         </div>
         
         <div className="flex flex-wrap items-center gap-2 bg-white p-2 rounded-2xl border border-gray-100 shadow-sm">
-          {/* ... */}
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 rounded-xl border border-gray-100">
+            <Calendar size={14} className="text-gray-400" />
+            <input 
+              type="date" 
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="bg-transparent border-none text-[10px] font-black focus:ring-0 p-0 w-24"
+            />
+          </div>
+          <span className="text-gray-300 text-[10px] font-black">TO</span>
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 rounded-xl border border-gray-100">
+            <Calendar size={14} className="text-gray-400" />
+            <input 
+              type="date" 
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="bg-transparent border-none text-[10px] font-black focus:ring-0 p-0 w-24"
+            />
+          </div>
         </div>
       </div>
 
