@@ -54,9 +54,11 @@ export async function POST(request: Request) {
       const master = await sql`SELECT item_id FROM master_data WHERE item_id = ${item.itemId} LIMIT 1`;
       if (master.length === 0) continue;
 
+      const expDate = item.expDate ? item.expDate : null;
+
       await sql`
         INSERT INTO shipments (reference_no, vendor, item_id, lot_no, exp_date, quantity, status)
-        VALUES (${referenceNo}, ${user.company}, ${item.itemId}, ${item.lotNo}, ${item.expDate}, ${item.qty}, 'In Transit')
+        VALUES (${referenceNo}, ${user.company}, ${item.itemId}, ${item.lotNo}, ${expDate}, ${item.qty}, 'In Transit')
       `;
       added++;
     }

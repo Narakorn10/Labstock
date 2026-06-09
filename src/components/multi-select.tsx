@@ -47,7 +47,7 @@ export default function MultiSelect({
   };
 
   const filteredOptions = options.filter(o => 
-    o.toLowerCase().includes(searchTerm.toLowerCase())
+    o && o.toLowerCase().includes(searchTerm.toLowerCase())
   );
   
   const isAllSelected = selected.includes('ALL');

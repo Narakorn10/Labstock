@@ -32,25 +32,35 @@ export default function Dashboard() {
   const [reagents, setReagents] = useState<Reagent[]>([]);
   const [usageData, setUsageData] = useState<UsageResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
   const fetchData = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const today = new Date().toISOString().split('T')[0];
       const weekAgo = new Date();
       weekAgo.setDate(weekAgo.getDate() - 7);
       const startDate = weekAgo.toISOString().split('T')[0];
 
-      const [dashData, usage] = await Promise.all([
-        apiClient.getDashboard(),
-        apiClient.getUsage(startDate, today)
-      ]);
-      setReagents(dashData);
-      setUsageData(usage);
-    } catch (err) {
-      console.error(err);
+      // Fetch separately to be more robust
+      try {
+        const dashData = await apiClient.getDashboard();
+        setReagents(dashData);
+      } catch (err) {
+        console.error('Dashboard Fetch Error:', err);
+        setError(prev => (prev ? prev + ' | ' : '') + 'ไม่สามารถดึงข้อมูลคลังสินค้าได้');
+      }
+
+      try {
+        const usage = await apiClient.getUsage(startDate, today);
+        setUsageData(usage);
+      } catch (err) {
+        console.error('Usage Fetch Error:', err);
+        setError(prev => (prev ? prev + ' | ' : '') + 'ไม่สามารถดึงข้อมูลสรุปการใช้งานได้');
+      }
     } finally {
       setLoading(false);
     }
@@ -139,13 +149,21 @@ export default function Dashboard() {
           </button>
           <button 
             onClick={() => setReportModalOpen(true)}
-            className="flex items-center gap-2 px-5 py-2.5 bg-[#166ee1] text-white hover:bg-[#1256b5] transition-all font-bold text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-blue-100"
+            className="flex items-center gap-2 px-6 py-2.5 bg-[#166ee1] text-white hover:bg-[#1259b3] transition-all font-bold text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-blue-100"
           >
             <FileText size={16} />
-            Generate Report
+            Generate Daily Report
           </button>
-        </div>
-      </div>
+          </div>
+          </div>
+
+          {error && (
+          <div className="bg-red-50 border border-red-100 p-4 rounded-2xl flex items-center gap-3 text-red-600 animate-in fade-in duration-300">
+          <AlertTriangle size={20} />
+          <p className="text-xs font-bold">{error}</p>
+          </div>
+          )}
+
 
       {/* Visual Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -274,7 +292,7 @@ export default function Dashboard() {
                       </td>
                       <td className="px-6 md:px-8 py-5">
                         <div className="flex gap-1.5">
-                            {item.lots.slice(0, 4).map((lot, i) => {
+                            {item.lots?.slice(0, 4).map((lot, i) => {
                                 const isExp = new Date(lot.expDate) < new Date();
                                 return (
                                     <div key={i} title={`EXP: ${lot.expDate}`} className={`w-3 h-3 rounded-full ${isExp ? 'bg-red-400' : 'bg-green-400'} border-2 border-white ring-1 ring-gray-100`} />

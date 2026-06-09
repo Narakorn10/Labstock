@@ -6,9 +6,12 @@ export async function GET(request: Request) {
   try {
     const user = await getAuthenticatedUser(request);
     if (!user) {
+      console.log('[Dashboard API] Unauthorized access attempt');
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
+    console.log(`[Dashboard API] Fetching data for ${user.username} (${user.role})...`);
+
     // Fetch all master data
     const masterData = await sql`
       SELECT 
@@ -25,6 +28,7 @@ export async function GET(request: Request) {
       FROM master_data
       ORDER BY item_id ASC
     `;
+    console.log(`[Dashboard API] Master data rows: ${masterData.length}`);
 
     // Fetch all inventory where quantity > 0
     const inventoryData = await sql`
@@ -37,6 +41,7 @@ export async function GET(request: Request) {
       WHERE quantity > 0
       ORDER BY exp_date ASC -- FEFO order
     `;
+    console.log(`[Dashboard API] Inventory data rows: ${inventoryData.length}`);
 
     // Map inventory to master data
     interface DashboardLot {
@@ -92,6 +97,11 @@ export async function GET(request: Request) {
   } catch (error: unknown) {
     console.error('Dashboard API Error:', error);
     const message = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: message }, { status: 500 });
+    const stack = error instanceof Error ? error.stack : null;
+    return NextResponse.json({ 
+      error: message,
+      stack: stack,
+      details: error
+    }, { status: 500 });
   }
 }

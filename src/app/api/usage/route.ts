@@ -3,6 +3,12 @@ import sql from '@/lib/db';
 import { getAuthenticatedUser } from '@/lib/auth-utils';
 
 export async function GET(request: Request) {
+  const logs: string[] = [];
+  const log = (msg: string) => {
+    console.log(`[Usage API] ${msg}`);
+    logs.push(msg);
+  };
+
   try {
     const user = await getAuthenticatedUser(request);
     if (!user) {
@@ -10,62 +16,97 @@ export async function GET(request: Request) {
     }
 
     const { searchParams } = new URL(request.url);
-    const startDate = searchParams.get('startDate');
-    const endDate = searchParams.get('endDate');
-    
-    if (!startDate || !endDate) {
-      return NextResponse.json({ error: 'Missing startDate or endDate' }, { status: 400 });
+    const rawStartDate = searchParams.get('startDate') || '';
+    const rawEndDate = searchParams.get('endDate') || '';
+
+    // Strict Regex for YYYY-MM-DD
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+
+    const startDate = rawStartDate.trim();
+    const endDate = rawEndDate.trim();
+
+    log(`Params: startDate="${startDate}", endDate="${endDate}", user=${user.username}`);
+
+    if (!dateRegex.test(startDate) || !dateRegex.test(endDate)) {
+      log(`ERROR: Invalid date format. Received: start="${startDate}", end="${endDate}"`);
+      return NextResponse.json({ 
+        error: 'Invalid date format. Use YYYY-MM-DD', 
+        received: { startDate, endDate },
+        logs 
+      }, { status: 400 });
     }
 
-    // 1. Fetch Summary Data (Grouped by Item)
-    const summaryPromise = sql`
-      SELECT 
-        item_id as "itemId", 
-        MAX(name) as name,
-        SUM(CASE WHEN action = 'เบิกไปหน้างาน' THEN quantity ELSE 0 END) as dispensed,
-        SUM(CASE WHEN action = 'รับเข้าสต๊อกหลัก' THEN quantity ELSE 0 END) as received,
-        SUM(CASE WHEN action LIKE '%ปรับปรุงยอด%' THEN quantity ELSE 0 END) as adjusted
-      FROM logs
-      WHERE timestamp >= ${startDate} AND timestamp <= ${endDate + ' 23:59:59'}
-      GROUP BY item_id
-    `;
+    // 1. Fetch Summary Data
+    log('Step 1: Summary query...');
+    let summaryRows;
+    try {
+      // Use explicit cast and ensured valid strings
+      summaryRows = await sql`
+        SELECT 
+          item_id as "itemId", 
+          MAX(name) as name,
+          SUM(CASE WHEN action = 'เบิกไปหน้างาน' THEN quantity ELSE 0 END) as dispensed,
+          SUM(CASE WHEN action = 'รับเข้าสต๊อกหลัก' THEN quantity ELSE 0 END) as received,
+          SUM(CASE WHEN action LIKE '%ปรับปรุงยอด%' THEN quantity ELSE 0 END) as adjusted
+        FROM logs
+        WHERE timestamp >= ${startDate}::date AND timestamp <= (${endDate}::date + interval '1 day')
+        GROUP BY item_id
+      `;
+      log(`Summary success: ${summaryRows.length} rows`);
+    } catch (e: any) {
+      log(`Summary FAILED: ${e.message}`);
+      throw e;
+    }
 
-    // 2. Fetch Daily & Weekly Stats for Admin/Manager
+    // 2. Fetch Detailed Stats
     if (user.role === 'Admin' || user.role === 'Manager') {
-      const [summaryRows, dailyRows, weeklyStats, expiringSoon, slowMoving] = await Promise.all([
-        summaryPromise,
-        sql`
+      log('Step 2: Detailed queries...');
+
+      let dailyRows, weeklyStats, expiringSoon, slowMoving;
+
+      try {
+        log('Sub-step: dailyRows...');
+        dailyRows = await sql`
           SELECT 
             TO_CHAR(timestamp, 'YYYY-MM-DD') as date,
             item_id as "itemId",
             SUM(quantity) as "qty"
           FROM logs
           WHERE action = 'เบิกไปหน้างาน' 
-            AND timestamp >= ${startDate} AND timestamp <= ${endDate + ' 23:59:59'}
+            AND timestamp >= ${startDate}::date AND timestamp <= (${endDate}::date + interval '1 day')
           GROUP BY date, item_id
           ORDER BY date ASC
-        `,
-        sql`
+        `;
+        log(`dailyRows success: ${dailyRows.length} rows`);
+
+        log('Sub-step: weeklyStats...');
+        weeklyStats = await sql`
           SELECT 
             TO_CHAR(DATE_TRUNC('week', timestamp), 'YYYY-"W"IW') as week,
             SUM(quantity) as "totalDispensed"
           FROM logs
           WHERE action = 'เบิกไปหน้างาน'
-            AND timestamp >= ${startDate} AND timestamp <= ${endDate + ' 23:59:59'}
+            AND timestamp >= ${startDate}::date AND timestamp <= (${endDate}::date + interval '1 day')
           GROUP BY week
           ORDER BY week ASC
-        `,
-        sql`
+        `;
+
+        log(`weeklyStats success: ${weeklyStats.length} rows`);
+
+        log('Sub-step: expiringSoon...');
+        expiringSoon = await sql`
           SELECT i.item_id as "itemId", m.name, i.lot_no as "lotNo", i.exp_date as "expDate", i.quantity
           FROM inventory i
           JOIN master_data m ON i.item_id = m.item_id
           WHERE i.quantity > 0 
             AND i.exp_date IS NOT NULL 
-            AND i.exp_date != ''
           ORDER BY i.exp_date ASC
           LIMIT 5
-        `,
-        sql`
+        `;
+        log(`expiringSoon success: ${expiringSoon.length} rows`);
+
+        log('Sub-step: slowMoving...');
+        slowMoving = await sql`
           SELECT m.item_id as "itemId", m.name, SUM(i.quantity) as stock
           FROM master_data m
           JOIN inventory i ON m.item_id = i.item_id
@@ -77,9 +118,13 @@ export async function GET(request: Request) {
           HAVING SUM(i.quantity) > 0
           ORDER BY stock DESC
           LIMIT 5
-        `
-      ]);
+        `;
+        log(`slowMoving success: ${slowMoving.length} rows`);
 
+      } catch (e: any) {
+        log(`Detailed queries FAILED: ${e.message}`);
+        throw e;
+      }
       interface DailyStatInternal {
         date: string;
         totalDispensed: number;
@@ -120,7 +165,6 @@ export async function GET(request: Request) {
       });
     }
 
-    const summaryRows = await summaryPromise;
     interface SummaryItemShort {
       itemId: string;
       name: string;
@@ -139,6 +183,11 @@ export async function GET(request: Request) {
   } catch (error: unknown) {
     console.error('Usage API Error:', error);
     const message = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: message }, { status: 500 });
+    const stack = error instanceof Error ? error.stack : null;
+    return NextResponse.json({ 
+      error: message,
+      stack: stack,
+      details: error
+    }, { status: 500 });
   }
 }

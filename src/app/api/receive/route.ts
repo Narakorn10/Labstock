@@ -26,6 +26,7 @@ export async function POST(request: Request) {
       const targetItemId = item.itemId.toString();
       const targetLotNo = item.lotNo.toString();
       const qty = parseFloat(item.qty);
+      const expDate = item.expDate ? item.expDate : null;
 
       // Skip if quantity is 0 or less
       if (isNaN(qty) || qty <= 0) continue;
@@ -37,11 +38,11 @@ export async function POST(request: Request) {
       await sql`
         WITH upserted AS (
           INSERT INTO inventory (item_id, lot_no, exp_date, quantity)
-          VALUES (${targetItemId}, ${targetLotNo}, ${item.expDate}, ${qty})
+          VALUES (${targetItemId}, ${targetLotNo}, ${expDate}, ${qty})
           ON CONFLICT (item_id, lot_no) 
           DO UPDATE SET 
             quantity = inventory.quantity + ${qty},
-            exp_date = EXCLUDED.exp_date
+            exp_date = COALESCE(EXCLUDED.exp_date, inventory.exp_date)
           RETURNING item_id, lot_no
         )
         INSERT INTO logs (item_id, name, lot_no, action, quantity, username, user_agent, ip_address)

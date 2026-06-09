@@ -78,9 +78,9 @@ export default function LabVendorReceiptPage() {
   };
 
   const filtered = shipments.filter(s => 
-    s.reagent_name?.toLowerCase().includes(search.toLowerCase()) ||
-    s.vendor?.toLowerCase().includes(search.toLowerCase()) ||
-    s.reference_no?.toLowerCase().includes(search.toLowerCase())
+    (s.reagent_name?.toLowerCase() || '').includes(search.toLowerCase()) ||
+    (s.vendor?.toLowerCase() || '').includes(search.toLowerCase()) ||
+    (s.reference_no?.toLowerCase() || '').includes(search.toLowerCase())
   );
 
   return (
