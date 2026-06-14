@@ -98,7 +98,7 @@ export default function VendorOrdersPage() {
         </div>
         
         <button 
-          onClick={() => fetchOrders(user.vendor)}
+          onClick={() => user?.vendor && fetchOrders(user.vendor)}
           className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-bold text-gray-600 hover:bg-gray-50 transition-all shadow-sm"
         >
           <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
