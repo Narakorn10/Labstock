@@ -28,6 +28,7 @@ interface CartItem {
 
 export default function DispensePage() {
   const [reagents, setReagents] = useState<Reagent[]>([]);
+  const [patterns, setPatterns] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [scanMode, setScanMode] = useState(false);
@@ -38,8 +39,12 @@ export default function DispensePage() {
 
   // Load reagents for lookup
   useEffect(() => {
-    apiClient.getDashboard().then(data => {
-      setReagents(data);
+    Promise.all([
+      apiClient.getDashboard(),
+      apiClient.getBarcodePatterns()
+    ]).then(([reagentsData, patternsData]) => {
+      setReagents(reagentsData);
+      setPatterns(patternsData);
       setLoading(false);
     }).catch(err => {
       console.error(err);
@@ -86,7 +91,7 @@ export default function DispensePage() {
   };
 
   const handleScan = useCallback((decodedText: string) => {
-    const data = processAnyBarcode(decodedText);
+    const data = processAnyBarcode(decodedText, patterns);
     if (!data) return;
 
     // Standardize GTIN for lookup (remove leading zeros)
@@ -112,7 +117,7 @@ export default function DispensePage() {
       setFeedback({ type: 'error', msg: 'ไม่พบข้อมูลน้ำยานี้ในระบบ' });
       setScanMode(false);
     }
-  }, [reagents]);
+  }, [reagents, patterns]);
 
   const filteredResults = useMemo(() => {
     if (!search.trim()) return [];

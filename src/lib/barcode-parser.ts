@@ -5,8 +5,10 @@
  * Migrated from LabReagentControl (React) to LabStock (Next.js)
  */
 
+import { BarcodePattern } from '@/lib/api-client';
+
 export interface BarcodeData {
-    barcodeType: "GS1_COMPLIANT" | "STANDARD_1D";
+    barcodeType: "GS1_COMPLIANT" | "STANDARD_1D" | "CUSTOM_PATTERN";
     gtin: string;
     ref: string;
     lot: string;
@@ -15,8 +17,30 @@ export interface BarcodeData {
     rawString: string;
 }
 
-export const processAnyBarcode = (rawBarcode: string): BarcodeData | null => {
+export const processAnyBarcode = (rawBarcode: string, patterns: BarcodePattern[] = []): BarcodeData | null => {
     if (!rawBarcode) return null;
+
+    // 0. Test Custom Patterns First
+    for (const pattern of patterns) {
+        try {
+            const regex = new RegExp(pattern.regex_pattern);
+            const match = rawBarcode.match(regex);
+            
+            if (match) {
+                return {
+                    barcodeType: "CUSTOM_PATTERN",
+                    gtin: pattern.item_id_group ? (match[pattern.item_id_group] || "") : rawBarcode,
+                    ref: "NEED_MANUAL_INPUT",
+                    lot: pattern.lot_no_group ? (match[pattern.lot_no_group] || "") : "NEED_MANUAL_INPUT",
+                    expDate: pattern.exp_date_group ? (match[pattern.exp_date_group] || "") : "NEED_MANUAL_INPUT",
+                    mfgDate: "NEED_MANUAL_INPUT",
+                    rawString: rawBarcode
+                };
+            }
+        } catch (e) {
+            console.error("Invalid regex pattern from DB:", pattern.regex_pattern, e);
+        }
+    }
 
     // 1. Aggressive Clean
     let workingString = rawBarcode.trim()

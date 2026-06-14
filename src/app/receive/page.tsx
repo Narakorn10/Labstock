@@ -26,6 +26,7 @@ interface CartItem {
 
 export default function ReceivePage() {
   const [reagents, setReagents] = useState<Reagent[]>([]);
+  const [patterns, setPatterns] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [scanMode, setScanMode] = useState(false);
@@ -36,8 +37,12 @@ export default function ReceivePage() {
 
   // Load reagents for lookup
   useEffect(() => {
-    apiClient.getDashboard().then(data => {
-      setReagents(data);
+    Promise.all([
+      apiClient.getDashboard(),
+      apiClient.getBarcodePatterns()
+    ]).then(([reagentsData, patternsData]) => {
+      setReagents(reagentsData);
+      setPatterns(patternsData);
       setLoading(false);
     }).catch(err => {
       console.error(err);
@@ -69,7 +74,7 @@ export default function ReceivePage() {
   };
 
   const handleScan = useCallback((decodedText: string) => {
-    const data = processAnyBarcode(decodedText);
+    const data = processAnyBarcode(decodedText, patterns);
     if (!data) return;
 
     // Standardize GTIN for lookup (remove leading zeros)
@@ -95,7 +100,7 @@ export default function ReceivePage() {
       setFeedback({ type: 'error', msg: 'ไม่พบข้อมูลน้ำยานี้ในระบบ Master Data' });
       setScanMode(false);
     }
-  }, [reagents]);
+  }, [reagents, patterns]);
 
   const filteredResults = useMemo(() => {
     if (!search.trim()) return [];
@@ -121,6 +126,14 @@ export default function ReceivePage() {
   const updateQty = (index: number, newQty: string) => {
     const val = parseInt(newQty) || 0;
     setCart(prev => prev.map((item, i) => i === index ? { ...item, qty: val } : item));
+  };
+
+  const updateLotNo = (index: number, newLot: string) => {
+    setCart(prev => prev.map((item, i) => i === index ? { ...item, lotNo: newLot } : item));
+  };
+
+  const updateExpDate = (index: number, newExp: string) => {
+    setCart(prev => prev.map((item, i) => i === index ? { ...item, expDate: newExp } : item));
   };
 
   const handleSubmit = async () => {
@@ -263,10 +276,27 @@ export default function ReceivePage() {
               <div key={`${item.itemId}-${item.lotNo}-${index}`} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-4 animate-in fade-in slide-in-from-right-4 duration-300">
                 <div className="flex-1 min-w-0">
                   <h3 className="font-bold text-gray-900 truncate">{item.name}</h3>
-                  <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 text-[11px] font-medium text-gray-500">
-                    <span className="bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">ID: {item.itemId}</span>
-                    <span className="bg-gray-50 px-1.5 py-0.5 rounded font-mono">Lot: {item.lotNo || 'รอกรอก...'}</span>
-                    <span className="bg-gray-50 px-1.5 py-0.5 rounded">EXP: {item.expDate || 'รอกรอก...'}</span>
+                  <div className="flex flex-wrap gap-x-3 gap-y-2 mt-2 text-[11px] font-medium text-gray-500">
+                    <span className="bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded flex items-center">ID: {item.itemId}</span>
+                    <div className="flex items-center gap-1">
+                      <span className="bg-gray-50 px-1.5 py-0.5 rounded font-mono">Lot:</span>
+                      <input 
+                        type="text" 
+                        value={item.lotNo} 
+                        onChange={e => updateLotNo(index, e.target.value)}
+                        placeholder="ระบุ Lot"
+                        className="border border-gray-200 rounded px-1.5 py-0.5 text-xs outline-none focus:ring-1 focus:ring-blue-500 w-24"
+                      />
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="bg-gray-50 px-1.5 py-0.5 rounded">EXP:</span>
+                      <input 
+                        type="date" 
+                        value={item.expDate} 
+                        onChange={e => updateExpDate(index, e.target.value)}
+                        className="border border-gray-200 rounded px-1.5 py-0.5 text-xs outline-none focus:ring-1 focus:ring-blue-500"
+                      />
+                    </div>
                   </div>
                 </div>
                 

@@ -75,7 +75,7 @@ export interface User {
   username: string;
   name: string;
   role: string;
-  company?: string;
+  vendor?: string;
   password?: string;
 }
 
@@ -104,6 +104,15 @@ export interface LogEntry {
   action: string;
   qty: number;
   user: string;
+}
+
+export interface BarcodePattern {
+  id: number;
+  name: string;
+  regex_pattern: string;
+  item_id_group: number | null;
+  lot_no_group: number | null;
+  exp_date_group: number | null;
 }
 
 export interface SettingsResponse {
@@ -211,8 +220,22 @@ export const apiClient = {
     return res.data;
   },
 
-  updateSettings: async (data: { action: 'add' | 'delete', type: 'reagent' | 'job' | 'machine', value: string }) => {
-    const res = await instance.post<ApiResponse>('/api/settings', data);
+  updateSettings: async (action: 'add' | 'delete', type: string, value: string) => {
+    const res = await instance.post('/api/settings', { action, type, value });
+    return res.data;
+  },
+
+  // Barcode Patterns
+  getBarcodePatterns: async () => {
+    const res = await instance.get<BarcodePattern[]>('/api/settings/barcodes');
+    return res.data;
+  },
+  createBarcodePattern: async (data: Omit<BarcodePattern, 'id'>) => {
+    const res = await instance.post('/api/settings/barcodes', data);
+    return res.data;
+  },
+  deleteBarcodePattern: async (id: number) => {
+    const res = await instance.delete('/api/settings/barcodes', { data: { id } });
     return res.data;
   },
 
@@ -232,8 +255,8 @@ export const apiClient = {
     return res.data;
   },
 
-  uploadShipments: async (items: ShipmentItem[], referenceNo: string) => {
-    const res = await instance.post<ApiResponse>('/api/vendor/shipments', { items, referenceNo });
+  uploadShipments: async (items: ShipmentItem[], referenceNo: string, poNumber?: string, trackingNo?: string, trackingProvider?: string) => {
+    const res = await instance.post<ApiResponse>('/api/vendor/shipments', { items, referenceNo, poNumber, trackingNo, trackingProvider });
     return res.data;
   },
 

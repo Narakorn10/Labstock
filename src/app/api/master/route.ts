@@ -34,7 +34,7 @@ export async function POST(request: Request) {
       if (!exists) return NextResponse.json({ success: false, message: 'ไม่พบรายการที่ต้องการแก้ไข' }, { status: 404 });
 
       // Vendor security for updates
-      if (isVendor && existing[0].vendor !== user.company) {
+      if (isVendor && existing[0].vendor !== user.vendor) {
         return NextResponse.json({ error: 'Permission denied for this item' }, { status: 403 });
       }
 
@@ -62,7 +62,7 @@ export async function POST(request: Request) {
       let added = 0;
       for (const item of items) {
         // Enforce vendor check for each item in bulk if vendor role
-        if (isVendor && item.vendor !== user.company) continue;
+        if (isVendor && item.vendor !== user.vendor) continue;
 
         await ensureCategories(item.reagentType, item.jobType, item.machineType);
 

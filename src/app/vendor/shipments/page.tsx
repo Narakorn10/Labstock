@@ -63,7 +63,7 @@ export default function VendorShipmentsPage() {
         const text = event.target?.result as string;
         const rows = text.split('\n').filter(line => line.trim());
         
-        // Expected CSV: itemId, lotNo, expDate, qty, referenceNo
+        // Expected CSV: itemId, lotNo, expDate, qty, referenceNo, poNumber, trackingNo, trackingProvider
         const items = rows.slice(1).map(row => {
           const values = row.split(',').map(s => s.trim());
           return {
@@ -76,10 +76,14 @@ export default function VendorShipmentsPage() {
 
         if (items.length === 0) throw new Error('ไม่พบข้อมูลที่ถูกต้องในไฟล์');
 
-        // Extract referenceNo from first row of data or a fixed index
-        const referenceNo = rows[1].split(',')[4]?.trim() || `SHIP-${Date.now()}`;
+        // Extract additional info from first row of data
+        const firstRow = rows[1].split(',').map(s => s.trim());
+        const referenceNo = firstRow[4] || `SHIP-${Date.now()}`;
+        const poNumber = firstRow[5] || '';
+        const trackingNo = firstRow[6] || '';
+        const trackingProvider = firstRow[7] || '';
 
-        const result = await apiClient.uploadShipments(items, referenceNo);
+        const result = await apiClient.uploadShipments(items, referenceNo, poNumber, trackingNo, trackingProvider);
         
         if (result.success) {
           alert(result.message);
@@ -127,8 +131,8 @@ export default function VendorShipmentsPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
-          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Company</p>
-          <p className="text-2xl font-black text-blue-600">{user?.company || 'Vendor'}</p>
+          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Vendor</p>
+          <p className="text-2xl font-black text-blue-600">{user?.vendor || 'Vendor'}</p>
         </div>
         <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex items-center justify-between">
           <div>

@@ -27,7 +27,7 @@ export default function UsersPage() {
     password: '', 
     name: '', 
     role: 'User',
-    company: ''
+    vendor: ''
   });
 
   const loadUsers = useCallback(async () => {
@@ -55,7 +55,7 @@ export default function UsersPage() {
 
   const openAddModal = () => {
     setIsEdit(false);
-    setForm({ username: '', password: '', name: '', role: 'User', company: '' });
+    setForm({ username: '', password: '', name: '', role: 'User', vendor: '' });
     setModalOpen(true);
   };
 
@@ -66,7 +66,7 @@ export default function UsersPage() {
       password: '', 
       name: user.name, 
       role: user.role,
-      company: user.company || ''
+      vendor: user.vendor || ''
     });
     setModalOpen(true);
   };
@@ -159,9 +159,9 @@ export default function UsersPage() {
                   `}>
                     {u.role}
                   </span>
-                  {u.company && (
+                  {u.vendor && (
                     <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-100">
-                        {u.company}
+                        {u.vendor}
                     </span>
                   )}
                 </div>
@@ -259,14 +259,14 @@ export default function UsersPage() {
             </div>
           </div>
 
-          {(form.role === 'Vendor' || form.company) && (
+          {(form.role === 'Vendor' || form.vendor) && (
             <div className="space-y-1.5 animate-in slide-in-from-top-2 duration-300">
-                <label className="text-[10px] font-black text-blue-400 uppercase tracking-widest ml-1">สังกัดบริษัท (Company)</label>
+                <label className="text-[10px] font-black text-blue-400 uppercase tracking-widest ml-1">สังกัดบริษัท (Vendor)</label>
                 <input 
                 type="text" 
                 required={form.role === 'Vendor'}
-                value={form.company}
-                onChange={e => setForm({...form, company: e.target.value})}
+                value={form.vendor}
+                onChange={e => setForm({...form, vendor: e.target.value})}
                 placeholder="ระบุชื่อบริษัทให้ตรงกับในฐานข้อมูล"
                 className="w-full p-4 bg-blue-50/50 border border-blue-100 rounded-2xl text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                 />

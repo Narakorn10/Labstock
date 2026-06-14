@@ -79,6 +79,24 @@ export async function PATCH(
       return NextResponse.json({ error: 'รายการนี้ถูกรับเข้าหรือยกเลิกไปก่อนหน้าแล้ว' }, { status: 400 });
     }
 
+    if (shipment.po_number) {
+        const poData = await sql`SELECT id FROM purchase_orders WHERE po_number = ${shipment.po_number}`;
+        if (poData.length > 0) {
+            await sql`
+              UPDATE purchase_order_items
+              SET received_qty = received_qty + ${shipment.quantity}
+              WHERE po_id = ${poData[0].id} AND item_id = ${shipment.item_id}
+            `;
+            // Simplified: Update PO status to RECEIVED
+            await sql`UPDATE purchase_orders SET status = 'RECEIVED', received_at = NOW() WHERE id = ${poData[0].id}`;
+
+            const { notifyUsers } = await import('@/lib/notifications');
+            const settings = await sql`SELECT * FROM notification_settings WHERE username = ${shipment.vendor}`;
+            const fullPoData = await sql`SELECT * FROM purchase_orders WHERE id = ${poData[0].id}`;
+            await notifyUsers('PO_RECEIVED', fullPoData[0], settings);
+        }
+    }
+
     return NextResponse.json({ success: true, message: 'รับเข้าสต๊อกสำเร็จ' });
 
   } catch (error: unknown) {

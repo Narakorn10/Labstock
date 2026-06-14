@@ -105,7 +105,7 @@ export default function SettingsPage() {
     if (!value) return;
 
     try {
-      const res = await apiClient.updateSettings({ action: 'add', type, value });
+      const res = await apiClient.updateSettings('add', type, value);
       if (res.success) {
         setNewValue({ ...newValue, [type]: '' });
         fetchSettings();
@@ -119,7 +119,7 @@ export default function SettingsPage() {
     if (!confirm(`คุณต้องการลบ "${value}" ใช่หรือไม่?`)) return;
 
     try {
-      const res = await apiClient.updateSettings({ action: 'delete', type, value });
+      const res = await apiClient.updateSettings('delete', type, value);
       if (res.success) {
         fetchSettings();
       }

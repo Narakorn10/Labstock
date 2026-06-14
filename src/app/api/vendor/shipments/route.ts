@@ -14,7 +14,7 @@ export async function GET(request: Request) {
         SELECT s.*, m.name as reagent_name, m.unit
         FROM shipments s
         JOIN master_data m ON s.item_id = m.item_id
-        WHERE s.vendor = ${user.company}
+        WHERE s.vendor = ${user.vendor}
         ORDER BY s.created_at DESC
       `;
     } else {
@@ -42,7 +42,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized: Vendors only' }, { status: 401 });
     }
 
-    const { items, referenceNo } = await request.json();
+    const { items, referenceNo, poNumber, trackingNo, trackingProvider } = await request.json();
 
     if (!items || !Array.isArray(items)) {
       return NextResponse.json({ error: 'Invalid items data' }, { status: 400 });
@@ -57,10 +57,23 @@ export async function POST(request: Request) {
       const expDate = item.expDate ? item.expDate : null;
 
       await sql`
-        INSERT INTO shipments (reference_no, vendor, item_id, lot_no, exp_date, quantity, status)
-        VALUES (${referenceNo}, ${user.company}, ${item.itemId}, ${item.lotNo}, ${expDate}, ${item.qty}, 'In Transit')
+        INSERT INTO shipments (reference_no, po_number, tracking_no, tracking_provider, vendor, item_id, lot_no, exp_date, quantity, status)
+        VALUES (${referenceNo}, ${poNumber || null}, ${trackingNo || null}, ${trackingProvider || null}, ${user.vendor}, ${item.itemId}, ${item.lotNo}, ${expDate}, ${item.qty}, 'In Transit')
       `;
       added++;
+    }
+
+    if (poNumber) {
+      // Update PO status to SHIPPED
+      await sql`UPDATE purchase_orders SET status = 'SHIPPED', shipped_at = NOW() WHERE po_number = ${poNumber}`;
+      
+      // Notify lab admins
+      const { notifyUsers } = await import('@/lib/notifications');
+      const settings = await sql`SELECT * FROM notification_settings WHERE username = 'admin'`; // Simple fallback
+      const poData = await sql`SELECT * FROM purchase_orders WHERE po_number = ${poNumber}`;
+      if (poData.length > 0) {
+        await notifyUsers('PO_SHIPPED', poData[0], settings);
+      }
     }
 
     return NextResponse.json({ success: true, message: `แจ้งส่งสินค้าสำเร็จ ${added} รายการ` });

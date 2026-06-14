@@ -31,7 +31,7 @@ export async function PUT(
         SET 
           name = ${updateData.name}, 
           role = ${updateData.role}, 
-          company = ${updateData.company || ''},
+          vendor = ${updateData.vendor || ''},
           password_hash = ${newHash}
         WHERE LOWER(username) = LOWER(${username.trim()})
       `;
@@ -41,7 +41,7 @@ export async function PUT(
         SET 
           name = ${updateData.name}, 
           role = ${updateData.role}, 
-          company = ${updateData.company || ''}
+          vendor = ${updateData.vendor || ''}
         WHERE LOWER(username) = LOWER(${username.trim()})
       `;
     }

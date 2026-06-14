@@ -14,20 +14,28 @@ import {
   X,
   CheckCircle2,
   ArrowLeftRight,
+  ArrowDownToLine,
+  ArrowUpFromLine,
   BarChart3,
   Shield,
-  LogOut
+  LogOut,
+  ScanLine,
+  ShoppingCart,
+  BellRing
 } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from './auth-provider';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard, roles: ['Admin', 'Manager', 'Operator', 'User', 'Vendor'] },
+  { name: 'สั่งซื้อน้ำยา (Purchase Orders)', href: '/orders', icon: ShoppingCart, roles: ['Admin', 'Manager', 'User'] },
+  { name: 'รับออเดอร์ (Vendor POs)', href: '/vendor/orders', icon: ShoppingCart, roles: ['Vendor'] },
   { name: 'Analysis (วิเคราะห์)', href: '/analysis', icon: BarChart3, roles: ['Admin', 'Manager', 'User'] },
   { name: 'Stock Count (นับ)', href: '/count', icon: CheckCircle2, roles: ['Admin', 'Manager', 'User', 'Vendor'] },
   { name: 'แจ้งส่งของ (Shipments)', href: '/vendor/shipments', icon: PackagePlus, roles: ['Vendor'] },
   { name: 'รับสินค้าจากบริษัท', href: '/receive/vendor', icon: Package, roles: ['Admin', 'Manager', 'User'] },
-  { name: 'Borrow (ยืมน้ำยา)', href: '/borrow', icon: ArrowLeftRight, roles: ['Admin', 'Manager', 'User'] },
+  { name: 'ระบบยืม (Borrow)', href: '/borrow', icon: ArrowDownToLine, roles: ['Admin', 'Manager', 'User'] },
+  { name: 'ระบบให้ยืม (Lend)', href: '/lend', icon: ArrowUpFromLine, roles: ['Admin', 'Manager', 'User'] },
   { name: 'Receive (รับเข้า)', href: '/receive', icon: PackagePlus, roles: ['Admin', 'Manager', 'User', 'Vendor'] },
   { name: 'Dispense (เบิกจ่าย)', href: '/dispense', icon: HandHelping, roles: ['Admin', 'Manager', 'Operator', 'User'] },
   { name: 'Logs (ประวัติ)', href: '/logs', icon: History, roles: ['Admin', 'Manager', 'User'] },
@@ -36,6 +44,8 @@ const navigation = [
   { name: 'User Management', href: '/master/users', icon: Shield, roles: ['Admin'] },
   { name: 'SQL Explorer', href: '/admin/sql', icon: Database, roles: ['Admin'] },
   { name: 'Settings (ตั้งค่า)', href: '/settings', icon: Settings, roles: ['Admin', 'Manager'] },
+  { name: 'ตั้งค่าการแจ้งเตือน (Notifications)', href: '/settings/notifications', icon: BellRing, roles: ['Admin', 'Manager', 'Operator', 'User', 'Vendor'] },
+  { name: 'สอนอ่านบาร์โค้ด', href: '/settings/barcodes', icon: ScanLine, roles: ['Admin', 'Manager'] },
 ];
 
 export default function Sidebar() {

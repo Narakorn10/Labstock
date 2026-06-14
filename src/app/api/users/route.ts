@@ -9,7 +9,7 @@ export async function GET(request: Request) {
     }
 
     const data = await sql`
-      SELECT username, name, role, company 
+      SELECT username, name, role, vendor 
       FROM users 
       ORDER BY username ASC
     `;
@@ -37,13 +37,13 @@ export async function POST(request: Request) {
     }
 
     await sql`
-      INSERT INTO users (username, password_hash, name, role, company)
+      INSERT INTO users (username, password_hash, name, role, vendor)
       VALUES (
         ${userData.username.trim()}, 
         ${await hashPassword(userData.password)}, 
         ${userData.name}, 
         ${userData.role || 'User'}, 
-        ${userData.company || ''}
+        ${userData.vendor || ''}
       )
     `;
 

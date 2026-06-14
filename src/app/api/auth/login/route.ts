@@ -8,7 +8,7 @@ export async function POST(request: Request) {
     const { username, password } = await request.json();
 
     const users = await sql`
-      SELECT username, password_hash, name, role, company 
+      SELECT username, password_hash, name, role, vendor 
       FROM users 
       WHERE LOWER(username) = LOWER(${username.trim()})
       LIMIT 1
@@ -44,7 +44,7 @@ export async function POST(request: Request) {
         username: user.username,
         name: user.name,
         role: user.role,
-        company: user.company || ''
+        vendor: user.vendor || ''
       }
     });
 

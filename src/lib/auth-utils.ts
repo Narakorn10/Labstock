@@ -36,7 +36,7 @@ export async function getAuthenticatedUser(request: Request) {
     const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
 
     const users = await sql`
-      SELECT username, name, role, company, token_expiry 
+      SELECT username, name, role, vendor, token_expiry 
       FROM users 
       WHERE (token = ${token} OR token = ${hashedToken})
       LIMIT 1
@@ -55,7 +55,7 @@ export async function getAuthenticatedUser(request: Request) {
       username: user.username,
       name: user.name,
       role: user.role,
-      company: user.company
+      vendor: user.vendor
     };
   } catch (error) {
     console.error('Auth check error:', error);

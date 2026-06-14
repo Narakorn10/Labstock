@@ -74,7 +74,7 @@ export default function MasterDataPage() {
             unit: values[6],
             minThreshold: Number(values[7]) || 0,
             weeklyTarget: Number(values[8]) || 0,
-            vendor: values[9] || (user?.role === 'Vendor' ? user.company : '')
+            vendor: values[9] || (user?.role === 'Vendor' ? user.vendor : '')
           };
           return item;
         }).filter(item => item.itemId);
@@ -348,7 +348,7 @@ export default function MasterDataPage() {
             <label className="text-xs font-bold text-blue-500 uppercase">บริษัทผู้ผลิต/จำหน่าย (Vendor)</label>
             <input 
               name="vendor" 
-              defaultValue={user?.role === 'Vendor' ? user.company : (editingReagent?.vendor || '')} 
+              defaultValue={user?.role === 'Vendor' ? user.vendor : (editingReagent?.vendor || '')} 
               readOnly={user?.role === 'Vendor'}
               placeholder="ระบุชื่อบริษัท (เช่น Roche, Abbott)"
               className={`w-full px-4 py-2 rounded-xl outline-none transition-all ${user?.role === 'Vendor' ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-blue-50/50 border border-blue-100 focus:ring-2 focus:ring-blue-500'}`}

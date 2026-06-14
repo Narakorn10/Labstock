@@ -89,8 +89,8 @@ export async function GET(request: Request) {
     });
 
     // Filter for Vendor role
-    if (user?.role === 'Vendor' && user.company) {
-      data = data.filter(item => item.vendor === user.company);
+    if (user?.role === 'Vendor' && user.vendor) {
+      data = data.filter(item => item.vendor === user.vendor);
     }
 
     return NextResponse.json(data);

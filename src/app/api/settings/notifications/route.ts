@@ -1,0 +1,76 @@
+import { NextResponse } from 'next/server';
+import { neon } from '@neondatabase/serverless';
+
+const sql = neon(process.env.DATABASE_URL || '');
+
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const username = searchParams.get('username');
+
+    if (!username) {
+      return NextResponse.json({ error: 'Username is required' }, { status: 400 });
+    }
+
+    const settings = await sql`SELECT * FROM notification_settings WHERE username = ${username}`;
+    
+    if (settings.length === 0) {
+      // Return default settings
+      return NextResponse.json({
+        username,
+        email: '',
+        line_user_id: '',
+        line_display_name: '',
+        notify_po_created: true,
+        notify_po_confirmed: true,
+        notify_po_shipped: true,
+        notify_po_received: true,
+        notify_low_stock: true
+      });
+    }
+
+    return NextResponse.json(settings[0]);
+  } catch (error: any) {
+    console.error('Error fetching notification settings:', error);
+    return NextResponse.json({ error: 'Failed to fetch settings' }, { status: 500 });
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+    const { 
+      username, email, line_user_id, line_display_name,
+      notify_po_created, notify_po_confirmed, notify_po_shipped, notify_po_received, notify_low_stock 
+    } = body;
+
+    if (!username) {
+      return NextResponse.json({ error: 'Username is required' }, { status: 400 });
+    }
+
+    const result = await sql`
+      INSERT INTO notification_settings (
+        username, email, line_user_id, line_display_name,
+        notify_po_created, notify_po_confirmed, notify_po_shipped, notify_po_received, notify_low_stock
+      ) VALUES (
+        ${username}, ${email || null}, ${line_user_id || null}, ${line_display_name || null},
+        ${notify_po_created ?? true}, ${notify_po_confirmed ?? true}, ${notify_po_shipped ?? true}, ${notify_po_received ?? true}, ${notify_low_stock ?? true}
+      )
+      ON CONFLICT (username) DO UPDATE SET
+        email = EXCLUDED.email,
+        line_user_id = EXCLUDED.line_user_id,
+        line_display_name = EXCLUDED.line_display_name,
+        notify_po_created = EXCLUDED.notify_po_created,
+        notify_po_confirmed = EXCLUDED.notify_po_confirmed,
+        notify_po_shipped = EXCLUDED.notify_po_shipped,
+        notify_po_received = EXCLUDED.notify_po_received,
+        notify_low_stock = EXCLUDED.notify_low_stock
+      RETURNING *
+    `;
+
+    return NextResponse.json(result[0]);
+  } catch (error: any) {
+    console.error('Error saving notification settings:', error);
+    return NextResponse.json({ error: 'Failed to save settings' }, { status: 500 });
+  }
+}
