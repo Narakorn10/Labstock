@@ -31,6 +31,16 @@ export async function POST(req: Request) {
 
         if (text.toLowerCase() === 'help' || text === 'เมนู') {
           await replyHelp(replyToken);
+        } else if (text.toLowerCase() === 'id' || text === 'ลงทะเบียน') {
+          const userId = event.source.userId;
+          const { lineClient } = await import('@/lib/line-bot');
+          await lineClient.replyMessage({ 
+            replyToken, 
+            messages: [{ 
+              type: 'text', 
+              text: `LINE User ID ของคุณคือ:\n${userId}\n\nกรุณาคัดลอกไปวางในเมนู "ตั้งค่าการแจ้งเตือน" ในระบบ LabStock เพื่อเปิดรับการแจ้งเตือนค่ะ` 
+            }] 
+          });
         } else if (text.toLowerCase() === 'stock' || text === 'สต๊อก') {
           // Fetch low stock items
           const lowStockData = await sql`

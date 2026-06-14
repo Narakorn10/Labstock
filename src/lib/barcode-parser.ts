@@ -17,6 +17,57 @@ export interface BarcodeData {
     rawString: string;
 }
 
+/**
+ * Standardizes various date formats into YYYY-MM-DD
+ * Supports: DDMMYYYY, YYYYMMDD, DDMMYY, YYMMDD, and separated formats
+ */
+export const standardizeDate = (dateStr: string): string => {
+    if (!dateStr || dateStr === "NEED_MANUAL_INPUT") return dateStr;
+    
+    // Clean string (remove separators like / - . space)
+    const clean = dateStr.replace(/[^0-9]/g, "");
+    
+    // 8 digits: YYYYMMDD or DDMMYYYY
+    if (clean.length === 8) {
+        // Check if starts with 19xx or 20xx (YYYYMMDD)
+        if (clean.startsWith('20') || clean.startsWith('19')) {
+            return `${clean.substring(0, 4)}-${clean.substring(4, 6)}-${clean.substring(6, 8)}`;
+        }
+        // Check if ends with 19xx or 20xx (DDMMYYYY)
+        const year = clean.substring(4, 8);
+        if (year.startsWith('20') || year.startsWith('19')) {
+            return `${year}-${clean.substring(2, 4)}-${clean.substring(0, 2)}`;
+        }
+    }
+    
+    // 6 digits: YYMMDD (GS1) or DDMMYY
+    if (clean.length === 6) {
+        const p1 = parseInt(clean.substring(0, 2));
+        const p2 = parseInt(clean.substring(2, 4)); // month?
+        const p3 = parseInt(clean.substring(4, 6));
+
+        // If p1 > 31, it must be YYMMDD
+        // If p3 > 31, it must be DDMMYY
+        // If both < 31, it's ambiguous, assume YYMMDD (GS1 standard)
+        
+        if (p1 > 31) {
+            // YYMMDD
+            const year = (p1 >= 70 ? "19" : "20") + clean.substring(0, 2);
+            return `${year}-${clean.substring(2, 4)}-${clean.substring(4, 6)}`;
+        } else if (p3 > 31) {
+            // DDMMYY
+            const year = (p3 >= 70 ? "19" : "20") + clean.substring(4, 6);
+            return `${year}-${clean.substring(2, 4)}-${clean.substring(0, 2)}`;
+        } else {
+            // Ambiguous, assume YYMMDD (Standard GS1)
+            const year = (p1 >= 70 ? "19" : "20") + clean.substring(0, 2);
+            return `${year}-${clean.substring(2, 4)}-${clean.substring(4, 6)}`;
+        }
+    }
+
+    return dateStr;
+};
+
 export const processAnyBarcode = (rawBarcode: string, patterns: BarcodePattern[] = []): BarcodeData | null => {
     if (!rawBarcode) return null;
 
@@ -32,7 +83,7 @@ export const processAnyBarcode = (rawBarcode: string, patterns: BarcodePattern[]
                     gtin: pattern.item_id_group ? (match[pattern.item_id_group] || "") : rawBarcode,
                     ref: "NEED_MANUAL_INPUT",
                     lot: pattern.lot_no_group ? (match[pattern.lot_no_group] || "") : "NEED_MANUAL_INPUT",
-                    expDate: pattern.exp_date_group ? (match[pattern.exp_date_group] || "") : "NEED_MANUAL_INPUT",
+                    expDate: pattern.exp_date_group ? standardizeDate(match[pattern.exp_date_group] || "") : "NEED_MANUAL_INPUT",
                     mfgDate: "NEED_MANUAL_INPUT",
                     rawString: rawBarcode
                 };
