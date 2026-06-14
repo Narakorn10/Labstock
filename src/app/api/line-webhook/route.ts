@@ -32,7 +32,9 @@ export async function POST(req: Request) {
         if (text.toLowerCase() === 'help' || text === 'เมนู') {
           await replyHelp(replyToken);
         } else if (text.toLowerCase() === 'id' || text === 'ลงทะเบียน') {
-          const userId = event.source.userId;
+          const userId = event.source?.userId;
+          if (!userId) return;
+          
           const { lineClient } = await import('@/lib/line-bot');
           await lineClient.replyMessage({ 
             replyToken, 
