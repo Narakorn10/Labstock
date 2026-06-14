@@ -11,28 +11,38 @@ export async function POST(req: Request) {
     const bodyText = await req.text();
     const signature = req.headers.get('x-line-signature') || '';
 
+    console.log('[LINE Webhook] Received event');
+
     if (process.env.LINE_CHANNEL_SECRET && process.env.LINE_CHANNEL_SECRET !== 'DUMMY_SECRET') {
       if (!validateSignature(bodyText, channelSecret, signature)) {
-        console.error('Invalid LINE signature');
+        console.error('[LINE Webhook] Invalid signature. Check your LINE_CHANNEL_SECRET.');
         return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
       }
     }
 
     const body = JSON.parse(bodyText);
     const events: webhook.Event[] = body.events;
+    
+    console.log(`[LINE Webhook] Processing ${events.length} events`);
 
     await Promise.all(events.map(async (event) => {
+      console.log(`[LINE Webhook] Event Type: ${event.type}`);
+      
       // Handle messages
       if (event.type === 'message' && event.message.type === 'text') {
         const text = (event.message as webhook.TextMessageContent).text.trim();
         const replyToken = (event as any).replyToken as string | undefined;
+        
+        console.log(`[LINE Webhook] Text received: "${text}"`);
 
         if (!replyToken) return;
 
         if (text.toLowerCase() === 'help' || text === 'เมนู') {
+          console.log('[LINE Webhook] Replying with Help');
           await replyHelp(replyToken);
         } else if (text.toLowerCase() === 'id' || text === 'ลงทะเบียน') {
           const userId = event.source?.userId;
+          console.log(`[LINE Webhook] User requested ID: ${userId}`);
           if (!userId) return;
           
           const { lineClient } = await import('@/lib/line-bot');
