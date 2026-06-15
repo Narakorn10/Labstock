@@ -151,7 +151,24 @@ export interface MasterReagentData {
   items?: unknown[]; // For bulk_add
 }
 
+export interface RolePermission {
+  role: string;
+  allowed_menus: string[];
+  updated_at?: string;
+}
+
 export const apiClient = {
+  // Permissions
+  getPermissions: async () => {
+    const res = await instance.get<RolePermission[] | RolePermission>('/api/permissions');
+    return res.data;
+  },
+
+  updatePermissions: async (role: string, allowed_menus: string[]) => {
+    const res = await instance.post<ApiResponse>('/api/permissions', { role, allowed_menus });
+    return res.data;
+  },
+
   getDashboard: async () => {
     const res = await instance.get<Reagent[]>('/api/dashboard');
     return res.data;

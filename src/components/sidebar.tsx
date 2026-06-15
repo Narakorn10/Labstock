@@ -21,41 +21,102 @@ import {
   LogOut,
   ScanLine,
   ShoppingCart,
-  BellRing
+  BellRing,
+  ShieldCheck
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from './auth-provider';
+import { apiClient } from '@/lib/api-client';
 
-const navigation = [
-  { name: 'Dashboard', href: '/', icon: LayoutDashboard, roles: ['Admin', 'Manager', 'Operator', 'User', 'Vendor'] },
-  { name: 'สั่งซื้อน้ำยา (Purchase Orders)', href: '/orders', icon: ShoppingCart, roles: ['Admin', 'Manager', 'User'] },
-  { name: 'รับออเดอร์ (Vendor POs)', href: '/vendor/orders', icon: ShoppingCart, roles: ['Vendor'] },
-  { name: 'Analysis (วิเคราะห์)', href: '/analysis', icon: BarChart3, roles: ['Admin', 'Manager', 'User'] },
-  { name: 'Stock Count (นับ)', href: '/count', icon: CheckCircle2, roles: ['Admin', 'Manager', 'User', 'Vendor'] },
-  { name: 'แจ้งส่งของ (Shipments)', href: '/vendor/shipments', icon: PackagePlus, roles: ['Vendor'] },
-  { name: 'รับสินค้าจากบริษัท', href: '/receive/vendor', icon: Package, roles: ['Admin', 'Manager', 'User'] },
-  { name: 'ระบบยืม (Borrow)', href: '/borrow', icon: ArrowDownToLine, roles: ['Admin', 'Manager', 'User'] },
-  { name: 'ระบบให้ยืม (Lend)', href: '/lend', icon: ArrowUpFromLine, roles: ['Admin', 'Manager', 'User'] },
-  { name: 'Receive (รับเข้า)', href: '/receive', icon: PackagePlus, roles: ['Admin', 'Manager', 'User', 'Vendor'] },
-  { name: 'Dispense (เบิกจ่าย)', href: '/dispense', icon: HandHelping, roles: ['Admin', 'Manager', 'Operator', 'User'] },
-  { name: 'Logs (ประวัติ)', href: '/logs', icon: History, roles: ['Admin', 'Manager', 'User'] },
-  { name: 'Master Data', href: '/master', icon: Database, roles: ['Admin', 'Manager'] },
-  { name: 'Main Stock (คลังใหญ่)', href: '/master/inventory', icon: Package, roles: ['Admin', 'Manager'] },
-  { name: 'User Management', href: '/master/users', icon: Shield, roles: ['Admin'] },
-  { name: 'SQL Explorer', href: '/admin/sql', icon: Database, roles: ['Admin'] },
-  { name: 'Settings (ตั้งค่า)', href: '/settings', icon: Settings, roles: ['Admin', 'Manager'] },
-  { name: 'ตั้งค่าการแจ้งเตือน (Notifications)', href: '/settings/notifications', icon: BellRing, roles: ['Admin', 'Manager', 'Operator', 'User', 'Vendor'] },
-  { name: 'สอนอ่านบาร์โค้ด', href: '/settings/barcodes', icon: ScanLine, roles: ['Admin', 'Manager'] },
+const navigationGroups = [
+  {
+    title: 'Overview',
+    items: [
+      { id: 'dashboard', name: 'Dashboard', href: '/', icon: LayoutDashboard },
+      { id: 'analysis', name: 'Analysis (วิเคราะห์)', href: '/analysis', icon: BarChart3 },
+      { id: 'logs', name: 'Logs (ประวัติ)', href: '/logs', icon: History },
+    ]
+  },
+  {
+    title: 'Operations',
+    items: [
+      { id: 'dispense', name: 'Dispense (เบิกจ่าย)', href: '/dispense', icon: HandHelping },
+      { id: 'receive', name: 'Receive (รับเข้า)', href: '/receive', icon: PackagePlus },
+      { id: 'count', name: 'Stock Count (นับ)', href: '/count', icon: CheckCircle2 },
+      { id: 'borrow', name: 'ระบบยืม (Borrow)', href: '/borrow', icon: ArrowDownToLine },
+      { id: 'lend', name: 'ระบบให้ยืม (Lend)', href: '/lend', icon: ArrowUpFromLine },
+    ]
+  },
+  {
+    title: 'Procurement',
+    items: [
+      { id: 'orders', name: 'สั่งซื้อน้ำยา (PO)', href: '/orders', icon: ShoppingCart },
+      { id: 'receive_vendor', name: 'รับสินค้าจากบริษัท', href: '/receive/vendor', icon: Package },
+      { id: 'vendor_orders', name: 'รับออเดอร์ (Vendor PO)', href: '/vendor/orders', icon: ShoppingCart },
+      { id: 'vendor_shipments', name: 'แจ้งส่งของ (Shipments)', href: '/vendor/shipments', icon: PackagePlus },
+    ]
+  },
+  {
+    title: 'Management',
+    items: [
+      { id: 'master_data', name: 'Master Data', href: '/master', icon: Database },
+      { id: 'main_stock', name: 'Main Stock (คลังใหญ่)', href: '/master/inventory', icon: Package },
+      { id: 'user_management', name: 'User Management', href: '/master/users', icon: Shield },
+      { id: 'rbac', name: 'Permissions (RBAC)', href: '/master/permissions', icon: ShieldCheck },
+      { id: 'sql_explorer', name: 'SQL Explorer', href: '/admin/sql', icon: Database },
+    ]
+  },
+  {
+    title: 'Settings',
+    items: [
+      { id: 'settings', name: 'Settings (ตั้งค่า)', href: '/settings', icon: Settings },
+      { id: 'notifications', name: 'Notifications', href: '/settings/notifications', icon: BellRing },
+      { id: 'barcodes', name: 'สอนอ่านบาร์โค้ด', href: '/settings/barcodes', icon: ScanLine },
+    ]
+  }
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
+  const [allowedMenus, setAllowedMenus] = useState<string[]>([]);
+  const [isLoadingPerms, setIsLoadingPerms] = useState(true);
   const { user, logout } = useAuth();
 
-  if (!user) return null;
+  useEffect(() => {
+    if (!user) return;
 
-  const filteredNavigation = navigation.filter(item => item.roles.includes(user.role));
+    const fetchPerms = async () => {
+      try {
+        // Try to get from session storage first for speed
+        const cached = sessionStorage.getItem(`perms_${user.role}`);
+        if (cached) {
+          setAllowedMenus(JSON.parse(cached));
+          setIsLoadingPerms(false);
+        }
+
+        const data = await apiClient.getPermissions();
+        let perms: string[] = [];
+        
+        if (Array.isArray(data)) {
+          perms = data.find(p => p.role === user.role)?.allowed_menus || [];
+        } else {
+          perms = (data as any).allowed_menus || [];
+        }
+        
+        setAllowedMenus(perms);
+        sessionStorage.setItem(`perms_${user.role}`, JSON.stringify(perms));
+      } catch (err) {
+        console.error('Failed to fetch sidebar permissions:', err);
+      } finally {
+        setIsLoadingPerms(false);
+      }
+    };
+
+    fetchPerms();
+  }, [user]);
+
+  if (!user) return null;
 
   return (
     <>
@@ -98,46 +159,78 @@ export default function Sidebar() {
           </div>
 
           {/* Navigation Links */}
-          <nav className="flex-1 p-3 space-y-1 overflow-y-auto no-scrollbar">
-            {filteredNavigation.map((item) => {
-              const isActive = pathname === item.href;
-              const Icon = item.icon;
-              
-              return (
-                <Link
-                  key={item.name}
-                  href={item.href}
-                  onClick={() => setIsOpen(false)}
-                  className={`
-                    flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-150
-                    ${isActive 
-                      ? 'bg-[#e7f0ff] text-[#166ee1] font-bold' 
-                      : 'text-gray-600 hover:bg-[#f3f4f6] hover:text-gray-900'}
-                  `}
-                >
-                  <Icon size={18} className={isActive ? 'text-[#166ee1]' : 'text-gray-400'} />
-                  <span className="text-sm font-medium">{item.name}</span>
-                </Link>
-              );
-            })}
+          <nav className="flex-1 p-3 space-y-7 overflow-y-auto no-scrollbar">
+            {isLoadingPerms && allowedMenus.length === 0 ? (
+              <div className="space-y-4 p-4">
+                {[1, 2, 3, 4, 5].map(i => (
+                  <div key={i} className="h-10 bg-gray-50 rounded-xl animate-pulse" />
+                ))}
+              </div>
+            ) : (
+              navigationGroups.map((group) => {
+                const filteredItems = group.items.filter(item => allowedMenus.includes(item.id));
+                
+                if (filteredItems.length === 0) return null;
+
+                return (
+                  <div key={group.title} className="space-y-2">
+                    <div className="flex items-center px-4 mb-2">
+                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">
+                        {group.title}
+                      </span>
+                      <div className="ml-2 flex-1 h-[1px] bg-gray-100" />
+                    </div>
+                    <div className="space-y-1">
+                      {filteredItems.map((item) => {
+                        const isActive = pathname === item.href;
+                        const Icon = item.icon;
+                        
+                        return (
+                          <Link
+                            key={item.id}
+                            href={item.href}
+                            onClick={() => setIsOpen(false)}
+                            className={`
+                              flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 group/item
+                              ${isActive 
+                                ? 'bg-[#e7f0ff] text-[#166ee1] font-bold shadow-sm' 
+                                : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'}
+                            `}
+                          >
+                            <Icon 
+                              size={18} 
+                              className={`transition-colors ${isActive ? 'text-[#166ee1]' : 'text-gray-400 group-hover/item:text-gray-600'}`} 
+                            />
+                            <span className="text-sm font-semibold tracking-tight">{item.name}</span>
+                            {isActive && (
+                              <div className="ml-auto w-1.5 h-1.5 rounded-full bg-[#166ee1]" />
+                            )}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </nav>
 
           {/* Footer Area */}
-          <div className="p-4 border-t border-[#f3f4f6] space-y-3">
-            <div className="p-3 bg-[#f9fafb] rounded-xl border border-[#f3f4f6]">
+          <div className="p-4 bg-gray-50/50 border-t border-[#f3f4f6] space-y-3">
+            <div className="p-3 bg-white rounded-2xl border border-[#f3f4f6] shadow-sm">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-xs">
+                <div className="w-9 h-9 rounded-xl bg-[#166ee1]/10 text-[#166ee1] flex items-center justify-center font-black text-sm">
                   {user.name.charAt(0).toUpperCase()}
                 </div>
                 <div className="min-w-0">
-                  <p className="text-xs font-bold text-gray-900 truncate">{user.name}</p>
-                  <p className="text-[10px] font-medium text-[#6b7280] uppercase tracking-tighter">{user.role}</p>
+                  <p className="text-xs font-black text-gray-900 truncate tracking-tight">{user.name}</p>
+                  <p className="text-[10px] font-bold text-[#166ee1] uppercase tracking-tighter opacity-80">{user.role}</p>
                 </div>
               </div>
             </div>
             <button
               onClick={logout}
-              className="w-full flex items-center gap-3 px-4 py-2 rounded-lg text-red-500 hover:bg-red-50 transition-colors font-bold text-xs"
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-red-500 hover:bg-red-50 transition-all font-bold text-xs uppercase tracking-widest active:scale-95"
             >
               <LogOut size={16} />
               Sign Out
