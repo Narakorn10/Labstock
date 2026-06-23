@@ -8,10 +8,6 @@ export default function TrackingBoardPage() {
   const [shipments, setShipments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchShipments();
-  }, []);
-
   const fetchShipments = async () => {
     try {
       // Note: Admin/Manager view fetches all, we should use a specific tracking endpoint
@@ -26,6 +22,10 @@ export default function TrackingBoardPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchShipments();
+  }, []);
 
   const columns = [
     { id: 'In Transit', title: '🚚 กำลังจัดส่ง (In Transit)' },

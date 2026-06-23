@@ -22,15 +22,6 @@ export default function NotificationSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState<'line' | 'email' | null>(null);
 
-  useEffect(() => {
-    if (user?.username) {
-      fetchSettings(user.username);
-    } else {
-      // If user state is determined (either logged in or out), stop loading
-      setLoading(false);
-    }
-  }, [user]);
-
   const fetchSettings = async (username: string) => {
     try {
       const res = await fetch(`/api/settings/notifications?username=${username}`);
@@ -43,6 +34,15 @@ export default function NotificationSettingsPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (user?.username) {
+      fetchSettings(user.username);
+    } else {
+      // If user state is determined (either logged in or out), stop loading
+      setLoading(false);
+    }
+  }, [user]);
 
   const handleSave = async () => {
     if (!user) return;

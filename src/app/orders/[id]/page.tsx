@@ -10,9 +10,16 @@ export default function PODetailPage() {
   const [tracking, setTracking] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchPO();
-  }, [id]);
+  const fetchTracking = async (trackingNo: string, provider: string) => {
+    try {
+      const res = await fetch(`/api/tracking/${trackingNo}?provider=${provider || 'THAIPOST'}`);
+      if (res.ok) {
+        setTracking(await res.json());
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   const fetchPO = async () => {
     try {
@@ -41,16 +48,9 @@ export default function PODetailPage() {
     }
   };
 
-  const fetchTracking = async (trackingNo: string, provider: string) => {
-    try {
-      const res = await fetch(`/api/tracking/${trackingNo}?provider=${provider || 'THAIPOST'}`);
-      if (res.ok) {
-        setTracking(await res.json());
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  };
+  useEffect(() => {
+    fetchPO();
+  }, [id]);
 
   if (loading) return <div className="p-6">Loading...</div>;
   if (!po) return <div className="p-6">PO not found</div>;

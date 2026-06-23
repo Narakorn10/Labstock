@@ -119,6 +119,8 @@ export interface SettingsResponse {
   reagentTypes: string[];
   jobTypes: string[];
   machineTypes: string[];
+  units: string[];
+  vendors: string[];
 }
 
 export interface Shipment {

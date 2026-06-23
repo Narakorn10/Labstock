@@ -14,10 +14,6 @@ export default function PurchaseOrdersPage() {
   const [loading, setLoading] = useState(false);
   const [suggestLoading, setSuggestLoading] = useState(false);
 
-  useEffect(() => {
-    fetchOrders();
-  }, []);
-
   const fetchOrders = async () => {
     try {
       const res = await fetch('/api/purchase-orders');
@@ -28,6 +24,10 @@ export default function PurchaseOrdersPage() {
       console.error(e);
     }
   };
+
+  useEffect(() => {
+    fetchOrders();
+  }, []);
 
   const loadSuggestions = async () => {
     setSuggestLoading(true);

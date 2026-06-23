@@ -2,6 +2,10 @@ import { NextResponse } from 'next/server';
 import sql from '@/lib/db';
 import { getAuthenticatedUser } from '@/lib/auth-utils';
 
+/**
+ * Dashboard API Route
+ * Fetches master data and active inventory.
+ */
 export async function GET(request: Request) {
   try {
     const user = await getAuthenticatedUser(request);

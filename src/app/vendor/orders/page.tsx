@@ -25,14 +25,6 @@ export default function VendorOrdersPage() {
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (user?.role === 'Vendor' && user.vendor) {
-      fetchOrders(user.vendor);
-    } else if (user) {
-      setLoading(false);
-    }
-  }, [user]);
-
   const fetchOrders = async (vendor: string) => {
     setLoading(true);
     try {
@@ -46,6 +38,14 @@ export default function VendorOrdersPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (user?.role === 'Vendor' && user.vendor) {
+      fetchOrders(user.vendor);
+    } else if (user) {
+      setLoading(false);
+    }
+  }, [user]);
 
   const updatePOStatus = async (id: string, status: string, note: string = '') => {
     if (!confirm(`ต้องการเปลี่ยนสถานะใบสั่งซื้อเป็น ${status} หรือไม่?`)) return;

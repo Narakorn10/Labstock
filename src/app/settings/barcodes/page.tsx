@@ -27,6 +27,17 @@ export default function BarcodeSettingsPage() {
   const [selection, setSelection] = useState<{ start: number, end: number } | null>(null);
   const [mapping, setMapping] = useState<{ item?: [number, number], lot?: [number, number], exp?: [number, number] }>({});
 
+  const loadPatterns = async () => {
+    try {
+      const data = await apiClient.getBarcodePatterns();
+      setPatterns(data);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadPatterns();
   }, []);

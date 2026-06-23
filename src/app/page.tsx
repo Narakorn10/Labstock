@@ -24,6 +24,7 @@ import {
 } from 'recharts';
 import { apiClient, Reagent, UsageResponse } from '@/lib/api-client';
 import ReportModal from '@/components/report-modal';
+import ReagentDetailModal from '@/components/reagent-detail-modal';
 import { useAuth } from '@/components/auth-provider';
 import Link from 'next/link';
 
@@ -35,6 +36,8 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedJobType, setSelectedJobType] = useState<string>('All');
+  const [selectedReagent, setSelectedReagent] = useState<Reagent | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -104,21 +107,27 @@ export default function Dashboard() {
   }, [reagents]);
 
   const jobTypes = useMemo(() => {
-    return Array.from(new Set(reagents.map(r => r.jobType)));
+    const types = Array.from(new Set(reagents.map(r => r.jobType).filter(Boolean)));
+    return ['All', ...types];
   }, [reagents]);
 
   const filteredItems = useMemo(() => {
     return reagents.filter(item => {
-      const terms = searchTerm.toLowerCase().trim().split(/\s+/).filter(Boolean);
-      const text = `${item.itemId} ${item.name}`.toLowerCase();
-      return terms.length === 0 || terms.every(t => text.includes(t));
+      const matchSearch = searchTerm === '' || 
+        `${item.itemId} ${item.name}`.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      const matchJob = selectedJobType === 'All' || item.jobType === selectedJobType;
+      
+      return matchSearch && matchJob;
     });
-  }, [reagents, searchTerm]);
+  }, [reagents, searchTerm, selectedJobType]);
 
   const totalUsedThisWeek = useMemo(() => {
     if (!usageData?.summary) return 0;
     return usageData.summary.reduce((sum, item) => sum + item.dispensed, 0);
   }, [usageData]);
+
+  const isPowerUser = user?.role === 'Admin' || user?.role === 'Manager';
 
   if (loading && reagents.length === 0) {
     return (
@@ -183,91 +192,113 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Quick Tools Column */}
-        <div className="lg:col-span-1 space-y-6">
-          <div className="bg-white border border-gray-100 rounded-[2rem] p-8 shadow-sm">
-            <h2 className="text-sm font-black text-gray-900 uppercase tracking-widest mb-6 flex items-center gap-2">
-              <Activity size={18} className="text-[#166ee1]" />
-              Workspace Tools
-            </h2>
-            <div className="grid grid-cols-1 gap-3">
-              {[
-                { name: 'Dispense Reagents', href: '/dispense', icon: ArrowRightLeft, bg: 'bg-blue-50', text: 'text-blue-600' },
-                { name: 'Receive Stock', href: '/receive', icon: Boxes, bg: 'bg-green-50', text: 'text-green-600' },
-                { name: 'Count Physical', href: '/count', icon: ClipboardList, bg: 'bg-purple-50', text: 'text-purple-600' },
-                { name: 'Base Dictionary', href: '/master', icon: Database, bg: 'bg-amber-50', text: 'text-amber-600' },
-              ].map((act) => (
-                <Link key={act.name} href={act.href} className="flex items-center gap-4 p-4 rounded-2xl border border-transparent hover:border-gray-200 hover:bg-gray-50 transition-all group">
-                  <div className={`w-10 h-10 ${act.bg} ${act.text} rounded-xl flex items-center justify-center group-hover:rotate-6 transition-transform`}>
-                    <act.icon size={20} />
+        {/* Quick Tools Column - Hidden for General Users & Vendors */}
+        {isPowerUser && (
+          <div className="lg:col-span-1 space-y-6">
+            <div className="bg-white border border-gray-100 rounded-[2rem] p-8 shadow-sm">
+              <h2 className="text-sm font-black text-gray-900 uppercase tracking-widest mb-6 flex items-center gap-2">
+                <Activity size={18} className="text-[#166ee1]" />
+                Workspace Tools
+              </h2>
+              <div className="grid grid-cols-1 gap-3">
+                {[
+                  { name: 'Dispense Reagents', href: '/dispense', icon: ArrowRightLeft, bg: 'bg-blue-50', text: 'text-blue-600' },
+                  { name: 'Receive Stock', href: '/receive', icon: Boxes, bg: 'bg-green-50', text: 'text-green-600' },
+                  { name: 'Count Physical', href: '/count', icon: ClipboardList, bg: 'bg-purple-50', text: 'text-purple-600' },
+                  { name: 'Base Dictionary', href: '/master', icon: Database, bg: 'bg-amber-50', text: 'text-amber-600' },
+                ].map((act) => (
+                  <Link key={act.name} href={act.href} className="flex items-center gap-4 p-4 rounded-2xl border border-transparent hover:border-gray-200 hover:bg-gray-50 transition-all group">
+                    <div className={`w-10 h-10 ${act.bg} ${act.text} rounded-xl flex items-center justify-center group-hover:rotate-6 transition-transform`}>
+                      <act.icon size={20} />
+                    </div>
+                    <span className="text-sm font-bold text-gray-700">{act.name}</span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-[#111827] p-8 rounded-[2rem] text-white relative overflow-hidden shadow-xl min-h-[300px] flex flex-col justify-between">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 -mr-8 -mt-8 rounded-full blur-3xl"></div>
+              <div className="relative z-10">
+                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-400">Weekly Pulse</p>
+                  <div className="flex items-baseline gap-2 mt-2">
+                      <p className="text-4xl font-black">{totalUsedThisWeek.toLocaleString()}</p>
+                      <p className="text-xs font-bold text-gray-400 uppercase">Units</p>
                   </div>
-                  <span className="text-sm font-bold text-gray-700">{act.name}</span>
-                </Link>
-              ))}
+                  
+                  {/* Micro Chart */}
+                  {usageData?.weeklyStats && usageData.weeklyStats.length > 0 && (
+                    <div className="h-24 w-full mt-4 -ml-2">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={usageData.weeklyStats}>
+                          <defs>
+                            <linearGradient id="colorPulse" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.3}/>
+                              <stop offset="95%" stopColor="#4f46e5" stopOpacity={0}/>
+                            </linearGradient>
+                          </defs>
+                          <Tooltip 
+                            contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: '8px', fontSize: '10px' }}
+                            itemStyle={{ color: '#fff' }}
+                          />
+                          <Area 
+                            type="monotone" 
+                            dataKey="totalDispensed" 
+                            stroke="#6366f1" 
+                            fillOpacity={1} 
+                            fill="url(#colorPulse)" 
+                            strokeWidth={2}
+                          />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+
+                  <p className="text-xs text-gray-400 mt-4 font-medium">Activity is <span className="text-green-400 font-bold">Stable</span> matching current inventory flow.</p>
+                  <Link href="/analysis" className="mt-6 flex items-center justify-center w-full bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl py-3 text-xs font-black uppercase tracking-widest transition-all">
+                      Full Insights
+                  </Link>
+              </div>
             </div>
           </div>
-
-          <div className="bg-[#111827] p-8 rounded-[2rem] text-white relative overflow-hidden shadow-xl min-h-[300px] flex flex-col justify-between">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 -mr-8 -mt-8 rounded-full blur-3xl"></div>
-            <div className="relative z-10">
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-400">Weekly Pulse</p>
-                <div className="flex items-baseline gap-2 mt-2">
-                    <p className="text-4xl font-black">{totalUsedThisWeek.toLocaleString()}</p>
-                    <p className="text-xs font-bold text-gray-400 uppercase">Units</p>
-                </div>
-                
-                {/* Micro Chart */}
-                {(user?.role === 'Admin' || user?.role === 'Manager') && usageData?.weeklyStats && usageData.weeklyStats.length > 0 && (
-                  <div className="h-24 w-full mt-4 -ml-2">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={usageData.weeklyStats}>
-                        <defs>
-                          <linearGradient id="colorPulse" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.3}/>
-                            <stop offset="95%" stopColor="#4f46e5" stopOpacity={0}/>
-                          </linearGradient>
-                        </defs>
-                        <Tooltip 
-                          contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: '8px', fontSize: '10px' }}
-                          itemStyle={{ color: '#fff' }}
-                        />
-                        <Area 
-                          type="monotone" 
-                          dataKey="totalDispensed" 
-                          stroke="#6366f1" 
-                          fillOpacity={1} 
-                          fill="url(#colorPulse)" 
-                          strokeWidth={2}
-                        />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
-
-                <p className="text-xs text-gray-400 mt-4 font-medium">Activity is <span className="text-green-400 font-bold">Stable</span> matching current inventory flow.</p>
-                <Link href="/analysis" className="mt-6 flex items-center justify-center w-full bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl py-3 text-xs font-black uppercase tracking-widest transition-all">
-                    Full Insights
-                </Link>
-            </div>
-          </div>
-        </div>
+        )}
 
         {/* Data Grid View */}
-        <div className="lg:col-span-2 bg-white border border-gray-100 rounded-[2rem] flex flex-col overflow-hidden shadow-sm">
-          <div className="p-6 border-b border-gray-50 flex flex-col sm:flex-row gap-4 items-center justify-between">
-            <div className="flex items-center gap-3 w-full sm:w-auto">
-                <div className="w-2 h-6 bg-[#166ee1] rounded-full"></div>
-                <h2 className="text-lg font-black text-gray-800 uppercase tracking-tight">Inventory Base</h2>
+        <div className={`${isPowerUser ? 'lg:col-span-2' : 'lg:col-span-3'} bg-white border border-gray-100 rounded-[2rem] flex flex-col overflow-hidden shadow-sm`}>
+          <div className="p-6 border-b border-gray-50 space-y-4">
+            <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+              <div className="flex items-center gap-3 w-full sm:w-auto">
+                  <div className="w-2 h-6 bg-[#166ee1] rounded-full"></div>
+                  <h2 className="text-lg font-black text-gray-800 uppercase tracking-tight">Inventory Base</h2>
+              </div>
+              <div className="relative w-full sm:w-72">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                <input 
+                  type="text" 
+                  placeholder="Search reagents or IDs..."
+                  className="w-full pl-11 pr-4 py-3 bg-gray-50 rounded-2xl text-sm font-bold focus:bg-white border-transparent focus:border-blue-100 outline-none transition-all shadow-inner"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
             </div>
-            <div className="relative w-full sm:w-72">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-              <input 
-                type="text" 
-                placeholder="Search reagents or IDs..."
-                className="w-full pl-11 pr-4 py-3 bg-gray-50 rounded-2xl text-sm font-bold focus:bg-white border-transparent focus:border-blue-100 outline-none transition-all shadow-inner"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
+            
+            {/* Filter Chips */}
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest mr-2 shrink-0">Filter Job:</span>
+              {jobTypes.map((type) => (
+                <button
+                  key={type}
+                  onClick={() => setSelectedJobType(type)}
+                  className={`px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shrink-0 border ${
+                    selectedJobType === type 
+                      ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-100' 
+                      : 'bg-white text-gray-500 border-gray-100 hover:border-gray-300'
+                  }`}
+                >
+                  {type}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -285,7 +316,11 @@ export default function Dashboard() {
                 {filteredItems.map((item) => {
                   const isLow = item.quantity <= item.minThreshold;
                   return (
-                    <tr key={item.itemId} className="hover:bg-blue-50/20 transition-colors group cursor-pointer">
+                    <tr 
+                      key={item.itemId} 
+                      onClick={() => setSelectedReagent(item)}
+                      className="hover:bg-blue-50/20 transition-colors group cursor-pointer"
+                    >
                       <td className="px-6 md:px-8 py-5">
                         <p className="text-sm font-black text-gray-900 group-hover:text-[#166ee1] transition-colors line-clamp-1">{item.name}</p>
                         <p className="text-[10px] text-gray-400 font-bold mt-0.5 uppercase tracking-tighter">Record ID: {item.itemId}</p>
@@ -321,7 +356,13 @@ export default function Dashboard() {
         isOpen={reportModalOpen} 
         onClose={() => setReportModalOpen(false)}
         data={reagents}
-        jobTypes={jobTypes}
+        jobTypes={jobTypes.filter(t => t !== 'All')}
+      />
+
+      <ReagentDetailModal 
+        isOpen={!!selectedReagent}
+        onClose={() => setSelectedReagent(null)}
+        reagent={selectedReagent}
       />
     </div>
   );
