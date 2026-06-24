@@ -235,7 +235,8 @@ const resolveBarcodeData = (
     const standardData = processAnyBarcode(rawBarcode, []);
     if (standardData) {
         const score = getReagentCodeMatchScore(standardData.gtin, reagent);
-        if (score > resolvedScore) {
+        const gs1Tie = standardData.barcodeType === "GS1_COMPLIANT" && score > 0 && score === resolvedScore;
+        if (score > resolvedScore || gs1Tie) {
             resolvedData = standardData;
         }
     }
