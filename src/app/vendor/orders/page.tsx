@@ -25,7 +25,7 @@ export default function VendorOrdersPage() {
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState<string | null>(null);
 
-  const getAuthHeaders = () => {
+  const getAuthHeaders = (): Record<string, string> => {
     const token = localStorage.getItem('labstock_token');
     return token ? { Authorization: `Bearer ${token}` } : {};
   };

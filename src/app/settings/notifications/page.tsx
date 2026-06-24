@@ -22,7 +22,7 @@ export default function NotificationSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState<'line' | 'email' | null>(null);
 
-  const getAuthHeaders = () => {
+  const getAuthHeaders = (): Record<string, string> => {
     const token = localStorage.getItem('labstock_token');
     return token ? { Authorization: `Bearer ${token}` } : {};
   };
