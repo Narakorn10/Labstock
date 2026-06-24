@@ -10,10 +10,12 @@ import type { BarcodePattern } from '@/lib/api-client';
 export interface BarcodeData {
     barcodeType: "GS1_COMPLIANT" | "STANDARD_1D" | "CUSTOM_PATTERN";
     gtin: string;
+    udi: string;
     ref: string;
     lot: string;
     expDate: string;
     mfgDate: string;
+    serial: string;
     rawString: string;
 }
 
@@ -85,10 +87,12 @@ const parseCustomPattern = (
         return {
             barcodeType: "CUSTOM_PATTERN",
             gtin: pattern.item_id_group ? (match[pattern.item_id_group] || "") : rawBarcode,
+            udi: rawBarcode,
             ref: "NEED_MANUAL_INPUT",
             lot: pattern.lot_no_group ? (match[pattern.lot_no_group] || "") : "NEED_MANUAL_INPUT",
             expDate: pattern.exp_date_group ? standardizeDate(match[pattern.exp_date_group] || "") : "NEED_MANUAL_INPUT",
             mfgDate: "NEED_MANUAL_INPUT",
+            serial: "NEED_MANUAL_INPUT",
             rawString: rawBarcode
         };
     } catch (error) {
@@ -102,14 +106,18 @@ const parseCustomPattern = (
 export const processAnyBarcode = (rawBarcode: string, patterns: BarcodePattern[] = []): BarcodeData | null => {
     if (!rawBarcode) return null;
 
-    // 0. Test Custom Patterns First
+    // A valid GS1 UDI must take precedence over broad positional patterns.
+    const gs1Data = parseGs1Udi(rawBarcode);
+    if (gs1Data) return gs1Data;
+
+    // Test vendor-specific patterns after standards-based parsing.
     for (const pattern of patterns) {
         const data = parseCustomPattern(rawBarcode, pattern);
         if (data) return data;
     }
 
     // 1. Aggressive Clean
-    let workingString = rawBarcode.trim()
+    const workingString = rawBarcode.trim()
         .replace(/^\][a-zA-Z0-9]{2}/, "") 
         .replace(/[()]/g, "")             
         .replace(/\s/g, "");             
@@ -117,54 +125,14 @@ export const processAnyBarcode = (rawBarcode: string, patterns: BarcodePattern[]
     const result: BarcodeData = {
         barcodeType: "STANDARD_1D",
         gtin: "",
+        udi: rawBarcode.trim(),
         ref: "NEED_MANUAL_INPUT",
         lot: "NEED_MANUAL_INPUT",
         expDate: "NEED_MANUAL_INPUT",
         mfgDate: "NEED_MANUAL_INPUT",
+        serial: "NEED_MANUAL_INPUT",
         rawString: workingString
     };
-
-    // 2. High-Precision GS1 Consumption Logic
-    let foundGS1 = false;
-
-    // A. Consume GTIN (01) - Always 14 digits
-    const gtinMatch = workingString.match(/01(\d{14})/);
-    if (gtinMatch) {
-        result.gtin = gtinMatch[1];
-        workingString = workingString.replace(gtinMatch[0], ""); 
-        foundGS1 = true;
-    }
-
-    // B. Consume EXP (17) - Always 6 digits
-    const expMatch = workingString.match(/17(\d{6})/);
-    if (expMatch) {
-        result.expDate = formatGS1Date(expMatch[1]);
-        workingString = workingString.replace(expMatch[0], ""); 
-        foundGS1 = true;
-    }
-
-    // C. Consume MFG (11) - Always 6 digits
-    const mfgMatch = workingString.match(/11(\d{6})/);
-    if (mfgMatch) {
-        result.mfgDate = formatGS1Date(mfgMatch[1]);
-        workingString = workingString.replace(mfgMatch[0], ""); 
-        foundGS1 = true;
-    }
-
-    // D. Extract Lot (10)
-    const lotMatch = workingString.match(/10([a-zA-Z0-9]+)/);
-    if (lotMatch) {
-        result.lot = lotMatch[1];
-        foundGS1 = true;
-    } else if (workingString.length > 2 && foundGS1) {
-        result.lot = workingString;
-        foundGS1 = true;
-    }
-
-    if (foundGS1) {
-        result.barcodeType = "GS1_COMPLIANT";
-        return result;
-    }
 
     // Fallback for simple barcodes
     result.gtin = rawBarcode.trim();
@@ -328,4 +296,80 @@ const formatGS1Date = (yymmdd: string): string => {
     const month = yymmdd.substring(2, 4);
     const day = yymmdd.substring(4, 6);
     return `${year}-${month}-${day}`;
+};
+
+const parseGs1Udi = (rawBarcode: string): BarcodeData | null => {
+    const elements = new Map<string, string>();
+    const supportedAis = new Set(['01', '10', '11', '17', '21']);
+    const addElement = (ai: string, value: string | undefined) => {
+        const cleanValue = value?.trim();
+        if (cleanValue && supportedAis.has(ai) && !elements.has(ai)) {
+            elements.set(ai, cleanValue);
+        }
+    };
+
+    // Human-readable GS1: (01)GTIN(17)YYMMDD(10)LOT(21)SERIAL
+    for (const match of rawBarcode.matchAll(/\((01|10|11|17|21)\)([^()]*)/g)) {
+        addElement(match[1], match[2]);
+    }
+
+    // GS1 Digital Link: /01/GTIN/10/LOT?17=YYMMDD
+    try {
+        const url = new URL(rawBarcode);
+        const parts = url.pathname.split('/').filter(Boolean);
+        for (let index = 0; index < parts.length - 1; index += 1) {
+            if (supportedAis.has(parts[index])) {
+                addElement(parts[index], decodeURIComponent(parts[index + 1]));
+                index += 1;
+            }
+        }
+        for (const ai of supportedAis) addElement(ai, url.searchParams.get(ai) || undefined);
+    } catch {
+        // Scanner payloads are usually compact GS1 strings rather than URLs.
+    }
+
+    // Scanner form: ]d2 + compact AIs, with ASCII 29 (FNC1) after variable fields.
+    const compact = rawBarcode.trim()
+        .replace(/^\][a-zA-Z0-9]{2}/, '')
+        .replace(/\((01|10|11|17|21)\)/g, '$1')
+        .replace(/\s/g, '');
+
+    for (const segment of compact.split(/\x1D|<GS>|\|/i)) {
+        let cursor = 0;
+        while (cursor < segment.length) {
+            const ai = segment.substring(cursor, cursor + 2);
+            if (ai === '01' && /^\d{14}$/.test(segment.substring(cursor + 2, cursor + 16))) {
+                addElement(ai, segment.substring(cursor + 2, cursor + 16));
+                cursor += 16;
+            } else if ((ai === '11' || ai === '17') && /^\d{6}$/.test(segment.substring(cursor + 2, cursor + 8))) {
+                addElement(ai, segment.substring(cursor + 2, cursor + 8));
+                cursor += 8;
+            } else if (ai === '10' || ai === '21') {
+                addElement(ai, segment.substring(cursor + 2));
+                break;
+            } else {
+                break;
+            }
+        }
+    }
+
+    const gtin = elements.get('01');
+    if (!gtin) return null;
+
+    const canonicalUdi = ['01', '17', '11', '10', '21']
+        .flatMap((ai) => elements.has(ai) ? [`(${ai})${elements.get(ai)}`] : [])
+        .join('');
+    const serial = elements.get('21') || 'NEED_MANUAL_INPUT';
+
+    return {
+        barcodeType: "GS1_COMPLIANT",
+        gtin,
+        udi: canonicalUdi,
+        ref: serial,
+        lot: elements.get('10') || 'NEED_MANUAL_INPUT',
+        expDate: elements.has('17') ? formatGS1Date(elements.get('17') || '') : 'NEED_MANUAL_INPUT',
+        mfgDate: elements.has('11') ? formatGS1Date(elements.get('11') || '') : 'NEED_MANUAL_INPUT',
+        serial,
+        rawString: rawBarcode
+    };
 };
