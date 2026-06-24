@@ -115,17 +115,6 @@ export default function BarcodeSettingsPage() {
     setExpDateGroup('');
   };
 
-  const loadPatterns = async () => {
-    try {
-      const data = await apiClient.getBarcodePatterns();
-      setPatterns(data);
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleScan = (text: string) => {
     setShowScanner(false);
     setTestString(text);
