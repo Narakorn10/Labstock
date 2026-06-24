@@ -10,7 +10,7 @@ export default function PODetailPage() {
   const [tracking, setTracking] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  const getAuthHeaders = () => {
+  const getAuthHeaders = (): Record<string, string> => {
     const token = localStorage.getItem('labstock_token');
     return token ? { Authorization: `Bearer ${token}` } : {};
   };

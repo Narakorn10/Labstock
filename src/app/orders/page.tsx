@@ -14,7 +14,7 @@ export default function PurchaseOrdersPage() {
   const [loading, setLoading] = useState(false);
   const [suggestLoading, setSuggestLoading] = useState(false);
 
-  const getAuthHeaders = () => {
+  const getAuthHeaders = (): Record<string, string> => {
     const token = localStorage.getItem('labstock_token');
     return token ? { Authorization: `Bearer ${token}` } : {};
   };

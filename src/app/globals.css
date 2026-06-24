@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 @theme inline {
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "Consolas", "SFMono-Regular", "Courier New", monospace;
   --color-airtable-blue: #166ee1;
   --color-airtable-bg: #f2f4f7;
   --color-airtable-border: #d1d5db;
