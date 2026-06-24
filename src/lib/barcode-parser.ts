@@ -299,6 +299,29 @@ const formatGS1Date = (yymmdd: string): string => {
     return `${year}-${month}-${day}`;
 };
 
+const isValidGs1Date = (value: string): boolean => {
+    if (!/^\d{6}$/.test(value)) return false;
+
+    const month = Number(value.substring(2, 4));
+    const day = Number(value.substring(4, 6));
+    return month >= 1 && month <= 12 && day >= 1 && day <= 31;
+};
+
+const findFixedAiBoundary = (value: string, includeGtin: boolean = false): number => {
+    for (let index = 1; index < value.length; index += 1) {
+        const ai = value.substring(index, index + 2);
+        if ((ai === '11' || ai === '17') && isValidGs1Date(value.substring(index + 2, index + 8))) {
+            return index;
+        }
+
+        if (includeGtin && ai === '01' && /^\d{14}$/.test(value.substring(index + 2, index + 16))) {
+            return index;
+        }
+    }
+
+    return -1;
+};
+
 const parseGs1Udi = (rawBarcode: string): BarcodeData | null => {
     const elements = new Map<string, string>();
     const supportedAis = new Set(['01', '10', '11', '17', '21', '240']);
@@ -342,11 +365,11 @@ const parseGs1Udi = (rawBarcode: string): BarcodeData | null => {
             const ai = segment.substring(cursor, cursor + 2);
             if (ai3 === '240') {
                 const remaining = segment.substring(cursor + 3);
-                const nextGtinIndex = remaining.search(/01\d{14}/);
+                const nextAiIndex = findFixedAiBoundary(remaining, true);
 
-                if (nextGtinIndex > 0) {
-                    addElement(ai3, remaining.substring(0, nextGtinIndex));
-                    cursor += 3 + nextGtinIndex;
+                if (nextAiIndex > 0) {
+                    addElement(ai3, remaining.substring(0, nextAiIndex));
+                    cursor += 3 + nextAiIndex;
                 } else {
                     addElement(ai3, remaining);
                     break;
@@ -354,12 +377,20 @@ const parseGs1Udi = (rawBarcode: string): BarcodeData | null => {
             } else if (ai === '01' && /^\d{14}$/.test(segment.substring(cursor + 2, cursor + 16))) {
                 addElement(ai, segment.substring(cursor + 2, cursor + 16));
                 cursor += 16;
-            } else if ((ai === '11' || ai === '17') && /^\d{6}$/.test(segment.substring(cursor + 2, cursor + 8))) {
+            } else if ((ai === '11' || ai === '17') && isValidGs1Date(segment.substring(cursor + 2, cursor + 8))) {
                 addElement(ai, segment.substring(cursor + 2, cursor + 8));
                 cursor += 8;
             } else if (ai === '10' || ai === '21') {
-                addElement(ai, segment.substring(cursor + 2));
-                break;
+                const remaining = segment.substring(cursor + 2);
+                const nextAiIndex = findFixedAiBoundary(remaining);
+
+                if (nextAiIndex > 0) {
+                    addElement(ai, remaining.substring(0, nextAiIndex));
+                    cursor += 2 + nextAiIndex;
+                } else {
+                    addElement(ai, remaining);
+                    break;
+                }
             } else {
                 break;
             }
