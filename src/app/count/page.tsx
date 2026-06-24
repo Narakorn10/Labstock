@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { apiClient, Reagent, BatchItem } from '@/lib/api-client';
 import { 
   Search, 
@@ -22,6 +22,11 @@ interface CountItem extends Reagent {
   submitting?: boolean;
 }
 
+type RefreshOptions = {
+  clearActualIds?: string[];
+  refilledIds?: string[];
+};
+
 export default function CountPage() {
   const [reagents, setReagents] = useState<CountItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,6 +34,27 @@ export default function CountPage() {
   const [filterType, setFilterType] = useState<string[]>(['ALL']);
   const [filterJob, setFilterJob] = useState<string[]>(['ALL']);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error', msg: string } | null>(null);
+
+  const mergeDashboardState = useCallback((dashboardData: Reagent[], previous: CountItem[], options?: RefreshOptions) => {
+    const previousMap = new Map(previous.map(item => [item.itemId, item]));
+    const clearActualIds = new Set(options?.clearActualIds || []);
+    const refilledIds = new Set(options?.refilledIds || []);
+
+    return dashboardData.map(item => {
+      const previousItem = previousMap.get(item.itemId);
+      return {
+        ...item,
+        actual: clearActualIds.has(item.itemId) ? '' : (previousItem?.actual ?? ''),
+        refilled: refilledIds.has(item.itemId) ? true : (previousItem?.refilled ?? false),
+        submitting: false
+      };
+    });
+  }, []);
+
+  const refreshFromServer = useCallback(async (options?: RefreshOptions) => {
+    const dashboardData = await apiClient.getDashboard();
+    setReagents(prev => mergeDashboardState(dashboardData, prev, options));
+  }, [mergeDashboardState]);
 
   // Load reagents and restore saved counts
   useEffect(() => {
@@ -144,14 +170,11 @@ export default function CountPage() {
         }
         setFeedback({ type: 'success', msg });
         
-        // Mark refilled and clear counts
-        setReagents(prev => prev.map(i => {
-          const isSynced = syncItems.some(si => si.itemId === i.itemId);
-          if (isSynced) {
-            return { ...i, actual: '', refilled: true };
-          }
-          return i;
-        }));
+        const syncedIds = syncItems.map(item => item.itemId);
+        await refreshFromServer({
+          clearActualIds: syncedIds,
+          refilledIds: syncedIds
+        });
       }
     } catch (err: unknown) {
       const error = err as { response?: { data?: { error?: string } }, message: string };
@@ -213,9 +236,10 @@ export default function CountPage() {
         }
         
         setFeedback({ type: 'success', msg });
-        setReagents(prev => prev.map(i => 
-          i.itemId === itemId ? { ...i, refilled: true, submitting: false, quantity: i.quantity - takenTotal, actual: '' } : i
-        ));
+        await refreshFromServer({
+          clearActualIds: [itemId],
+          refilledIds: [itemId]
+        });
       } else {
         setFeedback({ type: 'error', msg: 'สต๊อกในคลังใหญ่ไม่มีรายการนี้เหลืออยู่' });
         setReagents(prev => prev.map(i => i.itemId === itemId ? { ...i, submitting: false } : i));

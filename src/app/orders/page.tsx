@@ -14,9 +14,16 @@ export default function PurchaseOrdersPage() {
   const [loading, setLoading] = useState(false);
   const [suggestLoading, setSuggestLoading] = useState(false);
 
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('labstock_token');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
   const fetchOrders = async () => {
     try {
-      const res = await fetch('/api/purchase-orders');
+      const res = await fetch('/api/purchase-orders', {
+        headers: getAuthHeaders()
+      });
       if (res.ok) {
         setOrders(await res.json());
       }
@@ -32,7 +39,9 @@ export default function PurchaseOrdersPage() {
   const loadSuggestions = async () => {
     setSuggestLoading(true);
     try {
-      const res = await fetch(`/api/purchase-orders/suggest${vendor ? `?vendor=${vendor}` : ''}`);
+      const res = await fetch(`/api/purchase-orders/suggest${vendor ? `?vendor=${vendor}` : ''}`, {
+        headers: getAuthHeaders()
+      });
       if (res.ok) {
         const data = await res.json();
         const suggestedItems = data.map((d: any) => ({
@@ -58,7 +67,7 @@ export default function PurchaseOrdersPage() {
     try {
       const res = await fetch('/api/purchase-orders', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
           vendor,
           expected_date: expectedDate,

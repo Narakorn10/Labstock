@@ -5,6 +5,10 @@ import { getAuthenticatedUser } from '@/lib/auth-utils';
 export async function POST(request: Request) {
   try {
     const user = await getAuthenticatedUser(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { batchItems } = await request.json();
     
     // Capture Audit Info
@@ -26,7 +30,7 @@ export async function POST(request: Request) {
       if (isNaN(qtyToSubtract) || qtyToSubtract <= 0) continue;
 
       const itemName = masterMap[targetItemId.toLowerCase()] || 'Unknown';
-      const actor = user ? `${user.name} (${user.role})` : 'System';
+      const actor = `${user.name} (${user.role})`;
 
       // ALL-IN-ONE Query: Update inventory AND Insert Log only if update succeeds
       const result = await sql`

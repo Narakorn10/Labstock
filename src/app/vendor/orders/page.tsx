@@ -25,10 +25,17 @@ export default function VendorOrdersPage() {
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState<string | null>(null);
 
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('labstock_token');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
   const fetchOrders = async (vendor: string) => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/purchase-orders?vendor=${vendor}`);
+      const res = await fetch(`/api/purchase-orders?vendor=${vendor}`, {
+        headers: getAuthHeaders()
+      });
       if (res.ok) {
         setOrders(await res.json());
       }
@@ -54,7 +61,7 @@ export default function VendorOrdersPage() {
     try {
       const res = await fetch(`/api/purchase-orders/${id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ status, vendor_note: note })
       });
       if (res.ok) {

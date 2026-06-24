@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { apiClient, Reagent } from '@/lib/api-client';
-import { processAnyBarcode } from '@/lib/barcode-parser';
+import { findMatchingReagent } from '@/lib/barcode-parser';
 import QRScanner from '@/components/qr-scanner';
 import { 
   ArrowDownToLine,
@@ -120,22 +120,8 @@ export default function BorrowPage() {
   };
 
   const handleScan = useCallback((decodedText: string) => {
-    const data = processAnyBarcode(decodedText, patterns);
+    const { data, match, lookupValues } = findMatchingReagent(decodedText, patterns, reagents);
     if (!data) return;
-
-    const cleanGtin = data.gtin.replace(/^0+/, '');
-    const cleanRaw = data.rawString.replace(/^0+/, '');
-
-    const match = reagents.find(r => {
-      const dbBarcode = r.qrCode?.replace(/^0+/, '') || '';
-      const dbItemId = r.itemId.replace(/^0+/, '');
-
-      return (
-        dbItemId.toLowerCase() === cleanGtin.toLowerCase() || 
-        dbBarcode.toLowerCase() === cleanGtin.toLowerCase() ||
-        dbItemId.toLowerCase() === cleanRaw.toLowerCase()
-      );
-    });
 
     if (match) {
       const parsedLot = data.lot === 'NEED_MANUAL_INPUT' ? '' : data.lot;
@@ -143,7 +129,9 @@ export default function BorrowPage() {
       addToCart(match, parsedLot, parsedExp);
       setScanMode(false);
     } else {
-      setFeedback({ type: 'error', msg: 'ไม่พบข้อมูลน้ำยานี้ในระบบ Master Data' });
+      const parsedId = data.gtin || data.rawString || '-';
+      const parsedLot = data.lot === 'NEED_MANUAL_INPUT' ? '-' : data.lot;
+      setFeedback({ type: 'error', msg: `ไม่พบข้อมูลใน Master Data | code: ${parsedId} | lot: ${parsedLot} | keys: ${lookupValues.join(', ') || '-'}` });
       setScanMode(false);
     }
   }, [reagents, patterns, mode]);
@@ -161,7 +149,8 @@ export default function BorrowPage() {
     if (!search.trim()) return [];
     return reagents.filter(r => 
       r.name.toLowerCase().includes(search.toLowerCase()) || 
-      r.itemId.toLowerCase().includes(search.toLowerCase())
+      r.itemId.toLowerCase().includes(search.toLowerCase()) ||
+      (r.qrCode || '').toLowerCase().includes(search.toLowerCase())
     ).slice(0, 5);
   }, [search, reagents]);
 

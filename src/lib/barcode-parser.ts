@@ -17,6 +17,11 @@ export interface BarcodeData {
     rawString: string;
 }
 
+interface ReagentLookupItem {
+    itemId: string;
+    qrCode?: string;
+}
+
 /**
  * Standardizes various date formats into YYYY-MM-DD
  * Supports: DDMMYYYY, YYYYMMDD, DDMMYY, YYMMDD, and separated formats
@@ -154,6 +159,59 @@ export const processAnyBarcode = (rawBarcode: string, patterns: BarcodePattern[]
     // Fallback for simple barcodes
     result.gtin = rawBarcode.trim();
     return result;
+};
+
+export const normalizeLookupValue = (value: string | null | undefined): string => {
+    if (!value) return "";
+
+    return value
+        .trim()
+        .replace(/^\][a-zA-Z0-9]{2}/, "")
+        .replace(/[()\s./-]/g, "")
+        .replace(/^0+/, "")
+        .toLowerCase();
+};
+
+export const findMatchingReagent = <T extends ReagentLookupItem>(
+    rawBarcode: string,
+    patterns: BarcodePattern[] = [],
+    reagents: T[] = []
+): { data: BarcodeData | null; match: T | undefined; lookupValues: string[] } => {
+    const data = processAnyBarcode(rawBarcode, patterns);
+    if (!data) {
+        return { data: null, match: undefined, lookupValues: [] };
+    }
+
+    const lookupKeys = new Set([
+        normalizeLookupValue(rawBarcode),
+        normalizeLookupValue(data.gtin),
+        normalizeLookupValue(data.rawString),
+    ].filter(Boolean));
+
+    const exactMatch = reagents.find((reagent) => {
+        const itemId = normalizeLookupValue(reagent.itemId);
+        const qrCode = normalizeLookupValue(reagent.qrCode);
+
+        return lookupKeys.has(itemId) || lookupKeys.has(qrCode);
+    });
+
+    if (exactMatch) {
+        return { data, match: exactMatch, lookupValues: Array.from(lookupKeys) };
+    }
+
+    const looseMatch = reagents.find((reagent) => {
+        const candidates = [
+            normalizeLookupValue(reagent.itemId),
+            normalizeLookupValue(reagent.qrCode),
+        ].filter((value) => value.length >= 6);
+
+        return Array.from(lookupKeys).some((key) => (
+            key.length >= 6 &&
+            candidates.some((candidate) => candidate.includes(key) || key.includes(candidate))
+        ));
+    });
+
+    return { data, match: looseMatch, lookupValues: Array.from(lookupKeys) };
 };
 
 const formatGS1Date = (yymmdd: string): string => {

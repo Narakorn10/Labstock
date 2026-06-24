@@ -4,7 +4,7 @@ import { replyHelp, replyPODetail, replyTrackingStatus, replyLowStock } from '@/
 import { neon } from '@neondatabase/serverless';
 
 const sql = neon(process.env.DATABASE_URL || '');
-const channelSecret = process.env.LINE_CHANNEL_SECRET || 'DUMMY_SECRET';
+const channelSecret = process.env.LINE_CHANNEL_SECRET;
 
 export async function POST(req: Request) {
   try {
@@ -13,11 +13,14 @@ export async function POST(req: Request) {
 
     console.log('[LINE Webhook] Received event');
 
-    if (process.env.LINE_CHANNEL_SECRET && process.env.LINE_CHANNEL_SECRET !== 'DUMMY_SECRET') {
-      if (!validateSignature(bodyText, channelSecret, signature)) {
-        console.error('[LINE Webhook] Invalid signature. Check your LINE_CHANNEL_SECRET.');
-        return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
-      }
+    if (!channelSecret || channelSecret === 'DUMMY_SECRET') {
+      console.error('[LINE Webhook] LINE_CHANNEL_SECRET is not configured.');
+      return NextResponse.json({ error: 'Webhook is not configured' }, { status: 503 });
+    }
+
+    if (!signature || !validateSignature(bodyText, channelSecret, signature)) {
+      console.error('[LINE Webhook] Invalid signature. Check your LINE_CHANNEL_SECRET.');
+      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
     }
 
     const body = JSON.parse(bodyText);

@@ -10,6 +10,11 @@ export default function PODetailPage() {
   const [tracking, setTracking] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('labstock_token');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
   const fetchTracking = async (trackingNo: string, provider: string) => {
     try {
       const res = await fetch(`/api/tracking/${trackingNo}?provider=${provider || 'THAIPOST'}`);
@@ -23,7 +28,9 @@ export default function PODetailPage() {
 
   const fetchPO = async () => {
     try {
-      const res = await fetch(`/api/purchase-orders/${id}`);
+      const res = await fetch(`/api/purchase-orders/${id}`, {
+        headers: getAuthHeaders()
+      });
       if (res.ok) {
         const data = await res.json();
         setPo(data);
@@ -32,7 +39,9 @@ export default function PODetailPage() {
         // Actually we added tracking_no to shipments. 
         // We need an API to fetch shipments for a PO, or we just fetch the tracking if we know it.
         // Let's assume we fetch shipments for this PO.
-        const shipRes = await fetch(`/api/vendor/shipments`); // We might need a better endpoint to get shipments by PO.
+        const shipRes = await fetch(`/api/vendor/shipments`, {
+          headers: getAuthHeaders()
+        }); // We might need a better endpoint to get shipments by PO.
         if (shipRes.ok) {
           const shipments = await shipRes.json();
           const poShipments = shipments.filter((s: any) => s.po_number === data.po_number);

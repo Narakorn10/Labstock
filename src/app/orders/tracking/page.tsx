@@ -8,11 +8,18 @@ export default function TrackingBoardPage() {
   const [shipments, setShipments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('labstock_token');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
   const fetchShipments = async () => {
     try {
       // Note: Admin/Manager view fetches all, we should use a specific tracking endpoint
       // but for simplicity we reuse the vendor shipments endpoint which returns all for admins.
-      const res = await fetch('/api/vendor/shipments');
+      const res = await fetch('/api/vendor/shipments', {
+        headers: getAuthHeaders()
+      });
       if (res.ok) {
         setShipments(await res.json());
       }

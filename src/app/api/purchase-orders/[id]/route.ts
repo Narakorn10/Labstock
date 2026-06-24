@@ -1,11 +1,17 @@
 import { NextResponse } from 'next/server';
 import { neon } from '@neondatabase/serverless';
 import { notifyUsers } from '@/lib/notifications';
+import { getAuthenticatedUser } from '@/lib/auth-utils';
 
 const sql = neon(process.env.DATABASE_URL || '');
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const user = await getAuthenticatedUser(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id } = await params;
     
     // Check if id is numeric or po_number
@@ -21,6 +27,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     }
 
     const po = poData[0];
+    if (user.role === 'Vendor' && po.vendor !== user.vendor) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
     const items = await sql`SELECT * FROM purchase_order_items WHERE po_id = ${po.id}`;
 
     return NextResponse.json({ ...po, items });
@@ -32,6 +42,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const user = await getAuthenticatedUser(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id } = await params;
     const body = await request.json();
     const { status, vendor_note } = body;
@@ -48,6 +63,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     }
 
     const po = poData[0];
+    if (user.role === 'Vendor') {
+      if (po.vendor !== user.vendor) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      }
+      if (status !== 'CONFIRMED' && status !== 'REJECTED') {
+        return NextResponse.json({ error: 'Invalid status for vendor action' }, { status: 403 });
+      }
+    }
+
     let updateQuery;
 
     if (status === 'CONFIRMED') {

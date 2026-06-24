@@ -22,9 +22,16 @@ export default function NotificationSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState<'line' | 'email' | null>(null);
 
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('labstock_token');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
   const fetchSettings = async (username: string) => {
     try {
-      const res = await fetch(`/api/settings/notifications?username=${username}`);
+      const res = await fetch(`/api/settings/notifications?username=${username}`, {
+        headers: getAuthHeaders()
+      });
       if (res.ok) {
         setSettings(await res.json());
       }
@@ -50,7 +57,7 @@ export default function NotificationSettingsPage() {
     try {
       const res = await fetch('/api/settings/notifications', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ ...settings, username: user.username })
       });
       if (res.ok) {
@@ -75,7 +82,7 @@ export default function NotificationSettingsPage() {
     try {
       const res = await fetch('/api/settings/notifications/test', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ type, value, username: user.username })
       });
       

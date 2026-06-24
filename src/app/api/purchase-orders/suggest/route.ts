@@ -1,12 +1,23 @@
 import { NextResponse } from 'next/server';
 import { neon } from '@neondatabase/serverless';
+import { getAuthenticatedUser } from '@/lib/auth-utils';
 
 const sql = neon(process.env.DATABASE_URL || '');
 
 export async function GET(request: Request) {
   try {
+    const user = await getAuthenticatedUser(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
-    const vendor = searchParams.get('vendor'); // Optional filter by vendor
+    const requestedVendor = searchParams.get('vendor');
+    const vendor = user.role === 'Vendor' ? user.vendor : requestedVendor;
+
+    if (user.role === 'Vendor' && !vendor) {
+      return NextResponse.json({ error: 'Vendor profile is not configured' }, { status: 403 });
+    }
     
     // Auto-suggest logic based on min_threshold and current quantity
     let query;

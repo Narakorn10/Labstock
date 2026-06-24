@@ -101,11 +101,8 @@ export async function GET(request: Request) {
   } catch (error: unknown) {
     console.error('Dashboard API Error:', error);
     const message = error instanceof Error ? error.message : String(error);
-    const stack = error instanceof Error ? error.stack : null;
     return NextResponse.json({ 
-      error: message,
-      stack: stack,
-      details: error
+      error: message
     }, { status: 500 });
   }
 }

@@ -1,15 +1,24 @@
 import { NextResponse } from 'next/server';
 import { neon } from '@neondatabase/serverless';
+import { getAuthenticatedUser } from '@/lib/auth-utils';
 
 const sql = neon(process.env.DATABASE_URL || '');
 
 export async function GET(request: Request) {
   try {
+    const user = await getAuthenticatedUser(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
     const username = searchParams.get('username');
 
     if (!username) {
       return NextResponse.json({ error: 'Username is required' }, { status: 400 });
+    }
+    if (user.role !== 'Admin' && username !== user.username) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     const settings = await sql`SELECT * FROM notification_settings WHERE username = ${username}`;
@@ -38,6 +47,11 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const user = await getAuthenticatedUser(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { 
       username, email, line_user_id, line_display_name,
@@ -46,6 +60,9 @@ export async function POST(request: Request) {
 
     if (!username) {
       return NextResponse.json({ error: 'Username is required' }, { status: 400 });
+    }
+    if (user.role !== 'Admin' && username !== user.username) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     const result = await sql`

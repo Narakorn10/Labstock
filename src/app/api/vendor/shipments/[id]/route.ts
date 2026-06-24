@@ -8,7 +8,7 @@ export async function PATCH(
 ) {
   try {
     const user = await getAuthenticatedUser(request);
-    if (!user || (user.role !== 'Admin' && user.role !== 'Manager' && user.role !== 'User')) {
+    if (!user || (user.role !== 'Admin' && user.role !== 'Manager' && user.role !== 'User' && user.role !== 'Operator')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
