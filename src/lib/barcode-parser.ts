@@ -72,29 +72,40 @@ export const standardizeDate = (dateStr: string): string => {
     return dateStr;
 };
 
+const parseCustomPattern = (
+    rawBarcode: string,
+    pattern: BarcodePattern,
+    reportInvalidPattern = true
+): BarcodeData | null => {
+    try {
+        const regex = new RegExp(pattern.regex_pattern);
+        const match = rawBarcode.match(regex);
+        if (!match) return null;
+
+        return {
+            barcodeType: "CUSTOM_PATTERN",
+            gtin: pattern.item_id_group ? (match[pattern.item_id_group] || "") : rawBarcode,
+            ref: "NEED_MANUAL_INPUT",
+            lot: pattern.lot_no_group ? (match[pattern.lot_no_group] || "") : "NEED_MANUAL_INPUT",
+            expDate: pattern.exp_date_group ? standardizeDate(match[pattern.exp_date_group] || "") : "NEED_MANUAL_INPUT",
+            mfgDate: "NEED_MANUAL_INPUT",
+            rawString: rawBarcode
+        };
+    } catch (error) {
+        if (reportInvalidPattern) {
+            console.error("Invalid regex pattern from DB:", pattern.regex_pattern, error);
+        }
+        return null;
+    }
+};
+
 export const processAnyBarcode = (rawBarcode: string, patterns: BarcodePattern[] = []): BarcodeData | null => {
     if (!rawBarcode) return null;
 
     // 0. Test Custom Patterns First
     for (const pattern of patterns) {
-        try {
-            const regex = new RegExp(pattern.regex_pattern);
-            const match = rawBarcode.match(regex);
-            
-            if (match) {
-                return {
-                    barcodeType: "CUSTOM_PATTERN",
-                    gtin: pattern.item_id_group ? (match[pattern.item_id_group] || "") : rawBarcode,
-                    ref: "NEED_MANUAL_INPUT",
-                    lot: pattern.lot_no_group ? (match[pattern.lot_no_group] || "") : "NEED_MANUAL_INPUT",
-                    expDate: pattern.exp_date_group ? standardizeDate(match[pattern.exp_date_group] || "") : "NEED_MANUAL_INPUT",
-                    mfgDate: "NEED_MANUAL_INPUT",
-                    rawString: rawBarcode
-                };
-            }
-        } catch (e) {
-            console.error("Invalid regex pattern from DB:", pattern.regex_pattern, e);
-        }
+        const data = parseCustomPattern(rawBarcode, pattern);
+        if (data) return data;
     }
 
     // 1. Aggressive Clean
@@ -209,6 +220,60 @@ const getLookupValues = (
     return Array.from(values);
 };
 
+const getReagentCodeMatchScore = (
+    value: string,
+    reagent: ReagentLookupItem
+): number => {
+    const key = normalizeLookupValue(value);
+    if (!key) return 0;
+
+    const candidates = [
+        normalizeLookupValue(reagent.itemId),
+        normalizeLookupValue(reagent.qrCode),
+    ].filter(Boolean);
+
+    if (candidates.some((candidate) => candidate === key)) return 2;
+
+    return candidates.some((candidate) => (
+        candidate.length >= 6 && key.length >= 6 && (
+            candidate.includes(key) || key.includes(candidate)
+        )
+    )) ? 1 : 0;
+};
+
+const resolveBarcodeData = (
+    rawBarcode: string,
+    patterns: BarcodePattern[],
+    reagent: ReagentLookupItem,
+    fallback: BarcodeData
+): BarcodeData => {
+    let resolvedData = fallback;
+    let resolvedScore = 0;
+
+    for (const pattern of patterns) {
+        const patternData = parseCustomPattern(rawBarcode, pattern, false);
+        if (!patternData) continue;
+
+        const score = getReagentCodeMatchScore(patternData.gtin, reagent);
+        if (score > resolvedScore) {
+            resolvedData = patternData;
+            resolvedScore = score;
+        }
+    }
+
+    // A broad custom regex can match an unrelated GS1 payload. Prefer the GS1
+    // interpretation when its GTIN is the code that identified the reagent.
+    const standardData = processAnyBarcode(rawBarcode, []);
+    if (standardData) {
+        const score = getReagentCodeMatchScore(standardData.gtin, reagent);
+        if (score > resolvedScore) {
+            resolvedData = standardData;
+        }
+    }
+
+    return resolvedData;
+};
+
 export const findMatchingReagent = <T extends ReagentLookupItem>(
     rawBarcode: string,
     patterns: BarcodePattern[] = [],
@@ -230,7 +295,11 @@ export const findMatchingReagent = <T extends ReagentLookupItem>(
     });
 
     if (exactMatch) {
-        return { data, match: exactMatch, lookupValues };
+        return {
+            data: resolveBarcodeData(rawBarcode, patterns, exactMatch, data),
+            match: exactMatch,
+            lookupValues
+        };
     }
 
     const looseMatch = reagents.find((reagent) => {
@@ -245,7 +314,11 @@ export const findMatchingReagent = <T extends ReagentLookupItem>(
         ));
     });
 
-    return { data, match: looseMatch, lookupValues };
+    return {
+        data: looseMatch ? resolveBarcodeData(rawBarcode, patterns, looseMatch, data) : data,
+        match: looseMatch,
+        lookupValues
+    };
 };
 
 const formatGS1Date = (yymmdd: string): string => {
