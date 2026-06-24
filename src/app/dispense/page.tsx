@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { apiClient, Reagent } from '@/lib/api-client';
-import { processAnyBarcode } from '@/lib/barcode-parser';
+import { findMatchingReagent } from '@/lib/barcode-parser';
 import QRScanner from '@/components/qr-scanner';
 import { 
   HandHelping, 
@@ -30,6 +30,7 @@ export default function DispensePage() {
   const [reagents, setReagents] = useState<Reagent[]>([]);
   const [patterns, setPatterns] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [scanMode, setScanMode] = useState(false);
   const [search, setSearch] = useState('');
@@ -37,20 +38,29 @@ export default function DispensePage() {
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error', msg: string } | null>(null);
   const [showResults, setShowResults] = useState(false);
 
-  // Load reagents for lookup
-  useEffect(() => {
-    Promise.all([
-      apiClient.getDashboard(),
-      apiClient.getBarcodePatterns()
-    ]).then(([reagentsData, patternsData]) => {
+  const loadLookupData = useCallback(async () => {
+    setLoading(true);
+    setLoadError('');
+    try {
+      const [reagentsData, patternsData] = await Promise.all([
+        apiClient.getDashboard(),
+        apiClient.getBarcodePatterns()
+      ]);
       setReagents(reagentsData);
       setPatterns(patternsData);
-      setLoading(false);
-    }).catch(err => {
+    } catch (err: unknown) {
       console.error(err);
+      const error = err as { response?: { data?: { error?: string } }, message?: string };
+      setLoadError(error.response?.data?.error || error.message || 'Unable to load lookup data');
+    } finally {
       setLoading(false);
-    });
+    }
   }, []);
+
+  // Load reagents for lookup
+  useEffect(() => {
+    loadLookupData();
+  }, [loadLookupData]);
 
   const addToCart = (match: Reagent, lotOverride?: string) => {
     if (match.lots.length === 0) {
@@ -91,30 +101,20 @@ export default function DispensePage() {
   };
 
   const handleScan = useCallback((decodedText: string) => {
-    const data = processAnyBarcode(decodedText, patterns);
-    if (!data) return;
-
-    // Standardize GTIN for lookup (remove leading zeros)
-    const cleanGtin = data.gtin.replace(/^0+/, '');
-    const cleanRaw = data.rawString.replace(/^0+/, '');
-
-    // Lookup item
-    const match = reagents.find(r => {
-      const dbBarcode = r.qrCode?.replace(/^0+/, '') || '';
-      const dbItemId = r.itemId.replace(/^0+/, '');
-
-      return (
-        dbItemId.toLowerCase() === cleanGtin.toLowerCase() || 
-        dbBarcode.toLowerCase() === cleanGtin.toLowerCase() ||
-        dbItemId.toLowerCase() === cleanRaw.toLowerCase()
-      );
-    });
+    const { data, match, lookupValues } = findMatchingReagent(decodedText, patterns, reagents);
+    if (!data) {
+      setFeedback({ type: 'error', msg: 'ไม่สามารถอ่าน QR/Barcode นี้ได้ กรุณาลองใหม่' });
+      setScanMode(false);
+      return;
+    }
 
     if (match) {
       addToCart(match, data.lot === 'NEED_MANUAL_INPUT' ? undefined : data.lot);
       setScanMode(false);
     } else {
-      setFeedback({ type: 'error', msg: 'ไม่พบข้อมูลน้ำยานี้ในระบบ' });
+      const parsedId = data.gtin || data.rawString || '-';
+      const parsedLot = data.lot === 'NEED_MANUAL_INPUT' ? '-' : data.lot;
+      setFeedback({ type: 'error', msg: `ไม่พบข้อมูลในระบบ | code: ${parsedId} | lot: ${parsedLot} | keys: ${lookupValues.join(', ') || '-'}` });
       setScanMode(false);
     }
   }, [reagents, patterns]);
@@ -123,7 +123,8 @@ export default function DispensePage() {
     if (!search.trim()) return [];
     return reagents.filter(r => 
       r.name.toLowerCase().includes(search.toLowerCase()) || 
-      r.itemId.toLowerCase().includes(search.toLowerCase())
+      r.itemId.toLowerCase().includes(search.toLowerCase()) ||
+      (r.qrCode || '').toLowerCase().includes(search.toLowerCase())
     ).slice(0, 5);
   }, [search, reagents]);
 
@@ -165,6 +166,7 @@ export default function DispensePage() {
       await apiClient.dispenseBatch(validItems);
       setFeedback({ type: 'success', msg: 'บันทึกรายการเบิกจ่ายเรียบร้อยแล้ว' });
       setCart([]);
+      await loadLookupData();
     } catch (err: unknown) {
       const error = err as { response?: { data?: { error?: string } }, message: string };
       setFeedback({ type: 'error', msg: 'เกิดข้อผิดพลาด: ' + (error.response?.data?.error || error.message) });
@@ -202,6 +204,12 @@ export default function DispensePage() {
           {feedback.type === 'success' ? <CheckCircle size={20} /> : <XCircle size={20} />}
           <p className="text-sm font-bold flex-1">{feedback.msg}</p>
           <button onClick={() => setFeedback(null)}><AlertCircle size={16} className="opacity-50" /></button>
+        </div>
+      )}
+
+      {loadError && (
+        <div className="p-4 rounded-xl bg-red-50 text-red-700 border border-red-100 text-sm font-bold">
+          โหลดข้อมูลไม่สำเร็จ: {loadError}
         </div>
       )}
 

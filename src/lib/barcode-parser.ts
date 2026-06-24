@@ -5,7 +5,7 @@
  * Migrated from LabReagentControl (React) to LabStock (Next.js)
  */
 
-import { BarcodePattern } from '@/lib/api-client';
+import type { BarcodePattern } from '@/lib/api-client';
 
 export interface BarcodeData {
     barcodeType: "GS1_COMPLIANT" | "STANDARD_1D" | "CUSTOM_PATTERN";
@@ -15,6 +15,11 @@ export interface BarcodeData {
     expDate: string;
     mfgDate: string;
     rawString: string;
+}
+
+interface ReagentLookupItem {
+    itemId: string;
+    qrCode?: string;
 }
 
 /**
@@ -43,7 +48,6 @@ export const standardizeDate = (dateStr: string): string => {
     // 6 digits: YYMMDD (GS1) or DDMMYY
     if (clean.length === 6) {
         const p1 = parseInt(clean.substring(0, 2));
-        const p2 = parseInt(clean.substring(2, 4)); // month?
         const p3 = parseInt(clean.substring(4, 6));
 
         // If p1 > 31, it must be YYMMDD
@@ -154,6 +158,94 @@ export const processAnyBarcode = (rawBarcode: string, patterns: BarcodePattern[]
     // Fallback for simple barcodes
     result.gtin = rawBarcode.trim();
     return result;
+};
+
+export const normalizeLookupValue = (value: string | null | undefined): string => {
+    if (!value) return "";
+
+    return value
+        .trim()
+        .replace(/^\][a-zA-Z0-9]{2}/, "")
+        // Scanners may preserve FNC1/control characters and vendor separators.
+        .replace(/[^a-zA-Z0-9]/g, "")
+        .replace(/^0+/, "")
+        .toLowerCase();
+};
+
+const getLookupValues = (
+    rawBarcode: string,
+    data: BarcodeData,
+    patterns: BarcodePattern[]
+): string[] => {
+    const values = new Set<string>();
+    const addValue = (value: string | null | undefined) => {
+        const normalized = normalizeLookupValue(value);
+        if (normalized) values.add(normalized);
+    };
+
+    addValue(rawBarcode);
+    addValue(data.gtin);
+    addValue(data.rawString);
+
+    // A GS1 payload identifies the product with AI (01), followed by a 14-digit GTIN.
+    for (const match of rawBarcode.matchAll(/(?:\(01\)|01)(\d{14})/g)) {
+        addValue(match[1]);
+    }
+
+    // Patterns can overlap. Collect every configured item group instead of trusting
+    // only the first pattern selected by processAnyBarcode().
+    for (const pattern of patterns) {
+        if (!pattern.item_id_group) continue;
+
+        try {
+            const regex = new RegExp(pattern.regex_pattern);
+            const match = rawBarcode.match(regex);
+            if (match) addValue(match[pattern.item_id_group]);
+        } catch {
+            // Invalid patterns are reported by processAnyBarcode; skip them here.
+        }
+    }
+
+    return Array.from(values);
+};
+
+export const findMatchingReagent = <T extends ReagentLookupItem>(
+    rawBarcode: string,
+    patterns: BarcodePattern[] = [],
+    reagents: T[] = []
+): { data: BarcodeData | null; match: T | undefined; lookupValues: string[] } => {
+    const data = processAnyBarcode(rawBarcode, patterns);
+    if (!data) {
+        return { data: null, match: undefined, lookupValues: [] };
+    }
+
+    const lookupValues = getLookupValues(rawBarcode, data, patterns);
+    const lookupKeys = new Set(lookupValues);
+
+    const exactMatch = reagents.find((reagent) => {
+        const itemId = normalizeLookupValue(reagent.itemId);
+        const qrCode = normalizeLookupValue(reagent.qrCode);
+
+        return lookupKeys.has(itemId) || lookupKeys.has(qrCode);
+    });
+
+    if (exactMatch) {
+        return { data, match: exactMatch, lookupValues };
+    }
+
+    const looseMatch = reagents.find((reagent) => {
+        const candidates = [
+            normalizeLookupValue(reagent.itemId),
+            normalizeLookupValue(reagent.qrCode),
+        ].filter((value) => value.length >= 6);
+
+        return lookupValues.some((key) => (
+            key.length >= 6 &&
+            candidates.some((candidate) => candidate.includes(key) || key.includes(candidate))
+        ));
+    });
+
+    return { data, match: looseMatch, lookupValues };
 };
 
 const formatGS1Date = (yymmdd: string): string => {
