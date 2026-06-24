@@ -12,6 +12,7 @@ export interface BarcodeData {
     gtin: string;
     udi: string;
     ref: string;
+    additionalProductId?: string;
     lot: string;
     expDate: string;
     mfgDate: string;
@@ -300,7 +301,7 @@ const formatGS1Date = (yymmdd: string): string => {
 
 const parseGs1Udi = (rawBarcode: string): BarcodeData | null => {
     const elements = new Map<string, string>();
-    const supportedAis = new Set(['01', '10', '11', '17', '21']);
+    const supportedAis = new Set(['01', '10', '11', '17', '21', '240']);
     const addElement = (ai: string, value: string | undefined) => {
         const cleanValue = value?.trim();
         if (cleanValue && supportedAis.has(ai) && !elements.has(ai)) {
@@ -309,7 +310,7 @@ const parseGs1Udi = (rawBarcode: string): BarcodeData | null => {
     };
 
     // Human-readable GS1: (01)GTIN(17)YYMMDD(10)LOT(21)SERIAL
-    for (const match of rawBarcode.matchAll(/\((01|10|11|17|21)\)([^()]*)/g)) {
+    for (const match of rawBarcode.matchAll(/\((01|10|11|17|21|240)\)([^()]*)/g)) {
         addElement(match[1], match[2]);
     }
 
@@ -331,14 +332,26 @@ const parseGs1Udi = (rawBarcode: string): BarcodeData | null => {
     // Scanner form: ]d2 + compact AIs, with ASCII 29 (FNC1) after variable fields.
     const compact = rawBarcode.trim()
         .replace(/^\][a-zA-Z0-9]{2}/, '')
-        .replace(/\((01|10|11|17|21)\)/g, '$1')
+        .replace(/\((01|10|11|17|21|240)\)/g, '$1')
         .replace(/\s/g, '');
 
     for (const segment of compact.split(/\x1D|<GS>|\|/i)) {
         let cursor = 0;
         while (cursor < segment.length) {
+            const ai3 = segment.substring(cursor, cursor + 3);
             const ai = segment.substring(cursor, cursor + 2);
-            if (ai === '01' && /^\d{14}$/.test(segment.substring(cursor + 2, cursor + 16))) {
+            if (ai3 === '240') {
+                const remaining = segment.substring(cursor + 3);
+                const nextGtinIndex = remaining.search(/01\d{14}/);
+
+                if (nextGtinIndex > 0) {
+                    addElement(ai3, remaining.substring(0, nextGtinIndex));
+                    cursor += 3 + nextGtinIndex;
+                } else {
+                    addElement(ai3, remaining);
+                    break;
+                }
+            } else if (ai === '01' && /^\d{14}$/.test(segment.substring(cursor + 2, cursor + 16))) {
                 addElement(ai, segment.substring(cursor + 2, cursor + 16));
                 cursor += 16;
             } else if ((ai === '11' || ai === '17') && /^\d{6}$/.test(segment.substring(cursor + 2, cursor + 8))) {
@@ -356,16 +369,18 @@ const parseGs1Udi = (rawBarcode: string): BarcodeData | null => {
     const gtin = elements.get('01');
     if (!gtin) return null;
 
-    const canonicalUdi = ['01', '17', '11', '10', '21']
+    const canonicalUdi = ['01', '240', '17', '11', '10', '21']
         .flatMap((ai) => elements.has(ai) ? [`(${ai})${elements.get(ai)}`] : [])
         .join('');
     const serial = elements.get('21') || 'NEED_MANUAL_INPUT';
+    const additionalProductId = elements.get('240');
 
     return {
         barcodeType: "GS1_COMPLIANT",
         gtin,
         udi: canonicalUdi,
-        ref: serial,
+        ref: additionalProductId || serial,
+        additionalProductId,
         lot: elements.get('10') || 'NEED_MANUAL_INPUT',
         expDate: elements.has('17') ? formatGS1Date(elements.get('17') || '') : 'NEED_MANUAL_INPUT',
         mfgDate: elements.has('11') ? formatGS1Date(elements.get('11') || '') : 'NEED_MANUAL_INPUT',

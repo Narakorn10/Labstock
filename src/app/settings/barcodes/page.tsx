@@ -266,8 +266,10 @@ export default function BarcodeSettingsPage() {
                   <CheckCircle size={18} /> GS1 UDI decoded automatically
                 </div>
                 <div><strong>GTIN (UDI-DI):</strong> <span className="font-mono">{gs1Result.gtin}</span></div>
+                <div><strong>REF (240):</strong> <span className="font-mono">{gs1Result.additionalProductId || '-'}</span></div>
                 <div><strong>Lot (10):</strong> <span className="font-mono">{gs1Result.lot === 'NEED_MANUAL_INPUT' ? '-' : gs1Result.lot}</span></div>
                 <div><strong>Expiry (17):</strong> <span className="font-mono">{gs1Result.expDate === 'NEED_MANUAL_INPUT' ? '-' : gs1Result.expDate}</span></div>
+                <div><strong>Manufacturing (11):</strong> <span className="font-mono">{gs1Result.mfgDate === 'NEED_MANUAL_INPUT' ? '-' : gs1Result.mfgDate}</span></div>
                 <div><strong>Serial (21):</strong> <span className="font-mono">{gs1Result.serial === 'NEED_MANUAL_INPUT' ? '-' : gs1Result.serial}</span></div>
                 <div className="break-all"><strong>Full UDI:</strong> <span className="font-mono">{gs1Result.udi}</span></div>
               </div>
