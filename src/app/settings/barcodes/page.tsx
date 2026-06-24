@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { apiClient, BarcodePattern } from '@/lib/api-client';
+import { processAnyBarcode } from '@/lib/barcode-parser';
 import { Trash2, Plus, Loader2, CheckCircle, Save, Camera, X, AlertCircle } from 'lucide-react';
 import QRScanner from '@/components/qr-scanner';
 
@@ -26,6 +27,22 @@ export default function BarcodeSettingsPage() {
   const [assistantMode, setAssistantMode] = useState(false);
   const [selection, setSelection] = useState<{ start: number, end: number } | null>(null);
   const [mapping, setMapping] = useState<{ item?: [number, number], lot?: [number, number], exp?: [number, number] }>({});
+
+  const gs1Result = useMemo(() => {
+    const data = processAnyBarcode(testString, []);
+    return data?.barcodeType === 'GS1_COMPLIANT' ? data : null;
+  }, [testString]);
+
+  const loadPatterns = async () => {
+    try {
+      const data = await apiClient.getBarcodePatterns();
+      setPatterns(data);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     loadPatterns();
@@ -104,29 +121,13 @@ export default function BarcodeSettingsPage() {
     setExpDateGroup('');
   };
 
-  const loadPatterns = async () => {
-    try {
-      const data = await apiClient.getBarcodePatterns();
-      setPatterns(data);
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleScan = (text: string) => {
     setShowScanner(false);
     setTestString(text);
   };
 
   const checkGS1Format = (text: string) => {
-    const cleanText = text.trim().replace(/^\][a-zA-Z0-9]{2}/, "").replace(/[()]/g, "").replace(/\s/g, "");
-    // Check if it has GTIN (01 + 14 digits)
-    if (cleanText.match(/01(\d{14})/)) {
-      return true;
-    }
-    return false;
+    return processAnyBarcode(text, [])?.barcodeType === 'GS1_COMPLIANT';
   };
 
   const runTest = () => {
@@ -258,6 +259,19 @@ export default function BarcodeSettingsPage() {
               </label>
               <input type="text" value={testString} onChange={e => setTestString(e.target.value)} className="w-full border rounded-xl px-4 py-2 font-mono" placeholder="วางบาร์โค้ดที่นี่เพื่อทดสอบ" />
             </div>
+
+            {gs1Result && (
+              <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-200 space-y-2 text-sm">
+                <div className="flex items-center gap-2 text-emerald-700 font-bold">
+                  <CheckCircle size={18} /> GS1 UDI decoded automatically
+                </div>
+                <div><strong>GTIN (UDI-DI):</strong> <span className="font-mono">{gs1Result.gtin}</span></div>
+                <div><strong>Lot (10):</strong> <span className="font-mono">{gs1Result.lot === 'NEED_MANUAL_INPUT' ? '-' : gs1Result.lot}</span></div>
+                <div><strong>Expiry (17):</strong> <span className="font-mono">{gs1Result.expDate === 'NEED_MANUAL_INPUT' ? '-' : gs1Result.expDate}</span></div>
+                <div><strong>Serial (21):</strong> <span className="font-mono">{gs1Result.serial === 'NEED_MANUAL_INPUT' ? '-' : gs1Result.serial}</span></div>
+                <div className="break-all"><strong>Full UDI:</strong> <span className="font-mono">{gs1Result.udi}</span></div>
+              </div>
+            )}
 
             {assistantMode && testString && (
               <div className="bg-white p-4 rounded-xl border border-blue-200 space-y-4 shadow-sm">
