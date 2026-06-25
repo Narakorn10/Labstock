@@ -4,6 +4,13 @@ import sql from './db';
 
 const SALT_ROUNDS = 10;
 
+export interface AuthenticatedUser {
+  username: string;
+  name: string;
+  role: string;
+  vendor?: string;
+}
+
 export async function hashPassword(password: string) {
   return await bcrypt.hash(password, SALT_ROUNDS);
 }
@@ -21,6 +28,22 @@ export async function comparePassword(password: string, hash: string) {
   // 2. Try SHA-256 (Legacy fallback for migration)
   const sha256Hash = crypto.createHash('sha256').update(password).digest('hex');
   return sha256Hash === hash;
+}
+
+export async function hashPin(pin: string) {
+  return await bcrypt.hash(pin, SALT_ROUNDS);
+}
+
+export async function hasUserPinColumn() {
+  const result = await sql`
+    SELECT EXISTS (
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_name = 'users' AND column_name = 'pin_hash'
+    ) as exists
+  `;
+
+  return Boolean(result[0]?.exists);
 }
 
 export async function getAuthenticatedUser(request: Request) {
@@ -59,6 +82,38 @@ export async function getAuthenticatedUser(request: Request) {
     };
   } catch (error) {
     console.error('Auth check error:', error);
+    return null;
+  }
+}
+
+export async function verifyUserPin(username: string, pin: string): Promise<AuthenticatedUser | null> {
+  try {
+    const pinEnabled = await hasUserPinColumn();
+    if (!pinEnabled) return null;
+
+    const users = await sql`
+      SELECT username, name, role, vendor, pin_hash
+      FROM users
+      WHERE LOWER(username) = LOWER(${username.trim()})
+      LIMIT 1
+    `;
+
+    if (users.length === 0) return null;
+
+    const user = users[0];
+    if (!user.pin_hash) return null;
+
+    const isMatch = await comparePassword(pin, user.pin_hash);
+    if (!isMatch) return null;
+
+    return {
+      username: user.username,
+      name: user.name,
+      role: user.role,
+      vendor: user.vendor
+    };
+  } catch (error) {
+    console.error('PIN verification error:', error);
     return null;
   }
 }

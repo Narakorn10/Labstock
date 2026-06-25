@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import sql from '@/lib/db';
-import { hashPassword, isAdmin } from '@/lib/auth-utils';
+import { hasUserPinColumn, hashPassword, hashPin, isAdmin } from '@/lib/auth-utils';
 
 export async function GET(request: Request) {
   try {
@@ -8,11 +8,18 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const data = await sql`
-      SELECT username, name, role, vendor 
-      FROM users 
-      ORDER BY username ASC
-    `;
+    const pinEnabled = await hasUserPinColumn();
+    const data = pinEnabled
+      ? await sql`
+          SELECT username, name, role, vendor, (pin_hash IS NOT NULL AND pin_hash != '') as "hasPin"
+          FROM users
+          ORDER BY username ASC
+        `
+      : await sql`
+          SELECT username, name, role, vendor, false as "hasPin"
+          FROM users
+          ORDER BY username ASC
+        `;
 
     return NextResponse.json(data);
   } catch (error: unknown) {
@@ -29,6 +36,11 @@ export async function POST(request: Request) {
     }
 
     const userData = await request.json();
+    const pinEnabled = await hasUserPinColumn();
+
+    if (userData.pin && !pinEnabled) {
+      return NextResponse.json({ error: 'PIN support is not enabled yet. Run upgrade_v5_user_pin.sql first.' }, { status: 400 });
+    }
     
     // Check for existing ID
     const existing = await sql`SELECT username FROM users WHERE LOWER(username) = LOWER(${userData.username.trim()})`;
@@ -37,10 +49,11 @@ export async function POST(request: Request) {
     }
 
     await sql`
-      INSERT INTO users (username, password_hash, name, role, vendor)
+      INSERT INTO users (username, password_hash, pin_hash, name, role, vendor)
       VALUES (
         ${userData.username.trim()}, 
         ${await hashPassword(userData.password)}, 
+        ${pinEnabled && userData.pin ? await hashPin(userData.pin) : null},
         ${userData.name}, 
         ${userData.role || 'User'}, 
         ${userData.vendor || ''}

@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 
 interface CartItem {
+  cartId: string;
   itemId: string;
   name: string;
   lotNo: string;
@@ -35,6 +36,8 @@ export default function ReceivePage() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error', msg: string } | null>(null);
   const [showResults, setShowResults] = useState(false);
+
+  const createCartId = (itemId: string) => `${itemId}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
   const loadLookupData = useCallback(async () => {
     setLoading(true);
@@ -62,6 +65,7 @@ export default function ReceivePage() {
 
   const addToCart = (match: Reagent, lot: string = '', exp: string = '') => {
     const newItem: CartItem = {
+      cartId: createCartId(match.itemId),
       itemId: match.itemId,
       name: match.name,
       lotNo: lot,
@@ -120,21 +124,21 @@ export default function ReceivePage() {
     }
   };
 
-  const removeFromCart = (index: number) => {
-    setCart(prev => prev.filter((_, i) => i !== index));
+  const removeFromCart = (cartId: string) => {
+    setCart(prev => prev.filter(item => item.cartId !== cartId));
   };
 
-  const updateQty = (index: number, newQty: string) => {
+  const updateQty = (cartId: string, newQty: string) => {
     const val = parseInt(newQty) || 0;
-    setCart(prev => prev.map((item, i) => i === index ? { ...item, qty: val } : item));
+    setCart(prev => prev.map(item => item.cartId === cartId ? { ...item, qty: val } : item));
   };
 
-  const updateLotNo = (index: number, newLot: string) => {
-    setCart(prev => prev.map((item, i) => i === index ? { ...item, lotNo: newLot } : item));
+  const updateLotNo = (cartId: string, newLot: string) => {
+    setCart(prev => prev.map(item => item.cartId === cartId ? { ...item, lotNo: newLot } : item));
   };
 
-  const updateExpDate = (index: number, newExp: string) => {
-    setCart(prev => prev.map((item, i) => i === index ? { ...item, expDate: newExp } : item));
+  const updateExpDate = (cartId: string, newExp: string) => {
+    setCart(prev => prev.map(item => item.cartId === cartId ? { ...item, expDate: newExp } : item));
   };
 
   const handleSubmit = async () => {
@@ -280,8 +284,8 @@ export default function ReceivePage() {
           </div>
         ) : (
           <div className="space-y-3">
-            {cart.map((item, index) => (
-              <div key={`${item.itemId}-${item.lotNo}-${index}`} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-4 animate-in fade-in slide-in-from-right-4 duration-300">
+            {cart.map((item) => (
+              <div key={item.cartId} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-4 animate-in fade-in slide-in-from-right-4 duration-300">
                 <div className="flex-1 min-w-0">
                   <h3 className="font-bold text-gray-900 truncate">{item.name}</h3>
                   <div className="flex flex-wrap gap-x-3 gap-y-2 mt-2 text-[11px] font-medium text-gray-500">
@@ -291,7 +295,7 @@ export default function ReceivePage() {
                       <input 
                         type="text" 
                         value={item.lotNo} 
-                        onChange={e => updateLotNo(index, e.target.value)}
+                        onChange={e => updateLotNo(item.cartId, e.target.value)}
                         placeholder="ระบุ Lot"
                         className="border border-gray-200 rounded px-1.5 py-0.5 text-xs outline-none focus:ring-1 focus:ring-blue-500 w-24"
                       />
@@ -301,7 +305,7 @@ export default function ReceivePage() {
                       <input 
                         type="date" 
                         value={item.expDate} 
-                        onChange={e => updateExpDate(index, e.target.value)}
+                        onChange={e => updateExpDate(item.cartId, e.target.value)}
                         className="border border-gray-200 rounded px-1.5 py-0.5 text-xs outline-none focus:ring-1 focus:ring-blue-500"
                       />
                     </div>
@@ -313,13 +317,13 @@ export default function ReceivePage() {
                     <input 
                       type="number"
                       value={item.qty}
-                      onChange={(e) => updateQty(index, e.target.value)}
+                      onChange={(e) => updateQty(item.cartId, e.target.value)}
                       className="w-16 text-center font-bold bg-gray-50 border border-gray-100 rounded-lg py-1.5 text-blue-600 outline-none focus:ring-2 focus:ring-blue-500"
                     />
                     <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] font-bold text-gray-400 uppercase whitespace-nowrap">{item.unit}</span>
                   </div>
                   <button 
-                    onClick={() => removeFromCart(index)}
+                    onClick={() => removeFromCart(item.cartId)}
                     className="p-2 text-gray-300 hover:text-red-500 transition-colors"
                   >
                     <Trash2 size={18} />

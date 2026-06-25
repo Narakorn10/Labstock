@@ -63,7 +63,6 @@ const navigationGroups = [
       { id: 'main_stock', name: 'Main Stock (คลังใหญ่)', href: '/master/inventory', icon: Package },
       { id: 'user_management', name: 'User Management', href: '/master/users', icon: Shield },
       { id: 'rbac', name: 'Permissions (RBAC)', href: '/master/permissions', icon: ShieldCheck },
-      { id: 'sql_explorer', name: 'SQL Explorer', href: '/admin/sql', icon: Database },
     ]
   },
   {

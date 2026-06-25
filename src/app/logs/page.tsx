@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 
 interface LogEntry {
-  id?: number;
+  id: number;
   timestamp: string;
   itemId: string;
   name: string;
@@ -27,6 +27,7 @@ interface LogEntry {
 export default function LogsPage() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [actionFilter, setActionFilter] = useState('');
   const [startDate, setStartDate] = useState('');
@@ -34,6 +35,7 @@ export default function LogsPage() {
 
   const fetchLogs = useCallback(async () => {
     setLoading(true);
+    setLoadError('');
     try {
       const data = await apiClient.getLogs(500, {
         search: searchTerm,
@@ -42,8 +44,11 @@ export default function LogsPage() {
         endDate
       });
       setLogs(data);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error(err);
+      const error = err as { response?: { data?: { error?: string } }, message?: string };
+      setLoadError(error.response?.data?.error || error.message || 'Unable to load transaction logs');
+      setLogs([]);
     } finally {
       setLoading(false);
     }
@@ -104,6 +109,12 @@ export default function LogsPage() {
           </button>
         </div>
       </div>
+
+      {loadError && (
+        <div className="p-4 rounded-2xl bg-red-50 text-red-700 border border-red-100 text-sm font-bold">
+          โหลดประวัติรายการไม่สำเร็จ: {loadError}
+        </div>
+      )}
 
       {/* Advanced Filters */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -171,11 +182,11 @@ export default function LogsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {logs.map((log, idx) => {
+                {logs.map((log) => {
                   const isReceive = log.action === 'รับเข้าสต๊อกหลัก';
                   const isReconcile = log.action.includes('ปรับปรุงยอด');
                   return (
-                    <tr key={idx} className="hover:bg-blue-50/30 transition-colors group">
+                    <tr key={log.id} className="hover:bg-blue-50/30 transition-colors group">
                       <td className="px-8 py-4 whitespace-nowrap">
                         <p className="font-bold text-gray-900 text-xs">{new Date(log.timestamp).toLocaleString('th-TH', { 
                           day: '2-digit', month: '2-digit', year: '2-digit', 

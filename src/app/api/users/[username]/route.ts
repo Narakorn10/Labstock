@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import sql from '@/lib/db';
-import { hashPassword, isAdmin } from '@/lib/auth-utils';
+import { hasUserPinColumn, hashPassword, hashPin, isAdmin } from '@/lib/auth-utils';
 
 export async function PUT(
   request: Request,
@@ -13,6 +13,11 @@ export async function PUT(
 
     const { username } = await params;
     const updateData = await request.json();
+    const pinEnabled = await hasUserPinColumn();
+
+    if (updateData.pin && !pinEnabled) {
+      return NextResponse.json({ error: 'PIN support is not enabled yet. Run upgrade_v5_user_pin.sql first.' }, { status: 400 });
+    }
 
     const users = await sql`
       SELECT username FROM users 
@@ -26,22 +31,26 @@ export async function PUT(
 
     if (updateData.password) {
       const newHash = await hashPassword(updateData.password);
+      const newPinHash = pinEnabled && updateData.pin ? await hashPin(updateData.pin) : null;
       await sql`
         UPDATE users 
         SET 
           name = ${updateData.name}, 
           role = ${updateData.role}, 
           vendor = ${updateData.vendor || ''},
-          password_hash = ${newHash}
+          password_hash = ${newHash},
+          pin_hash = COALESCE(${newPinHash}, pin_hash)
         WHERE LOWER(username) = LOWER(${username.trim()})
       `;
     } else {
+      const newPinHash = pinEnabled && updateData.pin ? await hashPin(updateData.pin) : null;
       await sql`
         UPDATE users 
         SET 
           name = ${updateData.name}, 
           role = ${updateData.role}, 
-          vendor = ${updateData.vendor || ''}
+          vendor = ${updateData.vendor || ''},
+          pin_hash = COALESCE(${newPinHash}, pin_hash)
         WHERE LOWER(username) = LOWER(${username.trim()})
       `;
     }

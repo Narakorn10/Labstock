@@ -36,7 +36,6 @@ const ALL_MENUS = [
   { id: 'master_data', label: 'Master Data', icon: Database },
   { id: 'main_stock', label: 'Main Stock', icon: Database },
   { id: 'user_management', label: 'User Management', icon: Users },
-  { id: 'sql_explorer', label: 'SQL Explorer', icon: Lock },
   { id: 'settings', label: 'System Settings', icon: Settings },
   { id: 'notifications', label: 'Notifications', icon: Settings },
   { id: 'barcodes', label: 'Barcode Learning', icon: Settings },
@@ -52,10 +51,6 @@ export default function PermissionsPage() {
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchPermissions();
-  }, []);
-
   const fetchPermissions = async () => {
     setLoading(true);
     try {
@@ -70,6 +65,10 @@ export default function PermissionsPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchPermissions();
+  }, []);
 
   const togglePermission = (role: string, menuId: string) => {
     setPermissions(prev => prev.map(p => {

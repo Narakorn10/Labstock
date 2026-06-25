@@ -27,13 +27,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const pathname = usePathname();
+  const isPublicPath = pathname === '/login' || pathname.startsWith('/mobile');
+
+  const clearStoredAuth = React.useCallback(() => {
+    localStorage.removeItem('labstock_user');
+    localStorage.removeItem('labstock_token');
+  }, []);
 
   const logout = React.useCallback(() => {
     setUser(null);
-    localStorage.removeItem('labstock_user');
-    localStorage.removeItem('labstock_token');
+    clearStoredAuth();
     router.push('/login');
-  }, [router]);
+  }, [clearStoredAuth, router]);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -51,7 +56,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setUser(data.user);
             localStorage.setItem('labstock_user', JSON.stringify(data.user));
           } else {
-            logout();
+            clearStoredAuth();
+            setUser(null);
+            if (!isPublicPath) {
+              router.push('/login');
+            }
           }
         } catch (error) {
           console.error('Auth verification failed:', error);
@@ -62,13 +71,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     checkAuth();
-  }, [logout]);
+  }, [clearStoredAuth, isPublicPath, router]);
 
   useEffect(() => {
-    if (!loading && !user && pathname !== '/login') {
+    if (!loading && !user && !isPublicPath) {
       router.push('/login');
     }
-  }, [user, loading, pathname, router]);
+  }, [user, loading, isPublicPath, router]);
 
   const login = async (credentials: Partial<User>) => {
     const res = await apiClient.login(credentials);

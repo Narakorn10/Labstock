@@ -31,7 +31,7 @@ export async function GET(request: Request) {
       AND (${action === '' ? true : false} OR action = ${action})
       AND (${startDate ? true : false} = false OR timestamp >= ${startDate || '1970-01-01'})
       AND (${endDate ? true : false} = false OR timestamp <= ${endDate ? endDate + ' 23:59:59' : '9999-12-31'})
-      ORDER BY timestamp DESC
+      ORDER BY timestamp DESC, id DESC
       LIMIT ${limit}
     `;
 

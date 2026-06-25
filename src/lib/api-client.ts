@@ -16,6 +16,19 @@ instance.interceptors.request.use((config) => {
   return Promise.reject(error);
 });
 
+instance.interceptors.response.use((response) => response, (error) => {
+  if (typeof window !== 'undefined' && error.response?.status === 401) {
+    localStorage.removeItem('labstock_user');
+    localStorage.removeItem('labstock_token');
+
+    if (window.location.pathname !== '/login') {
+      window.location.href = '/login';
+    }
+  }
+
+  return Promise.reject(error);
+});
+
 export interface Reagent {
   itemId: string;
   qrCode: string;
@@ -77,6 +90,8 @@ export interface User {
   role: string;
   vendor?: string;
   password?: string;
+  pin?: string;
+  hasPin?: boolean;
 }
 
 export interface ApiResponse<T = unknown> {
@@ -115,10 +130,16 @@ export interface BarcodePattern {
   exp_date_group: number | null;
 }
 
+export type BarcodePatternCreatePayload = Omit<BarcodePattern, 'id'> & {
+  sample_barcode: string;
+};
+
 export interface SettingsResponse {
   reagentTypes: string[];
   jobTypes: string[];
   machineTypes: string[];
+  units: string[];
+  vendors: string[];
 }
 
 export interface Shipment {
@@ -247,7 +268,7 @@ export const apiClient = {
     const res = await instance.get<BarcodePattern[]>('/api/settings/barcodes');
     return res.data;
   },
-  createBarcodePattern: async (data: Omit<BarcodePattern, 'id'>) => {
+  createBarcodePattern: async (data: BarcodePatternCreatePayload) => {
     const res = await instance.post('/api/settings/barcodes', data);
     return res.data;
   },

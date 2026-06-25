@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { apiClient, Reagent } from '@/lib/api-client';
+import { apiClient, Reagent, Lot } from '@/lib/api-client';
 import { findMatchingReagent } from '@/lib/barcode-parser';
 import QRScanner from '@/components/qr-scanner';
 import { 
@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 
 interface CartItem {
+  cartId: string;
   itemId: string;
   name: string;
   lotNo: string;
@@ -24,7 +25,10 @@ interface CartItem {
   unit: string;
   maxQty: number;
   expDate: string;
+  availableLots: Lot[];
 }
+
+const createCartId = (itemId: string) => `${itemId}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
 export default function DispensePage() {
   const [reagents, setReagents] = useState<Reagent[]>([]);
@@ -77,13 +81,15 @@ export default function DispensePage() {
     }
 
     const newItem: CartItem = {
+      cartId: createCartId(match.itemId),
       itemId: match.itemId,
       name: match.name,
       lotNo: selectedLot.lotNo,
       expDate: selectedLot.expDate,
       qty: 1,
       unit: match.unit,
-      maxQty: selectedLot.qty
+      maxQty: selectedLot.qty,
+      availableLots: sortedLots
     };
 
     setCart(prev => {
@@ -137,19 +143,59 @@ export default function DispensePage() {
     }
   };
 
-  const removeFromCart = (index: number) => {
-    setCart(prev => prev.filter((_, i) => i !== index));
+  const removeFromCart = (cartId: string) => {
+    setCart(prev => prev.filter(item => item.cartId !== cartId));
   };
 
-  const updateQty = (index: number, newQty: string) => {
+  const updateQty = (cartId: string, newQty: string) => {
     const val = parseInt(newQty) || 0;
-    setCart(prev => prev.map((item, i) => {
-      if (i === index) {
+    setCart(prev => prev.map((item) => {
+      if (item.cartId === cartId) {
         const finalQty = Math.min(val, item.maxQty);
         return { ...item, qty: finalQty };
       }
       return item;
     }));
+  };
+
+  const updateLotSelection = (cartId: string, selectedLotNo: string) => {
+    setCart(prev => {
+      const currentItem = prev.find(item => item.cartId === cartId);
+      if (!currentItem) return prev;
+
+      const selectedLot = currentItem.availableLots.find(lot => lot.lotNo === selectedLotNo);
+      if (!selectedLot) return prev;
+
+      const duplicateItem = prev.find(item =>
+        item.cartId !== cartId &&
+        item.itemId === currentItem.itemId &&
+        item.lotNo === selectedLotNo
+      );
+
+      if (duplicateItem) {
+        return prev
+          .filter(item => item.cartId !== cartId)
+          .map(item => item.cartId === duplicateItem.cartId
+            ? {
+                ...item,
+                qty: Math.min(item.qty + currentItem.qty, item.maxQty)
+              }
+            : item
+          );
+      }
+
+      return prev.map(item => {
+        if (item.cartId !== cartId) return item;
+
+        return {
+          ...item,
+          lotNo: selectedLot.lotNo,
+          expDate: selectedLot.expDate,
+          maxQty: selectedLot.qty,
+          qty: Math.min(item.qty, selectedLot.qty)
+        };
+      });
+    });
   };
 
   const handleSubmit = async () => {
@@ -286,12 +332,25 @@ export default function DispensePage() {
           </div>
         ) : (
           <div className="space-y-3">
-            {cart.map((item, index) => (
-              <div key={`${item.itemId}-${item.lotNo}`} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-4 animate-in fade-in slide-in-from-right-4 duration-300">
+            {cart.map((item) => (
+              <div key={item.cartId} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-4 animate-in fade-in slide-in-from-right-4 duration-300">
                 <div className="flex-1 min-w-0">
                   <h3 className="font-bold text-gray-900 truncate">{item.name}</h3>
-                  <div className="flex items-center gap-3 mt-1 text-[11px] font-medium">
-                    <span className="text-red-600 bg-red-50 px-1.5 py-0.5 rounded font-bold">Lot: {item.lotNo}</span>
+                  <div className="flex flex-wrap items-center gap-3 mt-1 text-[11px] font-medium">
+                    <label className="flex items-center gap-2 text-gray-500">
+                      <span className="text-red-600 bg-red-50 px-1.5 py-0.5 rounded font-bold">Lot</span>
+                      <select
+                        value={item.lotNo}
+                        onChange={(e) => updateLotSelection(item.cartId, e.target.value)}
+                        className="min-w-28 bg-white border border-gray-200 rounded-lg px-2 py-1 text-[11px] font-bold text-gray-700 outline-none focus:ring-2 focus:ring-red-500"
+                      >
+                        {item.availableLots.map((lot) => (
+                          <option key={`${item.itemId}-${lot.lotNo}`} value={lot.lotNo}>
+                            {lot.lotNo}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
                     <span className="text-gray-400 flex items-center gap-1">
                       <Calendar size={12} />
                       EXP: {new Date(item.expDate).toLocaleDateString('th-TH')}
@@ -306,13 +365,13 @@ export default function DispensePage() {
                       type="number"
                       value={item.qty}
                       max={item.maxQty}
-                      onChange={(e) => updateQty(index, e.target.value)}
+                      onChange={(e) => updateQty(item.cartId, e.target.value)}
                       className="w-16 text-center font-bold bg-gray-50 border border-gray-100 rounded-lg py-1.5 text-red-600 outline-none focus:ring-2 focus:ring-red-500"
                     />
                     <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] font-bold text-gray-400 uppercase whitespace-nowrap">{item.unit}</span>
                   </div>
                   <button 
-                    onClick={() => removeFromCart(index)}
+                    onClick={() => removeFromCart(item.cartId)}
                     className="p-2 text-gray-300 hover:text-red-500 transition-colors"
                   >
                     <Trash2 size={18} />

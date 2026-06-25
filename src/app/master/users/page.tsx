@@ -27,7 +27,8 @@ export default function UsersPage() {
     password: '', 
     name: '', 
     role: 'User',
-    vendor: ''
+    vendor: '',
+    pin: ''
   });
 
   const loadUsers = useCallback(async () => {
@@ -55,7 +56,7 @@ export default function UsersPage() {
 
   const openAddModal = () => {
     setIsEdit(false);
-    setForm({ username: '', password: '', name: '', role: 'User', vendor: '' });
+    setForm({ username: '', password: '', name: '', role: 'User', vendor: '', pin: '' });
     setModalOpen(true);
   };
 
@@ -66,7 +67,8 @@ export default function UsersPage() {
       password: '', 
       name: user.name, 
       role: user.role,
-      vendor: user.vendor || ''
+      vendor: user.vendor || '',
+      pin: ''
     });
     setModalOpen(true);
   };
@@ -159,6 +161,9 @@ export default function UsersPage() {
                   `}>
                     {u.role}
                   </span>
+                  <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${u.hasPin ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-gray-50 text-gray-500 border-gray-100'}`}>
+                    {u.hasPin ? 'PIN Ready' : 'No PIN'}
+                  </span>
                   {u.vendor && (
                     <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-100">
                         {u.vendor}
@@ -239,6 +244,22 @@ export default function UsersPage() {
                 className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
               />
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">
+              {isEdit ? "PIN (leave blank to keep current)" : "User PIN"}
+            </label>
+            <input
+              type="password"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={form.pin || ''}
+              onChange={e => setForm({ ...form, pin: e.target.value.replace(/\D/g, '').slice(0, 6) })}
+              placeholder="4-6 digits for mobile confirm"
+              className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+            />
+            <p className="text-xs font-medium text-gray-500">Used by the no-login mobile receive/dispense confirm step.</p>
           </div>
 
           <div className="space-y-1.5">
