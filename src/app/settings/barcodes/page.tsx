@@ -161,6 +161,7 @@ export default function BarcodeSettingsPage() {
 
   const handleSave = async () => {
     if (!name || !regexPattern) return alert("กรุณาระบุชื่อและ Regex Pattern");
+    if (!testString) return alert("กรุณาสแกนหรือวางบาร์โค้ดตัวอย่างก่อนบันทึก");
     setSaving(true);
     try {
       await apiClient.createBarcodePattern({
@@ -169,6 +170,7 @@ export default function BarcodeSettingsPage() {
         item_id_group: itemIdGroup ? Number(itemIdGroup) : null,
         lot_no_group: lotNoGroup ? Number(lotNoGroup) : null,
         exp_date_group: expDateGroup ? Number(expDateGroup) : null,
+        sample_barcode: testString,
       });
       setName('');
       setRegexPattern('');
@@ -369,7 +371,7 @@ export default function BarcodeSettingsPage() {
         </div>
 
         <div className="flex justify-end">
-          <button onClick={handleSave} disabled={saving || !name || !regexPattern} className="bg-blue-600 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2 disabled:opacity-50">
+          <button onClick={handleSave} disabled={saving || !name || !regexPattern || !testString} className="bg-blue-600 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2 disabled:opacity-50">
             {saving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />} บันทึกรูปแบบ
           </button>
         </div>
