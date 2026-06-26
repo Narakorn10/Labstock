@@ -61,6 +61,31 @@ export async function replyLowStock(replyToken: string, items: LowStockItem[]) {
   await sendLineReply(replyToken, [template]);
 }
 
+const lineCommandQuickReply: messagingApi.QuickReply = {
+  items: [
+    {
+      type: 'action',
+      action: { type: 'message', label: 'ลงทะเบียน', text: 'id' },
+    },
+    {
+      type: 'action',
+      action: { type: 'message', label: 'สต๊อกต่ำ', text: 'stock' },
+    },
+    {
+      type: 'action',
+      action: { type: 'message', label: 'ตามประเภทงาน', text: 'job' },
+    },
+    {
+      type: 'action',
+      action: { type: 'message', label: 'สั่งซื้อ', text: 'order' },
+    },
+    {
+      type: 'action',
+      action: { type: 'message', label: 'Help', text: 'help' },
+    },
+  ],
+};
+
 export async function replyHelp(replyToken: string) {
   await sendLineReply(replyToken, [{
     type: 'text',
@@ -104,6 +129,7 @@ export async function replyHelp(replyToken: string) {
       'Group chat',
       '- Add this bot to a group/room and type help.',
       '- For private registration, chat 1:1 with the bot and type id.',
-    ].join('\n')
+    ].join('\n'),
+    quickReply: lineCommandQuickReply,
   }]);
 }
