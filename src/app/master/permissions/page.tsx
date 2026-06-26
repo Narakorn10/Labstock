@@ -31,7 +31,7 @@ const ALL_MENUS = [
   { id: 'lend', label: 'Lend System', icon: RefreshCw },
   { id: 'orders', label: 'Purchase Orders', icon: ShoppingCart },
   { id: 'receive_vendor', label: 'Receive from Vendor', icon: Box },
-  { id: 'vendor_orders', label: 'Vendor PO Portal', icon: ShoppingCart },
+  { id: 'vendor_orders', label: 'Vendor Orders', icon: ShoppingCart },
   { id: 'vendor_shipments', label: 'Vendor Shipments', icon: Box },
   { id: 'master_data', label: 'Master Data', icon: Database },
   { id: 'user_management', label: 'User Management', icon: Users },

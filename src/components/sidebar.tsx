@@ -47,12 +47,17 @@ const navigationGroups = [
     ]
   },
   {
-    title: 'Procurement',
+    title: 'Lab Procurement',
     items: [
-      { id: 'orders', name: 'สั่งซื้อน้ำยา (PO)', href: '/orders', icon: ShoppingCart },
-      { id: 'receive_vendor', name: 'รับสินค้าจากบริษัท', href: '/receive/vendor', icon: Package },
-      { id: 'vendor_orders', name: 'รับออเดอร์ (Vendor PO)', href: '/vendor/orders', icon: ShoppingCart },
-      { id: 'vendor_shipments', name: 'แจ้งส่งของ (Shipments)', href: '/vendor/shipments', icon: PackagePlus },
+      { id: 'orders', name: 'Purchase Orders', href: '/orders', icon: ShoppingCart },
+      { id: 'receive_vendor', name: 'Receive from Vendor', href: '/receive/vendor', icon: Package },
+    ]
+  },
+  {
+    title: 'Vendor Portal',
+    items: [
+      { id: 'vendor_orders', name: 'Vendor Orders', href: '/vendor/orders', icon: ShoppingCart },
+      { id: 'vendor_shipments', name: 'Vendor Shipments', href: '/vendor/shipments', icon: PackagePlus },
     ]
   },
   {
