@@ -23,6 +23,32 @@ const extractStockSearch = (text: string) => {
   return '';
 };
 
+const parseJobTypeCommand = (text: string) => {
+  const trimmed = text.trim();
+  const lower = trimmed.toLowerCase();
+  const summaryCommands = new Set([
+    'job',
+    'jobs',
+    'stock by job',
+    'งาน',
+    'ประเภทงาน',
+    'จำนวนน้ำยาตามงาน',
+  ]);
+
+  if (summaryCommands.has(lower) || summaryCommands.has(trimmed)) {
+    return { matched: true, keyword: '' };
+  }
+
+  if (lower.startsWith('job ')) return { matched: true, keyword: trimmed.slice(4).trim() };
+  if (lower.startsWith('job:')) return { matched: true, keyword: trimmed.slice(4).trim() };
+  if (trimmed.startsWith('งาน ')) return { matched: true, keyword: trimmed.slice(4).trim() };
+  if (trimmed.startsWith('งาน:')) return { matched: true, keyword: trimmed.slice(4).trim() };
+  if (trimmed.startsWith('ประเภทงาน ')) return { matched: true, keyword: trimmed.slice(9).trim() };
+  if (trimmed.startsWith('ประเภทงาน:')) return { matched: true, keyword: trimmed.slice(9).trim() };
+
+  return { matched: false, keyword: '' };
+};
+
 async function replyText(replyToken: string, text: string) {
   await sendLineReply(replyToken, [{ type: 'text', text }]);
 }
@@ -104,6 +130,84 @@ async function replyStockSearch(replyToken: string, keyword: string) {
   await replyText(replyToken, `ผลค้นหาสต๊อก "${keyword}"\n\n${lines.join('\n\n')}`);
 }
 
+async function replyJobTypeStock(replyToken: string, keyword: string) {
+  if (!keyword) {
+    const rows = await sql`
+      WITH InventorySummary AS (
+        SELECT
+          item_id,
+          SUM(quantity) as current_qty
+        FROM inventory
+        GROUP BY item_id
+      )
+      SELECT
+        COALESCE(NULLIF(m.job_type, ''), 'ไม่ระบุงาน') as "jobType",
+        COUNT(m.item_id) as "itemCount",
+        COALESCE(SUM(i.current_qty), 0) as quantity,
+        COUNT(*) FILTER (WHERE COALESCE(i.current_qty, 0) <= m.min_threshold) as "lowStockCount"
+      FROM master_data m
+      LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)
+      GROUP BY COALESCE(NULLIF(m.job_type, ''), 'ไม่ระบุงาน')
+      ORDER BY COALESCE(NULLIF(m.job_type, ''), 'ไม่ระบุงาน') ASC
+    `;
+
+    if (rows.length === 0) {
+      await replyText(replyToken, 'ยังไม่มีข้อมูลน้ำยาในระบบค่ะ');
+      return;
+    }
+
+    const lines = rows.map((row) => {
+      const itemCount = Number(row.itemCount || 0);
+      const quantity = Number(row.quantity || 0);
+      const lowStockCount = Number(row.lowStockCount || 0);
+
+      return `${row.jobType}: ${itemCount} รายการ, ยอดรวม ${quantity}, ต่ำกว่า Min ${lowStockCount} รายการ`;
+    });
+
+    await replyText(replyToken, `จำนวนน้ำยาตามประเภทงาน\n\n${lines.join('\n')}`);
+    return;
+  }
+
+  const likeKeyword = `%${keyword}%`;
+  const rows = await sql`
+    WITH InventorySummary AS (
+      SELECT
+        item_id,
+        SUM(quantity) as current_qty
+      FROM inventory
+      GROUP BY item_id
+    )
+    SELECT
+      m.item_id as "itemId",
+      m.name,
+      COALESCE(NULLIF(m.job_type, ''), 'ไม่ระบุงาน') as "jobType",
+      m.unit,
+      m.min_threshold as "minThreshold",
+      COALESCE(i.current_qty, 0) as quantity
+    FROM master_data m
+    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)
+    WHERE COALESCE(NULLIF(m.job_type, ''), 'ไม่ระบุงาน') ILIKE ${likeKeyword}
+    ORDER BY m.item_id ASC
+    LIMIT 10
+  `;
+
+  if (rows.length === 0) {
+    await replyText(replyToken, `ไม่พบประเภทงาน "${keyword}" ค่ะ`);
+    return;
+  }
+
+  const lines = rows.map((row) => {
+    const quantity = Number(row.quantity || 0);
+    const minThreshold = Number(row.minThreshold || 0);
+    const unit = row.unit || '';
+    const status = quantity <= minThreshold ? 'ต่ำกว่า Min' : 'พร้อมใช้';
+
+    return `${row.itemId} - ${row.name}: ${quantity} ${unit} (${status})`;
+  });
+
+  await replyText(replyToken, `น้ำยาในประเภทงาน "${rows[0].jobType}"\n\n${lines.join('\n')}`);
+}
+
 async function replyLowStockSummary(replyToken: string) {
   const lowStockData = await sql`
     WITH InventorySummary AS (
@@ -166,6 +270,7 @@ export async function POST(req: Request) {
         if (!replyToken) return;
 
         const stockSearch = extractStockSearch(text);
+        const jobTypeCommand = parseJobTypeCommand(text);
 
         if (isCommand(text, 'help', 'เมนู')) {
           console.log('[LINE Webhook] Replying with Help');
@@ -176,6 +281,8 @@ export async function POST(req: Request) {
           if (!userId) return;
 
           await replyText(replyToken, `LINE User ID ของคุณคือ:\n${userId}\n\nกรุณาคัดลอกไปวางในเมนู "ตั้งค่าการแจ้งเตือน" ในระบบ LabStock เพื่อเปิดรับการแจ้งเตือนค่ะ`);
+        } else if (jobTypeCommand.matched) {
+          await replyJobTypeStock(replyToken, jobTypeCommand.keyword);
         } else if (stockSearch) {
           await replyStockSearch(replyToken, stockSearch);
         } else if (isCommand(text, 'stock', 'สต๊อก')) {
