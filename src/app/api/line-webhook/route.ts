@@ -1,10 +1,116 @@
 import { NextResponse } from 'next/server';
 import { validateSignature, webhook } from '@line/bot-sdk';
-import { replyHelp, replyPODetail, replyTrackingStatus, replyLowStock } from '@/lib/line-bot';
-import { neon } from '@neondatabase/serverless';
+import { replyHelp, replyPODetail, replyTrackingStatus, replyLowStock, sendLineReply } from '@/lib/line-bot';
+import sql from '@/lib/db';
+import type { LowStockItem, PurchaseOrder, TrackingResult } from '@/lib/line-flex-templates';
 
-const sql = neon(process.env.DATABASE_URL || '');
 const channelSecret = process.env.LINE_CHANNEL_SECRET || 'DUMMY_SECRET';
+
+const isCommand = (text: string, english: string, thai: string) => {
+  const trimmed = text.trim();
+  return trimmed.toLowerCase() === english || trimmed === thai;
+};
+
+const extractStockSearch = (text: string) => {
+  const trimmed = text.trim();
+  const lower = trimmed.toLowerCase();
+
+  if (lower.startsWith('stock ')) return trimmed.slice(6).trim();
+  if (lower.startsWith('stock:')) return trimmed.slice(6).trim();
+  if (trimmed.startsWith('สต๊อก ')) return trimmed.slice(6).trim();
+  if (trimmed.startsWith('สต๊อก:')) return trimmed.slice(6).trim();
+
+  return '';
+};
+
+async function replyText(replyToken: string, text: string) {
+  await sendLineReply(replyToken, [{ type: 'text', text }]);
+}
+
+function getReplyToken(event: webhook.Event) {
+  if ('replyToken' in event && typeof event.replyToken === 'string') {
+    return event.replyToken;
+  }
+
+  return '';
+}
+
+async function replyStockSearch(replyToken: string, keyword: string) {
+  const likeKeyword = `%${keyword}%`;
+  const rows = await sql`
+    WITH InventorySummary AS (
+      SELECT
+        item_id,
+        SUM(quantity) as current_qty
+      FROM inventory
+      GROUP BY item_id
+    )
+    SELECT
+      m.item_id as "itemId",
+      m.name,
+      m.unit,
+      m.min_threshold as "minThreshold",
+      COALESCE(i.current_qty, 0) as quantity
+    FROM master_data m
+    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)
+    WHERE m.item_id ILIKE ${likeKeyword}
+       OR m.name ILIKE ${likeKeyword}
+       OR COALESCE(m.barcode, '') ILIKE ${likeKeyword}
+    ORDER BY m.item_id ASC
+    LIMIT 5
+  `;
+
+  if (rows.length === 0) {
+    await replyText(replyToken, `ไม่พบรายการสต๊อกที่ตรงกับ "${keyword}" ค่ะ`);
+    return;
+  }
+
+  const lines = rows.map((row) => {
+    const quantity = Number(row.quantity || 0);
+    const minThreshold = Number(row.minThreshold || 0);
+    const unit = row.unit || '';
+    const status = quantity <= minThreshold ? 'ต่ำกว่า Min' : 'พร้อมใช้';
+
+    return [
+      `${row.itemId} - ${row.name}`,
+      `คงเหลือ: ${quantity} ${unit}`,
+      `Min: ${minThreshold} ${unit}`,
+      `สถานะ: ${status}`,
+    ].join('\n');
+  });
+
+  await replyText(replyToken, `ผลค้นหาสต๊อก "${keyword}"\n\n${lines.join('\n\n')}`);
+}
+
+async function replyLowStockSummary(replyToken: string) {
+  const lowStockData = await sql`
+    WITH InventorySummary AS (
+      SELECT
+        item_id,
+        SUM(quantity) as current_qty
+      FROM inventory
+      GROUP BY item_id
+    )
+    SELECT
+      m.item_id as "itemId",
+      m.name,
+      m.unit,
+      m.min_threshold as "minThreshold",
+      COALESCE(i.current_qty, 0) as quantity
+    FROM master_data m
+    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)
+    WHERE COALESCE(i.current_qty, 0) <= m.min_threshold
+    ORDER BY COALESCE(i.current_qty, 0) ASC, m.item_id ASC
+    LIMIT 10
+  `;
+
+  if (lowStockData.length > 0) {
+    await replyLowStock(replyToken, lowStockData as unknown as LowStockItem[]);
+    return;
+  }
+
+  await replyText(replyToken, 'ไม่มีรายการน้ำยาที่ต่ำกว่า Min Stock ในขณะนี้ค่ะ');
+}
 
 export async function POST(req: Request) {
   try {
@@ -20,8 +126,8 @@ export async function POST(req: Request) {
       }
     }
 
-    const body = JSON.parse(bodyText);
-    const events: webhook.Event[] = body.events;
+    const body = JSON.parse(bodyText) as { events?: webhook.Event[] };
+    const events = Array.isArray(body.events) ? body.events : [];
     
     console.log(`[LINE Webhook] Processing ${events.length} events`);
 
@@ -31,71 +137,42 @@ export async function POST(req: Request) {
       // Handle messages
       if (event.type === 'message' && event.message.type === 'text') {
         const text = (event.message as webhook.TextMessageContent).text.trim();
-        const replyToken = (event as any).replyToken as string | undefined;
+        const replyToken = getReplyToken(event);
         
         console.log(`[LINE Webhook] Text received: "${text}"`);
 
         if (!replyToken) return;
 
-        if (text.toLowerCase() === 'help' || text === 'เมนู') {
+        const stockSearch = extractStockSearch(text);
+
+        if (isCommand(text, 'help', 'เมนู')) {
           console.log('[LINE Webhook] Replying with Help');
           await replyHelp(replyToken);
-        } else if (text.toLowerCase() === 'id' || text === 'ลงทะเบียน') {
+        } else if (isCommand(text, 'id', 'ลงทะเบียน')) {
           const userId = event.source?.userId;
           console.log(`[LINE Webhook] User requested ID: ${userId}`);
           if (!userId) return;
-          
-          const { lineClient } = await import('@/lib/line-bot');
-          await lineClient.replyMessage({ 
-            replyToken, 
-            messages: [{ 
-              type: 'text', 
-              text: `LINE User ID ของคุณคือ:\n${userId}\n\nกรุณาคัดลอกไปวางในเมนู "ตั้งค่าการแจ้งเตือน" ในระบบ LabStock เพื่อเปิดรับการแจ้งเตือนค่ะ` 
-            }] 
-          });
-        } else if (text.toLowerCase() === 'stock' || text === 'สต๊อก') {
-          // Fetch low stock items
-          const lowStockData = await sql`
-            WITH InventorySummary AS (
-              SELECT 
-                item_id,
-                SUM(quantity) as current_qty
-              FROM inventory
-              GROUP BY item_id
-            )
-            SELECT 
-              m.item_id as "itemId",
-              m.name,
-              m.unit,
-              m.min_threshold as "minThreshold",
-              COALESCE(i.current_qty, 0) as quantity
-            FROM master_data m
-            LEFT JOIN InventorySummary i ON m.item_id = i.item_id
-            WHERE COALESCE(i.current_qty, 0) <= m.min_threshold
-            LIMIT 10
-          `;
-          if (lowStockData.length > 0) {
-            await replyLowStock(replyToken, lowStockData as any);
-          } else {
-            const { lineClient } = await import('@/lib/line-bot');
-            await lineClient.replyMessage({ replyToken, messages: [{ type: 'text', text: 'ไม่มีรายการน้ำยาที่ต่ำกว่า Min Stock ในขณะนี้ค่ะ 🎉' }] });
-          }
+
+          await replyText(replyToken, `LINE User ID ของคุณคือ:\n${userId}\n\nกรุณาคัดลอกไปวางในเมนู "ตั้งค่าการแจ้งเตือน" ในระบบ LabStock เพื่อเปิดรับการแจ้งเตือนค่ะ`);
+        } else if (stockSearch) {
+          await replyStockSearch(replyToken, stockSearch);
+        } else if (isCommand(text, 'stock', 'สต๊อก')) {
+          await replyLowStockSummary(replyToken);
         } else if (text.toUpperCase().startsWith('PO-')) {
           const poNumber = text.toUpperCase();
           const poData = await sql`SELECT * FROM purchase_orders WHERE po_number = ${poNumber}`;
           if (poData.length > 0) {
             const itemsData = await sql`SELECT item_name, quantity, unit FROM purchase_order_items WHERE po_id = ${poData[0].id}`;
-            const po = { ...poData[0], items: itemsData };
-            await replyPODetail(replyToken, po as any);
+            const po = { ...poData[0], items: itemsData } as unknown as PurchaseOrder;
+            await replyPODetail(replyToken, po);
           } else {
-            const { lineClient } = await import('@/lib/line-bot');
-            await lineClient.replyMessage({ replyToken, messages: [{ type: 'text', text: `ไม่พบใบสั่งซื้อหมายเลข ${poNumber} ในระบบค่ะ` }] });
+            await replyText(replyToken, `ไม่พบใบสั่งซื้อหมายเลข ${poNumber} ในระบบค่ะ`);
           }
         } else if (text.match(/^[A-Z]{2}[0-9]{9}[A-Z]{2}$/)) {
           // EMS Tracking format e.g. EY123456789TH
           const shipments = await sql`SELECT * FROM shipments WHERE tracking_no = ${text}`;
           if (shipments.length > 0) {
-            const tracking = {
+            const tracking: TrackingResult = {
               provider: shipments[0].tracking_provider || 'Unknown',
               trackingNo: text,
               status: shipments[0].tracking_status || 'UNKNOWN',
@@ -103,17 +180,12 @@ export async function POST(req: Request) {
               lastUpdate: new Date().toISOString(),
               history: []
             };
-            await replyTrackingStatus(replyToken, tracking as any);
+            await replyTrackingStatus(replyToken, tracking);
           } else {
-            const { lineClient } = await import('@/lib/line-bot');
-            await lineClient.replyMessage({ replyToken, messages: [{ type: 'text', text: `ไม่พบข้อมูลพัสดุ ${text} ในระบบค่ะ` }] });
+            await replyText(replyToken, `ไม่พบข้อมูลพัสดุ ${text} ในระบบค่ะ`);
           }
-        } else if (text === 'สั่งซื้อ' || text.toLowerCase() === 'order') {
-          const { lineClient } = await import('@/lib/line-bot');
-          await lineClient.replyMessage({ replyToken, messages: [{ 
-            type: 'text', 
-            text: `กรุณาเข้าสู่ระบบเพื่อสร้างใบสั่งซื้อ: ${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/orders` 
-          }] });
+        } else if (isCommand(text, 'order', 'สั่งซื้อ')) {
+          await replyText(replyToken, `กรุณาเข้าสู่ระบบเพื่อสร้างใบสั่งซื้อ: ${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/orders`);
         } else {
           // Unrecognized command
           await replyHelp(replyToken);
@@ -125,25 +197,24 @@ export async function POST(req: Request) {
         const data = new URLSearchParams(postbackEvent.postback.data);
         const action = data.get('action');
         const id = data.get('id'); // po_number
-        const replyToken = (event as any).replyToken as string | undefined;
+        const replyToken = getReplyToken(event);
 
         if (!replyToken) return;
 
         if (action === 'confirm_po' && id) {
           await sql`UPDATE purchase_orders SET status = 'CONFIRMED', confirmed_at = NOW() WHERE po_number = ${id}`;
-          const { lineClient } = await import('@/lib/line-bot');
-          await lineClient.replyMessage({ replyToken, messages: [{ type: 'text', text: `ยืนยันใบสั่งซื้อ ${id} เรียบร้อยแล้ว ระบบได้แจ้งเตือนให้ Lab ทราบแล้วค่ะ` }] });
+          await replyText(replyToken, `ยืนยันใบสั่งซื้อ ${id} เรียบร้อยแล้ว ระบบได้แจ้งเตือนให้ Lab ทราบแล้วค่ะ`);
         } else if (action === 'reject_po' && id) {
           await sql`UPDATE purchase_orders SET status = 'REJECTED' WHERE po_number = ${id}`;
-          const { lineClient } = await import('@/lib/line-bot');
-          await lineClient.replyMessage({ replyToken, messages: [{ type: 'text', text: `ปฏิเสธใบสั่งซื้อ ${id} เรียบร้อยแล้วค่ะ` }] });
+          await replyText(replyToken, `ปฏิเสธใบสั่งซื้อ ${id} เรียบร้อยแล้วค่ะ`);
         }
       }
     }));
 
     return NextResponse.json({ success: true });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Webhook processing error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }
