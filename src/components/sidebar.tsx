@@ -78,6 +78,24 @@ const navigationGroups = [
   }
 ];
 
+const PERMISSION_CACHE_VERSION = 'v2';
+
+function getRoleFallbackMenus(role: string) {
+  if (role === 'Admin') {
+    return ['dashboard', 'master_data', 'user_management', 'rbac'];
+  }
+
+  if (role === 'Manager') {
+    return ['dashboard', 'master_data'];
+  }
+
+  return ['dashboard'];
+}
+
+function mergeMenus(primary: string[], fallback: string[]) {
+  return Array.from(new Set([...primary, ...fallback]));
+}
+
 export default function Sidebar() {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
@@ -91,9 +109,11 @@ export default function Sidebar() {
     const fetchPerms = async () => {
       try {
         // Try to get from session storage first for speed
-        const cached = sessionStorage.getItem(`perms_${user.role}`);
+        const cacheKey = `perms_${PERMISSION_CACHE_VERSION}_${user.role}`;
+        const fallbackMenus = getRoleFallbackMenus(user.role);
+        const cached = sessionStorage.getItem(cacheKey);
         if (cached) {
-          setAllowedMenus(JSON.parse(cached));
+          setAllowedMenus(mergeMenus(JSON.parse(cached), fallbackMenus));
           setIsLoadingPerms(false);
         }
 
@@ -107,8 +127,9 @@ export default function Sidebar() {
           perms = rolePermission.allowed_menus || [];
         }
         
-        setAllowedMenus(perms);
-        sessionStorage.setItem(`perms_${user.role}`, JSON.stringify(perms));
+        const nextMenus = mergeMenus(perms, fallbackMenus);
+        setAllowedMenus(nextMenus);
+        sessionStorage.setItem(cacheKey, JSON.stringify(nextMenus));
       } catch (err) {
         console.error('Failed to fetch sidebar permissions:', err);
       } finally {
