@@ -19,6 +19,11 @@ interface MasterDataImportItem {
   vendor: string;
 }
 
+function getApiErrorMessage(error: unknown, fallback: string) {
+  const apiError = error as { response?: { data?: { message?: string; error?: string } }; message?: string };
+  return apiError.response?.data?.message || apiError.response?.data?.error || apiError.message || fallback;
+}
+
 export default function MasterDataPage() {
   const { user } = useAuth();
   const [reagents, setReagents] = useState<Reagent[]>([]);
@@ -51,6 +56,7 @@ export default function MasterDataPage() {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchReagents();
   }, [fetchReagents]);
 
@@ -87,8 +93,8 @@ export default function MasterDataPage() {
         const res = await apiClient.saveMaster({ action: 'bulk_add', items });
         alert(res.message);
         fetchReagents();
-      } catch (err: any) {
-        alert(err.response?.data?.message || err.response?.data?.error || err.message || 'นำเข้าข้อมูลไม่สำเร็จ');
+      } catch (err: unknown) {
+        alert(getApiErrorMessage(err, 'นำเข้าข้อมูลไม่สำเร็จ'));
       }
     };
     reader.readAsText(file);
@@ -126,9 +132,9 @@ export default function MasterDataPage() {
       } else {
         alert(res.message || res.error || 'เกิดข้อผิดพลาดในการบันทึก');
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Save Error:', err);
-      const errorMsg = err.response?.data?.message || err.response?.data?.error || err.message || 'เกิดข้อผิดพลาดไม่ทราบสาเหตุ';
+      const errorMsg = getApiErrorMessage(err, 'เกิดข้อผิดพลาดไม่ทราบสาเหตุ');
       alert(errorMsg);
     }
   };
@@ -332,7 +338,7 @@ export default function MasterDataPage() {
                 className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
               />
               <datalist id="reagentTypes">
-                {settings?.reagentTypes.map(t => <option key={t} value={t} />)}
+                {(settings?.reagentTypes ?? []).map(t => <option key={t} value={t} />)}
               </datalist>
             </div>
             <div className="space-y-1">
@@ -345,7 +351,7 @@ export default function MasterDataPage() {
                 className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
               />
               <datalist id="machineTypes">
-                {settings?.machineTypes.map(m => <option key={m} value={m} />)}
+                {(settings?.machineTypes ?? []).map(m => <option key={m} value={m} />)}
               </datalist>
             </div>
           </div>
@@ -361,7 +367,7 @@ export default function MasterDataPage() {
                 className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
               />
               <datalist id="units">
-                {settings?.units.map(u => <option key={u} value={u} />)}
+                {(settings?.units ?? []).map(u => <option key={u} value={u} />)}
               </datalist>
             </div>
             <div className="space-y-1">
@@ -396,7 +402,7 @@ export default function MasterDataPage() {
               className={`w-full px-4 py-2 rounded-xl outline-none transition-all ${user?.role === 'Vendor' ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-blue-50/50 border border-blue-100 focus:ring-2 focus:ring-blue-500'}`}
             />
             <datalist id="vendors">
-              {settings?.vendors.map(v => <option key={v} value={v} />)}
+              {(settings?.vendors ?? []).map(v => <option key={v} value={v} />)}
             </datalist>
           </div>
 

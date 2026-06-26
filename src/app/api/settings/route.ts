@@ -5,16 +5,30 @@ import { isAdmin } from '@/lib/auth-utils';
 export async function GET() {
   try {
     // Fetch all types in parallel for performance
-    const [reagentRows, jobRows, machineRows] = await Promise.all([
+    const [reagentRows, jobRows, machineRows, unitRows, vendorRows] = await Promise.all([
       sql`SELECT name FROM reagent_types ORDER BY name ASC`,
       sql`SELECT name FROM job_types ORDER BY name ASC`,
-      sql`SELECT name FROM machine_types ORDER BY name ASC`
+      sql`SELECT name FROM machine_types ORDER BY name ASC`,
+      sql`
+        SELECT DISTINCT unit as name
+        FROM master_data
+        WHERE COALESCE(unit, '') <> ''
+        ORDER BY unit ASC
+      `,
+      sql`
+        SELECT DISTINCT vendor as name
+        FROM master_data
+        WHERE COALESCE(vendor, '') <> ''
+        ORDER BY vendor ASC
+      `
     ]);
 
     return NextResponse.json({
       reagentTypes: reagentRows.map(r => r.name),
       jobTypes: jobRows.map(r => r.name),
-      machineTypes: machineRows.map(r => r.name)
+      machineTypes: machineRows.map(r => r.name),
+      units: unitRows.map(r => r.name),
+      vendors: vendorRows.map(r => r.name)
     });
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);
