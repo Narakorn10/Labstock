@@ -35,6 +35,28 @@ function getReplyToken(event: webhook.Event) {
   return '';
 }
 
+const followReplyText = [
+  'Welcome to LabStock LINE.',
+  '',
+  'Type "id" to register this LINE account.',
+  'Type "help" to see commands.',
+  'For stock search, type: stock <keyword>',
+].join('\n');
+
+const groupJoinReplyText = [
+  'LabStock bot joined this chat.',
+  '',
+  'Group/room replies are supported for commands such as help, stock, PO, and tracking.',
+  'For private registration, chat 1:1 with this bot and type "id".',
+].join('\n');
+
+const memberJoinReplyText = [
+  'Welcome to LabStock.',
+  '',
+  'Type "help" to see available commands.',
+  'For private registration, chat 1:1 with this bot and type "id".',
+].join('\n');
+
 async function replyStockSearch(replyToken: string, keyword: string) {
   const likeKeyword = `%${keyword}%`;
   const rows = await sql`
@@ -190,7 +212,22 @@ export async function POST(req: Request) {
           // Unrecognized command
           await replyHelp(replyToken);
         }
-      } 
+      }
+      else if (event.type === 'follow') {
+        const replyToken = getReplyToken(event);
+        if (!replyToken) return;
+        await replyText(replyToken, followReplyText);
+      }
+      else if (event.type === 'join') {
+        const replyToken = getReplyToken(event);
+        if (!replyToken) return;
+        await replyText(replyToken, groupJoinReplyText);
+      }
+      else if (event.type === 'memberJoined') {
+        const replyToken = getReplyToken(event);
+        if (!replyToken) return;
+        await replyText(replyToken, memberJoinReplyText);
+      }
       // Handle postback (button clicks in Flex messages)
       else if (event.type === 'postback') {
         const postbackEvent = event as webhook.PostbackEvent;
