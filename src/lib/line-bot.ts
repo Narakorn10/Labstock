@@ -25,7 +25,8 @@ export async function sendLineReply(replyToken: string, messages: unknown[]) {
     return;
   }
   try {
-    await lineClient.replyMessage({ replyToken, messages: messages as messagingApi.Message[] });
+    const replyMessages = attachDefaultQuickReply(messages);
+    await lineClient.replyMessage({ replyToken, messages: replyMessages as messagingApi.Message[] });
   } catch (error) {
     console.error('Error sending LINE reply:', error);
   }
@@ -85,6 +86,24 @@ const lineCommandQuickReply: messagingApi.QuickReply = {
     },
   ],
 };
+
+function attachDefaultQuickReply(messages: unknown[]) {
+  if (messages.length === 0) return messages;
+
+  return messages.map((message, index) => {
+    if (index !== messages.length - 1 || typeof message !== 'object' || message === null || Array.isArray(message)) {
+      return message;
+    }
+
+    const lineMessage = message as Record<string, unknown>;
+    if (lineMessage.quickReply) return message;
+
+    return {
+      ...lineMessage,
+      quickReply: lineCommandQuickReply,
+    };
+  });
+}
 
 export async function replyHelp(replyToken: string) {
   await sendLineReply(replyToken, [{
