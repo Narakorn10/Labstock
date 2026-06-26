@@ -334,15 +334,9 @@ export function generateLowStockTemplate(items: LowStockItem[]) {
         },
         {
           type: "text",
-          text: `Current: ${item.quantity} ${item.unit}`,
+          text: `คงเหลือ: ${item.quantity} ${item.unit}`,
           size: "sm",
           margin: "sm"
-        },
-        {
-          type: "text",
-          text: `Min: ${item.minThreshold} ${item.unit}`,
-          size: "xs",
-          color: "#aaaaaa"
         }
       ]
     },

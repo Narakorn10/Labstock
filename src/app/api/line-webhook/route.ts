@@ -115,15 +115,11 @@ async function replyStockSearch(replyToken: string, keyword: string) {
 
   const lines = rows.map((row) => {
     const quantity = Number(row.quantity || 0);
-    const minThreshold = Number(row.minThreshold || 0);
     const unit = row.unit || '';
-    const status = quantity <= minThreshold ? 'ต่ำกว่า Min' : 'พร้อมใช้';
 
     return [
-      `${row.itemId} - ${row.name}`,
+      `${row.name}`,
       `คงเหลือ: ${quantity} ${unit}`,
-      `Min: ${minThreshold} ${unit}`,
-      `สถานะ: ${status}`,
     ].join('\n');
   });
 
@@ -142,13 +138,13 @@ async function replyJobTypeStock(replyToken: string, keyword: string) {
       )
       SELECT
         COALESCE(NULLIF(m.job_type, ''), 'ไม่ระบุงาน') as "jobType",
-        COUNT(m.item_id) as "itemCount",
-        COALESCE(SUM(i.current_qty), 0) as quantity,
-        COUNT(*) FILTER (WHERE COALESCE(i.current_qty, 0) <= m.min_threshold) as "lowStockCount"
+        m.name,
+        m.unit,
+        COALESCE(i.current_qty, 0) as quantity
       FROM master_data m
       LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)
-      GROUP BY COALESCE(NULLIF(m.job_type, ''), 'ไม่ระบุงาน')
-      ORDER BY COALESCE(NULLIF(m.job_type, ''), 'ไม่ระบุงาน') ASC
+      ORDER BY COALESCE(NULLIF(m.job_type, ''), 'ไม่ระบุงาน') ASC, m.name ASC
+      LIMIT 30
     `;
 
     if (rows.length === 0) {
@@ -157,14 +153,13 @@ async function replyJobTypeStock(replyToken: string, keyword: string) {
     }
 
     const lines = rows.map((row) => {
-      const itemCount = Number(row.itemCount || 0);
       const quantity = Number(row.quantity || 0);
-      const lowStockCount = Number(row.lowStockCount || 0);
+      const unit = row.unit || '';
 
-      return `${row.jobType}: ${itemCount} รายการ, ยอดรวม ${quantity}, ต่ำกว่า Min ${lowStockCount} รายการ`;
+      return `${row.jobType} - ${row.name}\nคงเหลือ: ${quantity} ${unit}`;
     });
 
-    await replyText(replyToken, `จำนวนน้ำยาตามประเภทงาน\n\n${lines.join('\n')}`);
+    await replyText(replyToken, `จำนวนน้ำยาตามประเภทงาน\n\n${lines.join('\n\n')}`);
     return;
   }
 
@@ -198,14 +193,12 @@ async function replyJobTypeStock(replyToken: string, keyword: string) {
 
   const lines = rows.map((row) => {
     const quantity = Number(row.quantity || 0);
-    const minThreshold = Number(row.minThreshold || 0);
     const unit = row.unit || '';
-    const status = quantity <= minThreshold ? 'ต่ำกว่า Min' : 'พร้อมใช้';
 
-    return `${row.itemId} - ${row.name}: ${quantity} ${unit} (${status})`;
+    return `${row.name}\nคงเหลือ: ${quantity} ${unit}`;
   });
 
-  await replyText(replyToken, `น้ำยาในประเภทงาน "${rows[0].jobType}"\n\n${lines.join('\n')}`);
+  await replyText(replyToken, `น้ำยาในประเภทงาน "${rows[0].jobType}"\n\n${lines.join('\n\n')}`);
 }
 
 async function replyLowStockSummary(replyToken: string) {
