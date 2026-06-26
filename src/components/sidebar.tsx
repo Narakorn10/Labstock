@@ -13,7 +13,6 @@ import {
   Menu,
   X,
   CheckCircle2,
-  ArrowLeftRight,
   ArrowDownToLine,
   ArrowUpFromLine,
   BarChart3,
@@ -32,7 +31,7 @@ const navigationGroups = [
   {
     title: 'Overview',
     items: [
-      { id: 'dashboard', name: 'Dashboard', href: '/', icon: LayoutDashboard },
+      { id: 'dashboard', name: 'Inventory Overview', href: '/', icon: LayoutDashboard },
       { id: 'analysis', name: 'Analysis (วิเคราะห์)', href: '/analysis', icon: BarChart3 },
       { id: 'logs', name: 'Logs (ประวัติ)', href: '/logs', icon: History },
     ]
@@ -60,7 +59,6 @@ const navigationGroups = [
     title: 'Management',
     items: [
       { id: 'master_data', name: 'Master Data', href: '/master', icon: Database },
-      { id: 'main_stock', name: 'Main Stock (คลังใหญ่)', href: '/master/inventory', icon: Package },
       { id: 'user_management', name: 'User Management', href: '/master/users', icon: Shield },
       { id: 'rbac', name: 'Permissions (RBAC)', href: '/master/permissions', icon: ShieldCheck },
     ]
@@ -100,7 +98,8 @@ export default function Sidebar() {
         if (Array.isArray(data)) {
           perms = data.find(p => p.role === user.role)?.allowed_menus || [];
         } else {
-          perms = (data as any).allowed_menus || [];
+          const rolePermission = data as { allowed_menus?: string[] };
+          perms = rolePermission.allowed_menus || [];
         }
         
         setAllowedMenus(perms);

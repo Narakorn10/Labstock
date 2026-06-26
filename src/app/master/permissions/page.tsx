@@ -21,7 +21,7 @@ import { useAuth } from '@/components/auth-provider';
 
 // Define the available menu keys (must match those in the sidebar)
 const ALL_MENUS = [
-  { id: 'dashboard', label: 'Dashboard', icon: Activity },
+  { id: 'dashboard', label: 'Inventory Overview', icon: Activity },
   { id: 'analysis', label: 'Analysis', icon: Eye },
   { id: 'logs', label: 'History Logs', icon: Database },
   { id: 'dispense', label: 'Dispense', icon: Box },
@@ -34,7 +34,6 @@ const ALL_MENUS = [
   { id: 'vendor_orders', label: 'Vendor PO Portal', icon: ShoppingCart },
   { id: 'vendor_shipments', label: 'Vendor Shipments', icon: Box },
   { id: 'master_data', label: 'Master Data', icon: Database },
-  { id: 'main_stock', label: 'Main Stock', icon: Database },
   { id: 'user_management', label: 'User Management', icon: Users },
   { id: 'settings', label: 'System Settings', icon: Settings },
   { id: 'notifications', label: 'Notifications', icon: Settings },
@@ -67,6 +66,7 @@ export default function PermissionsPage() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchPermissions();
   }, []);
 

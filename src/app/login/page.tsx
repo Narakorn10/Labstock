@@ -1,15 +1,47 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '@/components/auth-provider';
+import { signIn } from 'next-auth/react';
 import { Database, KeyRound, User, Loader2, AlertCircle } from 'lucide-react';
 
 export default function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState('');
   const { login } = useAuth();
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('google') !== '1') return;
+
+    const finishGoogleLogin = async () => {
+      setGoogleLoading(true);
+      setError('');
+
+      try {
+        const res = await fetch('/api/auth/google-token', { method: 'POST' });
+        const data = await res.json();
+
+        if (!res.ok || !data.success || !data.user || !data.token) {
+          throw new Error(data.error || 'Google login failed');
+        }
+
+        localStorage.setItem('labstock_user', JSON.stringify(data.user));
+        localStorage.setItem('labstock_token', data.token);
+        window.location.href = '/';
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Google login failed';
+        setError(message);
+      } finally {
+        setGoogleLoading(false);
+      }
+    };
+
+    finishGoogleLogin();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -23,6 +55,12 @@ export default function LoginPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleGoogleLogin = () => {
+    setError('');
+    setGoogleLoading(true);
+    signIn('google', { callbackUrl: '/login?google=1' });
   };
 
   return (
@@ -75,10 +113,26 @@ export default function LoginPage() {
 
             <button 
               type="submit"
-              disabled={loading}
+              disabled={loading || googleLoading}
               className="w-full py-5 bg-gray-900 text-white rounded-[1.5rem] font-black text-sm uppercase tracking-widest shadow-xl hover:bg-gray-800 active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
             >
               {loading ? <Loader2 className="animate-spin" size={20} /> : 'เข้าสู่ระบบ'}
+            </button>
+
+            <div className="flex items-center gap-3">
+              <div className="h-px flex-1 bg-gray-100" />
+              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">or</span>
+              <div className="h-px flex-1 bg-gray-100" />
+            </div>
+
+            <button
+              type="button"
+              onClick={handleGoogleLogin}
+              disabled={loading || googleLoading}
+              className="w-full py-4 bg-white text-gray-800 rounded-2xl font-black text-sm border border-gray-200 shadow-sm hover:bg-gray-50 active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {googleLoading ? <Loader2 className="animate-spin" size={20} /> : <span className="text-base font-black">G</span>}
+              Continue with Google
             </button>
           </form>
         </div>

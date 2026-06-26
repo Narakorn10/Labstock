@@ -1,15 +1,9 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import Link from 'next/link';
 import {
-  Activity,
   AlertTriangle,
-  ArrowRightLeft,
-  Boxes,
-  ClipboardList,
   Clock,
-  Database,
   FileText,
   Loader2,
   Package,
@@ -182,34 +176,6 @@ export default function InventoryOverview() {
           </div>
         ))}
       </div>
-
-      {isPowerUser && (
-        <div className="bg-white border border-gray-100 rounded-[2rem] p-6 shadow-sm">
-          <div className="flex items-center gap-2 mb-4">
-            <Activity size={18} className="text-[#166ee1]" />
-            <h2 className="text-sm font-black text-gray-900 uppercase tracking-widest">Quick Actions</h2>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-            {[
-              { name: 'Dispense', href: '/dispense', icon: ArrowRightLeft, bg: 'bg-blue-50', text: 'text-blue-600' },
-              { name: 'Receive', href: '/receive', icon: Boxes, bg: 'bg-green-50', text: 'text-green-600' },
-              { name: 'Count', href: '/count', icon: ClipboardList, bg: 'bg-purple-50', text: 'text-purple-600' },
-              { name: 'Master Data', href: '/master', icon: Database, bg: 'bg-amber-50', text: 'text-amber-600' },
-            ].map((action) => (
-              <Link
-                key={action.name}
-                href={action.href}
-                className="flex items-center gap-4 p-4 rounded-2xl border border-transparent hover:border-gray-200 hover:bg-gray-50 transition-all"
-              >
-                <div className={`w-10 h-10 ${action.bg} ${action.text} rounded-xl flex items-center justify-center`}>
-                  <action.icon size={20} />
-                </div>
-                <span className="text-sm font-bold text-gray-700">{action.name}</span>
-              </Link>
-            ))}
-          </div>
-        </div>
-      )}
 
       <div className="bg-white border border-gray-100 rounded-[2rem] flex flex-col overflow-hidden shadow-sm">
         <div className="p-6 border-b border-gray-50 space-y-4">
