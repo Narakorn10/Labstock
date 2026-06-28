@@ -24,6 +24,13 @@ interface LogEntry {
   user: string;
 }
 
+function sortLogsNewestFirst(entries: LogEntry[]) {
+  return entries.toSorted((a, b) => {
+    const timeDiff = new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+    return timeDiff || b.id - a.id;
+  });
+}
+
 export default function LogsPage() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -43,7 +50,7 @@ export default function LogsPage() {
         startDate,
         endDate
       });
-      setLogs(data);
+      setLogs(sortLogsNewestFirst(data));
     } catch (err: unknown) {
       console.error(err);
       const error = err as { response?: { data?: { error?: string } }, message?: string };

@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { apiClient, BarcodePattern } from '@/lib/api-client';
 import { processAnyBarcode } from '@/lib/barcode-parser';
-import { Trash2, Plus, Loader2, CheckCircle, Save, Camera, X, AlertCircle } from 'lucide-react';
+import { Trash2, Plus, Loader2, CheckCircle, Save, Camera, AlertCircle } from 'lucide-react';
 import QRScanner from '@/components/qr-scanner';
 
 export default function BarcodeSettingsPage() {
@@ -32,6 +32,7 @@ export default function BarcodeSettingsPage() {
     const data = processAnyBarcode(testString, []);
     return data?.barcodeType === 'GS1_COMPLIANT' ? data : null;
   }, [testString]);
+  const canSave = Boolean(name && regexPattern && testString && testResult?.match && testResult.item && !isGS1Warning);
 
   const loadPatterns = async () => {
     try {
@@ -45,6 +46,7 @@ export default function BarcodeSettingsPage() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadPatterns();
   }, []);
 
@@ -88,6 +90,7 @@ export default function BarcodeSettingsPage() {
 
   useEffect(() => {
     if (assistantMode && (mapping.item || mapping.lot || mapping.exp)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       generateRegexFromMapping();
     }
   }, [mapping, assistantMode]);
@@ -139,22 +142,26 @@ export default function BarcodeSettingsPage() {
       const regex = new RegExp(regexPattern);
       const match = testString.match(regex);
       if (match) {
+        const item = itemIdGroup ? match[Number(itemIdGroup)] : undefined;
+        const lot = lotNoGroup ? match[Number(lotNoGroup)] : undefined;
+        const exp = expDateGroup ? match[Number(expDateGroup)] : undefined;
         setTestResult({
-          match: true,
-          item: itemIdGroup ? match[Number(itemIdGroup)] : undefined,
-          lot: lotNoGroup ? match[Number(lotNoGroup)] : undefined,
-          exp: expDateGroup ? match[Number(expDateGroup)] : undefined
+          match: Boolean(item),
+          item,
+          lot,
+          exp
         });
       } else {
         setTestResult({ match: false });
       }
-    } catch (e) {
+    } catch {
       setTestResult({ match: false });
     }
   };
 
   useEffect(() => {
     if (regexPattern && testString) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       runTest();
     }
   }, [regexPattern, testString, itemIdGroup, lotNoGroup, expDateGroup]);
@@ -162,6 +169,8 @@ export default function BarcodeSettingsPage() {
   const handleSave = async () => {
     if (!name || !regexPattern) return alert("กรุณาระบุชื่อและ Regex Pattern");
     if (!testString) return alert("กรุณาสแกนหรือวางบาร์โค้ดตัวอย่างก่อนบันทึก");
+    if (isGS1Warning) return alert("This barcode is already supported by the GS1/UDI parser. Do not save a duplicate custom pattern.");
+    if (!testResult?.match || !testResult.item) return alert("Please test the Regex and capture Item ID before saving.");
     setSaving(true);
     try {
       await apiClient.createBarcodePattern({
@@ -180,8 +189,9 @@ export default function BarcodeSettingsPage() {
       setTestString('');
       setTestResult(null);
       loadPatterns();
-    } catch (e: any) {
-      alert("Error: " + (e.response?.data?.error || e.message));
+    } catch (error: unknown) {
+      const apiError = error as { response?: { data?: { error?: string } }; message?: string };
+      alert("Error: " + (apiError.response?.data?.error || apiError.message || "Unable to save pattern"));
     } finally {
       setSaving(false);
     }
@@ -192,7 +202,7 @@ export default function BarcodeSettingsPage() {
     try {
       await apiClient.deleteBarcodePattern(id);
       loadPatterns();
-    } catch (e) {
+    } catch {
       alert("Error deleting");
     }
   };
@@ -371,7 +381,7 @@ export default function BarcodeSettingsPage() {
         </div>
 
         <div className="flex justify-end">
-          <button onClick={handleSave} disabled={saving || !name || !regexPattern || !testString} className="bg-blue-600 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2 disabled:opacity-50">
+          <button onClick={handleSave} disabled={saving || !canSave} className="bg-blue-600 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2 disabled:opacity-50">
             {saving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />} บันทึกรูปแบบ
           </button>
         </div>

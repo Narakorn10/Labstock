@@ -24,6 +24,16 @@ function getApiErrorMessage(error: unknown, fallback: string) {
   return apiError.response?.data?.message || apiError.response?.data?.error || apiError.message || fallback;
 }
 
+function getCategoryDefaults(currentValue: string | undefined, options: string[]) {
+  const normalizedValue = currentValue?.trim() ?? "";
+  const isKnownValue = normalizedValue ? options.includes(normalizedValue) : false;
+
+  return {
+    selectValue: isKnownValue ? normalizedValue : "",
+    customValue: isKnownValue ? "" : normalizedValue,
+  };
+}
+
 export default function MasterDataPage() {
   const { user } = useAuth();
   const [reagents, setReagents] = useState<Reagent[]>([]);
@@ -109,19 +119,35 @@ export default function MasterDataPage() {
     const rawItemId = String(formData.get('itemId') || '').trim().toUpperCase();
     if (!rawItemId) return alert("กรุณาระบุ Item ID");
 
+    const reagentTypeCustom = String(formData.get('reagentTypeCustom') || '').trim();
+    const jobTypeCustom = String(formData.get('jobTypeCustom') || '').trim();
+    const machineTypeCustom = String(formData.get('machineTypeCustom') || '').trim();
+
     const data = {
       action: (editingReagent?.itemId ? 'update' : 'add') as 'update' | 'add',
       itemId: rawItemId,
       qrCode: String(formData.get('qrCode') || '').trim(),
       name: String(formData.get('name') || '').trim(),
-      reagentType: String(formData.get('reagentType') || '').trim(),
-      jobType: String(formData.get('jobType') || '').trim(),
-      machineType: String(formData.get('machineType') || '').trim(),
+      reagentType: reagentTypeCustom || String(formData.get('reagentType') || '').trim(),
+      jobType: jobTypeCustom || String(formData.get('jobType') || '').trim(),
+      machineType: machineTypeCustom || String(formData.get('machineType') || '').trim(),
       unit: String(formData.get('unit') || '').trim(),
       minThreshold: Number(formData.get('minThreshold')) || 0,
       weeklyTarget: Number(formData.get('weeklyTarget')) || 0,
       vendor: String(formData.get('vendor') || '').trim(),
     };
+
+    const missingFields = [
+      !data.name && 'Name',
+      !data.reagentType && 'Reagent Type',
+      !data.jobType && 'Job Type',
+      !data.machineType && 'Machine Type',
+      !data.unit && 'Unit',
+    ].filter(Boolean);
+
+    if (missingFields.length > 0) {
+      return alert(`กรุณาระบุข้อมูลให้ครบ: ${missingFields.join(', ')}`);
+    }
 
     try {
       const res = await apiClient.saveMaster(data);
@@ -150,6 +176,9 @@ export default function MasterDataPage() {
     lowStock: reagents.filter(r => r.quantity <= r.minThreshold).length,
     machines: new Set(reagents.map(r => r.machineType)).size
   };
+  const reagentTypeDefaults = getCategoryDefaults(editingReagent?.reagentType, settings?.reagentTypes ?? []);
+  const jobTypeDefaults = getCategoryDefaults(editingReagent?.jobType, settings?.jobTypes ?? []);
+  const machineTypeDefaults = getCategoryDefaults(editingReagent?.machineType, settings?.machineTypes ?? []);
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -260,7 +289,7 @@ export default function MasterDataPage() {
                   </td>
                   <td className="px-6 py-4">
                     <div className="text-gray-700">{reagent.reagentType}</div>
-                    <div className="text-xs text-gray-400">{reagent.machineType}</div>
+                    <div className="text-xs text-gray-400">{reagent.jobType} / {reagent.machineType}</div>
                   </td>
                   <td className="px-6 py-4">
                     <div className="text-xs font-bold text-blue-600">{reagent.vendor || '-'}</div>
@@ -295,7 +324,7 @@ export default function MasterDataPage() {
         maxWidth="max-w-2xl"
       >
         <form onSubmit={handleSave} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1">
               <label className="text-xs font-bold text-gray-500 uppercase">Item ID (รหัสน้ำยา)</label>
               <input 
@@ -327,32 +356,60 @@ export default function MasterDataPage() {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1">
               <label className="text-xs font-bold text-gray-500 uppercase">ประเภทน้ำยา</label>
-              <input 
-                name="reagentType" 
-                defaultValue={editingReagent?.reagentType} 
-                list="reagentTypes"
-                autoComplete="off"
+              <select
+                name="reagentType"
+                defaultValue={reagentTypeDefaults.selectValue}
                 className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
+              >
+                <option value="">เลือกจากรายการ</option>
+                {(settings?.reagentTypes ?? []).map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+              <input
+                name="reagentTypeCustom"
+                defaultValue={reagentTypeDefaults.customValue}
+                placeholder="พิมพ์เองถ้าไม่มีในรายการ"
+                autoComplete="off"
+                className="w-full px-4 py-2 bg-white border border-dashed border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all text-sm"
               />
-              <datalist id="reagentTypes">
-                {(settings?.reagentTypes ?? []).map(t => <option key={t} value={t} />)}
-              </datalist>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-gray-500 uppercase">Job Type</label>
+              <select
+                name="jobType"
+                defaultValue={jobTypeDefaults.selectValue}
+                className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
+              >
+                <option value="">เลือกจากรายการ</option>
+                {(settings?.jobTypes ?? []).map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+              <input
+                name="jobTypeCustom"
+                defaultValue={jobTypeDefaults.customValue}
+                placeholder="พิมพ์เองถ้าไม่มีในรายการ"
+                autoComplete="off"
+                className="w-full px-4 py-2 bg-white border border-dashed border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all text-sm"
+              />
             </div>
             <div className="space-y-1">
               <label className="text-xs font-bold text-gray-500 uppercase">ประเภทเครื่อง</label>
-              <input 
-                name="machineType" 
-                defaultValue={editingReagent?.machineType} 
-                list="machineTypes"
-                autoComplete="off"
+              <select
+                name="machineType"
+                defaultValue={machineTypeDefaults.selectValue}
                 className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
+              >
+                <option value="">เลือกจากรายการ</option>
+                {(settings?.machineTypes ?? []).map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+              <input
+                name="machineTypeCustom"
+                defaultValue={machineTypeDefaults.customValue}
+                placeholder="พิมพ์เองถ้าไม่มีในรายการ"
+                autoComplete="off"
+                className="w-full px-4 py-2 bg-white border border-dashed border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all text-sm"
               />
-              <datalist id="machineTypes">
-                {(settings?.machineTypes ?? []).map(m => <option key={m} value={m} />)}
-              </datalist>
             </div>
           </div>
 
@@ -364,6 +421,7 @@ export default function MasterDataPage() {
                 defaultValue={editingReagent?.unit} 
                 list="units"
                 autoComplete="off"
+                required
                 className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
               />
               <datalist id="units">

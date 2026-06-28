@@ -2,6 +2,14 @@ import { NextResponse } from 'next/server';
 import sql from '@/lib/db';
 import { hasUserPinColumn, hashPassword, hashPin, isAdmin } from '@/lib/auth-utils';
 
+function normalizeOptionalText(value: unknown) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function validatePin(pin: string) {
+  return /^\d{4,6}$/.test(pin);
+}
+
 export async function PUT(
   request: Request,
   { params }: { params: Promise<{ username: string }> }
@@ -14,10 +22,19 @@ export async function PUT(
     const { username } = await params;
     const updateData = await request.json();
     const pinEnabled = await hasUserPinColumn();
+    const password = normalizeOptionalText(updateData.password);
+    const pin = normalizeOptionalText(updateData.pin);
 
-    if (updateData.pin && !pinEnabled) {
+    if (pin && !pinEnabled) {
       return NextResponse.json({ error: 'PIN support is not enabled yet. Run upgrade_v5_user_pin.sql first.' }, { status: 400 });
     }
+
+    if (pin && !validatePin(pin)) {
+      return NextResponse.json({ error: 'PIN must be 4-6 digits.' }, { status: 400 });
+    }
+
+    const newPasswordHash = password ? await hashPassword(password) : null;
+    const newPinHash = pin ? await hashPin(pin) : null;
 
     const users = await sql`
       SELECT username FROM users 
@@ -29,21 +46,18 @@ export async function PUT(
       return NextResponse.json({ error: 'ไม่พบผู้ใช้ที่ต้องการแก้ไข' }, { status: 404 });
     }
 
-    if (updateData.password) {
-      const newHash = await hashPassword(updateData.password);
-      const newPinHash = pinEnabled && updateData.pin ? await hashPin(updateData.pin) : null;
+    if (newPasswordHash) {
       await sql`
         UPDATE users 
         SET 
           name = ${updateData.name}, 
           role = ${updateData.role}, 
           vendor = ${updateData.vendor || ''},
-          password_hash = ${newHash},
+          password_hash = ${newPasswordHash},
           pin_hash = COALESCE(${newPinHash}, pin_hash)
         WHERE LOWER(username) = LOWER(${username.trim()})
       `;
     } else {
-      const newPinHash = pinEnabled && updateData.pin ? await hashPin(updateData.pin) : null;
       await sql`
         UPDATE users 
         SET 

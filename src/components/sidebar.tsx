@@ -2,99 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { 
-  LayoutDashboard, 
-  PackagePlus, 
-  Package,
-  HandHelping, 
-  History, 
-  Database, 
-  Settings,
-  Menu,
-  X,
-  CheckCircle2,
-  ArrowDownToLine,
-  ArrowUpFromLine,
-  BarChart3,
-  Shield,
-  LogOut,
-  ScanLine,
-  ShoppingCart,
-  BellRing,
-  ShieldCheck
-} from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { Database, LogOut, Menu, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { useAuth } from './auth-provider';
 import { apiClient } from '@/lib/api-client';
+import { NAVIGATION_GROUPS, getRoleFallbackMenus, mergeMenus } from '@/lib/menu-config';
 
-const navigationGroups = [
-  {
-    title: 'Overview',
-    items: [
-      { id: 'dashboard', name: 'Inventory Overview', href: '/', icon: LayoutDashboard },
-      { id: 'analysis', name: 'Analysis (วิเคราะห์)', href: '/analysis', icon: BarChart3 },
-      { id: 'logs', name: 'Logs (ประวัติ)', href: '/logs', icon: History },
-    ]
-  },
-  {
-    title: 'Operations',
-    items: [
-      { id: 'dispense', name: 'Dispense (เบิกจ่าย)', href: '/dispense', icon: HandHelping },
-      { id: 'receive', name: 'Receive (รับเข้า)', href: '/receive', icon: PackagePlus },
-      { id: 'count', name: 'Stock Count (นับ)', href: '/count', icon: CheckCircle2 },
-      { id: 'borrow', name: 'ระบบยืม (Borrow)', href: '/borrow', icon: ArrowDownToLine },
-      { id: 'lend', name: 'ระบบให้ยืม (Lend)', href: '/lend', icon: ArrowUpFromLine },
-    ]
-  },
-  {
-    title: 'Lab Procurement',
-    items: [
-      { id: 'orders', name: 'Purchase Orders', href: '/orders', icon: ShoppingCart },
-      { id: 'receive_vendor', name: 'Receive from Vendor', href: '/receive/vendor', icon: Package },
-    ]
-  },
-  {
-    title: 'Vendor Portal',
-    items: [
-      { id: 'vendor_orders', name: 'Vendor Orders', href: '/vendor/orders', icon: ShoppingCart },
-      { id: 'vendor_shipments', name: 'Vendor Shipments', href: '/vendor/shipments', icon: PackagePlus },
-    ]
-  },
-  {
-    title: 'Management',
-    items: [
-      { id: 'master_data', name: 'Master Data', href: '/master', icon: Database },
-      { id: 'user_management', name: 'User Management', href: '/master/users', icon: Shield },
-      { id: 'rbac', name: 'Permissions (RBAC)', href: '/master/permissions', icon: ShieldCheck },
-    ]
-  },
-  {
-    title: 'Settings',
-    items: [
-      { id: 'settings', name: 'Settings (ตั้งค่า)', href: '/settings', icon: Settings },
-      { id: 'notifications', name: 'Notifications', href: '/settings/notifications', icon: BellRing },
-      { id: 'barcodes', name: 'สอนอ่านบาร์โค้ด', href: '/settings/barcodes', icon: ScanLine },
-    ]
-  }
-];
-
-const PERMISSION_CACHE_VERSION = 'v2';
-
-function getRoleFallbackMenus(role: string) {
-  if (role === 'Admin') {
-    return ['dashboard', 'master_data', 'user_management', 'rbac'];
-  }
-
-  if (role === 'Manager') {
-    return ['dashboard', 'master_data'];
-  }
-
-  return ['dashboard'];
-}
-
-function mergeMenus(primary: string[], fallback: string[]) {
-  return Array.from(new Set([...primary, ...fallback]));
-}
+const PERMISSION_CACHE_VERSION = 'v3';
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -108,10 +22,10 @@ export default function Sidebar() {
 
     const fetchPerms = async () => {
       try {
-        // Try to get from session storage first for speed
         const cacheKey = `perms_${PERMISSION_CACHE_VERSION}_${user.role}`;
         const fallbackMenus = getRoleFallbackMenus(user.role);
         const cached = sessionStorage.getItem(cacheKey);
+
         if (cached) {
           setAllowedMenus(mergeMenus(JSON.parse(cached), fallbackMenus));
           setIsLoadingPerms(false);
@@ -119,14 +33,14 @@ export default function Sidebar() {
 
         const data = await apiClient.getPermissions();
         let perms: string[] = [];
-        
+
         if (Array.isArray(data)) {
-          perms = data.find(p => p.role === user.role)?.allowed_menus || [];
+          perms = data.find((permission) => permission.role === user.role)?.allowed_menus || [];
         } else {
           const rolePermission = data as { allowed_menus?: string[] };
           perms = rolePermission.allowed_menus || [];
         }
-        
+
         const nextMenus = mergeMenus(perms, fallbackMenus);
         setAllowedMenus(nextMenus);
         sessionStorage.setItem(cacheKey, JSON.stringify(nextMenus));
@@ -144,7 +58,6 @@ export default function Sidebar() {
 
   return (
     <>
-      {/* Mobile Menu Button */}
       <div className="lg:hidden fixed top-4 left-4 z-50">
         <button
           onClick={() => setIsOpen(!isOpen)}
@@ -154,22 +67,19 @@ export default function Sidebar() {
         </button>
       </div>
 
-      {/* Sidebar Overlay for Mobile */}
       {isOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/60 z-40 lg:hidden"
           onClick={() => setIsOpen(false)}
         />
       )}
 
-      {/* Sidebar Container */}
       <aside className={`
         fixed top-0 left-0 h-full bg-white border-r border-[#e5e7eb] z-40
         transition-all duration-300 ease-in-out w-64
         ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
       `}>
         <div className="flex flex-col h-full">
-          {/* Logo Area */}
           <div className="p-6 border-b border-[#f3f4f6]">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 bg-[#166ee1] rounded-lg flex items-center justify-center text-white shadow-sm">
@@ -182,18 +92,17 @@ export default function Sidebar() {
             </div>
           </div>
 
-          {/* Navigation Links */}
           <nav className="flex-1 p-3 space-y-7 overflow-y-auto no-scrollbar">
             {isLoadingPerms && allowedMenus.length === 0 ? (
               <div className="space-y-4 p-4">
-                {[1, 2, 3, 4, 5].map(i => (
+                {[1, 2, 3, 4, 5].map((i) => (
                   <div key={i} className="h-10 bg-gray-50 rounded-xl animate-pulse" />
                 ))}
               </div>
             ) : (
-              navigationGroups.map((group) => {
-                const filteredItems = group.items.filter(item => allowedMenus.includes(item.id));
-                
+              NAVIGATION_GROUPS.map((group) => {
+                const filteredItems = group.items.filter((item) => allowedMenus.includes(item.id));
+
                 if (filteredItems.length === 0) return null;
 
                 return (
@@ -208,7 +117,7 @@ export default function Sidebar() {
                       {filteredItems.map((item) => {
                         const isActive = pathname === item.href;
                         const Icon = item.icon;
-                        
+
                         return (
                           <Link
                             key={item.id}
@@ -216,19 +125,17 @@ export default function Sidebar() {
                             onClick={() => setIsOpen(false)}
                             className={`
                               flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 group/item
-                              ${isActive 
-                                ? 'bg-[#e7f0ff] text-[#166ee1] font-bold shadow-sm' 
+                              ${isActive
+                                ? 'bg-[#e7f0ff] text-[#166ee1] font-bold shadow-sm'
                                 : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'}
                             `}
                           >
-                            <Icon 
-                              size={18} 
-                              className={`transition-colors ${isActive ? 'text-[#166ee1]' : 'text-gray-400 group-hover/item:text-gray-600'}`} 
+                            <Icon
+                              size={18}
+                              className={`transition-colors ${isActive ? 'text-[#166ee1]' : 'text-gray-400 group-hover/item:text-gray-600'}`}
                             />
                             <span className="text-sm font-semibold tracking-tight">{item.name}</span>
-                            {isActive && (
-                              <div className="ml-auto w-1.5 h-1.5 rounded-full bg-[#166ee1]" />
-                            )}
+                            {isActive && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-[#166ee1]" />}
                           </Link>
                         );
                       })}
@@ -239,7 +146,6 @@ export default function Sidebar() {
             )}
           </nav>
 
-          {/* Footer Area */}
           <div className="p-4 bg-gray-50/50 border-t border-[#f3f4f6] space-y-3">
             <div className="p-3 bg-white rounded-2xl border border-[#f3f4f6] shadow-sm">
               <div className="flex items-center gap-3">

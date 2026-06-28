@@ -1,47 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { 
-  ShieldCheck, 
-  Save, 
-  RefreshCw, 
-  Check, 
-  X,
-  Lock,
-  Eye,
-  Settings,
-  Database,
-  Users,
-  ShoppingCart,
-  Activity,
-  Box
-} from 'lucide-react';
-import { apiClient, RolePermission } from '@/lib/api-client';
+import { useEffect, useState } from 'react';
+import { Check, Lock, RefreshCw, Save, X } from 'lucide-react';
 import { useAuth } from '@/components/auth-provider';
-
-// Define the available menu keys (must match those in the sidebar)
-const ALL_MENUS = [
-  { id: 'dashboard', label: 'Inventory Overview', icon: Activity },
-  { id: 'analysis', label: 'Analysis', icon: Eye },
-  { id: 'logs', label: 'History Logs', icon: Database },
-  { id: 'dispense', label: 'Dispense', icon: Box },
-  { id: 'receive', label: 'Receive Stock', icon: Box },
-  { id: 'count', label: 'Stock Count', icon: Check },
-  { id: 'borrow', label: 'Borrow System', icon: RefreshCw },
-  { id: 'lend', label: 'Lend System', icon: RefreshCw },
-  { id: 'orders', label: 'Purchase Orders', icon: ShoppingCart },
-  { id: 'receive_vendor', label: 'Receive from Vendor', icon: Box },
-  { id: 'vendor_orders', label: 'Vendor Orders', icon: ShoppingCart },
-  { id: 'vendor_shipments', label: 'Vendor Shipments', icon: Box },
-  { id: 'master_data', label: 'Master Data', icon: Database },
-  { id: 'user_management', label: 'User Management', icon: Users },
-  { id: 'settings', label: 'System Settings', icon: Settings },
-  { id: 'notifications', label: 'Notifications', icon: Settings },
-  { id: 'barcodes', label: 'Barcode Learning', icon: Settings },
-  { id: 'rbac', label: 'Permissions Management', icon: ShieldCheck },
-];
-
-const ROLES = ['Admin', 'Manager', 'Operator', 'User', 'Vendor'];
+import { apiClient, RolePermission } from '@/lib/api-client';
+import { ALL_MENUS, ROLES } from '@/lib/menu-config';
 
 export default function PermissionsPage() {
   const { user } = useAuth();
@@ -71,28 +34,27 @@ export default function PermissionsPage() {
   }, []);
 
   const togglePermission = (role: string, menuId: string) => {
-    setPermissions(prev => prev.map(p => {
-      if (p.role === role) {
-        const hasMenu = p.allowed_menus.includes(menuId);
+    setPermissions((prev) => prev.map((permission) => {
+      if (permission.role === role) {
+        const hasMenu = permission.allowed_menus.includes(menuId);
         return {
-          ...p,
-          allowed_menus: hasMenu 
-            ? p.allowed_menus.filter(id => id !== menuId)
-            : [...p.allowed_menus, menuId]
+          ...permission,
+          allowed_menus: hasMenu
+            ? permission.allowed_menus.filter((id) => id !== menuId)
+            : [...permission.allowed_menus, menuId],
         };
       }
-      return p;
+      return permission;
     }));
   };
 
   const savePermissions = async (role: string) => {
-    const roleData = permissions.find(p => p.role === role);
+    const roleData = permissions.find((permission) => permission.role === role);
     if (!roleData) return;
 
     setSaving(role);
     try {
       await apiClient.updatePermissions(role, roleData.allowed_menus);
-      // Small delay for UI feedback
       setTimeout(() => setSaving(null), 500);
     } catch (err) {
       console.error(`Failed to save permissions for ${role}:`, err);
@@ -120,7 +82,7 @@ export default function PermissionsPage() {
           </h1>
           <p className="text-gray-500 text-sm mt-1 font-medium">Control which menus each user role can see and access.</p>
         </div>
-        <button 
+        <button
           onClick={fetchPermissions}
           className="flex items-center gap-2 px-4 py-2.5 bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 transition-all font-bold text-xs uppercase tracking-wider rounded-xl shadow-sm"
         >
@@ -142,7 +104,7 @@ export default function PermissionsPage() {
             <thead>
               <tr className="bg-gray-50/50 border-b border-gray-100">
                 <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest min-w-[250px]">Menu Section</th>
-                {ROLES.map(role => (
+                {ROLES.map((role) => (
                   <th key={role} className="px-6 py-5 text-center min-w-[120px]">
                     <div className="flex flex-col items-center gap-1">
                       <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{role}</span>
@@ -173,18 +135,18 @@ export default function PermissionsPage() {
                       </div>
                     </div>
                   </td>
-                  {ROLES.map(role => {
-                    const rolePerms = permissions.find(p => p.role === role);
+                  {ROLES.map((role) => {
+                    const rolePerms = permissions.find((permission) => permission.role === role);
                     const isAllowed = rolePerms?.allowed_menus.includes(menu.id);
-                    
+
                     return (
                       <td key={role} className="px-6 py-4 text-center">
                         <button
                           onClick={() => togglePermission(role, menu.id)}
                           className={`
                             w-6 h-6 rounded-md border-2 transition-all flex items-center justify-center mx-auto
-                            ${isAllowed 
-                              ? 'bg-blue-600 border-blue-600 text-white shadow-sm shadow-blue-200' 
+                            ${isAllowed
+                              ? 'bg-blue-600 border-blue-600 text-white shadow-sm shadow-blue-200'
                               : 'bg-white border-gray-200 text-transparent hover:border-blue-300'}
                           `}
                         >
