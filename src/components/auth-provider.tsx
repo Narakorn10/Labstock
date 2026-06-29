@@ -22,8 +22,26 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+function readStoredUser() {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const raw = localStorage.getItem('labstock_user');
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(raw) as User;
+  } catch {
+    localStorage.removeItem('labstock_user');
+    return null;
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(() => readStoredUser());
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const pathname = usePathname();
@@ -42,31 +60,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const checkAuth = async () => {
-      const savedUser = localStorage.getItem('labstock_user');
       const token = localStorage.getItem('labstock_token');
-      
-      if (savedUser && token) {
-        try {
-          const res = await fetch('/api/auth/me', {
-            headers: { 'Authorization': `Bearer ${token}` }
-          });
-          
-          if (res.ok) {
-            const data = await res.json();
-            setUser(data.user);
-            localStorage.setItem('labstock_user', JSON.stringify(data.user));
-          } else {
-            clearStoredAuth();
-            setUser(null);
-            if (!isPublicPath) {
-              router.push('/login');
-            }
-          }
-        } catch (error) {
-          console.error('Auth verification failed:', error);
-          setUser(JSON.parse(savedUser));
-        }
+
+      if (!token) {
+        clearStoredAuth();
+        setUser(null);
+        setLoading(false);
+        return;
       }
+
+      try {
+        const res = await fetch('/api/auth/me', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          setUser(data.user);
+          localStorage.setItem('labstock_user', JSON.stringify(data.user));
+        } else {
+          clearStoredAuth();
+          setUser(null);
+        }
+      } catch (error) {
+        console.error('Auth verification failed:', error);
+        clearStoredAuth();
+        setUser(null);
+      }
+
       setLoading(false);
     };
 

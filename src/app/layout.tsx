@@ -37,7 +37,7 @@ export default function RootLayout({
               <footer className="p-8 text-center text-[#6b7280] text-xs border-t border-[#e5e7eb] bg-white">
                 <div className="flex items-center justify-center gap-2">
                   <div className="w-2 h-2 rounded-full bg-[#166ee1]"></div>
-                  <p className="font-semibold tracking-tight">LabStock Workspace • Medical Technology Hub</p>
+                  <p className="font-semibold tracking-tight">LabStock Workspace | Medical Technology Hub</p>
                 </div>
               </footer>
             </main>

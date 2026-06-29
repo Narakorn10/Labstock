@@ -17,7 +17,7 @@ import ReagentDetailModal from '@/components/reagent-detail-modal';
 import { useAuth } from '@/components/auth-provider';
 
 export default function InventoryOverview() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [reagents, setReagents] = useState<Reagent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -43,6 +43,15 @@ export default function InventoryOverview() {
   }, []);
 
   useEffect(() => {
+    if (authLoading || !user || typeof window === "undefined") {
+      return;
+    }
+
+    const token = window.localStorage.getItem("labstock_token");
+    if (!token) {
+      return;
+    }
+
     let isMounted = true;
 
     const load = async () => {
@@ -56,7 +65,7 @@ export default function InventoryOverview() {
     return () => {
       isMounted = false;
     };
-  }, [fetchData]);
+  }, [authLoading, fetchData, user]);
 
   const stats = useMemo(() => {
     const total = reagents.length;
