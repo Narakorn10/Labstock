@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import Modal from '@/components/modal';
 import { BarcodePattern, Lot, Reagent } from '@/lib/api-client';
@@ -23,6 +23,8 @@ type WorkflowMode = 'receive' | 'dispense';
 
 interface MobileStockWorkflowProps {
   mode: WorkflowMode;
+  deepLinkCode?: string;
+  deepLinkLot?: string;
 }
 
 interface MobileCartItem {
@@ -42,9 +44,37 @@ interface MobileLookupResponse {
   patterns: BarcodePattern[];
 }
 
-const createCartId = (itemId: string) => `${itemId}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+interface RememberedApprover {
+  username: string;
+  name: string;
+  role: string;
+}
 
-export default function MobileStockWorkflow({ mode }: MobileStockWorkflowProps) {
+const createCartId = (itemId: string) => `${itemId}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+const MOBILE_APPROVER_STORAGE_KEY = 'labstock_mobile_approver';
+
+const readStoredApprover = (): RememberedApprover | null => {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const raw = localStorage.getItem(MOBILE_APPROVER_STORAGE_KEY);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as Partial<RememberedApprover>;
+    if (!parsed.username || !parsed.name || !parsed.role) return null;
+
+    return {
+      username: parsed.username,
+      name: parsed.name,
+      role: parsed.role,
+    };
+  } catch (error) {
+    console.error('Failed to load mobile approver:', error);
+    return null;
+  }
+};
+
+export default function MobileStockWorkflow({ mode, deepLinkCode = '', deepLinkLot = '' }: MobileStockWorkflowProps) {
   const [reagents, setReagents] = useState<Reagent[]>([]);
   const [patterns, setPatterns] = useState<BarcodePattern[]>([]);
   const [loading, setLoading] = useState(true);
@@ -56,9 +86,12 @@ export default function MobileStockWorkflow({ mode }: MobileStockWorkflowProps) 
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
   const [showResults, setShowResults] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [approverUsername, setApproverUsername] = useState('');
+  const [approverUsername, setApproverUsername] = useState(() => readStoredApprover()?.username || '');
   const [approverPin, setApproverPin] = useState('');
   const [confirmError, setConfirmError] = useState('');
+  const [rememberedApprover, setRememberedApprover] = useState<RememberedApprover | null>(() => readStoredApprover());
+  const [changeApproverMode, setChangeApproverMode] = useState(false);
+  const processedDeepLinkRef = useRef('');
 
   const isReceive = mode === 'receive';
 
@@ -178,6 +211,39 @@ export default function MobileStockWorkflow({ mode }: MobileStockWorkflowProps) 
     [isReceive]
   );
 
+  useEffect(() => {
+    if (isReceive || loading || !deepLinkCode) return;
+
+    const deepLinkKey = `${deepLinkCode}::${deepLinkLot}`;
+    if (processedDeepLinkRef.current === deepLinkKey) return;
+
+    const { data, match, lookupValues } = findMatchingReagent(deepLinkCode, patterns, reagents);
+    processedDeepLinkRef.current = deepLinkKey;
+
+    queueMicrotask(() => {
+      if (!data) {
+        setFeedback({ type: 'error', msg: 'Could not read this dispense QR link.' });
+        return;
+      }
+
+      if (!match) {
+        const parsedId = data.gtin || data.rawString || '-';
+        const parsedLot = deepLinkLot || (data.lot === 'NEED_MANUAL_INPUT' ? '-' : data.lot);
+        setFeedback({
+          type: 'error',
+          msg: `No reagent match found from link. code: ${parsedId} | lot: ${parsedLot} | keys: ${lookupValues.join(', ') || '-'}`,
+        });
+        return;
+      }
+
+      addToCart(
+        match,
+        deepLinkLot || (data.lot === 'NEED_MANUAL_INPUT' ? '' : data.lot),
+        data.expDate === 'NEED_MANUAL_INPUT' ? '' : data.expDate
+      );
+    });
+  }, [addToCart, deepLinkCode, deepLinkLot, isReceive, loading, patterns, reagents]);
+
   const handleScan = useCallback(
     (decodedText: string) => {
       const { data, match, lookupValues } = findMatchingReagent(decodedText, patterns, reagents);
@@ -283,6 +349,7 @@ export default function MobileStockWorkflow({ mode }: MobileStockWorkflowProps) 
     }
 
     setConfirmError('');
+    setChangeApproverMode(!rememberedApprover);
     setConfirmOpen(true);
   };
 
@@ -294,8 +361,10 @@ export default function MobileStockWorkflow({ mode }: MobileStockWorkflowProps) 
       return;
     }
 
-    if (!approverUsername.trim() || !approverPin.trim()) {
-      setConfirmError('Username and PIN are required.');
+    const submitUsername = (changeApproverMode ? approverUsername : rememberedApprover?.username || approverUsername).trim();
+
+    if (!submitUsername || !approverPin.trim()) {
+      setConfirmError(changeApproverMode || !rememberedApprover ? 'Username and PIN are required.' : 'PIN is required.');
       return;
     }
 
@@ -308,22 +377,35 @@ export default function MobileStockWorkflow({ mode }: MobileStockWorkflowProps) 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           mode,
-          username: approverUsername.trim(),
+          username: submitUsername,
           pin: approverPin.trim(),
           batchItems: validItems,
         }),
       });
 
-      const result = await response.json() as { error?: string; approver?: { name: string; role: string } };
+      const result = await response.json() as { error?: string; approver?: { username?: string; name: string; role: string } };
       if (!response.ok) {
         throw new Error(result.error || 'Request failed.');
+      }
+
+      const nextApprover = {
+        username: result.approver?.username || submitUsername,
+        name: result.approver?.name || submitUsername,
+        role: result.approver?.role || 'User',
+      };
+
+      setRememberedApprover(nextApprover);
+      setApproverUsername(nextApprover.username);
+      setChangeApproverMode(false);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(MOBILE_APPROVER_STORAGE_KEY, JSON.stringify(nextApprover));
       }
 
       setFeedback({
         type: 'success',
         msg: isReceive
-          ? `Received ${validItems.length} item(s). Approved by ${result.approver?.name || approverUsername}.`
-          : `Dispensed ${validItems.length} item(s). Approved by ${result.approver?.name || approverUsername}.`,
+          ? `Received ${validItems.length} item(s). Approved by ${result.approver?.name || submitUsername}.`
+          : `Dispensed ${validItems.length} item(s). Approved by ${result.approver?.name || submitUsername}.`,
       });
       setCart([]);
       setApproverPin('');
@@ -341,6 +423,7 @@ export default function MobileStockWorkflow({ mode }: MobileStockWorkflowProps) 
   const pageDescription = isReceive
     ? 'Scanner-first receive flow with large controls and quick lot entry.'
     : 'Scanner-first dispense flow with FEFO default and quick lot selection.';
+  const activeApproverUsername = (changeApproverMode ? approverUsername : rememberedApprover?.username || approverUsername).trim();
 
   if (loading) {
     return (
@@ -571,6 +654,7 @@ export default function MobileStockWorkflow({ mode }: MobileStockWorkflowProps) 
             setConfirmOpen(false);
             setConfirmError('');
             setApproverPin('');
+            setChangeApproverMode(!rememberedApprover);
           }
         }}
         title={isReceive ? 'Approve Receive' : 'Approve Dispense'}
@@ -580,20 +664,43 @@ export default function MobileStockWorkflow({ mode }: MobileStockWorkflowProps) 
           <div className="rounded-2xl bg-gray-50 border border-gray-100 p-4">
             <p className="text-xs font-black text-gray-400 uppercase tracking-widest">Approval Required</p>
             <p className="mt-2 text-sm font-medium text-gray-600">
-              Enter a username and PIN to approve this {isReceive ? 'receive' : 'dispense'} transaction.
+              {rememberedApprover && !changeApproverMode
+                ? `Approve this ${isReceive ? 'receive' : 'dispense'} transaction with PIN only.`
+                : `Enter a username and PIN to approve this ${isReceive ? 'receive' : 'dispense'} transaction.`}
             </p>
           </div>
 
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Username</label>
-            <input
-              type="text"
-              value={approverUsername}
-              onChange={(e) => setApproverUsername(e.target.value)}
-              placeholder="e.g. staff01"
-              className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-            />
-          </div>
+          {rememberedApprover && !changeApproverMode ? (
+            <div className="rounded-2xl bg-blue-50 border border-blue-100 p-4 space-y-2">
+              <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest">Approver</p>
+              <p className="text-sm font-black text-gray-900">{rememberedApprover.name}</p>
+              <p className="text-xs font-bold text-gray-500">
+                {rememberedApprover.username} • {rememberedApprover.role}
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setChangeApproverMode(true);
+                  setApproverUsername(rememberedApprover.username);
+                  setConfirmError('');
+                }}
+                className="text-xs font-black uppercase text-blue-600"
+              >
+                Change Approver
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Username</label>
+              <input
+                type="text"
+                value={approverUsername}
+                onChange={(e) => setApproverUsername(e.target.value)}
+                placeholder="e.g. staff01"
+                className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+              />
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">PIN</label>
@@ -603,7 +710,7 @@ export default function MobileStockWorkflow({ mode }: MobileStockWorkflowProps) 
               pattern="[0-9]*"
               value={approverPin}
               onChange={(e) => setApproverPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              placeholder="4-6 digits"
+              placeholder={activeApproverUsername ? `PIN for ${activeApproverUsername}` : '4-6 digits'}
               className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
             />
           </div>

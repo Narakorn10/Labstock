@@ -1,5 +1,10 @@
 import nodemailer from 'nodemailer';
-import { PurchaseOrder, TrackingResult, LowStockItem } from './line-flex-templates';
+import { PurchaseOrder, LowStockItem } from './line-flex-templates';
+import {
+  formatLowStockTelegramDigest,
+  formatTransactionTelegramDigest,
+  sendTelegramBroadcast,
+} from "./telegram-bot";
 
 // For Email (Nodemailer)
 const transporter = nodemailer.createTransport({
@@ -29,19 +34,91 @@ export async function sendEmail(to: string, subject: string, html: string) {
   }
 }
 
-export type NotifyEvent = 'PO_CREATED' | 'PO_CONFIRMED' | 'PO_SHIPPED' | 'PO_RECEIVED' | 'LOW_STOCK' | 'TEST';
+export type NotifyEvent =
+  | 'PO_CREATED'
+  | 'PO_CONFIRMED'
+  | 'PO_SHIPPED'
+  | 'PO_RECEIVED'
+  | 'LOW_STOCK'
+  | 'STOCK_RECEIVED'
+  | 'STOCK_DISPENSED'
+  | 'TEST';
 
-export async function notifyUsers(event: NotifyEvent, data: any, settings: any[]) {
+type TransactionNotificationData = {
+  actor: string;
+  items: Array<{
+    itemId: string;
+    lotNo: string;
+    qty: number;
+    name?: string;
+  }>;
+};
+
+type NotificationPayload = PurchaseOrder | LowStockItem[] | TransactionNotificationData | Record<string, unknown>;
+
+type NotificationSetting = {
+  username?: string;
+  email?: string | null;
+  line_user_id?: string | null;
+  notify_po_created?: boolean;
+  notify_po_confirmed?: boolean;
+  notify_po_shipped?: boolean;
+  notify_po_received?: boolean;
+  notify_low_stock?: boolean;
+};
+
+const isTransactionNotificationData = (data: NotificationPayload): data is TransactionNotificationData => {
+  return typeof data === "object" && data !== null && "actor" in data && "items" in data;
+};
+
+function buildTelegramMessage(event: NotifyEvent, data: NotificationPayload) {
+  if (event === "LOW_STOCK") {
+    return formatLowStockTelegramDigest(data as LowStockItem[]);
+  }
+
+  if (event === "STOCK_RECEIVED" && isTransactionNotificationData(data)) {
+    return formatTransactionTelegramDigest({
+      actor: data.actor || "Staff",
+      action: "receive",
+      items: data.items || [],
+    });
+  }
+
+  if (event === "STOCK_DISPENSED" && isTransactionNotificationData(data)) {
+    return formatTransactionTelegramDigest({
+      actor: data.actor || "Staff",
+      action: "dispense",
+      items: data.items || [],
+    });
+  }
+
+  if (event === "TEST") {
+    return "<b>LabStock Telegram Test</b>\nTelegram notification is working.";
+  }
+
+  return "";
+}
+
+export async function notifyUsers(event: NotifyEvent, data: NotificationPayload, settings: NotificationSetting[]) {
   console.log(`[Notification] Dispatching event: ${event} to ${settings.length} users`);
+
+  const telegramMessage = buildTelegramMessage(event, data);
+  if (telegramMessage) {
+    try {
+      await sendTelegramBroadcast(telegramMessage);
+    } catch (err) {
+      console.error("[Notification] Telegram broadcast error:", err);
+    }
+  }
   
   for (const setting of settings) {
     let shouldNotify = false;
     switch (event) {
-      case 'PO_CREATED':   shouldNotify = setting.notify_po_created;   break;
-      case 'PO_CONFIRMED': shouldNotify = setting.notify_po_confirmed; break;
-      case 'PO_SHIPPED':   shouldNotify = setting.notify_po_shipped;   break;
-      case 'PO_RECEIVED':  shouldNotify = setting.notify_po_received;  break;
-      case 'LOW_STOCK':    shouldNotify = setting.notify_low_stock;    break;
+      case 'PO_CREATED':   shouldNotify = setting.notify_po_created ?? false;   break;
+      case 'PO_CONFIRMED': shouldNotify = setting.notify_po_confirmed ?? false; break;
+      case 'PO_SHIPPED':   shouldNotify = setting.notify_po_shipped ?? false;   break;
+      case 'PO_RECEIVED':  shouldNotify = setting.notify_po_received ?? false;  break;
+      case 'LOW_STOCK':    shouldNotify = setting.notify_low_stock ?? false;    break;
       case 'TEST':         shouldNotify = true;                        break;
     }
 
@@ -59,13 +136,9 @@ export async function notifyUsers(event: NotifyEvent, data: any, settings: any[]
           await pushPONotification(setting.line_user_id, data as PurchaseOrder);
         } else if (event === 'LOW_STOCK') {
           await pushLowStockAlert(setting.line_user_id, data as LowStockItem[]);
-        } else if (data.po_number) {
-          const { messagingApi } = await import('@line/bot-sdk');
-          const lineClient = new messagingApi.MessagingApiClient({
-            channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN || 'DUMMY_TOKEN',
-          });
+        } else if ("po_number" in data) {
           const msg = generatePOStatusTemplate(data as PurchaseOrder);
-          await lineClient.pushMessage({ to: setting.line_user_id, messages: [msg as any] });
+          await sendLinePush(setting.line_user_id, [msg]);
         }
       } catch (err) {
         console.error(`[Notification] LINE Error for user ${setting.username}:`, err);

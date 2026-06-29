@@ -106,6 +106,26 @@ export async function runReceiveBatch(
     affectedItemIds.push(targetItemId);
   }
 
+  const completedItems = batchItems
+    .map((item) => ({
+      itemId: item.itemId.toString(),
+      lotNo: item.lotNo.toString(),
+      qty: parseFloat(String(item.qty)),
+      name: item.name || itemNameMap[item.itemId.toString().toLowerCase()] || "Unknown",
+    }))
+    .filter((item) => !isNaN(item.qty) && item.qty > 0);
+
+  if (completedItems.length > 0) {
+    await notifyUsers(
+      "STOCK_RECEIVED",
+      {
+        actor: getActorName(user),
+        items: completedItems,
+      },
+      []
+    );
+  }
+
   await notifyLowStockForAffectedItems(affectedItemIds);
 
   return {
@@ -156,6 +176,26 @@ export async function runDispenseBatch(
     }
 
     affectedItemIds.push(targetItemId);
+  }
+
+  const completedItems = batchItems
+    .map((item) => ({
+      itemId: item.itemId.toString(),
+      lotNo: item.lotNo.toString(),
+      qty: parseFloat(String(item.qty)),
+      name: item.name || masterMap[item.itemId.toString().toLowerCase()] || "Unknown",
+    }))
+    .filter((item) => !isNaN(item.qty) && item.qty > 0);
+
+  if (completedItems.length > 0) {
+    await notifyUsers(
+      "STOCK_DISPENSED",
+      {
+        actor: getActorName(user),
+        items: completedItems,
+      },
+      []
+    );
   }
 
   await notifyLowStockForAffectedItems(affectedItemIds);
