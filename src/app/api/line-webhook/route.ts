@@ -10,6 +10,8 @@ import {
 import sql from "@/lib/db";
 import type { AuthenticatedUser } from "@/lib/auth-utils";
 import { runDispenseBatch, type StockBatchItem } from "@/lib/stock-transactions";
+import { getLowStockRows, searchStockRows } from "@/lib/bot-stock-queries";
+import { getAppBaseUrl } from "@/lib/telegram-bot";
 import type {
   LowStockItem,
   PurchaseOrder,
@@ -391,30 +393,7 @@ async function buildDispensePlan(itemId: string, quantity: number) {
 }
 
 async function replyStockSearch(replyToken: string, keyword: string) {
-  const likeKeyword = `%${keyword}%`;
-  const rows = await sql`
-    WITH InventorySummary AS (
-      SELECT
-        item_id,
-        SUM(quantity) as current_qty
-      FROM inventory
-      GROUP BY item_id
-    )
-    SELECT
-      m.item_id as "itemId",
-      m.name,
-      COALESCE(NULLIF(m.job_type, ''), 'Unassigned job') as "jobType",
-      COALESCE(NULLIF(m.machine_type, ''), 'Unassigned machine') as "machineType",
-      m.unit,
-      COALESCE(i.current_qty, 0) as quantity
-    FROM master_data m
-    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)
-    WHERE m.item_id ILIKE ${likeKeyword}
-       OR m.name ILIKE ${likeKeyword}
-       OR COALESCE(m.barcode, '') ILIKE ${likeKeyword}
-    ORDER BY m.item_id ASC
-    LIMIT 5
-  `;
+  const rows = await searchStockRows(keyword, 5);
 
   if (rows.length === 0) {
     await replyText(replyToken, `ไม่พบรายการสต๊อกที่ตรงกับ "${keyword}"`);
@@ -532,26 +511,7 @@ async function replyJobTypeStock(replyToken: string, keyword: string) {
 }
 
 async function replyLowStockSummary(replyToken: string) {
-  const lowStockData = await sql`
-    WITH InventorySummary AS (
-      SELECT
-        item_id,
-        SUM(quantity) as current_qty
-      FROM inventory
-      GROUP BY item_id
-    )
-    SELECT
-      m.item_id as "itemId",
-      m.name,
-      m.unit,
-      m.min_threshold as "minThreshold",
-      COALESCE(i.current_qty, 0) as quantity
-    FROM master_data m
-    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)
-    WHERE COALESCE(i.current_qty, 0) <= m.min_threshold
-    ORDER BY COALESCE(i.current_qty, 0) ASC, m.item_id ASC
-    LIMIT 10
-  `;
+  const lowStockData = await getLowStockRows(10);
 
   if (lowStockData.length > 0) {
     await replyLowStock(replyToken, lowStockData as unknown as LowStockItem[]);
@@ -670,7 +630,7 @@ export async function POST(req: Request) {
           } else if (isCommand(text, "order", "สั่งซื้อ")) {
             await replyText(
               replyToken,
-              `เปิดหน้าสร้างใบสั่งซื้อได้ที่ ${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/orders`,
+              `เปิดหน้าสร้างใบสั่งซื้อได้ที่ ${getAppBaseUrl()}/orders`,
             );
           } else {
             await replyHelp(replyToken);

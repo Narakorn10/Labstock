@@ -5,6 +5,8 @@ const TELEGRAM_MAX_TEXT_LENGTH = 4000;
 
 const getBotToken = () => process.env.TELEGRAM_BOT_TOKEN?.trim() || "";
 
+export const getAppBaseUrl = () => process.env.NEXT_PUBLIC_APP_URL?.trim() || "http://localhost:3000";
+
 const normalizeChatIds = (value: string | undefined) => {
   return (value || "")
     .split(",")
@@ -189,4 +191,24 @@ export function formatStockTelegramDigest(items: StockSummaryEntry[], title: str
   });
 
   return `<b>${title}</b>\n${lines.join("\n")}`;
+}
+
+export function buildTelegramHelpText() {
+  return [
+    "<b>LabStock Telegram Bot</b>",
+    "Available commands:",
+    "/help - show this help",
+    "/logs - show the latest 10 log entries",
+    "/logs 20 - show up to 20 recent log entries",
+    "/transactions - show the latest 10 transaction logs",
+    "/stock - show low-stock items",
+    "/stock <keyword> - search stock by item ID, name, or barcode",
+    "/dispense - open the LabStock dispense page",
+    "/receive - open the LabStock receive page",
+  ].join("\n");
+}
+
+export function buildTelegramRouteMessage(route: "/dispense" | "/receive") {
+  const label = route === "/dispense" ? "dispense" : "receive";
+  return `Open LabStock ${label} here:\n${getAppBaseUrl()}${route}`;
 }
