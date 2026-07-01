@@ -1,10 +1,5 @@
 import nodemailer from 'nodemailer';
-import { PurchaseOrder, LowStockItem } from './line-flex-templates';
-import {
-  formatLowStockTelegramDigest,
-  formatTransactionTelegramDigest,
-  sendTelegramBroadcast,
-} from "./telegram-bot";
+import { PurchaseOrder, LowStockItem, ExpiringSoonItem, WeeklyStockSummaryItem } from './line-flex-templates';
 
 // For Email (Nodemailer)
 const transporter = nodemailer.createTransport({
@@ -34,30 +29,10 @@ export async function sendEmail(to: string, subject: string, html: string) {
   }
 }
 
-export type NotifyEvent =
-  | 'PO_CREATED'
-  | 'PO_CONFIRMED'
-  | 'PO_SHIPPED'
-  | 'PO_RECEIVED'
-  | 'LOW_STOCK'
-  | 'STOCK_RECEIVED'
-  | 'STOCK_DISPENSED'
-  | 'TEST';
+export type NotifyEvent = 'PO_CREATED' | 'PO_CONFIRMED' | 'PO_SHIPPED' | 'PO_RECEIVED' | 'LOW_STOCK' | 'EXPIRING_SOON' | 'WEEKLY_STOCK' | 'TEST';
 
-type TransactionNotificationData = {
-  actor: string;
-  items: Array<{
-    itemId: string;
-    lotNo: string;
-    qty: number;
-    name?: string;
-  }>;
-};
-
-type NotificationPayload = PurchaseOrder | LowStockItem[] | TransactionNotificationData | Record<string, unknown>;
-
-type NotificationSetting = {
-  username?: string;
+interface NotificationSetting {
+  username: string;
   email?: string | null;
   line_user_id?: string | null;
   notify_po_created?: boolean;
@@ -65,60 +40,33 @@ type NotificationSetting = {
   notify_po_shipped?: boolean;
   notify_po_received?: boolean;
   notify_low_stock?: boolean;
-};
-
-const isTransactionNotificationData = (data: NotificationPayload): data is TransactionNotificationData => {
-  return typeof data === "object" && data !== null && "actor" in data && "items" in data;
-};
-
-function buildTelegramMessage(event: NotifyEvent, data: NotificationPayload) {
-  if (event === "LOW_STOCK") {
-    return formatLowStockTelegramDigest(data as LowStockItem[]);
-  }
-
-  if (event === "STOCK_RECEIVED" && isTransactionNotificationData(data)) {
-    return formatTransactionTelegramDigest({
-      actor: data.actor || "Staff",
-      action: "receive",
-      items: data.items || [],
-    });
-  }
-
-  if (event === "STOCK_DISPENSED" && isTransactionNotificationData(data)) {
-    return formatTransactionTelegramDigest({
-      actor: data.actor || "Staff",
-      action: "dispense",
-      items: data.items || [],
-    });
-  }
-
-  if (event === "TEST") {
-    return "<b>LabStock Telegram Test</b>\nTelegram notification is working.";
-  }
-
-  return "";
+  notify_expiring_soon?: boolean;
+  notify_weekly_summary?: boolean;
 }
 
-export async function notifyUsers(event: NotifyEvent, data: NotificationPayload, settings: NotificationSetting[]) {
-  console.log(`[Notification] Dispatching event: ${event} to ${settings.length} users`);
+type NotifyPayload = PurchaseOrder | LowStockItem[] | ExpiringSoonItem[] | WeeklyStockSummaryItem[] | Record<string, never>;
 
-  const telegramMessage = buildTelegramMessage(event, data);
-  if (telegramMessage) {
-    try {
-      await sendTelegramBroadcast(telegramMessage);
-    } catch (err) {
-      console.error("[Notification] Telegram broadcast error:", err);
-    }
-  }
+function isWeeklyStockPayload(data: NotifyPayload): data is WeeklyStockSummaryItem[] {
+  return Array.isArray(data) && (data.length === 0 || "weeklyTarget" in data[0]);
+}
+
+function isPurchaseOrderPayload(data: NotifyPayload): data is PurchaseOrder {
+  return !Array.isArray(data) && "po_number" in data;
+}
+
+export async function notifyUsers(event: NotifyEvent, data: NotifyPayload, settings: NotificationSetting[]) {
+  console.log(`[Notification] Dispatching event: ${event} to ${settings.length} users`);
   
   for (const setting of settings) {
     let shouldNotify = false;
     switch (event) {
-      case 'PO_CREATED':   shouldNotify = setting.notify_po_created ?? false;   break;
-      case 'PO_CONFIRMED': shouldNotify = setting.notify_po_confirmed ?? false; break;
-      case 'PO_SHIPPED':   shouldNotify = setting.notify_po_shipped ?? false;   break;
-      case 'PO_RECEIVED':  shouldNotify = setting.notify_po_received ?? false;  break;
-      case 'LOW_STOCK':    shouldNotify = setting.notify_low_stock ?? false;    break;
+      case 'PO_CREATED':   shouldNotify = setting.notify_po_created;   break;
+      case 'PO_CONFIRMED': shouldNotify = setting.notify_po_confirmed; break;
+      case 'PO_SHIPPED':   shouldNotify = setting.notify_po_shipped;   break;
+      case 'PO_RECEIVED':  shouldNotify = setting.notify_po_received;  break;
+      case 'LOW_STOCK':    shouldNotify = setting.notify_low_stock;    break;
+      case 'EXPIRING_SOON': shouldNotify = setting.notify_expiring_soon; break;
+      case 'WEEKLY_STOCK': shouldNotify = setting.notify_weekly_summary; break;
       case 'TEST':         shouldNotify = true;                        break;
     }
 
@@ -127,7 +75,7 @@ export async function notifyUsers(event: NotifyEvent, data: NotificationPayload,
     // Send LINE Push
     if (setting.line_user_id) {
       try {
-        const { pushPONotification, pushLowStockAlert, sendLinePush } = await import('./line-bot');
+        const { pushPONotification, pushLowStockAlert, pushExpiringSoonAlert, pushWeeklyStockSummary, sendLinePush } = await import('./line-bot');
         const { generatePOStatusTemplate } = await import('./line-flex-templates');
 
         if (event === 'TEST') {
@@ -136,9 +84,18 @@ export async function notifyUsers(event: NotifyEvent, data: NotificationPayload,
           await pushPONotification(setting.line_user_id, data as PurchaseOrder);
         } else if (event === 'LOW_STOCK') {
           await pushLowStockAlert(setting.line_user_id, data as LowStockItem[]);
-        } else if ("po_number" in data) {
-          const msg = generatePOStatusTemplate(data as PurchaseOrder);
-          await sendLinePush(setting.line_user_id, [msg]);
+        } else if (event === 'EXPIRING_SOON') {
+          await pushExpiringSoonAlert(setting.line_user_id, data as ExpiringSoonItem[]);
+        } else if (event === 'WEEKLY_STOCK' && isWeeklyStockPayload(data)) {
+          const vendor = data[0]?.vendor || setting.username;
+          await pushWeeklyStockSummary(setting.line_user_id, vendor, data);
+        } else if (isPurchaseOrderPayload(data)) {
+          const { messagingApi } = await import('@line/bot-sdk');
+          const lineClient = new messagingApi.MessagingApiClient({
+            channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN || 'DUMMY_TOKEN',
+          });
+          const msg = generatePOStatusTemplate(data);
+          await lineClient.pushMessage({ to: setting.line_user_id, messages: [msg] });
         }
       } catch (err) {
         console.error(`[Notification] LINE Error for user ${setting.username}:`, err);
@@ -170,8 +127,16 @@ export async function notifyUsers(event: NotifyEvent, data: NotificationPayload,
           subject = `Low Stock Alert`;
           const items = data as LowStockItem[];
           html = `<h3>The following items are low in stock:</h3><ul>${items.map(i => `<li>${i.name}: ${i.quantity} ${i.unit} (Min: ${i.minThreshold})</li>`).join('')}</ul>`;
+        } else if (event === 'EXPIRING_SOON') {
+          subject = 'Expiring Soon Alert';
+          const items = data as ExpiringSoonItem[];
+          html = `<h3>The following lots will expire within 30 days:</h3><ul>${items.map((item) => `<li>${item.name} (Lot ${item.lotNo}) expires on ${item.expDate} and has ${item.quantity} ${item.unit} remaining.</li>`).join('')}</ul>`;
+        } else if (event === 'WEEKLY_STOCK') {
+          subject = 'Weekly Stock Summary';
+          const items = data as WeeklyStockSummaryItem[];
+          html = `<h3>Weekly stock summary</h3><ul>${items.map((item) => `<li>${item.name}: ${item.quantity} ${item.unit} remaining (weekly target ${item.weeklyTarget})</li>`).join('')}</ul>`;
         } else {
-          subject = `PO Status Update: ${(data as PurchaseOrder).po_number || ''}`;
+          subject = `PO Status Update: ${isPurchaseOrderPayload(data) ? data.po_number : ''}`;
           html = `<h3>Order status updated</h3><p>Status: ${event}</p>`;
         }
 

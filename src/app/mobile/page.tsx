@@ -6,10 +6,10 @@ export default function MobileHomePage() {
     <div className="min-h-screen bg-[#f5f7f9]">
       <div className="max-w-md mx-auto px-4 py-6 space-y-4">
         <div className="bg-white rounded-[2rem] border border-gray-100 shadow-sm p-6 space-y-3">
-          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Standalone Mobile Surface</p>
-          <h1 className="text-3xl font-black text-gray-900">LabStock Mobile</h1>
+          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">หน้ามือถือแบบแยก</p>
+          <h1 className="text-3xl font-black text-gray-900">LabStock สำหรับมือถือ</h1>
           <p className="text-sm font-medium text-gray-500">
-            Fast scanner-first workflow for receiving and dispensing with large controls and fewer steps.
+            ขั้นตอนรับเข้าและเบิกจ่ายแบบเน้นสแกนก่อน ปุ่มใหญ่ ใช้งานง่าย และลดจำนวนขั้นตอน
           </p>
         </div>
 
@@ -22,11 +22,11 @@ export default function MobileHomePage() {
               <PackagePlus size={28} />
             </div>
             <div>
-              <h2 className="text-2xl font-black">Receive</h2>
-              <p className="text-sm font-medium text-green-100">Scan incoming stock, edit lot and expiry, then submit.</p>
+              <h2 className="text-2xl font-black">รับเข้า</h2>
+              <p className="text-sm font-medium text-green-100">สแกนของเข้า แก้ล็อตและวันหมดอายุ แล้วค่อยยืนยัน</p>
             </div>
             <div className="flex items-center gap-2 text-sm font-black uppercase tracking-widest">
-              Open <ArrowRight size={16} />
+              เข้าใช้งาน <ArrowRight size={16} />
             </div>
           </Link>
 
@@ -38,11 +38,11 @@ export default function MobileHomePage() {
               <HandHelping size={28} />
             </div>
             <div>
-              <h2 className="text-2xl font-black">Dispense</h2>
-              <p className="text-sm font-medium text-red-100">Scan, keep FEFO by default, switch lots when needed, then confirm.</p>
+              <h2 className="text-2xl font-black">เบิกจ่าย</h2>
+              <p className="text-sm font-medium text-red-100">สแกนก่อน ใช้ FEFO อัตโนมัติ เปลี่ยนล็อตได้เมื่อจำเป็น แล้วค่อยยืนยัน</p>
             </div>
             <div className="flex items-center gap-2 text-sm font-black uppercase tracking-widest">
-              Open <ArrowRight size={16} />
+              เข้าใช้งาน <ArrowRight size={16} />
             </div>
           </Link>
         </div>
@@ -52,9 +52,9 @@ export default function MobileHomePage() {
             <Camera size={24} />
           </div>
           <div className="space-y-1">
-            <p className="text-sm font-black text-gray-900">Same login, simpler flow</p>
+            <p className="text-sm font-black text-gray-900">ล็อกอินเดิม แต่ขั้นตอนง่ายกว่า</p>
             <p className="text-sm font-medium text-gray-500">
-              This mobile surface reuses the current auth and inventory APIs. No backend stock logic was changed.
+              หน้ามือถือนี้ใช้ระบบล็อกอินและ API สต๊อกชุดเดิม โดยไม่ได้เปลี่ยน logic ฝั่ง backend
             </p>
           </div>
         </div>

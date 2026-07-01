@@ -33,6 +33,25 @@ export interface LowStockItem {
   unit: string;
 }
 
+export interface ExpiringSoonItem {
+  itemId: string;
+  name: string;
+  lotNo: string;
+  expDate: string;
+  quantity: number;
+  unit: string;
+  daysUntilExpiry: number;
+}
+
+export interface WeeklyStockSummaryItem {
+  itemId: string;
+  name: string;
+  quantity: number;
+  unit: string;
+  weeklyTarget: number;
+  vendor: string;
+}
+
 export function generatePONotificationTemplate(po: PurchaseOrder) {
   const itemComponents = po.items?.map(item => ({
     type: "box",
@@ -334,9 +353,15 @@ export function generateLowStockTemplate(items: LowStockItem[]) {
         },
         {
           type: "text",
-          text: `คงเหลือ: ${item.quantity} ${item.unit}`,
+          text: `Current: ${item.quantity} ${item.unit}`,
           size: "sm",
           margin: "sm"
+        },
+        {
+          type: "text",
+          text: `Min: ${item.minThreshold} ${item.unit}`,
+          size: "xs",
+          color: "#aaaaaa"
         }
       ]
     },
@@ -364,6 +389,164 @@ export function generateLowStockTemplate(items: LowStockItem[]) {
     contents: {
       type: "carousel",
       contents: carouselBubbles
+    }
+  };
+}
+
+export function generateExpiringSoonTemplate(items: ExpiringSoonItem[]) {
+  const carouselBubbles = items.slice(0, 10).map((item) => ({
+    type: "bubble",
+    size: "micro",
+    body: {
+      type: "box",
+      layout: "vertical",
+      contents: [
+        {
+          type: "text",
+          text: "ใกล้หมดอายุ",
+          weight: "bold",
+          color: "#F97316",
+          size: "sm"
+        },
+        {
+          type: "text",
+          text: item.name,
+          weight: "bold",
+          size: "md",
+          margin: "md",
+          wrap: true
+        },
+        {
+          type: "text",
+          text: `Lot: ${item.lotNo}`,
+          size: "xs",
+          color: "#555555",
+          margin: "sm",
+          wrap: true
+        },
+        {
+          type: "text",
+          text: `หมดอายุ: ${new Date(item.expDate).toLocaleDateString("th-TH")}`,
+          size: "sm",
+          margin: "sm",
+          wrap: true
+        },
+        {
+          type: "text",
+          text: `คงเหลือ: ${item.quantity} ${item.unit}`,
+          size: "xs",
+          color: "#555555",
+          margin: "sm"
+        },
+        {
+          type: "text",
+          text: `เหลืออีก ${item.daysUntilExpiry} วัน`,
+          size: "xs",
+          color: "#F97316",
+          weight: "bold",
+          margin: "sm"
+        }
+      ]
+    },
+    footer: {
+      type: "box",
+      layout: "vertical",
+      contents: [
+        {
+          type: "button",
+          style: "primary",
+          color: "#F97316",
+          action: {
+            type: "postback",
+            label: "รับทราบ",
+            data: `action=ack_expiry&itemId=${encodeURIComponent(item.itemId)}&lotNo=${encodeURIComponent(item.lotNo)}&expDate=${encodeURIComponent(item.expDate)}`
+          }
+        }
+      ]
+    }
+  }));
+
+  return {
+    type: "flex",
+    altText: "แจ้งเตือนน้ำยาใกล้หมดอายุ",
+    contents: {
+      type: "carousel",
+      contents: carouselBubbles
+    }
+  };
+}
+
+export function generateWeeklyStockSummaryTemplate(vendor: string, items: WeeklyStockSummaryItem[]) {
+  const itemRows = items.slice(0, 12).map((item) => ({
+    type: "box",
+    layout: "horizontal",
+    margin: "md",
+    contents: [
+      {
+        type: "text",
+        text: item.name,
+        size: "xs",
+        color: "#111111",
+        wrap: true,
+        flex: 4
+      },
+      {
+        type: "text",
+        text: `${item.quantity} ${item.unit}`,
+        size: "xs",
+        color: "#2563EB",
+        align: "end",
+        flex: 2
+      }
+    ]
+  }));
+
+  return {
+    type: "flex",
+    altText: `สรุปสต๊อกรายสัปดาห์ของ ${vendor}`,
+    contents: {
+      type: "bubble",
+      header: {
+        type: "box",
+        layout: "vertical",
+        contents: [
+          {
+            type: "text",
+            text: "WEEKLY STOCK",
+            color: "#ffffff",
+            weight: "bold",
+            size: "sm"
+          },
+          {
+            type: "text",
+            text: vendor,
+            color: "#ffffff",
+            weight: "bold",
+            size: "lg",
+            margin: "sm",
+            wrap: true
+          }
+        ],
+        backgroundColor: "#2563EB"
+      },
+      body: {
+        type: "box",
+        layout: "vertical",
+        contents: [
+          {
+            type: "text",
+            text: "สรุปปริมาณน้ำยาคงเหลือประจำสัปดาห์หลังการนับ",
+            size: "xs",
+            color: "#555555",
+            wrap: true
+          },
+          {
+            type: "separator",
+            margin: "lg"
+          },
+          ...itemRows
+        ]
+      }
     }
   };
 }

@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import { apiClient, Reagent, Lot } from '@/lib/api-client';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { apiClient, BarcodePattern, Lot, Reagent } from '@/lib/api-client';
 import { findMatchingReagent } from '@/lib/barcode-parser';
 import QRScanner from '@/components/qr-scanner';
 import { 
@@ -28,11 +28,9 @@ interface CartItem {
   availableLots: Lot[];
 }
 
-const createCartId = (itemId: string) => `${itemId}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-
 export default function DispensePage() {
   const [reagents, setReagents] = useState<Reagent[]>([]);
-  const [patterns, setPatterns] = useState<any[]>([]);
+  const [patterns, setPatterns] = useState<BarcodePattern[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -41,8 +39,14 @@ export default function DispensePage() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error', msg: string } | null>(null);
   const [showResults, setShowResults] = useState(false);
+  const cartIdRef = useRef(0);
 
-  const loadLookupData = useCallback(async () => {
+  const createCartId = (itemId: string) => {
+    cartIdRef.current += 1;
+    return `${itemId}-${cartIdRef.current}`;
+  };
+
+  const loadLookupData = async () => {
     setLoading(true);
     setLoadError('');
     try {
@@ -59,12 +63,46 @@ export default function DispensePage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  };
 
   // Load reagents for lookup
   useEffect(() => {
-    loadLookupData();
-  }, [loadLookupData]);
+    let active = true;
+
+    const fetchInitialLookupData = async () => {
+      try {
+        const [reagentsData, patternsData] = await Promise.all([
+          apiClient.getDashboard(),
+          apiClient.getBarcodePatterns()
+        ]);
+
+        if (!active) {
+          return;
+        }
+
+        setReagents(reagentsData);
+        setPatterns(patternsData);
+      } catch (err: unknown) {
+        if (!active) {
+          return;
+        }
+
+        console.error(err);
+        const error = err as { response?: { data?: { error?: string } }, message?: string };
+        setLoadError(error.response?.data?.error || error.message || 'Unable to load lookup data');
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void fetchInitialLookupData();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const addToCart = (match: Reagent, lotOverride?: string) => {
     if (match.lots.length === 0) {
@@ -106,7 +144,7 @@ export default function DispensePage() {
     setFeedback({ type: 'success', msg: `เพิ่ม ${match.name} (Lot: ${selectedLot.lotNo}) ลงตะกร้าแล้ว` });
   };
 
-  const handleScan = useCallback((decodedText: string) => {
+  const handleScan = (decodedText: string) => {
     const { data, match, lookupValues } = findMatchingReagent(decodedText, patterns, reagents);
     if (!data) {
       setFeedback({ type: 'error', msg: 'ไม่สามารถอ่าน QR/Barcode นี้ได้ กรุณาลองใหม่' });
@@ -123,7 +161,7 @@ export default function DispensePage() {
       setFeedback({ type: 'error', msg: `ไม่พบข้อมูลในระบบ | code: ${parsedId} | lot: ${parsedLot} | keys: ${lookupValues.join(', ') || '-'}` });
       setScanMode(false);
     }
-  }, [reagents, patterns]);
+  };
 
   const filteredResults = useMemo(() => {
     if (!search.trim()) return [];

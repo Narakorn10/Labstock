@@ -44,7 +44,15 @@ export default function QRScanner({ onScan, onClose }: QRScannerProps) {
         // Beep Sound Generator
         const playBeep = () => {
           try {
-            const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const AudioContextCtor =
+              window.AudioContext ||
+              (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+
+            if (!AudioContextCtor) {
+              return;
+            }
+
+            const audioCtx = new AudioContextCtor();
             const oscillator = audioCtx.createOscillator();
             const gainNode = audioCtx.createGain();
             oscillator.connect(gainNode);
@@ -90,7 +98,7 @@ export default function QRScanner({ onScan, onClose }: QRScannerProps) {
       } catch (err) {
         const error = err as Error;
         console.error("Scanner Error:", error);
-        setError("ไม่สามารถเปิดกล้องได้: " + error.message);
+        setError("Ã Â¹â€žÃ Â¸Â¡Ã Â¹Ë†Ã Â¸ÂªÃ Â¸Â²Ã Â¸Â¡Ã Â¸Â²Ã Â¸Â£Ã Â¸â€“Ã Â¹â‚¬Ã Â¸â€ºÃ Â¸Â´Ã Â¸â€Ã Â¸ÂÃ Â¸Â¥Ã Â¹â€°Ã Â¸Â­Ã Â¸â€¡Ã Â¹â€žÃ Â¸â€Ã Â¹â€°: " + error.message);
       }
     };
 
@@ -116,7 +124,7 @@ export default function QRScanner({ onScan, onClose }: QRScannerProps) {
         )}
 
         {/* Scanning Overlay (Visual only) */}
-        {!error && isScannerStarted && !isSuccess && (
+        {!error && isScannerStarted && !isSuccess && !isProcessing && (
           <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
             <div className="w-[250px] h-[250px] border-2 border-blue-500 rounded-lg animate-pulse">
               <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-white"></div>
@@ -138,7 +146,7 @@ export default function QRScanner({ onScan, onClose }: QRScannerProps) {
               className="px-6 py-2 bg-white text-black rounded-full font-bold flex items-center gap-2"
             >
               <RotateCcw size={18} />
-              Retry
+              à¸¥à¸­à¸‡à¹ƒà¸«à¸¡à¹ˆ
             </button>
           </div>
         )}
@@ -146,7 +154,7 @@ export default function QRScanner({ onScan, onClose }: QRScannerProps) {
 
       <div className="mt-8 flex flex-col items-center gap-4 w-full">
         <p className="text-white/60 text-sm font-medium animate-pulse">
-          Position the barcode inside the frame
+          à¸§à¸²à¸‡à¸šà¸²à¸£à¹Œà¹‚à¸„à¹‰à¸”à¹ƒà¸«à¹‰à¸­à¸¢à¸¹à¹ˆà¸ à¸²à¸¢à¹ƒà¸™à¸à¸£à¸­à¸š
         </p>
         
         <div className="flex gap-4">

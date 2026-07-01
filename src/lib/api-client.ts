@@ -84,6 +84,15 @@ export interface BatchItem {
   note?: string;
 }
 
+export interface WeeklyStockNotificationItem {
+  itemId: string;
+  name: string;
+  quantity: number;
+  unit: string;
+  weeklyTarget: number;
+  vendor: string;
+}
+
 export interface User {
   username: string;
   name: string;
@@ -300,6 +309,16 @@ export const apiClient = {
 
   runRawQuery: async (query: string, params?: unknown[]) => {
     const res = await instance.post<ApiResponse<Record<string, unknown>[]>>('/api/raw-query', { query, params });
+    return res.data;
+  },
+
+  sendWeeklyStockSummary: async (items: WeeklyStockNotificationItem[]) => {
+    const res = await instance.post<ApiResponse>('/api/notifications/weekly-stock-summary', { items });
+    return res.data;
+  },
+
+  sendVendorLowStockAlert: async () => {
+    const res = await instance.post<ApiResponse>('/api/notifications/vendor-low-stock');
     return res.data;
   }
 };

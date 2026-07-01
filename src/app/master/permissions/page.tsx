@@ -6,6 +6,18 @@ import { useAuth } from '@/components/auth-provider';
 import { apiClient, RolePermission } from '@/lib/api-client';
 import { ALL_MENUS, ROLES } from '@/lib/menu-config';
 
+function normalizePermissions(data: RolePermission[]) {
+  return ROLES.map((role) => {
+    const existing = data.find((permission) => permission.role === role);
+
+    return {
+      role,
+      allowed_menus: existing?.allowed_menus || [],
+      updated_at: existing?.updated_at
+    };
+  });
+}
+
 export default function PermissionsPage() {
   const { user } = useAuth();
   const [permissions, setPermissions] = useState<RolePermission[]>([]);
@@ -13,13 +25,18 @@ export default function PermissionsPage() {
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const applyPermissionsResponse = (data: RolePermission[] | RolePermission) => {
+    if (Array.isArray(data)) {
+      setPermissions(normalizePermissions(data));
+    }
+  };
+
   const fetchPermissions = async () => {
     setLoading(true);
+    setError(null);
     try {
       const data = await apiClient.getPermissions();
-      if (Array.isArray(data)) {
-        setPermissions(data);
-      }
+      applyPermissionsResponse(data);
     } catch (err) {
       console.error('Failed to fetch permissions:', err);
       setError('ไม่สามารถดึงข้อมูลสิทธิ์ได้');
@@ -29,13 +46,47 @@ export default function PermissionsPage() {
   };
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchPermissions();
+    let active = true;
+
+    const loadInitialPermissions = async () => {
+      try {
+        const data = await apiClient.getPermissions();
+        if (!active) {
+          return;
+        }
+
+        setError(null);
+        applyPermissionsResponse(data);
+      } catch (err) {
+        if (!active) {
+          return;
+        }
+
+        console.error('Failed to fetch permissions:', err);
+        setError('ไม่สามารถดึงข้อมูลสิทธิ์ได้');
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void loadInitialPermissions();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   const togglePermission = (role: string, menuId: string) => {
-    setPermissions((prev) => prev.map((permission) => {
-      if (permission.role === role) {
+    setPermissions((prev) => {
+      const source = prev.length > 0 ? prev : normalizePermissions([]);
+
+      return source.map((permission) => {
+        if (permission.role !== role) {
+          return permission;
+        }
+
         const hasMenu = permission.allowed_menus.includes(menuId);
         return {
           ...permission,
@@ -43,21 +94,24 @@ export default function PermissionsPage() {
             ? permission.allowed_menus.filter((id) => id !== menuId)
             : [...permission.allowed_menus, menuId],
         };
-      }
-      return permission;
-    }));
+      });
+    });
   };
 
   const savePermissions = async (role: string) => {
-    const roleData = permissions.find((permission) => permission.role === role);
-    if (!roleData) return;
+    const roleData = permissions.find((permission) => permission.role === role) || {
+      role,
+      allowed_menus: []
+    };
 
     setSaving(role);
+    setError(null);
     try {
       await apiClient.updatePermissions(role, roleData.allowed_menus);
       setTimeout(() => setSaving(null), 500);
     } catch (err) {
       console.error(`Failed to save permissions for ${role}:`, err);
+      setError(`Unable to save permissions for ${role}`);
       alert(`ไม่สามารถบันทึกสิทธิ์สำหรับ ${role} ได้`);
       setSaving(null);
     }

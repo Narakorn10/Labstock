@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import Modal from '@/components/modal';
-import { BarcodePattern, Lot, Reagent } from '@/lib/api-client';
+import { BarcodePattern, ล็อต, Reagent } from '@/lib/api-client';
 import { findMatchingReagent } from '@/lib/barcode-parser';
 import QRScanner from '@/components/qr-scanner';
 import {
@@ -24,7 +24,7 @@ type WorkflowMode = 'receive' | 'dispense';
 interface MobileStockWorkflowProps {
   mode: WorkflowMode;
   deepLinkCode?: string;
-  deepLinkLot?: string;
+  deepLinkล็อต?: string;
 }
 
 interface MobileCartItem {
@@ -36,7 +36,7 @@ interface MobileCartItem {
   unit: string;
   expDate: string;
   maxQty?: number;
-  availableLots?: Lot[];
+  availableล็อตs?: ล็อต[];
 }
 
 interface MobileLookupResponse {
@@ -44,7 +44,7 @@ interface MobileLookupResponse {
   patterns: BarcodePattern[];
 }
 
-interface RememberedApprover {
+interface Rememberedผู้อนุมัติ {
   username: string;
   name: string;
   role: string;
@@ -53,14 +53,14 @@ interface RememberedApprover {
 const createCartId = (itemId: string) => `${itemId}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 const MOBILE_APPROVER_STORAGE_KEY = 'labstock_mobile_approver';
 
-const readStoredApprover = (): RememberedApprover | null => {
+const readStoredผู้อนุมัติ = (): Rememberedผู้อนุมัติ | null => {
   if (typeof window === 'undefined') return null;
 
   try {
     const raw = localStorage.getItem(MOBILE_APPROVER_STORAGE_KEY);
     if (!raw) return null;
 
-    const parsed = JSON.parse(raw) as Partial<RememberedApprover>;
+    const parsed = JSON.parse(raw) as Partial<Rememberedผู้อนุมัติ>;
     if (!parsed.username || !parsed.name || !parsed.role) return null;
 
     return {
@@ -74,7 +74,7 @@ const readStoredApprover = (): RememberedApprover | null => {
   }
 };
 
-export default function MobileStockWorkflow({ mode, deepLinkCode = '', deepLinkLot = '' }: MobileStockWorkflowProps) {
+export default function MobileStockWorkflow({ mode, deepLinkCode = '', deepLinkล็อต = '' }: MobileStockWorkflowProps) {
   const [reagents, setReagents] = useState<Reagent[]>([]);
   const [patterns, setPatterns] = useState<BarcodePattern[]>([]);
   const [loading, setLoading] = useState(true);
@@ -86,11 +86,11 @@ export default function MobileStockWorkflow({ mode, deepLinkCode = '', deepLinkL
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
   const [showResults, setShowResults] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [approverUsername, setApproverUsername] = useState(() => readStoredApprover()?.username || '');
-  const [approverPin, setApproverPin] = useState('');
+  const [approverชื่อผู้ใช้, setผู้อนุมัติชื่อผู้ใช้] = useState(() => readStoredผู้อนุมัติ()?.username || '');
+  const [approverPin, setผู้อนุมัติPin] = useState('');
   const [confirmError, setConfirmError] = useState('');
-  const [rememberedApprover, setRememberedApprover] = useState<RememberedApprover | null>(() => readStoredApprover());
-  const [changeApproverMode, setChangeApproverMode] = useState(false);
+  const [rememberedผู้อนุมัติ, setRememberedผู้อนุมัติ] = useState<Rememberedผู้อนุมัติ | null>(() => readStoredผู้อนุมัติ());
+  const [changeผู้อนุมัติMode, setChangeผู้อนุมัติMode] = useState(false);
   const processedDeepLinkRef = useRef('');
 
   const isReceive = mode === 'receive';
@@ -103,7 +103,7 @@ export default function MobileStockWorkflow({ mode, deepLinkCode = '', deepLinkL
       const data = await response.json() as MobileLookupResponse & { error?: string };
 
       if (!response.ok) {
-        throw new Error(data.error || 'Unable to load mobile workflow data');
+        throw new Error(data.error || 'ไม่สามารถโหลดข้อมูลหน้า mobile ได้');
       }
 
       setReagents(data.reagents);
@@ -111,7 +111,7 @@ export default function MobileStockWorkflow({ mode, deepLinkCode = '', deepLinkL
     } catch (err: unknown) {
       console.error(err);
       const error = err as { message?: string };
-      setLoadError(error.message || 'Unable to load mobile workflow data');
+      setLoadError(error.message || 'ไม่สามารถโหลดข้อมูลหน้า mobile ได้');
     } finally {
       setLoading(false);
     }
@@ -151,35 +151,35 @@ export default function MobileStockWorkflow({ mode, deepLinkCode = '', deepLinkL
       return [newItem, ...prev];
     });
 
-    setFeedback({ type: 'success', msg: `Added ${match.name} to receive queue.` });
+    setFeedback({ type: 'success', msg: `เพิ่ม ${match.name} เข้าในคิวรับเข้าแล้ว` });
   };
 
   const addDispenseItem = (match: Reagent, lotOverride?: string) => {
     if (match.lots.length === 0) {
-      setFeedback({ type: 'error', msg: `No available stock for ${match.name}.` });
+      setFeedback({ type: 'error', msg: `ไม่พบสต๊อกที่พร้อมใช้งานสำหรับ ${match.name}` });
       return;
     }
 
-    const sortedLots = [...match.lots].sort(
+    const sortedล็อตs = [...match.lots].sort(
       (a, b) => new Date(a.expDate).getTime() - new Date(b.expDate).getTime()
     );
-    let selectedLot = sortedLots[0];
+    let selectedล็อต = sortedล็อตs[0];
 
     if (lotOverride) {
-      const exactLot = sortedLots.find((lot) => lot.lotNo.toLowerCase() === lotOverride.toLowerCase());
-      if (exactLot) selectedLot = exactLot;
+      const exactล็อต = sortedล็อตs.find((lot) => lot.lotNo.toLowerCase() === lotOverride.toLowerCase());
+      if (exactล็อต) selectedล็อต = exactล็อต;
     }
 
     const newItem: MobileCartItem = {
       cartId: createCartId(match.itemId),
       itemId: match.itemId,
       name: match.name,
-      lotNo: selectedLot.lotNo,
-      expDate: selectedLot.expDate,
+      lotNo: selectedล็อต.lotNo,
+      expDate: selectedล็อต.expDate,
       qty: 1,
       unit: match.unit,
-      maxQty: selectedLot.qty,
-      availableLots: sortedLots,
+      maxQty: selectedล็อต.qty,
+      availableล็อตs: sortedล็อตs,
     };
 
     setCart((prev) => {
@@ -194,7 +194,7 @@ export default function MobileStockWorkflow({ mode, deepLinkCode = '', deepLinkL
       return [newItem, ...prev];
     });
 
-    setFeedback({ type: 'success', msg: `Added ${match.name} (${selectedLot.lotNo}) to dispense queue.` });
+    setFeedback({ type: 'success', msg: `Added ${match.name} (${selectedล็อต.lotNo}) to dispense queue.` });
   };
 
   const addToCart = useCallback(
@@ -214,7 +214,7 @@ export default function MobileStockWorkflow({ mode, deepLinkCode = '', deepLinkL
   useEffect(() => {
     if (isReceive || loading || !deepLinkCode) return;
 
-    const deepLinkKey = `${deepLinkCode}::${deepLinkLot}`;
+    const deepLinkKey = `${deepLinkCode}::${deepLinkล็อต}`;
     if (processedDeepLinkRef.current === deepLinkKey) return;
 
     const { data, match, lookupValues } = findMatchingReagent(deepLinkCode, patterns, reagents);
@@ -222,43 +222,43 @@ export default function MobileStockWorkflow({ mode, deepLinkCode = '', deepLinkL
 
     queueMicrotask(() => {
       if (!data) {
-        setFeedback({ type: 'error', msg: 'Could not read this dispense QR link.' });
+        setFeedback({ type: 'error', msg: 'ไม่สามารถอ่าน QR link สำหรับเบิกจ่ายนี้ได้' });
         return;
       }
 
       if (!match) {
         const parsedId = data.gtin || data.rawString || '-';
-        const parsedLot = deepLinkLot || (data.lot === 'NEED_MANUAL_INPUT' ? '-' : data.lot);
+        const parsedล็อต = deepLinkล็อต || (data.lot === 'NEED_MANUAL_INPUT' ? '-' : data.lot);
         setFeedback({
           type: 'error',
-          msg: `No reagent match found from link. code: ${parsedId} | lot: ${parsedLot} | keys: ${lookupValues.join(', ') || '-'}`,
+          msg: `No reagent match found from link. code: ${parsedId} | lot: ${parsedล็อต} | keys: ${lookupValues.join(', ') || '-'}`,
         });
         return;
       }
 
       addToCart(
         match,
-        deepLinkLot || (data.lot === 'NEED_MANUAL_INPUT' ? '' : data.lot),
+        deepLinkล็อต || (data.lot === 'NEED_MANUAL_INPUT' ? '' : data.lot),
         data.expDate === 'NEED_MANUAL_INPUT' ? '' : data.expDate
       );
     });
-  }, [addToCart, deepLinkCode, deepLinkLot, isReceive, loading, patterns, reagents]);
+  }, [addToCart, deepLinkCode, deepLinkล็อต, isReceive, loading, patterns, reagents]);
 
   const handleScan = useCallback(
     (decodedText: string) => {
       const { data, match, lookupValues } = findMatchingReagent(decodedText, patterns, reagents);
       if (!data) {
-        setFeedback({ type: 'error', msg: 'Could not read this barcode.' });
+        setFeedback({ type: 'error', msg: 'ไม่สามารถอ่านบาร์โค้ดนี้ได้' });
         setScanMode(false);
         return;
       }
 
       if (!match) {
         const parsedId = data.gtin || data.rawString || '-';
-        const parsedLot = data.lot === 'NEED_MANUAL_INPUT' ? '-' : data.lot;
+        const parsedล็อต = data.lot === 'NEED_MANUAL_INPUT' ? '-' : data.lot;
         setFeedback({
           type: 'error',
-          msg: `No reagent match found. code: ${parsedId} | lot: ${parsedLot} | keys: ${lookupValues.join(', ') || '-'}`,
+          msg: `No reagent match found. code: ${parsedId} | lot: ${parsedล็อต} | keys: ${lookupValues.join(', ') || '-'}`,
         });
         setScanMode(false);
         return;
@@ -302,19 +302,19 @@ export default function MobileStockWorkflow({ mode, deepLinkCode = '', deepLinkL
     setCart((prev) => prev.map((item) => (item.cartId === cartId ? { ...item, [field]: value } : item)));
   };
 
-  const updateDispenseLot = (cartId: string, selectedLotNo: string) => {
+  const updateDispenseล็อต = (cartId: string, selectedล็อตNo: string) => {
     setCart((prev) => {
       const currentItem = prev.find((item) => item.cartId === cartId);
-      if (!currentItem?.availableLots) return prev;
+      if (!currentItem?.availableล็อตs) return prev;
 
-      const selectedLot = currentItem.availableLots.find((lot) => lot.lotNo === selectedLotNo);
-      if (!selectedLot) return prev;
+      const selectedล็อต = currentItem.availableล็อตs.find((lot) => lot.lotNo === selectedล็อตNo);
+      if (!selectedล็อต) return prev;
 
       const duplicateItem = prev.find(
         (item) =>
           item.cartId !== cartId &&
           item.itemId === currentItem.itemId &&
-          item.lotNo === selectedLot.lotNo
+          item.lotNo === selectedล็อต.lotNo
       );
 
       if (duplicateItem) {
@@ -331,10 +331,10 @@ export default function MobileStockWorkflow({ mode, deepLinkCode = '', deepLinkL
         item.cartId === cartId
           ? {
               ...item,
-              lotNo: selectedLot.lotNo,
-              expDate: selectedLot.expDate,
-              maxQty: selectedLot.qty,
-              qty: Math.min(item.qty, selectedLot.qty),
+              lotNo: selectedล็อต.lotNo,
+              expDate: selectedล็อต.expDate,
+              maxQty: selectedล็อต.qty,
+              qty: Math.min(item.qty, selectedล็อต.qty),
             }
           : item
       );
@@ -344,12 +344,12 @@ export default function MobileStockWorkflow({ mode, deepLinkCode = '', deepLinkL
   const openConfirm = () => {
     const validItems = cart.filter((item) => item.qty > 0);
     if (validItems.length === 0) {
-      setFeedback({ type: 'error', msg: 'Please enter a quantity greater than 0.' });
+      setFeedback({ type: 'error', msg: 'กรุณาระบุจำนวนที่มากกว่า 0' });
       return;
     }
 
     setConfirmError('');
-    setChangeApproverMode(!rememberedApprover);
+    setChangeผู้อนุมัติMode(!rememberedผู้อนุมัติ);
     setConfirmOpen(true);
   };
 
@@ -357,14 +357,14 @@ export default function MobileStockWorkflow({ mode, deepLinkCode = '', deepLinkL
     const validItems = cart.filter((item) => item.qty > 0);
 
     if (validItems.length === 0) {
-      setConfirmError('Please enter a quantity greater than 0.');
+      setConfirmError('กรุณาระบุจำนวนที่มากกว่า 0');
       return;
     }
 
-    const submitUsername = (changeApproverMode ? approverUsername : rememberedApprover?.username || approverUsername).trim();
+    const submitชื่อผู้ใช้ = (changeผู้อนุมัติMode ? approverชื่อผู้ใช้ : rememberedผู้อนุมัติ?.username || approverชื่อผู้ใช้).trim();
 
-    if (!submitUsername || !approverPin.trim()) {
-      setConfirmError(changeApproverMode || !rememberedApprover ? 'Username and PIN are required.' : 'PIN is required.');
+    if (!submitชื่อผู้ใช้ || !approverPin.trim()) {
+      setConfirmError(changeผู้อนุมัติMode || !rememberedผู้อนุมัติ ? 'ชื่อผู้ใช้ and PIN are required.' : 'กรุณากรอก PIN');
       return;
     }
 
@@ -377,7 +377,7 @@ export default function MobileStockWorkflow({ mode, deepLinkCode = '', deepLinkL
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           mode,
-          username: submitUsername,
+          username: submitชื่อผู้ใช้,
           pin: approverPin.trim(),
           batchItems: validItems,
         }),
@@ -385,51 +385,51 @@ export default function MobileStockWorkflow({ mode, deepLinkCode = '', deepLinkL
 
       const result = await response.json() as { error?: string; approver?: { username?: string; name: string; role: string } };
       if (!response.ok) {
-        throw new Error(result.error || 'Request failed.');
+        throw new Error(result.error || 'ส่งรายการไม่สำเร็จ');
       }
 
-      const nextApprover = {
-        username: result.approver?.username || submitUsername,
-        name: result.approver?.name || submitUsername,
+      const nextผู้อนุมัติ = {
+        username: result.approver?.username || submitชื่อผู้ใช้,
+        name: result.approver?.name || submitชื่อผู้ใช้,
         role: result.approver?.role || 'User',
       };
 
-      setRememberedApprover(nextApprover);
-      setApproverUsername(nextApprover.username);
-      setChangeApproverMode(false);
+      setRememberedผู้อนุมัติ(nextผู้อนุมัติ);
+      setผู้อนุมัติชื่อผู้ใช้(nextผู้อนุมัติ.username);
+      setChangeผู้อนุมัติMode(false);
       if (typeof window !== 'undefined') {
-        localStorage.setItem(MOBILE_APPROVER_STORAGE_KEY, JSON.stringify(nextApprover));
+        localStorage.setItem(MOBILE_APPROVER_STORAGE_KEY, JSON.stringify(nextผู้อนุมัติ));
       }
 
       setFeedback({
         type: 'success',
         msg: isReceive
-          ? `Received ${validItems.length} item(s). Approved by ${result.approver?.name || submitUsername}.`
-          : `Dispensed ${validItems.length} item(s). Approved by ${result.approver?.name || submitUsername}.`,
+          ? `Received ${validItems.length} item(s). Approved by ${result.approver?.name || submitชื่อผู้ใช้}.`
+          : `Dispensed ${validItems.length} item(s). Approved by ${result.approver?.name || submitชื่อผู้ใช้}.`,
       });
       setCart([]);
-      setApproverPin('');
+      setผู้อนุมัติPin('');
       setConfirmOpen(false);
       await loadLookupData();
     } catch (err: unknown) {
       const error = err as { message?: string };
-      setConfirmError(error.message || 'Request failed.');
+      setConfirmError(error.message || 'ส่งรายการไม่สำเร็จ');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const pageTitle = isReceive ? 'Mobile Receive' : 'Mobile Dispense';
+  const pageTitle = isReceive ? 'รับเข้าบนมือถือ' : 'เบิกจ่ายบนมือถือ';
   const pageDescription = isReceive
-    ? 'Scanner-first receive flow with large controls and quick lot entry.'
-    : 'Scanner-first dispense flow with FEFO default and quick lot selection.';
-  const activeApproverUsername = (changeApproverMode ? approverUsername : rememberedApprover?.username || approverUsername).trim();
+    ? 'ขั้นตอนรับเข้าแบบเน้นสแกนก่อน ปุ่มใหญ่ และกรอกล็อตได้รวดเร็ว'
+    : 'ขั้นตอนเบิกจ่ายแบบเน้นสแกนก่อน ใช้ FEFO อัตโนมัติ และเลือกล็อตได้รวดเร็ว';
+  const activeผู้อนุมัติชื่อผู้ใช้ = (changeผู้อนุมัติMode ? approverชื่อผู้ใช้ : rememberedผู้อนุมัติ?.username || approverชื่อผู้ใช้).trim();
 
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-4 px-6">
         <Loader2 className="animate-spin text-blue-600" size={42} />
-        <p className="text-sm font-bold text-gray-500">Loading mobile workflow...</p>
+        <p className="text-sm font-bold text-gray-500">กำลังโหลดหน้าการทำงานบนมือถือ...</p>
       </div>
     );
   }
@@ -443,7 +443,7 @@ export default function MobileStockWorkflow({ mode, deepLinkCode = '', deepLinkL
               <ArrowLeft size={20} />
             </Link>
             <div className="text-right">
-              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Scanner First</p>
+              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">สแกนก่อน</p>
               <h1 className="text-xl font-black text-gray-900">{pageTitle}</h1>
             </div>
           </div>
@@ -481,7 +481,7 @@ export default function MobileStockWorkflow({ mode, deepLinkCode = '', deepLinkL
             {feedback.type === 'success' ? <CheckCircle size={18} /> : <XCircle size={18} />}
             <p className="text-sm font-bold flex-1">{feedback.msg}</p>
             <button onClick={() => setFeedback(null)} className="text-xs font-black uppercase">
-              Close
+              ปิด
             </button>
           </div>
         )}
@@ -500,7 +500,7 @@ export default function MobileStockWorkflow({ mode, deepLinkCode = '', deepLinkL
             }`}
           >
             <Camera size={22} />
-            Scan Barcode
+            สแกนบาร์โค้ด
           </button>
 
           <form onSubmit={handleManualAdd} className="space-y-3">
@@ -514,7 +514,7 @@ export default function MobileStockWorkflow({ mode, deepLinkCode = '', deepLinkL
                   setShowResults(true);
                 }}
                 onFocus={() => setShowResults(true)}
-                placeholder="Type item ID, name, or barcode..."
+                placeholder="พิมพ์รหัส ชื่อน้ำยา หรือบาร์โค้ด..."
                 className="w-full h-14 pl-11 pr-4 rounded-2xl border border-gray-200 bg-gray-50 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500"
               />
               {showResults && filteredResults.length > 0 && (
@@ -527,7 +527,7 @@ export default function MobileStockWorkflow({ mode, deepLinkCode = '', deepLinkL
                       className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-50 last:border-none"
                     >
                       <p className="text-sm font-black text-gray-900">{item.name}</p>
-                      <p className="text-[10px] font-bold text-gray-400 uppercase">ID: {item.itemId}</p>
+                      <p className="text-[10px] font-bold text-gray-400 uppercase">รหัส: {item.itemId}</p>
                     </button>
                   ))}
                 </div>
@@ -535,7 +535,7 @@ export default function MobileStockWorkflow({ mode, deepLinkCode = '', deepLinkL
               {showResults && <div className="fixed inset-0 z-0" onClick={() => setShowResults(false)} />}
             </div>
             <button type="submit" className="w-full h-12 rounded-2xl bg-slate-900 text-white text-sm font-black">
-              Add Manually
+              เพิ่มด้วยตนเอง
             </button>
           </form>
         </div>
@@ -543,12 +543,12 @@ export default function MobileStockWorkflow({ mode, deepLinkCode = '', deepLinkL
         <div className="bg-white rounded-[2rem] border border-gray-100 shadow-sm p-4 space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Queue</p>
-              <h2 className="text-lg font-black text-gray-900">{cart.length} item(s)</h2>
+              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">คิวรายการ</p>
+              <h2 className="text-lg font-black text-gray-900">{cart.length} รายการ</h2>
             </div>
             {cart.length > 0 && (
               <button onClick={() => setCart([])} className="text-xs font-black uppercase text-red-500">
-                Clear
+                ล้างทั้งหมด
               </button>
             )}
           </div>
@@ -556,7 +556,7 @@ export default function MobileStockWorkflow({ mode, deepLinkCode = '', deepLinkL
           {cart.length === 0 ? (
             <div className="rounded-[1.5rem] border-2 border-dashed border-gray-100 bg-gray-50 p-8 text-center">
               {isReceive ? <PackagePlus className="mx-auto text-gray-300 mb-3" size={40} /> : <HandHelping className="mx-auto text-gray-300 mb-3" size={40} />}
-              <p className="text-sm font-bold text-gray-400">Scan or search to start.</p>
+              <p className="text-sm font-bold text-gray-400">เริ่มต้นด้วยการสแกนหรือค้นหา</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -565,7 +565,7 @@ export default function MobileStockWorkflow({ mode, deepLinkCode = '', deepLinkL
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <h3 className="text-sm font-black text-gray-900 truncate">{item.name}</h3>
-                      <p className="text-[10px] font-bold text-gray-400 uppercase">ID: {item.itemId}</p>
+                      <p className="text-[10px] font-bold text-gray-400 uppercase">รหัส: {item.itemId}</p>
                     </div>
                     <button onClick={() => removeFromCart(item.cartId)} className="w-10 h-10 rounded-2xl bg-white text-gray-400 flex items-center justify-center">
                       <Trash2 size={16} />
@@ -578,7 +578,7 @@ export default function MobileStockWorkflow({ mode, deepLinkCode = '', deepLinkL
                         type="text"
                         value={item.lotNo}
                         onChange={(e) => updateReceiveField(item.cartId, 'lotNo', e.target.value)}
-                        placeholder="Lot number"
+                        placeholder="ล็อต number"
                         className="h-12 rounded-2xl border border-gray-200 bg-white px-4 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500"
                       />
                       <input
@@ -590,13 +590,13 @@ export default function MobileStockWorkflow({ mode, deepLinkCode = '', deepLinkL
                     </div>
                   ) : (
                     <div className="space-y-2">
-                      <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Lot</label>
+                      <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">ล็อต</label>
                       <select
                         value={item.lotNo}
-                        onChange={(e) => updateDispenseLot(item.cartId, e.target.value)}
+                        onChange={(e) => updateDispenseล็อต(item.cartId, e.target.value)}
                         className="w-full h-12 rounded-2xl border border-gray-200 bg-white px-4 text-sm font-bold outline-none focus:ring-2 focus:ring-red-500"
                       >
-                        {item.availableLots?.map((lot) => (
+                        {item.availableล็อตs?.map((lot) => (
                           <option key={`${item.itemId}-${lot.lotNo}`} value={lot.lotNo}>
                             {lot.lotNo}
                           </option>
@@ -604,7 +604,7 @@ export default function MobileStockWorkflow({ mode, deepLinkCode = '', deepLinkL
                       </select>
                       <p className="text-[11px] font-bold text-gray-500 flex items-center gap-2">
                         <Calendar size={12} />
-                        EXP {item.expDate} | Max {item.maxQty} {item.unit}
+                        หมดอายุ {item.expDate} | สูงสุด {item.maxQty} {item.unit}
                       </p>
                     </div>
                   )}
@@ -619,7 +619,7 @@ export default function MobileStockWorkflow({ mode, deepLinkCode = '', deepLinkL
                       className="flex-1 h-12 rounded-2xl border border-gray-200 bg-white px-4 text-center text-lg font-black text-gray-900 outline-none focus:ring-2 focus:ring-blue-500"
                     />
                     <div className="min-w-16 text-center">
-                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Unit</p>
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">หน่วย</p>
                       <p className="text-sm font-black text-gray-700">{item.unit}</p>
                     </div>
                   </div>
@@ -641,7 +641,7 @@ export default function MobileStockWorkflow({ mode, deepLinkCode = '', deepLinkL
               } disabled:opacity-50`}
             >
               {submitting ? <Loader2 size={22} className="animate-spin" /> : <CheckCircle size={22} />}
-              {isReceive ? `Confirm Receive ${cart.length}` : `Confirm Dispense ${cart.length}`}
+              {isReceive ? `ยืนยันรับเข้า ${cart.length} รายการ` : `ยืนยันเบิกจ่าย ${cart.length} รายการ`}
             </button>
           </div>
         </div>
@@ -649,54 +649,54 @@ export default function MobileStockWorkflow({ mode, deepLinkCode = '', deepLinkL
 
       <Modal
         isOpen={confirmOpen}
-        onClose={() => {
+        onปิด={() => {
           if (!submitting) {
             setConfirmOpen(false);
             setConfirmError('');
-            setApproverPin('');
-            setChangeApproverMode(!rememberedApprover);
+            setผู้อนุมัติPin('');
+            setChangeผู้อนุมัติMode(!rememberedผู้อนุมัติ);
           }
         }}
-        title={isReceive ? 'Approve Receive' : 'Approve Dispense'}
+        title={isReceive ? 'อนุมัติรายการรับเข้า' : 'อนุมัติรายการเบิกจ่าย'}
         maxWidth="max-w-md"
       >
         <div className="space-y-5">
           <div className="rounded-2xl bg-gray-50 border border-gray-100 p-4">
-            <p className="text-xs font-black text-gray-400 uppercase tracking-widest">Approval Required</p>
+            <p className="text-xs font-black text-gray-400 uppercase tracking-widest">ต้องมีการอนุมัติ</p>
             <p className="mt-2 text-sm font-medium text-gray-600">
-              {rememberedApprover && !changeApproverMode
-                ? `Approve this ${isReceive ? 'receive' : 'dispense'} transaction with PIN only.`
-                : `Enter a username and PIN to approve this ${isReceive ? 'receive' : 'dispense'} transaction.`}
+              {rememberedผู้อนุมัติ && !changeผู้อนุมัติMode
+                ? `ยืนยันรายการ${isReceive ? 'รับเข้า' : 'เบิกจ่าย'}นี้ด้วย PIN`
+                : `กรอกชื่อผู้ใช้และ PIN เพื่ออนุมัติรายการ${isReceive ? 'รับเข้า' : 'เบิกจ่าย'}นี้`}
             </p>
           </div>
 
-          {rememberedApprover && !changeApproverMode ? (
+          {rememberedผู้อนุมัติ && !changeผู้อนุมัติMode ? (
             <div className="rounded-2xl bg-blue-50 border border-blue-100 p-4 space-y-2">
-              <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest">Approver</p>
-              <p className="text-sm font-black text-gray-900">{rememberedApprover.name}</p>
+              <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest">ผู้อนุมัติ</p>
+              <p className="text-sm font-black text-gray-900">{rememberedผู้อนุมัติ.name}</p>
               <p className="text-xs font-bold text-gray-500">
-                {rememberedApprover.username} • {rememberedApprover.role}
+                {rememberedผู้อนุมัติ.username} â€¢ {rememberedผู้อนุมัติ.role}
               </p>
               <button
                 type="button"
                 onClick={() => {
-                  setChangeApproverMode(true);
-                  setApproverUsername(rememberedApprover.username);
+                  setChangeผู้อนุมัติMode(true);
+                  setผู้อนุมัติชื่อผู้ใช้(rememberedผู้อนุมัติ.username);
                   setConfirmError('');
                 }}
                 className="text-xs font-black uppercase text-blue-600"
               >
-                Change Approver
+                Change ผู้อนุมัติ
               </button>
             </div>
           ) : (
             <div className="space-y-1.5">
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Username</label>
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">ชื่อผู้ใช้</label>
               <input
                 type="text"
-                value={approverUsername}
-                onChange={(e) => setApproverUsername(e.target.value)}
-                placeholder="e.g. staff01"
+                value={approverชื่อผู้ใช้}
+                onChange={(e) => setผู้อนุมัติชื่อผู้ใช้(e.target.value)}
+                placeholder="ตัวอย่าง staff01"
                 className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
               />
             </div>
@@ -709,8 +709,8 @@ export default function MobileStockWorkflow({ mode, deepLinkCode = '', deepLinkL
               inputMode="numeric"
               pattern="[0-9]*"
               value={approverPin}
-              onChange={(e) => setApproverPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              placeholder={activeApproverUsername ? `PIN for ${activeApproverUsername}` : '4-6 digits'}
+              onChange={(e) => setผู้อนุมัติPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              placeholder={activeผู้อนุมัติชื่อผู้ใช้ ? `PIN for ${activeผู้อนุมัติชื่อผู้ใช้}` : '4-6 หลัก'}
               className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
             />
           </div>
@@ -730,12 +730,12 @@ export default function MobileStockWorkflow({ mode, deepLinkCode = '', deepLinkL
             }`}
           >
             {submitting ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle size={20} />}
-            Confirm with PIN
+            ยืนยันด้วย PIN
           </button>
         </div>
       </Modal>
 
-      {scanMode && <QRScanner onScan={handleScan} onClose={() => setScanMode(false)} />}
+      {scanMode && <QRScanner onScan={handleScan} onปิด={() => setScanMode(false)} />}
     </div>
   );
 }
