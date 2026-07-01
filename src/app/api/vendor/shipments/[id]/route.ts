@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import sql from '@/lib/db';
 import { getAuthenticatedUser } from '@/lib/auth-utils';
+import { normalizeNotificationSettings, normalizePurchaseOrder } from '@/lib/notifications';
 
 export async function PATCH(
   request: Request,
@@ -8,7 +9,7 @@ export async function PATCH(
 ) {
   try {
     const user = await getAuthenticatedUser(request);
-    if (!user || (user.role !== 'Admin' && user.role !== 'Manager' && user.role !== 'User')) {
+    if (!user || (user.role !== 'Admin' && user.role !== 'Manager' && user.role !== 'User' && user.role !== 'Operator')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -91,9 +92,10 @@ export async function PATCH(
             await sql`UPDATE purchase_orders SET status = 'RECEIVED', received_at = NOW() WHERE id = ${poData[0].id}`;
 
             const { notifyUsers } = await import('@/lib/notifications');
-            const settings = await sql`SELECT * FROM notification_settings WHERE username = ${shipment.vendor}`;
+            const settingsRows = await sql`SELECT * FROM notification_settings WHERE username = ${shipment.vendor}`;
             const fullPoData = await sql`SELECT * FROM purchase_orders WHERE id = ${poData[0].id}`;
-            await notifyUsers('PO_RECEIVED', fullPoData[0], settings);
+            const settings = normalizeNotificationSettings(settingsRows);
+            await notifyUsers('PO_RECEIVED', normalizePurchaseOrder(fullPoData[0]), settings);
         }
     }
 

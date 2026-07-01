@@ -13,6 +13,20 @@ type ReplyTextMessage = {
   text: string;
 };
 
+type PurchaseOrderItem = {
+  item_name: string;
+  quantity: number;
+  unit: string;
+};
+
+type PurchaseOrderRow = {
+  id?: number;
+  po_number: string;
+  vendor: string;
+  status: string;
+  expected_date?: string | null;
+};
+
 async function ensureExpiryAcknowledgementSchema() {
   await sql`
     CREATE TABLE IF NOT EXISTS expiry_notification_logs (
@@ -128,12 +142,25 @@ export async function POST(req: Request) {
           const poData = await sql`SELECT * FROM purchase_orders WHERE po_number = ${poNumber}`;
 
           if (poData.length > 0) {
-            const itemsData = await sql`
+            const poRow = poData[0] as PurchaseOrderRow;
+            const itemsDataRows = await sql`
               SELECT item_name, quantity, unit
               FROM purchase_order_items
-              WHERE po_id = ${poData[0].id}
+              WHERE po_id = ${poRow.id}
             `;
-            const po: PurchaseOrder = { ...poData[0], items: itemsData };
+            const itemsData: PurchaseOrderItem[] = itemsDataRows.map((item) => ({
+              item_name: String(item.item_name ?? ""),
+              quantity: Number(item.quantity ?? 0),
+              unit: String(item.unit ?? ""),
+            }));
+            const po: PurchaseOrder = {
+              id: poRow.id,
+              po_number: String(poRow.po_number),
+              vendor: String(poRow.vendor),
+              status: String(poRow.status),
+              expected_date: poRow.expected_date ?? null,
+              items: itemsData,
+            };
             await replyPODetail(replyToken, po);
           } else {
             await sendReply(replyToken, {

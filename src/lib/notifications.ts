@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import { messagingApi } from '@line/bot-sdk';
 import { PurchaseOrder, LowStockItem, ExpiringSoonItem, WeeklyStockSummaryItem } from './line-flex-templates';
 
 // For Email (Nodemailer)
@@ -29,9 +30,28 @@ export async function sendEmail(to: string, subject: string, html: string) {
   }
 }
 
-export type NotifyEvent = 'PO_CREATED' | 'PO_CONFIRMED' | 'PO_SHIPPED' | 'PO_RECEIVED' | 'LOW_STOCK' | 'EXPIRING_SOON' | 'WEEKLY_STOCK' | 'TEST';
+export type NotifyEvent =
+  | 'PO_CREATED'
+  | 'PO_CONFIRMED'
+  | 'PO_SHIPPED'
+  | 'PO_RECEIVED'
+  | 'LOW_STOCK'
+  | 'EXPIRING_SOON'
+  | 'WEEKLY_STOCK'
+  | 'STOCK_RECEIVED'
+  | 'STOCK_DISPENSED'
+  | 'TEST';
+export type StockActivityPayload = {
+  actor: string;
+  items: Array<{
+    itemId: string;
+    lotNo: string;
+    qty: number;
+    name: string;
+  }>;
+};
 
-interface NotificationSetting {
+export interface NotificationSetting {
   username: string;
   email?: string | null;
   line_user_id?: string | null;
@@ -44,7 +64,44 @@ interface NotificationSetting {
   notify_weekly_summary?: boolean;
 }
 
-type NotifyPayload = PurchaseOrder | LowStockItem[] | ExpiringSoonItem[] | WeeklyStockSummaryItem[] | Record<string, never>;
+type DbRow = Record<string, unknown>;
+
+type NotifyPayload =
+  | PurchaseOrder
+  | LowStockItem[]
+  | ExpiringSoonItem[]
+  | WeeklyStockSummaryItem[]
+  | StockActivityPayload
+  | Record<string, never>;
+
+export function normalizeNotificationSettings(rows: DbRow[]): NotificationSetting[] {
+  return rows.map((row) => ({
+    username: String(row.username ?? ""),
+    email: row.email ? String(row.email) : null,
+    line_user_id: row.line_user_id ? String(row.line_user_id) : null,
+    notify_po_created: row.notify_po_created === undefined ? undefined : Boolean(row.notify_po_created),
+    notify_po_confirmed: row.notify_po_confirmed === undefined ? undefined : Boolean(row.notify_po_confirmed),
+    notify_po_shipped: row.notify_po_shipped === undefined ? undefined : Boolean(row.notify_po_shipped),
+    notify_po_received: row.notify_po_received === undefined ? undefined : Boolean(row.notify_po_received),
+    notify_low_stock: row.notify_low_stock === undefined ? undefined : Boolean(row.notify_low_stock),
+    notify_expiring_soon: row.notify_expiring_soon === undefined ? undefined : Boolean(row.notify_expiring_soon),
+    notify_weekly_summary: row.notify_weekly_summary === undefined ? undefined : Boolean(row.notify_weekly_summary),
+  }));
+}
+
+export function normalizePurchaseOrder(
+  row: DbRow,
+  items?: PurchaseOrder["items"]
+): PurchaseOrder {
+  return {
+    id: row.id === undefined ? undefined : Number(row.id),
+    po_number: String(row.po_number ?? ""),
+    vendor: String(row.vendor ?? ""),
+    status: String(row.status ?? ""),
+    expected_date: row.expected_date ? String(row.expected_date) : null,
+    items,
+  };
+}
 
 function isWeeklyStockPayload(data: NotifyPayload): data is WeeklyStockSummaryItem[] {
   return Array.isArray(data) && (data.length === 0 || "weeklyTarget" in data[0]);
@@ -60,13 +117,13 @@ export async function notifyUsers(event: NotifyEvent, data: NotifyPayload, setti
   for (const setting of settings) {
     let shouldNotify = false;
     switch (event) {
-      case 'PO_CREATED':   shouldNotify = setting.notify_po_created;   break;
-      case 'PO_CONFIRMED': shouldNotify = setting.notify_po_confirmed; break;
-      case 'PO_SHIPPED':   shouldNotify = setting.notify_po_shipped;   break;
-      case 'PO_RECEIVED':  shouldNotify = setting.notify_po_received;  break;
-      case 'LOW_STOCK':    shouldNotify = setting.notify_low_stock;    break;
-      case 'EXPIRING_SOON': shouldNotify = setting.notify_expiring_soon; break;
-      case 'WEEKLY_STOCK': shouldNotify = setting.notify_weekly_summary; break;
+      case 'PO_CREATED':   shouldNotify = Boolean(setting.notify_po_created);   break;
+      case 'PO_CONFIRMED': shouldNotify = Boolean(setting.notify_po_confirmed); break;
+      case 'PO_SHIPPED':   shouldNotify = Boolean(setting.notify_po_shipped);   break;
+      case 'PO_RECEIVED':  shouldNotify = Boolean(setting.notify_po_received);  break;
+      case 'LOW_STOCK':    shouldNotify = Boolean(setting.notify_low_stock);    break;
+      case 'EXPIRING_SOON': shouldNotify = Boolean(setting.notify_expiring_soon); break;
+      case 'WEEKLY_STOCK': shouldNotify = Boolean(setting.notify_weekly_summary); break;
       case 'TEST':         shouldNotify = true;                        break;
     }
 
@@ -95,7 +152,7 @@ export async function notifyUsers(event: NotifyEvent, data: NotifyPayload, setti
             channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN || 'DUMMY_TOKEN',
           });
           const msg = generatePOStatusTemplate(data);
-          await lineClient.pushMessage({ to: setting.line_user_id, messages: [msg] });
+          await lineClient.pushMessage({ to: setting.line_user_id, messages: [msg as messagingApi.Message] });
         }
       } catch (err) {
         console.error(`[Notification] LINE Error for user ${setting.username}:`, err);

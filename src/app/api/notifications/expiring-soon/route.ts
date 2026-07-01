@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import sql from "@/lib/db";
 import { getAuthenticatedUser } from "@/lib/auth-utils";
-import { notifyUsers } from "@/lib/notifications";
+import { normalizeNotificationSettings, notifyUsers } from "@/lib/notifications";
 import { ExpiringSoonItem } from "@/lib/line-flex-templates";
 
 const ALERT_WINDOW_DAYS = 30;
@@ -59,12 +59,14 @@ export async function POST(request: Request) {
 
     await ensureExpiryNotificationSchema();
 
-    const settings = await sql`
+    const settingsRows = await sql`
       SELECT username, email, line_user_id, notify_expiring_soon
       FROM notification_settings
       WHERE notify_expiring_soon = true
         AND (line_user_id IS NOT NULL OR email IS NOT NULL)
     `;
+
+    const settings = normalizeNotificationSettings(settingsRows);
 
     if (settings.length === 0) {
       return NextResponse.json({
@@ -74,7 +76,7 @@ export async function POST(request: Request) {
       });
     }
 
-    const items = await sql`
+    const itemsRows = await sql`
       SELECT
         i.item_id as "itemId",
         m.name,
@@ -100,6 +102,16 @@ export async function POST(request: Request) {
       ORDER BY i.exp_date ASC, m.name ASC
     `;
 
+    const items: ExpiringSoonItem[] = itemsRows.map((row) => ({
+      itemId: String(row.itemId),
+      name: String(row.name),
+      lotNo: String(row.lotNo),
+      expDate: String(row.expDate),
+      quantity: Number(row.quantity),
+      unit: String(row.unit),
+      daysUntilExpiry: Number(row.daysUntilExpiry),
+    }));
+
     if (items.length === 0) {
       return NextResponse.json({
         success: true,
@@ -108,9 +120,9 @@ export async function POST(request: Request) {
       });
     }
 
-    await notifyUsers("EXPIRING_SOON", items as ExpiringSoonItem[], settings);
+    await notifyUsers("EXPIRING_SOON", items, settings);
 
-    for (const item of items as ExpiringSoonItem[]) {
+    for (const item of items) {
       await sql`
         INSERT INTO expiry_notification_logs (item_id, lot_no, exp_date, notification_type)
         VALUES (${item.itemId}, ${item.lotNo}, ${item.expDate}, ${NOTIFICATION_TYPE})

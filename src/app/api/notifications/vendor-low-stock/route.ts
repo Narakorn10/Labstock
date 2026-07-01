@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import sql from "@/lib/db";
 import { getAuthenticatedUser } from "@/lib/auth-utils";
-import { notifyUsers } from "@/lib/notifications";
+import { normalizeNotificationSettings, notifyUsers } from "@/lib/notifications";
 import { LowStockItem } from "@/lib/line-flex-templates";
 import { ensureVendorNotificationSchema } from "@/lib/vendor-notification-utils";
 
@@ -73,7 +73,7 @@ export async function POST(request: Request) {
     let notifiedItems = 0;
 
     for (const [vendor, items] of rowsByVendor.entries()) {
-      const settings = await sql`
+      const settingsRows = await sql`
         SELECT
           n.username,
           n.email,
@@ -86,6 +86,8 @@ export async function POST(request: Request) {
           AND n.notify_low_stock = true
           AND (n.line_user_id IS NOT NULL OR n.email IS NOT NULL)
       `;
+
+      const settings = normalizeNotificationSettings(settingsRows);
 
       if (settings.length === 0) {
         continue;

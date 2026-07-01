@@ -1,6 +1,6 @@
 import sql from "@/lib/db";
 import { AuthenticatedUser } from "@/lib/auth-utils";
-import { notifyUsers } from "@/lib/notifications";
+import { normalizeNotificationSettings, notifyUsers } from "@/lib/notifications";
 import type { LowStockItem } from "@/lib/line-flex-templates";
 
 export interface StockBatchItem {
@@ -51,11 +51,13 @@ async function notifyLowStockForAffectedItems(itemIds: string[]) {
 
     if (affectedLowStock.length === 0) return;
 
-    const settings = await sql`
+    const settingsRows = await sql`
       SELECT *
       FROM notification_settings
       WHERE notify_low_stock = true
     `;
+
+    const settings = normalizeNotificationSettings(settingsRows);
 
     if (settings.length > 0) {
       await notifyUsers("LOW_STOCK", affectedLowStock, settings);

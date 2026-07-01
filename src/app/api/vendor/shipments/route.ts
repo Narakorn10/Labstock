@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import sql from '@/lib/db';
 import { getAuthenticatedUser } from '@/lib/auth-utils';
+import { normalizeNotificationSettings, normalizePurchaseOrder } from '@/lib/notifications';
 
 export async function GET(request: Request) {
   try {
@@ -69,10 +70,11 @@ export async function POST(request: Request) {
       
       // Notify lab admins
       const { notifyUsers } = await import('@/lib/notifications');
-      const settings = await sql`SELECT * FROM notification_settings WHERE username = 'admin'`; // Simple fallback
+      const settingsRows = await sql`SELECT * FROM notification_settings WHERE username = 'admin'`; // Simple fallback
       const poData = await sql`SELECT * FROM purchase_orders WHERE po_number = ${poNumber}`;
       if (poData.length > 0) {
-        await notifyUsers('PO_SHIPPED', poData[0], settings);
+        const settings = normalizeNotificationSettings(settingsRows);
+        await notifyUsers('PO_SHIPPED', normalizePurchaseOrder(poData[0]), settings);
       }
     }
 

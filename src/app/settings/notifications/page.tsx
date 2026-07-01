@@ -34,7 +34,7 @@ export default function NotificationSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState<'line' | 'email' | null>(null);
 
-  const getAuthHeaders = () => {
+  const getAuthHeaders = (): Record<string, string> => {
     const token = localStorage.getItem('labstock_token');
     return token ? { Authorization: `Bearer ${token}` } : {};
   };
@@ -247,7 +247,7 @@ export default function NotificationSettingsPage() {
                 <div className="relative flex items-center">
                   <input 
                     type="checkbox" 
-                    checked={settings?.[item.id] || false} 
+                    checked={Boolean(settings?.[item.id])} 
                     onChange={e => handleChange(item.id, e.target.checked)}
                     className="w-5 h-5 accent-indigo-600 rounded-lg cursor-pointer"
                   />

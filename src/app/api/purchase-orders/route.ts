@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { neon } from '@neondatabase/serverless';
-import { notifyUsers } from '@/lib/notifications';
+import { normalizeNotificationSettings, normalizePurchaseOrder, notifyUsers } from '@/lib/notifications';
+import { getAuthenticatedUser } from '@/lib/auth-utils';
 
 const sql = neon(process.env.DATABASE_URL || '');
 
@@ -18,11 +19,27 @@ async function generatePONumber() {
 
 export async function GET(request: Request) {
   try {
+    const user = await getAuthenticatedUser(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
-    const vendor = searchParams.get('vendor');
+    const requestedVendor = searchParams.get('vendor');
+    const vendor = user.role === 'Vendor' ? user.vendor : requestedVendor;
     
     let orders;
-    if (vendor) {
+    if (user.role === 'Vendor') {
+      if (!vendor) {
+        return NextResponse.json({ error: 'Vendor profile is not configured' }, { status: 403 });
+      }
+
+      orders = await sql`
+        SELECT * FROM purchase_orders 
+        WHERE vendor = ${vendor} 
+        ORDER BY created_at DESC
+      `;
+    } else if (vendor) {
       orders = await sql`
         SELECT * FROM purchase_orders 
         WHERE vendor = ${vendor} 
@@ -43,7 +60,7 @@ export async function GET(request: Request) {
     }));
 
     return NextResponse.json(ordersWithItems);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error fetching POs:', error);
     return NextResponse.json({ error: 'Failed to fetch purchase orders' }, { status: 500 });
   }
@@ -51,8 +68,16 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const user = await getAuthenticatedUser(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    if (user.role === 'Vendor') {
+      return NextResponse.json({ error: 'Vendors cannot create purchase orders' }, { status: 403 });
+    }
+
     const body = await request.json();
-    const { vendor, note, expected_date, created_by, items } = body;
+    const { vendor, note, expected_date, items } = body;
 
     if (!vendor || !items || items.length === 0) {
       return NextResponse.json({ error: 'Vendor and items are required' }, { status: 400 });
@@ -64,7 +89,7 @@ export async function POST(request: Request) {
     // Actually we can do it via a standard query block
     const poResult = await sql`
       INSERT INTO purchase_orders (po_number, vendor, note, expected_date, created_by, status)
-      VALUES (${poNumber}, ${vendor}, ${note}, ${expected_date || null}, ${created_by || 'system'}, 'SUBMITTED')
+      VALUES (${poNumber}, ${vendor}, ${note}, ${expected_date || null}, ${user.username}, 'SUBMITTED')
       RETURNING *
     `;
 
@@ -80,15 +105,20 @@ export async function POST(request: Request) {
       itemsData.push(itemRes[0]);
     }
 
-    const fullPO = { ...po, items: itemsData };
+    const fullPO = normalizePurchaseOrder(po, itemsData.map((item) => ({
+      item_name: String(item.item_name ?? ''),
+      quantity: Number(item.quantity ?? 0),
+      unit: String(item.unit ?? ''),
+    })));
 
     // Fetch notification settings for the vendor to notify them
     // Assuming vendor user has username matching the vendor name or similar
-    const settings = await sql`SELECT * FROM notification_settings WHERE username = ${vendor}`;
+    const settingsRows = await sql`SELECT * FROM notification_settings WHERE username = ${vendor}`;
+    const settings = normalizeNotificationSettings(settingsRows);
     await notifyUsers('PO_CREATED', fullPO, settings);
 
     return NextResponse.json(fullPO, { status: 201 });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error creating PO:', error);
     return NextResponse.json({ error: 'Failed to create purchase order' }, { status: 500 });
   }

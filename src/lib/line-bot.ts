@@ -33,42 +33,42 @@ export async function sendLineReply(replyToken: string, messages: messagingApi.M
 
 export async function pushPONotification(lineUserId: string, po: PurchaseOrder) {
   const template = generatePONotificationTemplate(po);
-  await sendLinePush(lineUserId, [template]);
+  await sendLinePush(lineUserId, [template as messagingApi.Message]);
 }
 
 export async function pushTrackingUpdate(lineUserId: string, tracking: TrackingResult) {
   const template = generateTrackingTemplate(tracking);
-  await sendLinePush(lineUserId, [template]);
+  await sendLinePush(lineUserId, [template as messagingApi.Message]);
 }
 
 export async function pushLowStockAlert(lineUserId: string, items: LowStockItem[]) {
   const template = generateLowStockTemplate(items);
-  await sendLinePush(lineUserId, [template]);
+  await sendLinePush(lineUserId, [template as messagingApi.Message]);
 }
 
 export async function pushExpiringSoonAlert(lineUserId: string, items: ExpiringSoonItem[]) {
   const template = generateExpiringSoonTemplate(items);
-  await sendLinePush(lineUserId, [template]);
+  await sendLinePush(lineUserId, [template as messagingApi.Message]);
 }
 
 export async function pushWeeklyStockSummary(lineUserId: string, vendor: string, items: WeeklyStockSummaryItem[]) {
   const template = generateWeeklyStockSummaryTemplate(vendor, items);
-  await sendLinePush(lineUserId, [template]);
+  await sendLinePush(lineUserId, [template as messagingApi.Message]);
 }
 
 export async function replyPODetail(replyToken: string, po: PurchaseOrder) {
   const template = generatePOStatusTemplate(po);
-  await sendLineReply(replyToken, [template]);
+  await sendLineReply(replyToken, [template as messagingApi.Message]);
 }
 
 export async function replyTrackingStatus(replyToken: string, tracking: TrackingResult) {
   const template = generateTrackingTemplate(tracking);
-  await sendLineReply(replyToken, [template]);
+  await sendLineReply(replyToken, [template as messagingApi.Message]);
 }
 
 export async function replyLowStock(replyToken: string, items: LowStockItem[]) {
   const template = generateLowStockTemplate(items);
-  await sendLineReply(replyToken, [template]);
+  await sendLineReply(replyToken, [template as messagingApi.Message]);
 }
 
 export async function replyHelp(replyToken: string) {
