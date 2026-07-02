@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import { apiClient, Reagent } from '@/lib/api-client';
+import { useEffect, useState } from 'react';
+import { apiClient, BarcodePattern, Reagent } from '@/lib/api-client';
 import { processAnyBarcode } from '@/lib/barcode-parser';
 import QRScanner from '@/components/qr-scanner';
 import { 
@@ -30,7 +30,7 @@ interface LendCartItem {
 export default function LendPage() {
   const [mode, setMode] = useState<'LEND_OUT' | 'RETURN_IN'>('LEND_OUT');
   const [reagents, setReagents] = useState<Reagent[]>([]);
-  const [patterns, setPatterns] = useState<any[]>([]);
+  const [patterns, setPatterns] = useState<BarcodePattern[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [scanMode, setScanMode] = useState(false);
@@ -53,11 +53,6 @@ export default function LendPage() {
       setLoading(false);
     });
   }, []);
-
-  useEffect(() => {
-    setCart([]);
-    setFeedback(null);
-  }, [mode]);
 
   const addToCart = (match: Reagent, barcodeLot: string = '', barcodeExp: string = '') => {
     if (mode === 'LEND_OUT') {
@@ -116,7 +111,7 @@ export default function LendPage() {
     setShowResults(false);
   };
 
-  const handleScan = useCallback((decodedText: string) => {
+  const handleScan = (decodedText: string) => {
     const data = processAnyBarcode(decodedText, patterns);
     if (!data) return;
 
@@ -143,7 +138,7 @@ export default function LendPage() {
       setFeedback({ type: 'error', msg: 'ไม่พบข้อมูลน้ำยานี้ในระบบ Master Data' });
       setScanMode(false);
     }
-  }, [reagents, patterns, mode]);
+  };
 
   const handleManualAdd = (e: React.FormEvent) => {
     e.preventDefault();
@@ -154,13 +149,12 @@ export default function LendPage() {
     }
   };
 
-  const filteredResults = useMemo(() => {
-    if (!search.trim()) return [];
-    return reagents.filter(r => 
-      r.name.toLowerCase().includes(search.toLowerCase()) || 
-      r.itemId.toLowerCase().includes(search.toLowerCase())
-    ).slice(0, 5);
-  }, [search, reagents]);
+  const filteredResults = !search.trim()
+    ? []
+    : reagents.filter(r =>
+        r.name.toLowerCase().includes(search.toLowerCase()) ||
+        r.itemId.toLowerCase().includes(search.toLowerCase())
+      ).slice(0, 5);
 
   const removeFromCart = (index: number) => {
     setCart(prev => prev.filter((_, i) => i !== index));
@@ -240,13 +234,21 @@ export default function LendPage() {
 
       <div className="bg-gray-100 p-1.5 rounded-2xl flex relative shadow-inner">
         <button 
-          onClick={() => setMode('LEND_OUT')}
+          onClick={() => {
+            setMode('LEND_OUT');
+            setCart([]);
+            setFeedback(null);
+          }}
           className={`flex-1 py-3 px-4 rounded-xl font-black text-sm flex items-center justify-center gap-2 transition-all z-10 ${mode === 'LEND_OUT' ? 'bg-white text-purple-600 shadow' : 'text-gray-500 hover:text-gray-700'}`}
         >
           <ArrowUpFromLine size={18} /> ให้เขายืม (ตัดออก)
         </button>
         <button 
-          onClick={() => setMode('RETURN_IN')}
+          onClick={() => {
+            setMode('RETURN_IN');
+            setCart([]);
+            setFeedback(null);
+          }}
           className={`flex-1 py-3 px-4 rounded-xl font-black text-sm flex items-center justify-center gap-2 transition-all z-10 ${mode === 'RETURN_IN' ? 'bg-white text-teal-600 shadow' : 'text-gray-500 hover:text-gray-700'}`}
         >
           <ArrowDownToLine size={18} /> รับคืนมา (รับเข้า)

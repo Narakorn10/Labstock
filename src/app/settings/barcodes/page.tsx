@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { apiClient, BarcodePattern } from '@/lib/api-client';
 import { processAnyBarcode } from '@/lib/barcode-parser';
 import { Trash2, Plus, Loader2, CheckCircle, Save, Camera, AlertCircle } from 'lucide-react';
@@ -50,7 +50,7 @@ export default function BarcodeSettingsPage() {
     loadPatterns();
   }, []);
 
-  const generateRegexFromMapping = () => {
+  const generateRegexFromMapping = useCallback(() => {
     if (!testString) return;
     
     // Sort mapped ranges to build positional regex
@@ -86,14 +86,14 @@ export default function BarcodeSettingsPage() {
     setItemIdGroup(newItemIdx || '');
     setLotNoGroup(newLotIdx || '');
     setExpDateGroup(newExpIdx || '');
-  };
+  }, [mapping, testString]);
 
   useEffect(() => {
     if (assistantMode && (mapping.item || mapping.lot || mapping.exp)) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       generateRegexFromMapping();
     }
-  }, [mapping, assistantMode]);
+  }, [assistantMode, generateRegexFromMapping, mapping]);
 
   const handleCharClick = (idx: number) => {
     if (!selection) {
@@ -129,11 +129,11 @@ export default function BarcodeSettingsPage() {
     setTestString(text);
   };
 
-  const checkGS1Format = (text: string) => {
+  const checkGS1Format = useCallback((text: string) => {
     return processAnyBarcode(text, [])?.barcodeType === 'GS1_COMPLIANT';
-  };
+  }, []);
 
-  const runTest = () => {
+  const runTest = useCallback(() => {
     if (!regexPattern || !testString) return;
     
     setIsGS1Warning(checkGS1Format(testString));
@@ -157,14 +157,14 @@ export default function BarcodeSettingsPage() {
     } catch {
       setTestResult({ match: false });
     }
-  };
+  }, [checkGS1Format, expDateGroup, itemIdGroup, lotNoGroup, regexPattern, testString]);
 
   useEffect(() => {
     if (regexPattern && testString) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       runTest();
     }
-  }, [regexPattern, testString, itemIdGroup, lotNoGroup, expDateGroup]);
+  }, [expDateGroup, itemIdGroup, lotNoGroup, regexPattern, runTest, testString]);
 
   const handleSave = async () => {
     if (!name || !regexPattern) return alert("กรุณาระบุชื่อและ Regex Pattern");

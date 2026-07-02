@@ -4,7 +4,7 @@ import { useState, useMemo } from 'react';
 import Modal from './modal';
 import { useExport } from '@/hooks/use-export';
 import MultiSelect from './multi-select';
-import { apiClient, Reagent } from '@/lib/api-client';
+import { Reagent } from '@/lib/api-client';
 import { 
   FileSpreadsheet, 
   FileText, 

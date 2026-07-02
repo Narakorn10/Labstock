@@ -5,7 +5,7 @@ import { neon } from '@neondatabase/serverless';
 const sql = neon(process.env.DATABASE_URL || '');
 
 async function runMigration() {
-  console.log('🚀 Running migration for barcode_patterns...');
+  console.log('ðŸš€ Running migration for barcode_patterns...');
   try {
     await sql`
       CREATE TABLE IF NOT EXISTS barcode_patterns (
@@ -18,9 +18,10 @@ async function runMigration() {
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
     `;
-    console.log('✅ barcode_patterns table created successfully!');
-  } catch (error: any) {
-    console.error('❌ Migration failed:', error.message);
+    console.log('âœ… barcode_patterns table created successfully!');
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('âŒ Migration failed:', message);
   }
 }
 

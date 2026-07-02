@@ -6,9 +6,8 @@ const sql = neon(process.env.DATABASE_URL || '');
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const vendor = searchParams.get('vendor'); // Optional filter by vendor
-    
-    // Auto-suggest logic based on min_threshold and current quantity
+    const vendor = searchParams.get('vendor');
+
     let query;
     if (vendor) {
       query = await sql`
@@ -57,7 +56,7 @@ export async function GET(request: Request) {
     }
 
     return NextResponse.json(query);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error suggesting PO items:', error);
     return NextResponse.json({ error: 'Failed to suggest items' }, { status: 500 });
   }

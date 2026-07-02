@@ -9,6 +9,8 @@
 }
 
 :root {
+  --font-geist-sans: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  --font-geist-mono: Consolas, "Cascadia Mono", "SFMono-Regular", Menlo, Monaco, monospace;
   --background: #f2f4f7; /* Light gray-blue */
   --foreground: #111827; /* Near black */
 }

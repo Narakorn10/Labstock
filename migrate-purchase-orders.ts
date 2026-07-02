@@ -5,9 +5,8 @@ import { neon } from '@neondatabase/serverless';
 const sql = neon(process.env.DATABASE_URL || '');
 
 async function runMigration() {
-  console.log('🚀 Running migration for purchase_orders...');
+  console.log('ðŸš€ Running migration for purchase_orders...');
   try {
-    // purchase_orders table
     await sql`
       CREATE TABLE IF NOT EXISTS purchase_orders (
         id SERIAL PRIMARY KEY,
@@ -25,9 +24,8 @@ async function runMigration() {
         received_at TIMESTAMPTZ
       );
     `;
-    console.log('✅ purchase_orders table created!');
+    console.log('âœ… purchase_orders table created!');
 
-    // purchase_order_items table
     await sql`
       CREATE TABLE IF NOT EXISTS purchase_order_items (
         id SERIAL PRIMARY KEY,
@@ -39,9 +37,8 @@ async function runMigration() {
         received_qty INTEGER DEFAULT 0
       );
     `;
-    console.log('✅ purchase_order_items table created!');
+    console.log('âœ… purchase_order_items table created!');
 
-    // notification_settings table
     await sql`
       CREATE TABLE IF NOT EXISTS notification_settings (
         id SERIAL PRIMARY KEY,
@@ -56,9 +53,8 @@ async function runMigration() {
         notify_low_stock BOOLEAN DEFAULT true
       );
     `;
-    console.log('✅ notification_settings table created!');
+    console.log('âœ… notification_settings table created!');
 
-    // Add tracking columns to shipments
     await sql`
       ALTER TABLE shipments 
       ADD COLUMN IF NOT EXISTS po_number TEXT REFERENCES purchase_orders(po_number),
@@ -67,10 +63,10 @@ async function runMigration() {
       ADD COLUMN IF NOT EXISTS tracking_status TEXT,
       ADD COLUMN IF NOT EXISTS tracking_updated_at TIMESTAMPTZ;
     `;
-    console.log('✅ shipments table altered with tracking and po_number columns!');
-    
-  } catch (error: any) {
-    console.error('❌ Migration failed:', error.message);
+    console.log('âœ… shipments table altered with tracking and po_number columns!');
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('âŒ Migration failed:', message);
   }
 }
 

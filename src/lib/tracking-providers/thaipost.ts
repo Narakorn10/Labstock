@@ -1,9 +1,25 @@
 import { TrackingProvider } from './index';
 import { TrackingResult } from '../line-flex-templates';
 
-// In a real app, you would cache this token until it expires
 let cachedToken: string | null = null;
 let tokenExpiresAt: number | null = null;
+
+interface ThaiPostAuthResponse {
+  token: string;
+}
+
+interface ThaiPostTrackingEvent {
+  status_date: string;
+  status_description: string;
+  location: string;
+  status_detail: string;
+}
+
+interface ThaiPostTrackingResponse {
+  response: {
+    items: Record<string, ThaiPostTrackingEvent[]>;
+  };
+}
 
 async function getThaiPostToken(): Promise<string> {
   const staticToken = process.env.THAIPOST_API_TOKEN;
@@ -27,10 +43,9 @@ async function getThaiPostToken(): Promise<string> {
     throw new Error(`Failed to authenticate with ThaiPost API: ${response.statusText}`);
   }
 
-  const data = await response.json();
+  const data = (await response.json()) as ThaiPostAuthResponse;
   cachedToken = data.token;
-  // Set expiry to a little before actual expiry (e.g. 1 hour)
-  tokenExpiresAt = Date.now() + 3500 * 1000; 
+  tokenExpiresAt = Date.now() + 3500 * 1000;
 
   return data.token;
 }
@@ -40,16 +55,15 @@ export const thaipostProvider: TrackingProvider = {
   track: async (trackingNo: string): Promise<TrackingResult> => {
     try {
       if (process.env.THAIPOST_API_TOKEN === 'DUMMY' || !process.env.THAIPOST_API_TOKEN) {
-        // Mock data for development
         return {
           provider: 'Thai Post / EMS',
           trackingNo,
           status: 'IN_TRANSIT',
-          statusText: 'อยู่ระหว่างการขนส่ง',
+          statusText: 'à¸­à¸¢à¸¹à¹ˆà¸£à¸°à¸«à¸§à¹ˆà¸²à¸‡à¸à¸²à¸£à¸‚à¸™à¸ªà¹ˆà¸‡',
           lastUpdate: new Date().toISOString(),
           history: [
-            { timestamp: new Date(Date.now() - 86400000).toISOString(), status: 'รับเข้าระบบ', location: 'ศป.EMS', description: 'รับถุง' },
-            { timestamp: new Date().toISOString(), status: 'อยู่ระหว่างการขนส่ง', location: 'ศป.กรุงเทพ', description: 'ส่งออกจาก ศป.' }
+            { timestamp: new Date(Date.now() - 86400000).toISOString(), status: 'à¸£à¸±à¸šà¹€à¸‚à¹‰à¸²à¸£à¸°à¸šà¸š', location: 'à¸¨à¸›.EMS', description: 'à¸£à¸±à¸šà¸–à¸¸à¸‡' },
+            { timestamp: new Date().toISOString(), status: 'à¸­à¸¢à¸¹à¹ˆà¸£à¸°à¸«à¸§à¹ˆà¸²à¸‡à¸à¸²à¸£à¸‚à¸™à¸ªà¹ˆà¸‡', location: 'à¸¨à¸›.à¸à¸£à¸¸à¸‡à¹€à¸—à¸ž', description: 'à¸ªà¹ˆà¸‡à¸­à¸­à¸à¸ˆà¸²à¸ à¸¨à¸›.' }
           ]
         };
       }
@@ -72,21 +86,21 @@ export const thaipostProvider: TrackingProvider = {
         throw new Error('Failed to fetch tracking data');
       }
 
-      const data = await response.json();
+      const data = (await response.json()) as ThaiPostTrackingResponse;
       const trackData = data.response.items[trackingNo];
-      
+
       if (!trackData || trackData.length === 0) {
-         return {
+        return {
           provider: 'Thai Post / EMS',
           trackingNo,
           status: 'UNKNOWN',
-          statusText: 'ไม่พบข้อมูล',
+          statusText: 'à¹„à¸¡à¹ˆà¸žà¸šà¸‚à¹‰à¸­à¸¡à¸¹à¸¥',
           lastUpdate: new Date().toISOString(),
           history: []
         };
       }
 
-      const history = trackData.map((event: any) => ({
+      const history = trackData.map((event) => ({
         timestamp: event.status_date,
         status: event.status_description,
         location: event.location,
@@ -98,7 +112,7 @@ export const thaipostProvider: TrackingProvider = {
       return {
         provider: 'Thai Post / EMS',
         trackingNo,
-        status: latest.status_description === 'นำจ่ายสำเร็จ' ? 'DELIVERED' : 'IN_TRANSIT',
+        status: latest.status_description === 'à¸™à¸³à¸ˆà¹ˆà¸²à¸¢à¸ªà¸³à¹€à¸£à¹‡à¸ˆ' ? 'DELIVERED' : 'IN_TRANSIT',
         statusText: latest.status_description,
         lastUpdate: latest.status_date,
         history

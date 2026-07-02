@@ -16,7 +16,7 @@ import {
   ArrowUpFromLine,
   Activity
 } from 'lucide-react';
-import { apiClient, Reagent, UsageData, DailyStat } from '@/lib/api-client';
+import { apiClient, Reagent, UsageData, DailyStat, UsageResponse } from '@/lib/api-client';
 import { useAuth } from '@/components/auth-provider';
 
 export default function AnalysisPage() {
@@ -26,9 +26,8 @@ export default function AnalysisPage() {
   const [reagents, setReagents] = useState<Reagent[]>([]);
   const [usage, setUsage] = useState<UsageData[]>([]);
   const [dailyStats, setDailyStats] = useState<DailyStat[]>([]);
-  const [weeklyStats, setWeeklyStats] = useState<any[]>([]);
-  const [expiringSoon, setExpiringSoon] = useState<any[]>([]);
-  const [slowMoving, setSlowMoving] = useState<any[]>([]);
+  const [expiringSoon, setExpiringSoon] = useState<NonNullable<UsageResponse['expiringSoon']>>([]);
+  const [slowMoving, setSlowMoving] = useState<NonNullable<UsageResponse['slowMoving']>>([]);
   const [selectedItemId, setSelectedItemId] = useState<string>('TOTAL');
 
   const [startDate, setStartDate] = useState(() => {
@@ -56,7 +55,6 @@ export default function AnalysisPage() {
           const usageResponse = await apiClient.getUsage(startDate, endDate);
           setUsage(usageResponse.summary || []);
           setDailyStats(usageResponse.dailyStats || []);
-          setWeeklyStats(usageResponse.weeklyStats || []);
           setExpiringSoon(usageResponse.expiringSoon || []);
           setSlowMoving(usageResponse.slowMoving || []);
         } catch (err) {

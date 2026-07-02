@@ -5,14 +5,15 @@ export async function GET(request: Request, { params }: { params: Promise<{ trac
   try {
     const { trackingNo } = await params;
     const { searchParams } = new URL(request.url);
-    const provider = searchParams.get('provider') || 'THAIPOST'; // Default provider
+    const provider = searchParams.get('provider') || 'THAIPOST';
 
     const trackingResult = await trackShipment(provider, trackingNo);
 
     return NextResponse.json(trackingResult);
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
     console.error('Error fetching tracking data:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 

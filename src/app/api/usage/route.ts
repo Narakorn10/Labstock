@@ -53,8 +53,9 @@ export async function GET(request: Request) {
         GROUP BY item_id
       `;
       log(`Summary success: ${summaryRows.length} rows`);
-    } catch (e: any) {
-      log(`Summary FAILED: ${e.message}`);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      log(`Summary FAILED: ${message}`);
       throw e;
     }
 
@@ -121,8 +122,9 @@ export async function GET(request: Request) {
         `;
         log(`slowMoving success: ${slowMoving.length} rows`);
 
-      } catch (e: any) {
-        log(`Detailed queries FAILED: ${e.message}`);
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : String(e);
+        log(`Detailed queries FAILED: ${message}`);
         throw e;
       }
       interface DailyStatInternal {

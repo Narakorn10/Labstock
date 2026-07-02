@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import { apiClient, Reagent } from '@/lib/api-client';
+import { useEffect, useState } from 'react';
+import { apiClient, BarcodePattern, Reagent } from '@/lib/api-client';
 import { processAnyBarcode } from '@/lib/barcode-parser';
 import QRScanner from '@/components/qr-scanner';
 import { 
@@ -30,7 +30,7 @@ interface BorrowCartItem {
 export default function BorrowPage() {
   const [mode, setMode] = useState<'BORROW_IN' | 'RETURN_OUT'>('BORROW_IN');
   const [reagents, setReagents] = useState<Reagent[]>([]);
-  const [patterns, setPatterns] = useState<any[]>([]);
+  const [patterns, setPatterns] = useState<BarcodePattern[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [scanMode, setScanMode] = useState(false);
@@ -53,12 +53,6 @@ export default function BorrowPage() {
       setLoading(false);
     });
   }, []);
-
-  // Clear cart when changing modes
-  useEffect(() => {
-    setCart([]);
-    setFeedback(null);
-  }, [mode]);
 
   const addToCart = (match: Reagent, barcodeLot: string = '', barcodeExp: string = '') => {
     if (mode === 'RETURN_OUT') {
@@ -119,7 +113,7 @@ export default function BorrowPage() {
     setShowResults(false);
   };
 
-  const handleScan = useCallback((decodedText: string) => {
+  const handleScan = (decodedText: string) => {
     const data = processAnyBarcode(decodedText, patterns);
     if (!data) return;
 
@@ -146,7 +140,7 @@ export default function BorrowPage() {
       setFeedback({ type: 'error', msg: 'ไม่พบข้อมูลน้ำยานี้ในระบบ Master Data' });
       setScanMode(false);
     }
-  }, [reagents, patterns, mode]);
+  };
 
   const handleManualAdd = (e: React.FormEvent) => {
     e.preventDefault();
@@ -157,13 +151,12 @@ export default function BorrowPage() {
     }
   };
 
-  const filteredResults = useMemo(() => {
-    if (!search.trim()) return [];
-    return reagents.filter(r => 
-      r.name.toLowerCase().includes(search.toLowerCase()) || 
-      r.itemId.toLowerCase().includes(search.toLowerCase())
-    ).slice(0, 5);
-  }, [search, reagents]);
+  const filteredResults = !search.trim()
+    ? []
+    : reagents.filter(r =>
+        r.name.toLowerCase().includes(search.toLowerCase()) ||
+        r.itemId.toLowerCase().includes(search.toLowerCase())
+      ).slice(0, 5);
 
   const removeFromCart = (index: number) => {
     setCart(prev => prev.filter((_, i) => i !== index));
@@ -245,13 +238,21 @@ export default function BorrowPage() {
       {/* Mode Toggle */}
       <div className="bg-gray-100 p-1.5 rounded-2xl flex relative shadow-inner">
         <button 
-          onClick={() => setMode('BORROW_IN')}
+          onClick={() => {
+            setMode('BORROW_IN');
+            setCart([]);
+            setFeedback(null);
+          }}
           className={`flex-1 py-3 px-4 rounded-xl font-black text-sm flex items-center justify-center gap-2 transition-all z-10 ${mode === 'BORROW_IN' ? 'bg-white text-blue-600 shadow' : 'text-gray-500 hover:text-gray-700'}`}
         >
           <ArrowDownToLine size={18} /> ยืมเข้ามา (รับเข้า)
         </button>
         <button 
-          onClick={() => setMode('RETURN_OUT')}
+          onClick={() => {
+            setMode('RETURN_OUT');
+            setCart([]);
+            setFeedback(null);
+          }}
           className={`flex-1 py-3 px-4 rounded-xl font-black text-sm flex items-center justify-center gap-2 transition-all z-10 ${mode === 'RETURN_OUT' ? 'bg-white text-rose-600 shadow' : 'text-gray-500 hover:text-gray-700'}`}
         >
           <ArrowUpFromLine size={18} /> ส่งคืนไป (ตัดออก)
