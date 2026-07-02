@@ -23,10 +23,6 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 function readStoredUser() {
-  if (typeof window === 'undefined') {
-    return null;
-  }
-
   const raw = localStorage.getItem('labstock_user');
   if (!raw) {
     return null;
@@ -41,7 +37,7 @@ function readStoredUser() {
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(() => readStoredUser());
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const pathname = usePathname();
@@ -60,34 +56,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const checkAuth = async () => {
+      const savedUser = readStoredUser();
       const token = localStorage.getItem('labstock_token');
-
-      if (!token) {
-        clearStoredAuth();
-        setUser(null);
-        setLoading(false);
-        return;
-      }
-
-      try {
-        const res = await fetch('/api/auth/me', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          setUser(data.user);
-          localStorage.setItem('labstock_user', JSON.stringify(data.user));
-        } else {
-          clearStoredAuth();
-          setUser(null);
+      
+      if (savedUser && token) {
+        try {
+          const res = await fetch('/api/auth/me', {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          
+          if (res.ok) {
+            const data = await res.json();
+            setUser(data.user);
+            localStorage.setItem('labstock_user', JSON.stringify(data.user));
+          } else {
+            clearStoredAuth();
+            setUser(null);
+            if (!isPublicPath) {
+              router.push('/login');
+            }
+          }
+        } catch (error) {
+          console.error('Auth verification failed:', error);
+          setUser(savedUser);
         }
-      } catch (error) {
-        console.error('Auth verification failed:', error);
-        clearStoredAuth();
-        setUser(null);
       }
-
       setLoading(false);
     };
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useAuth } from '@/components/auth-provider';
 import { apiClient, BarcodePattern, Reagent } from '@/lib/api-client';
 import { findMatchingReagent } from '@/lib/barcode-parser';
 import QRScanner from '@/components/qr-scanner';
@@ -26,6 +27,7 @@ interface CartItem {
 }
 
 export default function ReceivePage() {
+  const { user, loading: authLoading } = useAuth();
   const [reagents, setReagents] = useState<Reagent[]>([]);
   const [patterns, setPatterns] = useState<BarcodePattern[]>([]);
   const [loading, setLoading] = useState(true);
@@ -67,6 +69,14 @@ export default function ReceivePage() {
     let active = true;
 
     const fetchInitialLookupData = async () => {
+      if (authLoading) {
+        return;
+      }
+
+      if (!user) {
+        return;
+      }
+
       try {
         const [reagentsData, patternsData] = await Promise.all([
           apiClient.getDashboard(),
@@ -99,7 +109,7 @@ export default function ReceivePage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [authLoading, user]);
 
   const addToCart = (match: Reagent, lot: string = '', exp: string = '') => {
     const newItem: CartItem = {
@@ -202,13 +212,17 @@ export default function ReceivePage() {
       }
   };
 
-  if (loading) {
+  if (authLoading || (user && loading)) {
     return (
       <div className="flex flex-col items-center justify-center h-96 gap-4">
         <Loader2 className="animate-spin text-blue-600" size={48} />
         <p className="text-gray-500 animate-pulse">กำลังโหลดข้อมูลฐานน้ำยา...</p>
       </div>
     );
+  }
+
+  if (!user) {
+    return null;
   }
 
   return (

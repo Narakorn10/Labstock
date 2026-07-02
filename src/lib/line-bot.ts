@@ -1,33 +1,54 @@
-import { messagingApi } from '@line/bot-sdk';
-import { PurchaseOrder, TrackingResult, LowStockItem, ExpiringSoonItem, WeeklyStockSummaryItem, generatePONotificationTemplate, generatePOStatusTemplate, generateTrackingTemplate, generateLowStockTemplate, generateExpiringSoonTemplate, generateWeeklyStockSummaryTemplate } from './line-flex-templates';
+import { messagingApi } from "@line/bot-sdk";
+import {
+  ExpiringSoonItem,
+  generateExpiringSoonTemplate,
+  generateLowStockTemplate,
+  generatePONotificationTemplate,
+  generatePOStatusTemplate,
+  generateTrackingTemplate,
+  generateWeeklyStockSummaryTemplate,
+  LowStockItem,
+  PurchaseOrder,
+  TrackingResult,
+  WeeklyStockSummaryItem,
+} from "./line-flex-templates";
 
 const config = {
-  channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN || 'DUMMY_TOKEN'
+  channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN || "DUMMY_TOKEN",
 };
 
 export const lineClient = new messagingApi.MessagingApiClient(config);
 
+type StockSummaryLineItem = {
+  itemId: string;
+  name: string;
+  quantity: number;
+  unit: string;
+  minThreshold?: number;
+  jobType?: string;
+};
+
 export async function sendLinePush(to: string, messages: messagingApi.Message[]) {
-  if (!process.env.LINE_CHANNEL_ACCESS_TOKEN || process.env.LINE_CHANNEL_ACCESS_TOKEN === 'DUMMY_TOKEN') {
-    console.warn('LINE_CHANNEL_ACCESS_TOKEN not set, skipping push to', to);
+  if (!process.env.LINE_CHANNEL_ACCESS_TOKEN || process.env.LINE_CHANNEL_ACCESS_TOKEN === "DUMMY_TOKEN") {
+    console.warn("LINE_CHANNEL_ACCESS_TOKEN not set, skipping push to", to);
     return;
   }
   try {
     await lineClient.pushMessage({ to, messages });
   } catch (error) {
-    console.error('Error sending LINE push message:', error);
+    console.error("Error sending LINE push message:", error);
   }
 }
 
 export async function sendLineReply(replyToken: string, messages: messagingApi.Message[]) {
-  if (!process.env.LINE_CHANNEL_ACCESS_TOKEN || process.env.LINE_CHANNEL_ACCESS_TOKEN === 'DUMMY_TOKEN') {
-    console.warn('LINE_CHANNEL_ACCESS_TOKEN not set, skipping reply');
+  if (!process.env.LINE_CHANNEL_ACCESS_TOKEN || process.env.LINE_CHANNEL_ACCESS_TOKEN === "DUMMY_TOKEN") {
+    console.warn("LINE_CHANNEL_ACCESS_TOKEN not set, skipping reply");
     return;
   }
   try {
     await lineClient.replyMessage({ replyToken, messages });
   } catch (error) {
-    console.error('Error sending LINE reply:', error);
+    console.error("Error sending LINE reply:", error);
   }
 }
 
@@ -71,9 +92,43 @@ export async function replyLowStock(replyToken: string, items: LowStockItem[]) {
   await sendLineReply(replyToken, [template as messagingApi.Message]);
 }
 
+function formatLineStockSummary(title: string, items: StockSummaryLineItem[]) {
+  if (items.length === 0) {
+    return `${title}\nไม่พบรายการน้ำยาที่ตรงกับคำค้น`;
+  }
+
+  const lines = items.map((item) => {
+    const minPart = typeof item.minThreshold === "number" ? ` | Min ${item.minThreshold}` : "";
+    const jobPart = item.jobType ? ` | ${item.jobType}` : "";
+    return `- ${item.name} (${item.itemId})\n  คงเหลือ ${item.quantity} ${item.unit}${minPart}${jobPart}`;
+  });
+
+  return `${title}\n${lines.join("\n")}`;
+}
+
+export async function replyStockSummary(
+  replyToken: string,
+  title: string,
+  items: StockSummaryLineItem[],
+) {
+  await sendLineReply(replyToken, [{
+    type: "text",
+    text: formatLineStockSummary(title, items),
+  }]);
+}
+
 export async function replyHelp(replyToken: string) {
   await sendLineReply(replyToken, [{
-    type: 'text',
-    text: `คำสั่งที่ใช้งานได้:\n- พิมพ์ 'id' หรือ 'ลงทะเบียน' เพื่อดู User ID ของคุณ\n- พิมพ์เลข PO (เช่น PO-20250613) เพื่อดูสถานะ\n- พิมพ์เลขพัสดุ (เช่น EY123456789TH) เพื่อดู Tracking\n- พิมพ์ 'สต๊อก' เพื่อดูรายการน้ำยาใกล้หมด\n- พิมพ์ 'สั่งซื้อ' เพื่อเอาลิงก์ไปสร้างใบสั่งซื้อ\n- สำหรับ Vendor สามารถกดยืนยัน/ปฏิเสธ PO จากการ์ดแจ้งเตือนได้เลย`
+    type: "text",
+    text: [
+      "คำสั่งที่ใช้งานได้:",
+      "- พิมพ์ 'id' หรือ 'ลงทะเบียน' เพื่อดู User ID ของคุณ",
+      "- พิมพ์เลข PO (เช่น PO-20250613) เพื่อดูสถานะ",
+      "- พิมพ์เลขพัสดุ (เช่น EY123456789TH) เพื่อดู Tracking",
+      "- พิมพ์ 'stock' หรือ 'สต๊อก' เพื่อดูรายการน้ำยาที่ต่ำกว่า Min Stock",
+      "- พิมพ์ 'stock <คำค้น>' หรือ 'สต๊อก <คำค้น>' เพื่อค้นหายอดน้ำยาตามรหัส/ชื่อ/บาร์โค้ด",
+      "- พิมพ์ 'สั่งซื้อ' เพื่อเอาลิงก์ไปสร้างใบสั่งซื้อ",
+      "- สำหรับ Vendor สามารถกดยืนยัน/ปฏิเสธ PO จากการ์ดแจ้งเตือนได้เลย",
+    ].join("\n"),
   }]);
 }

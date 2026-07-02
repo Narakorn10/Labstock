@@ -1,10 +1,47 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Check, Lock, RefreshCw, Save, X } from 'lucide-react';
-import { useAuth } from '@/components/auth-provider';
+import {
+  ShieldCheck,
+  Save,
+  RefreshCw,
+  Check,
+  X,
+  Lock,
+  Eye,
+  Settings,
+  Database,
+  Users,
+  ShoppingCart,
+  Activity,
+  Box
+} from 'lucide-react';
 import { apiClient, RolePermission } from '@/lib/api-client';
-import { ALL_MENUS, ROLES } from '@/lib/menu-config';
+import { useAuth } from '@/components/auth-provider';
+
+const ALL_MENUS = [
+  { id: 'dashboard', label: 'Dashboard', icon: Activity },
+  { id: 'analysis', label: 'Analysis', icon: Eye },
+  { id: 'logs', label: 'History Logs', icon: Database },
+  { id: 'dispense', label: 'Dispense', icon: Box },
+  { id: 'receive', label: 'Receive Stock', icon: Box },
+  { id: 'count', label: 'Stock Count', icon: Check },
+  { id: 'borrow', label: 'Borrow System', icon: RefreshCw },
+  { id: 'lend', label: 'Lend System', icon: RefreshCw },
+  { id: 'orders', label: 'Purchase Orders', icon: ShoppingCart },
+  { id: 'receive_vendor', label: 'Receive from Vendor', icon: Box },
+  { id: 'vendor_orders', label: 'Vendor PO Portal', icon: ShoppingCart },
+  { id: 'vendor_shipments', label: 'Vendor Shipments', icon: Box },
+  { id: 'master_data', label: 'Master Data', icon: Database },
+  { id: 'main_stock', label: 'Main Stock', icon: Database },
+  { id: 'user_management', label: 'User Management', icon: Users },
+  { id: 'settings', label: 'System Settings', icon: Settings },
+  { id: 'notifications', label: 'Notifications', icon: Settings },
+  { id: 'barcodes', label: 'Barcode Learning', icon: Settings },
+  { id: 'rbac', label: 'Permissions Management', icon: ShieldCheck }
+];
+
+const ROLES = ['Admin', 'Manager', 'Operator', 'User', 'Vendor'];
 
 function normalizePermissions(data: RolePermission[]) {
   return ROLES.map((role) => {
@@ -19,7 +56,7 @@ function normalizePermissions(data: RolePermission[]) {
 }
 
 export default function PermissionsPage() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [permissions, setPermissions] = useState<RolePermission[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
@@ -39,7 +76,7 @@ export default function PermissionsPage() {
       applyPermissionsResponse(data);
     } catch (err) {
       console.error('Failed to fetch permissions:', err);
-      setError('ไม่สามารถดึงข้อมูลสิทธิ์ได้');
+      setError('Unable to load permission data');
     } finally {
       setLoading(false);
     }
@@ -49,6 +86,14 @@ export default function PermissionsPage() {
     let active = true;
 
     const loadInitialPermissions = async () => {
+      if (authLoading) {
+        return;
+      }
+
+      if (!user || user.role !== 'Admin') {
+        return;
+      }
+
       try {
         const data = await apiClient.getPermissions();
         if (!active) {
@@ -63,7 +108,7 @@ export default function PermissionsPage() {
         }
 
         console.error('Failed to fetch permissions:', err);
-        setError('ไม่สามารถดึงข้อมูลสิทธิ์ได้');
+        setError('Unable to load permission data');
       } finally {
         if (active) {
           setLoading(false);
@@ -76,7 +121,20 @@ export default function PermissionsPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [authLoading, user]);
+
+  if (authLoading || (user?.role === 'Admin' && loading)) {
+    return (
+      <div className="flex flex-col items-center justify-center h-96 gap-4">
+        <RefreshCw className="animate-spin text-blue-600" size={48} />
+        <p className="text-gray-500 text-sm">Loading permissions...</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return null;
+  }
 
   const togglePermission = (role: string, menuId: string) => {
     setPermissions((prev) => {
@@ -92,7 +150,7 @@ export default function PermissionsPage() {
           ...permission,
           allowed_menus: hasMenu
             ? permission.allowed_menus.filter((id) => id !== menuId)
-            : [...permission.allowed_menus, menuId],
+            : [...permission.allowed_menus, menuId]
         };
       });
     });
@@ -112,7 +170,7 @@ export default function PermissionsPage() {
     } catch (err) {
       console.error(`Failed to save permissions for ${role}:`, err);
       setError(`Unable to save permissions for ${role}`);
-      alert(`ไม่สามารถบันทึกสิทธิ์สำหรับ ${role} ได้`);
+      alert(`Unable to save permissions for ${role}`);
       setSaving(null);
     }
   };
@@ -122,7 +180,7 @@ export default function PermissionsPage() {
       <div className="flex flex-col items-center justify-center h-96 gap-4">
         <Lock className="text-red-500" size={48} />
         <h1 className="text-xl font-bold">Access Denied</h1>
-        <p className="text-gray-500 text-sm">เฉพาะ Admin เท่านั้นที่สามารถเข้าถึงหน้านี้ได้</p>
+        <p className="text-gray-500 text-sm">Only Admin can open this page.</p>
       </div>
     );
   }
@@ -132,7 +190,8 @@ export default function PermissionsPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight flex items-center gap-3">
-            Permissions <span className="text-gray-400 font-normal">/</span> <span className="bg-[#e7f0ff] text-[#166ee1] px-3 py-1 rounded-lg text-xl font-bold">RBAC Management</span>
+            Permissions <span className="text-gray-400 font-normal">/</span>{' '}
+            <span className="bg-[#e7f0ff] text-[#166ee1] px-3 py-1 rounded-lg text-xl font-bold">RBAC Management</span>
           </h1>
           <p className="text-gray-500 text-sm mt-1 font-medium">Control which menus each user role can see and access.</p>
         </div>

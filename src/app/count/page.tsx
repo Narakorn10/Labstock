@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useAuth } from '@/components/auth-provider';
 import {
   AlertCircle,
   AlertTriangle,
@@ -16,7 +17,7 @@ import {
 } from 'lucide-react';
 import Modal from '@/components/modal';
 import MultiSelect from '@/components/multi-select';
-import { apiClient, BatchItem, Reagent } from '@/lib/api-client';
+import { apiClient, BatchItem, Reagent, WeeklyStockNotificationItem } from '@/lib/api-client';
 
 interface CountItem extends Reagent {
   actual: number | '';
@@ -125,6 +126,7 @@ const formatExpDate = (value?: string) => {
 };
 
 export default function CountPage() {
+  const { user, loading: authLoading } = useAuth();
   const [reagents, setReagents] = useState<CountItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -132,8 +134,10 @@ export default function CountPage() {
   const [filterJob, setFilterJob] = useState<string[]>(['ALL']);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error', msg: string } | null>(null);
   const [submittingAll, setSubmittingAll] = useState(false);
+  const [sendingSummary, setSendingSummary] = useState(false);
   const [batchPreview, setBatchPreview] = useState<SyncDispensePreview | null>(null);
   const [isBatchSummaryOpen, setIsBatchSummaryOpen] = useState(false);
+  void sendingSummary;
 
   const mergeDashboardState = useCallback((dashboardData: Reagent[], previous: CountItem[], options?: RefreshOptions) => {
     const previousMap = new Map(previous.map((item) => [item.itemId, item]));
@@ -157,6 +161,14 @@ export default function CountPage() {
   }, [mergeDashboardState]);
 
   useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+
+    if (!user) {
+      return;
+    }
+
     apiClient.getDashboard().then((data) => {
       const savedCounts = JSON.parse(localStorage.getItem(COUNT_STORAGE_KEY) || '{}') as Record<string, number>;
       const items = data.map((item) => ({
@@ -172,7 +184,7 @@ export default function CountPage() {
       console.error(err);
       setLoading(false);
     });
-  }, []);
+  }, [authLoading, user]);
 
   useEffect(() => {
     if (reagents.length === 0) return;
@@ -210,6 +222,19 @@ export default function CountPage() {
 
   const syncItems = useMemo(() => {
     return reagents.filter((item) => item.actual !== '' && (item.actual as number) < item.weeklyTarget && !item.refilled);
+  }, [reagents]);
+
+  const weeklySummaryItems = useMemo<WeeklyStockNotificationItem[]>(() => {
+    return reagents
+      .filter((item) => item.actual !== '' && item.vendor)
+      .map((item) => ({
+        itemId: item.itemId,
+        name: item.name,
+        quantity: Number(item.actual),
+        unit: item.unit,
+        weeklyTarget: item.weeklyTarget,
+        vendor: item.vendor || ''
+      }));
   }, [reagents]);
 
   const handleInput = (itemId: string, value: string) => {
@@ -274,6 +299,33 @@ export default function CountPage() {
       setFeedback({ type: 'success', msg: 'ล้างยอดนับทั้งหมดเรียบร้อยแล้ว' });
     }
   };
+
+  const handleSendWeeklySummary = async () => {
+    if (weeklySummaryItems.length === 0) {
+      setFeedback({ type: 'error', msg: 'ยังไม่มีรายการที่นับจริงสำหรับส่งสรุปรายสัปดาห์' });
+      return;
+    }
+
+    setSendingSummary(true);
+    try {
+      const result = await apiClient.sendWeeklyStockSummary(weeklySummaryItems);
+      const vendorCount = typeof result.data === 'object' && result.data && 'notifiedVendors' in result.data
+        ? Number((result.data as { notifiedVendors?: number }).notifiedVendors || 0)
+        : 0;
+      setFeedback({
+        type: 'success',
+        msg: vendorCount > 0
+          ? `ส่งสรุปสต๊อกรายสัปดาห์ให้ Vendor ${vendorCount} รายแล้ว`
+          : 'ส่งคำขอสรุปรายสัปดาห์เรียบร้อยแล้ว'
+      });
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { error?: string } }, message: string };
+      setFeedback({ type: 'error', msg: 'ส่งสรุปรายสัปดาห์ไม่สำเร็จ: ' + (error.response?.data?.error || error.message) });
+    } finally {
+      setSendingSummary(false);
+    }
+  };
+  void handleSendWeeklySummary;
 
   const handleRefillSingle = async (itemId: string) => {
     const item = reagents.find((reagent) => reagent.itemId === itemId);
@@ -340,7 +392,7 @@ export default function CountPage() {
     }
   };
 
-  if (loading) {
+  if (authLoading || (user && loading)) {
     return (
       <div className="flex flex-col items-center justify-center h-96 gap-4">
         <Loader2 className="animate-spin text-blue-600" size={48} />
@@ -349,6 +401,10 @@ export default function CountPage() {
         </p>
       </div>
     );
+  }
+
+  if (!user) {
+    return null;
   }
 
   return (

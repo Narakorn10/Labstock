@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useAuth } from '@/components/auth-provider';
 import { apiClient, BarcodePattern, Lot, Reagent } from '@/lib/api-client';
 import { findMatchingReagent } from '@/lib/barcode-parser';
 import QRScanner from '@/components/qr-scanner';
@@ -29,6 +30,7 @@ interface CartItem {
 }
 
 export default function DispensePage() {
+  const { user, loading: authLoading } = useAuth();
   const [reagents, setReagents] = useState<Reagent[]>([]);
   const [patterns, setPatterns] = useState<BarcodePattern[]>([]);
   const [loading, setLoading] = useState(true);
@@ -59,7 +61,7 @@ export default function DispensePage() {
     } catch (err: unknown) {
       console.error(err);
       const error = err as { response?: { data?: { error?: string } }, message?: string };
-      setLoadError(error.response?.data?.error || error.message || 'Unable to load lookup data');
+      setLoadError(error.response?.data?.error || error.message || 'ไม่สามารถโหลดข้อมูลสำหรับค้นหาได้');
     } finally {
       setLoading(false);
     }
@@ -70,6 +72,14 @@ export default function DispensePage() {
     let active = true;
 
     const fetchInitialLookupData = async () => {
+      if (authLoading) {
+        return;
+      }
+
+      if (!user) {
+        return;
+      }
+
       try {
         const [reagentsData, patternsData] = await Promise.all([
           apiClient.getDashboard(),
@@ -89,7 +99,7 @@ export default function DispensePage() {
 
         console.error(err);
         const error = err as { response?: { data?: { error?: string } }, message?: string };
-        setLoadError(error.response?.data?.error || error.message || 'Unable to load lookup data');
+        setLoadError(error.response?.data?.error || error.message || 'ไม่สามารถโหลดข้อมูลสำหรับค้นหาได้');
       } finally {
         if (active) {
           setLoading(false);
@@ -102,7 +112,7 @@ export default function DispensePage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [authLoading, user]);
 
   const addToCart = (match: Reagent, lotOverride?: string) => {
     if (match.lots.length === 0) {
@@ -141,7 +151,7 @@ export default function DispensePage() {
 
     setSearch('');
     setShowResults(false);
-    setFeedback({ type: 'success', msg: `เพิ่ม ${match.name} (Lot: ${selectedLot.lotNo}) ลงตะกร้าแล้ว` });
+    setFeedback({ type: 'success', msg: `เพิ่ม ${match.name} (ล็อต ${selectedLot.lotNo}) ลงตะกร้าแล้ว` });
   };
 
   const handleScan = (decodedText: string) => {
@@ -158,7 +168,7 @@ export default function DispensePage() {
     } else {
       const parsedId = data.gtin || data.rawString || '-';
       const parsedLot = data.lot === 'NEED_MANUAL_INPUT' ? '-' : data.lot;
-      setFeedback({ type: 'error', msg: `ไม่พบข้อมูลในระบบ | code: ${parsedId} | lot: ${parsedLot} | keys: ${lookupValues.join(', ') || '-'}` });
+      setFeedback({ type: 'error', msg: `ไม่พบข้อมูลในระบบ | รหัส: ${parsedId} | ล็อต: ${parsedLot} | คำค้น: ${lookupValues.join(', ') || '-'}` });
       setScanMode(false);
     }
   };
@@ -259,13 +269,17 @@ export default function DispensePage() {
     }
   };
 
-  if (loading) {
+  if (authLoading || (user && loading)) {
     return (
       <div className="flex flex-col items-center justify-center h-96 gap-4">
         <Loader2 className="animate-spin text-red-600" size={48} />
         <p className="text-gray-500 animate-pulse">กำลังโหลดข้อมูลสต๊อก...</p>
       </div>
     );
+  }
+
+  if (!user) {
+    return null;
   }
 
   return (
@@ -336,7 +350,7 @@ export default function DispensePage() {
                       <span className="text-sm font-bold text-gray-900">{item.name}</span>
                       <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">คงเหลือ: {item.quantity}</span>
                     </div>
-                    <span className="text-[10px] font-bold text-gray-400 uppercase">ID: {item.itemId}</span>
+                      <span className="text-[10px] font-bold text-gray-400 uppercase">รหัส: {item.itemId}</span>
                   </button>
                 ))}
               </div>
@@ -376,7 +390,7 @@ export default function DispensePage() {
                   <h3 className="font-bold text-gray-900 truncate">{item.name}</h3>
                   <div className="flex flex-wrap items-center gap-3 mt-1 text-[11px] font-medium">
                     <label className="flex items-center gap-2 text-gray-500">
-                      <span className="text-red-600 bg-red-50 px-1.5 py-0.5 rounded font-bold">Lot</span>
+                      <span className="text-red-600 bg-red-50 px-1.5 py-0.5 rounded font-bold">ล็อต</span>
                       <select
                         value={item.lotNo}
                         onChange={(e) => updateLotSelection(item.cartId, e.target.value)}
@@ -391,10 +405,10 @@ export default function DispensePage() {
                     </label>
                     <span className="text-gray-400 flex items-center gap-1">
                       <Calendar size={12} />
-                      EXP: {new Date(item.expDate).toLocaleDateString('th-TH')}
+                      หมดอายุ: {new Date(item.expDate).toLocaleDateString('th-TH')}
                     </span>
                   </div>
-                  <p className="text-[10px] text-gray-400 mt-1 uppercase">คงเหลือใน Lot: {item.maxQty} {item.unit}</p>
+                  <p className="text-[10px] text-gray-400 mt-1">คงเหลือในล็อต: {item.maxQty} {item.unit}</p>
                 </div>
                 
                 <div className="flex items-center gap-3">

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { validateSignature, webhook } from "@line/bot-sdk";
 import { neon } from "@neondatabase/serverless";
-import { replyHelp, replyLowStock, replyPODetail, replyTrackingStatus } from "@/lib/line-bot";
+import { getLowStockRows, searchStockRows } from "@/lib/bot-stock-queries";
+import { replyHelp, replyLowStock, replyPODetail, replyStockSummary, replyTrackingStatus } from "@/lib/line-bot";
 import { LowStockItem, PurchaseOrder, TrackingResult } from "@/lib/line-flex-templates";
 
 const sql = neon(process.env.DATABASE_URL || "");
@@ -26,6 +27,21 @@ type PurchaseOrderRow = {
   status: string;
   expected_date?: string | null;
 };
+
+function parseStockCommand(text: string) {
+  const trimmed = text.trim();
+  const match =
+    trimmed.match(/^stock(?:\s+(.+))?$/i) ??
+    trimmed.match(/^สต๊อก(?:\s+(.+))?$/) ??
+    trimmed.match(/^สต็อก(?:\s+(.+))?$/);
+
+  if (!match) {
+    return null;
+  }
+
+  const keyword = match[1]?.trim();
+  return keyword ? { keyword } : { keyword: null };
+}
 
 async function ensureExpiryAcknowledgementSchema() {
   await sql`
@@ -102,37 +118,31 @@ export async function POST(req: Request) {
 
           await sendReply(replyToken, {
             type: "text",
-            text: `LINE User ID ของคุณคือ:\n${userId}\n\nกรุณาคัดลอกไปวางในเมนู "ตั้งค่าการแจ้งเตือน" ในระบบ LabStock เพื่อเปิดรับการแจ้งเตือนค่ะ`
+            text: `LINE User ID ของคุณคือ:\n${userId}\n\nกรุณาคัดลอกไปวางในเมนู "ตั้งค่าการแจ้งเตือน" ในระบบ LabStock เพื่อเปิดรับการแจ้งเตือนค่ะ`,
           });
           return;
         }
 
-        if (text.toLowerCase() === "stock" || text === "สต๊อก") {
-          const lowStockData = await sql`
-            WITH inventory_summary AS (
-              SELECT item_id, SUM(quantity) as current_qty
-              FROM inventory
-              GROUP BY item_id
-            )
-            SELECT
-              m.item_id as "itemId",
-              m.name,
-              m.unit,
-              m.min_threshold as "minThreshold",
-              COALESCE(i.current_qty, 0) as quantity
-            FROM master_data m
-            LEFT JOIN inventory_summary i ON m.item_id = i.item_id
-            WHERE COALESCE(i.current_qty, 0) <= m.min_threshold
-            LIMIT 10
-          `;
-
-          if (lowStockData.length > 0) {
-            await replyLowStock(replyToken, lowStockData as LowStockItem[]);
+        const stockCommand = parseStockCommand(text);
+        if (stockCommand) {
+          if (stockCommand.keyword) {
+            const stockRows = await searchStockRows(stockCommand.keyword, 10);
+            await replyStockSummary(
+              replyToken,
+              `ผลค้นหาสต๊อกสำหรับ "${stockCommand.keyword}"`,
+              stockRows,
+            );
           } else {
-            await sendReply(replyToken, {
-              type: "text",
-              text: "ขณะนี้ไม่มีรายการน้ำยาที่ต่ำกว่าระดับ Min Stock ค่ะ"
-            });
+            const lowStockData = await getLowStockRows(10);
+
+            if (lowStockData.length > 0) {
+              await replyLowStock(replyToken, lowStockData as LowStockItem[]);
+            } else {
+              await sendReply(replyToken, {
+                type: "text",
+                text: "ขณะนี้ไม่มีรายการน้ำยาที่ต่ำกว่าระดับ Min Stock ค่ะ",
+              });
+            }
           }
           return;
         }
@@ -165,7 +175,7 @@ export async function POST(req: Request) {
           } else {
             await sendReply(replyToken, {
               type: "text",
-              text: `ไม่พบใบสั่งซื้อหมายเลข ${poNumber} ในระบบค่ะ`
+              text: `ไม่พบใบสั่งซื้อหมายเลข ${poNumber} ในระบบค่ะ`,
             });
           }
           return;
@@ -181,13 +191,13 @@ export async function POST(req: Request) {
               status: shipments[0].tracking_status || "UNKNOWN",
               statusText: "พัสดุอยู่ในระบบ",
               lastUpdate: new Date().toISOString(),
-              history: []
+              history: [],
             };
             await replyTrackingStatus(replyToken, tracking);
           } else {
             await sendReply(replyToken, {
               type: "text",
-              text: `ไม่พบข้อมูลพัสดุ ${text} ในระบบค่ะ`
+              text: `ไม่พบข้อมูลพัสดุ ${text} ในระบบค่ะ`,
             });
           }
           return;
@@ -196,7 +206,7 @@ export async function POST(req: Request) {
         if (text === "สั่งซื้อ" || text.toLowerCase() === "order") {
           await sendReply(replyToken, {
             type: "text",
-            text: `กรุณาเข้าสู่ระบบเพื่อสร้างใบสั่งซื้อ: ${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/orders`
+            text: `กรุณาเข้าสู่ระบบเพื่อสร้างใบสั่งซื้อ: ${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/orders`,
           });
           return;
         }
@@ -218,7 +228,7 @@ export async function POST(req: Request) {
           await sql`UPDATE purchase_orders SET status = 'CONFIRMED', confirmed_at = NOW() WHERE po_number = ${id}`;
           await sendReply(replyToken, {
             type: "text",
-            text: `ยืนยันใบสั่งซื้อ ${id} เรียบร้อยแล้ว ระบบได้แจ้งเตือนให้ Lab ทราบแล้วค่ะ`
+            text: `ยืนยันใบสั่งซื้อ ${id} เรียบร้อยแล้ว ระบบได้แจ้งเตือนให้ Lab ทราบแล้วค่ะ`,
           });
           return;
         }
@@ -227,7 +237,7 @@ export async function POST(req: Request) {
           await sql`UPDATE purchase_orders SET status = 'REJECTED' WHERE po_number = ${id}`;
           await sendReply(replyToken, {
             type: "text",
-            text: `ปฏิเสธใบสั่งซื้อ ${id} เรียบร้อยแล้วค่ะ`
+            text: `ปฏิเสธใบสั่งซื้อ ${id} เรียบร้อยแล้วค่ะ`,
           });
           return;
         }
@@ -253,7 +263,7 @@ export async function POST(req: Request) {
 
           await sendReply(replyToken, {
             type: "text",
-            text: `รับทราบน้ำยา Lot ${lotNo} เรียบร้อยแล้ว`
+            text: `รับทราบน้ำยา Lot ${lotNo} เรียบร้อยแล้ว`,
           });
         }
       }
