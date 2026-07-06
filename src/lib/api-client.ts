@@ -286,7 +286,13 @@ export const apiClient = {
     return res.data;
   },
 
-  reconcileInventory: async (data: { itemId: string, lotNo: string, newQty: number }) => {
+  reconcileInventory: async (data: {
+    itemId: string;
+    currentLotNo: string;
+    newLotNo: string;
+    newExpDate?: string;
+    newQty: number;
+  }) => {
     const res = await instance.post<ApiResponse>('/api/inventory/reconcile', data);
     return res.data;
   },

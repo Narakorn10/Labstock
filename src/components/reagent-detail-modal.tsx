@@ -45,13 +45,22 @@ export default function ReagentDetailModal({
     if (!editingLot) return;
 
     const formData = new FormData(event.currentTarget);
+    const newLotNo = String(formData.get('lotNo') || '').trim();
+    const newExpDate = String(formData.get('expDate') || '').trim();
     const newQty = Number(formData.get('newQty'));
+
+    if (!newLotNo) {
+      alert('กรุณากรอก Lot Number');
+      return;
+    }
 
     try {
       setSubmitting(true);
       const result = await apiClient.reconcileInventory({
         itemId: reagent.itemId,
-        lotNo: editingLot.lotNo,
+        currentLotNo: editingLot.lotNo,
+        newLotNo,
+        newExpDate,
         newQty,
       });
 
@@ -233,6 +242,27 @@ export default function ReagentDetailModal({
             </div>
 
             <div className="space-y-2">
+              <label className="text-sm font-black text-gray-700 uppercase tracking-widest">Lot Number</label>
+              <input
+                name="lotNo"
+                type="text"
+                required
+                defaultValue={editingLot.lotNo}
+                className="w-full border border-blue-200 rounded-2xl px-4 py-3 font-bold text-gray-800 focus:bg-white transition outline-none"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-black text-gray-700 uppercase tracking-widest">Expiry Date</label>
+              <input
+                name="expDate"
+                type="date"
+                defaultValue={editingLot.expDate || ''}
+                className="w-full border border-blue-200 rounded-2xl px-4 py-3 font-bold text-gray-800 focus:bg-white transition outline-none"
+              />
+            </div>
+
+            <div className="space-y-2">
               <label className="text-sm font-black text-gray-700 uppercase tracking-widest">Actual Quantity</label>
               <input
                 name="newQty"
@@ -248,7 +278,7 @@ export default function ReagentDetailModal({
 
             <p className="text-xs text-amber-700 font-bold bg-amber-50 p-3 rounded-xl border border-amber-100">
               <AlertTriangle size={14} className="inline mr-1" />
-              This updates the selected lot immediately and writes an adjustment log.
+              This updates lot, expiry, and quantity immediately, then writes an adjustment log.
             </p>
 
             <div className="flex gap-3">
@@ -265,7 +295,7 @@ export default function ReagentDetailModal({
                 className="flex-1 px-4 py-3 bg-blue-600 text-white rounded-2xl hover:bg-blue-700 transition-all shadow-lg font-black text-sm uppercase flex items-center justify-center gap-2"
               >
                 {submitting && <Loader2 size={18} className="animate-spin" />}
-                Save Qty
+                Save Changes
               </button>
             </div>
           </form>
