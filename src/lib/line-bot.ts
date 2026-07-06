@@ -19,7 +19,18 @@ const config = {
 
 export const lineClient = new messagingApi.MessagingApiClient(config);
 
-const getAppBaseUrl = () => process.env.NEXT_PUBLIC_APP_URL?.trim() || "http://localhost:3000";
+const getAppBaseUrl = () => {
+  const explicitUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  if (explicitUrl) return explicitUrl;
+
+  const productionUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
+  if (productionUrl) return `https://${productionUrl}`;
+
+  const vercelUrl = process.env.VERCEL_URL?.trim();
+  if (vercelUrl) return `https://${vercelUrl}`;
+
+  return "http://localhost:3000";
+};
 
 export const getLineDispenseUrl = () => {
   const explicitLiffUrl = process.env.NEXT_PUBLIC_LINE_DISPENSE_LIFF_URL?.trim();
