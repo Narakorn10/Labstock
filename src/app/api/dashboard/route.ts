@@ -43,6 +43,26 @@ export async function GET(request: Request) {
     `;
     console.log(`[Dashboard API] Inventory data rows: ${inventoryData.length}`);
 
+    const formatInventoryDate = (value: unknown) => {
+      if (!value) return '';
+      if (value instanceof Date) {
+        return value.toISOString().slice(0, 10);
+      }
+
+      const text = String(value);
+      const directMatch = text.match(/^(\d{4}-\d{2}-\d{2})/);
+      if (directMatch) {
+        return directMatch[1];
+      }
+
+      const parsed = new Date(text);
+      if (Number.isNaN(parsed.getTime())) {
+        return text;
+      }
+
+      return parsed.toISOString().slice(0, 10);
+    };
+
     // Map inventory to master data
     interface DashboardLot {
       lotNo: string;
@@ -74,7 +94,7 @@ export async function GET(request: Request) {
       inventoryMap[id].totalQty += parseFloat(inv.qty as string);
       inventoryMap[id].lots.push({
         lotNo: inv.lotNo as string,
-        expDate: inv.expDate as string,
+        expDate: formatInventoryDate(inv.expDate),
         qty: parseFloat(inv.qty as string)
       });
     });

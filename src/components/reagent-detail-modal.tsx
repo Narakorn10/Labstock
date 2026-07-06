@@ -33,6 +33,21 @@ export default function ReagentDetailModal({
   const [editingLot, setEditingLot] = useState<Lot | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const formatDateForInput = (value?: string) => {
+    if (!value) return '';
+    const directMatch = value.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (directMatch) {
+      return directMatch[1];
+    }
+
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return '';
+    }
+
+    return parsed.toISOString().slice(0, 10);
+  };
+
   if (!reagent) return null;
 
   const isLow = reagent.quantity <= reagent.minThreshold;
@@ -46,7 +61,8 @@ export default function ReagentDetailModal({
 
     const formData = new FormData(event.currentTarget);
     const newLotNo = String(formData.get('lotNo') || '').trim();
-    const newExpDate = String(formData.get('expDate') || '').trim();
+    const submittedExpDate = String(formData.get('expDate') || '').trim();
+    const newExpDate = submittedExpDate || formatDateForInput(editingLot.expDate);
     const newQty = Number(formData.get('newQty'));
 
     if (!newLotNo) {
@@ -257,7 +273,7 @@ export default function ReagentDetailModal({
               <input
                 name="expDate"
                 type="date"
-                defaultValue={editingLot.expDate || ''}
+                defaultValue={formatDateForInput(editingLot.expDate)}
                 className="w-full border border-blue-200 rounded-2xl px-4 py-3 font-bold text-gray-800 focus:bg-white transition outline-none"
               />
             </div>
