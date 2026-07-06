@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { validateSignature, webhook } from "@line/bot-sdk";
 import { neon } from "@neondatabase/serverless";
 import { getLowStockRows, searchStockRows } from "@/lib/bot-stock-queries";
-import { replyHelp, replyLowStock, replyPODetail, replyStockSummary, replyTrackingStatus } from "@/lib/line-bot";
+import { replyDispenseMenu, replyHelp, replyLowStock, replyPODetail, replyStockSummary, replyTrackingStatus } from "@/lib/line-bot";
 import { LowStockItem, PurchaseOrder, TrackingResult } from "@/lib/line-flex-templates";
 
 const sql = neon(process.env.DATABASE_URL || "");
@@ -41,6 +41,11 @@ function parseStockCommand(text: string) {
 
   const keyword = match[1]?.trim();
   return keyword ? { keyword } : { keyword: null };
+}
+
+function isDispenseMenuCommand(text: string) {
+  const normalized = text.trim().toLowerCase();
+  return ["dispense", "เบิก", "เบิกน้ำยา", "เบิกจ่าย", "เมนูเบิก"].includes(normalized);
 }
 
 async function ensureExpiryAcknowledgementSchema() {
@@ -106,6 +111,11 @@ export async function POST(req: Request) {
         console.log(`[LINE Webhook] Text received: "${text}"`);
 
         if (!replyToken) return;
+
+        if (isDispenseMenuCommand(text)) {
+          await replyDispenseMenu(replyToken);
+          return;
+        }
 
         if (text.toLowerCase() === "help" || text === "เมนู") {
           await replyHelp(replyToken);

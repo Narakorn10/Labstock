@@ -19,6 +19,18 @@ const config = {
 
 export const lineClient = new messagingApi.MessagingApiClient(config);
 
+const getAppBaseUrl = () => process.env.NEXT_PUBLIC_APP_URL?.trim() || "http://localhost:3000";
+
+export const getLineDispenseUrl = () => {
+  const explicitLiffUrl = process.env.NEXT_PUBLIC_LINE_DISPENSE_LIFF_URL?.trim();
+  if (explicitLiffUrl) return explicitLiffUrl;
+
+  const liffId = process.env.NEXT_PUBLIC_LINE_DISPENSE_LIFF_ID?.trim();
+  if (liffId) return `https://liff.line.me/${liffId}`;
+
+  return `${getAppBaseUrl()}/liff/dispense`;
+};
+
 type StockSummaryLineItem = {
   itemId: string;
   name: string;
@@ -90,6 +102,23 @@ export async function replyTrackingStatus(replyToken: string, tracking: Tracking
 export async function replyLowStock(replyToken: string, items: LowStockItem[]) {
   const template = generateLowStockTemplate(items);
   await sendLineReply(replyToken, [template as messagingApi.Message]);
+}
+
+export async function replyDispenseMenu(replyToken: string) {
+  await sendLineReply(replyToken, [{
+    type: "template",
+    altText: "Open LabStock dispense menu",
+    template: {
+      type: "buttons",
+      title: "LabStock",
+      text: "เปิดเมนูเบิกน้ำยาใน LINE",
+      actions: [{
+        type: "uri",
+        label: "เปิดเมนูเบิก",
+        uri: getLineDispenseUrl(),
+      }],
+    },
+  } as messagingApi.Message]);
 }
 
 function formatLineStockSummary(title: string, items: StockSummaryLineItem[]) {
