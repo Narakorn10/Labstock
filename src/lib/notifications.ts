@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 import { messagingApi } from '@line/bot-sdk';
 import { PurchaseOrder, LowStockItem, ExpiringSoonItem, WeeklyStockSummaryItem } from './line-flex-templates';
+import { ReagentUsageInsight } from './reagent-usage-insights';
 
 // For Email (Nodemailer)
 const transporter = nodemailer.createTransport({
@@ -38,6 +39,7 @@ export type NotifyEvent =
   | 'LOW_STOCK'
   | 'EXPIRING_SOON'
   | 'WEEKLY_STOCK'
+  | 'REORDER_RISK'
   | 'STOCK_RECEIVED'
   | 'STOCK_DISPENSED'
   | 'TEST';
@@ -62,6 +64,7 @@ export interface NotificationSetting {
   notify_low_stock?: boolean;
   notify_expiring_soon?: boolean;
   notify_weekly_summary?: boolean;
+  notify_reorder_risk?: boolean;
 }
 
 type DbRow = Record<string, unknown>;
@@ -71,6 +74,7 @@ type NotifyPayload =
   | LowStockItem[]
   | ExpiringSoonItem[]
   | WeeklyStockSummaryItem[]
+  | ReagentUsageInsight[]
   | StockActivityPayload
   | Record<string, never>;
 
@@ -86,6 +90,7 @@ export function normalizeNotificationSettings(rows: DbRow[]): NotificationSettin
     notify_low_stock: row.notify_low_stock === undefined ? undefined : Boolean(row.notify_low_stock),
     notify_expiring_soon: row.notify_expiring_soon === undefined ? undefined : Boolean(row.notify_expiring_soon),
     notify_weekly_summary: row.notify_weekly_summary === undefined ? undefined : Boolean(row.notify_weekly_summary),
+    notify_reorder_risk: row.notify_reorder_risk === undefined ? undefined : Boolean(row.notify_reorder_risk),
   }));
 }
 
@@ -124,6 +129,7 @@ export async function notifyUsers(event: NotifyEvent, data: NotifyPayload, setti
       case 'LOW_STOCK':    shouldNotify = Boolean(setting.notify_low_stock);    break;
       case 'EXPIRING_SOON': shouldNotify = Boolean(setting.notify_expiring_soon); break;
       case 'WEEKLY_STOCK': shouldNotify = Boolean(setting.notify_weekly_summary); break;
+      case 'REORDER_RISK': shouldNotify = Boolean(setting.notify_reorder_risk); break;
       case 'TEST':         shouldNotify = true;                        break;
     }
 
@@ -147,6 +153,13 @@ export async function notifyUsers(event: NotifyEvent, data: NotifyPayload, setti
           const vendors = new Set(data.map((item) => item.vendor));
           const vendor = vendors.size === 1 ? data[0]?.vendor || setting.username : "ภาพรวมสต็อก";
           await pushWeeklyStockSummary(setting.line_user_id, vendor, data);
+        } else if (event === 'REORDER_RISK') {
+          const items = data as ReagentUsageInsight[];
+          const lines = items.slice(0, 8).map((item) => {
+            const days = item.daysUntilMin === null ? 'ข้อมูลไม่พอ' : `${Math.ceil(item.daysUntilMin)} วัน`;
+            return `• ${item.name}: ${item.status === 'critical' ? 'วิกฤต' : 'ควรสั่ง'} (เหลือ ${days}, แนะนำ ${Math.ceil(item.recommendedOrderQty)} ${item.unit})`;
+          });
+          await sendLinePush(setting.line_user_id, [{ type: 'text', text: `📦 สรุปความเสี่ยงจัดซื้อน้ำยา\n${lines.join('\n')}` }]);
         } else if (isPurchaseOrderPayload(data)) {
           const { messagingApi } = await import('@line/bot-sdk');
           const lineClient = new messagingApi.MessagingApiClient({
@@ -193,6 +206,10 @@ export async function notifyUsers(event: NotifyEvent, data: NotifyPayload, setti
           subject = 'Weekly Stock Summary';
           const items = data as WeeklyStockSummaryItem[];
           html = `<h3>Weekly stock summary</h3><ul>${items.map((item) => `<li>${item.name}: ${item.quantity} ${item.unit} remaining (weekly target ${item.weeklyTarget})</li>`).join('')}</ul>`;
+        } else if (event === 'REORDER_RISK') {
+          const items = data as ReagentUsageInsight[];
+          subject = 'Reagent reorder risk';
+          html = `<h3>Reagent reorder risk</h3><ul>${items.map((item) => `<li>${item.name}: ${item.status}, recommended order ${Math.ceil(item.recommendedOrderQty)} ${item.unit}</li>`).join('')}</ul>`;
         } else {
           subject = `PO Status Update: ${isPurchaseOrderPayload(data) ? data.po_number : ''}`;
           html = `<h3>Order status updated</h3><p>Status: ${event}</p>`;

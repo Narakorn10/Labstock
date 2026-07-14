@@ -10,4 +10,9 @@ export async function ensureVendorNotificationSchema() {
     ALTER TABLE notification_settings
     ADD COLUMN IF NOT EXISTS notify_weekly_summary BOOLEAN DEFAULT true
   `;
+
+  await sql`
+    ALTER TABLE notification_settings
+    ADD COLUMN IF NOT EXISTS notify_reorder_risk BOOLEAN DEFAULT true
+  `;
 }

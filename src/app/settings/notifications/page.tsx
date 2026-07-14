@@ -24,6 +24,7 @@ type NotificationSettings = {
   notify_low_stock: boolean;
   notify_expiring_soon: boolean;
   notify_weekly_summary: boolean;
+  notify_reorder_risk: boolean;
   [key: string]: string | boolean | undefined;
 };
 
@@ -239,6 +240,7 @@ export default function NotificationSettingsPage() {
               { id: 'notify_low_stock', label: 'น้ำยาต่ำกว่าระดับสำรอง', sub: 'Low Stock Alert' },
               { id: 'notify_expiring_soon', label: 'น้ำยาใกล้หมดอายุภายใน 30 วัน', sub: 'Expiring Soon Alert' },
               { id: 'notify_weekly_summary', label: 'สรุปปริมาณน้ำยาคงเหลือประจำสัปดาห์', sub: 'Weekly Stock Summary' },
+              { id: 'notify_reorder_risk', label: 'ความเสี่ยงต้องสั่งซื้อน้ำยา', sub: 'Weekly Reorder Risk (Monday 08:00)' },
             ].map((item) => (
               <label 
                 key={item.id} 

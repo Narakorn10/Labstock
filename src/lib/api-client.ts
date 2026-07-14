@@ -66,12 +66,41 @@ export interface DailyStat {
   items: Record<string, number>;
 }
 
+export type ReorderStatus = 'normal' | 'reorder' | 'critical';
+
+export interface ReagentUsageInsight {
+  itemId: string;
+  name: string;
+  unit: string;
+  quantity: number;
+  minThreshold: number;
+  dispensedLast90Days: number;
+  averageDailyUsage: number;
+  daysUntilMin: number | null;
+  status: ReorderStatus;
+  recommendedOrderQty: number;
+}
+
+export interface ExpiryRiskInsight {
+  itemId: string;
+  name: string;
+  unit: string;
+  lotNo: string;
+  expDate: string;
+  quantity: number;
+  daysUntilExpiry: number;
+  expectedDaysToUse: number | null;
+  isExpiryRisk: boolean;
+}
+
 export interface UsageResponse {
   summary: UsageData[];
   dailyStats?: DailyStat[];
   weeklyStats?: { week: string; totalDispensed: number }[];
   expiringSoon?: { itemId: string; name: string; lotNo: string; expDate: string; quantity: number }[];
   slowMoving?: { itemId: string; name: string; stock: number }[];
+  insights?: ReagentUsageInsight[];
+  expiryRisks?: ExpiryRiskInsight[];
 }
 
 export interface BatchItem {

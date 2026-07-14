@@ -15,7 +15,8 @@ const defaultSettings = {
   notify_po_received: true,
   notify_low_stock: true,
   notify_expiring_soon: true,
-  notify_weekly_summary: true
+  notify_weekly_summary: true,
+  notify_reorder_risk: true
 };
 
 export async function GET(request: Request) {
@@ -50,7 +51,8 @@ export async function GET(request: Request) {
       username,
       ...defaultSettings,
       ...settings[0],
-      notify_expiring_soon: settings[0].notify_expiring_soon ?? true
+      notify_expiring_soon: settings[0].notify_expiring_soon ?? true,
+      notify_reorder_risk: settings[0].notify_reorder_risk ?? true
     });
   } catch (error: unknown) {
     console.error('Error fetching notification settings:', error);
@@ -69,7 +71,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { 
       username, email, line_user_id, line_display_name,
-      notify_po_created, notify_po_confirmed, notify_po_shipped, notify_po_received, notify_low_stock, notify_expiring_soon, notify_weekly_summary 
+      notify_po_created, notify_po_confirmed, notify_po_shipped, notify_po_received, notify_low_stock, notify_expiring_soon, notify_weekly_summary, notify_reorder_risk
     } = body;
 
     if (!username) {
@@ -82,10 +84,10 @@ export async function POST(request: Request) {
     const result = await sql`
       INSERT INTO notification_settings (
         username, email, line_user_id, line_display_name,
-        notify_po_created, notify_po_confirmed, notify_po_shipped, notify_po_received, notify_low_stock, notify_expiring_soon, notify_weekly_summary
+        notify_po_created, notify_po_confirmed, notify_po_shipped, notify_po_received, notify_low_stock, notify_expiring_soon, notify_weekly_summary, notify_reorder_risk
       ) VALUES (
         ${username}, ${email || null}, ${line_user_id || null}, ${line_display_name || null},
-        ${notify_po_created ?? true}, ${notify_po_confirmed ?? true}, ${notify_po_shipped ?? true}, ${notify_po_received ?? true}, ${notify_low_stock ?? true}, ${notify_expiring_soon ?? true}, ${notify_weekly_summary ?? true}
+        ${notify_po_created ?? true}, ${notify_po_confirmed ?? true}, ${notify_po_shipped ?? true}, ${notify_po_received ?? true}, ${notify_low_stock ?? true}, ${notify_expiring_soon ?? true}, ${notify_weekly_summary ?? true}, ${notify_reorder_risk ?? true}
       )
       ON CONFLICT (username) DO UPDATE SET
         email = EXCLUDED.email,
@@ -97,7 +99,8 @@ export async function POST(request: Request) {
         notify_po_received = EXCLUDED.notify_po_received,
         notify_low_stock = EXCLUDED.notify_low_stock,
         notify_expiring_soon = EXCLUDED.notify_expiring_soon,
-        notify_weekly_summary = EXCLUDED.notify_weekly_summary
+        notify_weekly_summary = EXCLUDED.notify_weekly_summary,
+        notify_reorder_risk = EXCLUDED.notify_reorder_risk
       RETURNING *
     `;
 
