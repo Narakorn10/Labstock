@@ -2,11 +2,9 @@ import { messagingApi } from "@line/bot-sdk";
 import {
   ExpiringSoonItem,
   generateExpiringSoonTemplate,
-  generateLowStockTemplate,
   generatePONotificationTemplate,
   generatePOStatusTemplate,
   generateTrackingTemplate,
-  generateWeeklyStockSummaryTemplate,
   LowStockItem,
   PurchaseOrder,
   TrackingResult,
@@ -37,7 +35,7 @@ export const getLineDispenseUrl = () => {
   if (explicitLiffUrl) return explicitLiffUrl;
 
   const liffId = process.env.NEXT_PUBLIC_LINE_DISPENSE_LIFF_ID?.trim();
-  if (liffId) return `https://liff.line.me/${liffId}`;
+  if (liffId) return `https://liff.line.me/${liffId}/liff/dispense`;
 
   return `${getAppBaseUrl()}/liff/dispense`;
 };
@@ -50,6 +48,28 @@ type StockSummaryLineItem = {
   minThreshold?: number;
   jobType?: string;
 };
+
+function formatLowStockMessage(items: LowStockItem[]) {
+  const visibleItems = items.slice(0, 15);
+  const itemLines = visibleItems.map((item) => (
+    `• ${item.name}\n  คงเหลือ ${item.quantity} ${item.unit} (ขั้นต่ำ ${item.minThreshold} ${item.unit})`
+  ));
+  const remainingCount = items.length - visibleItems.length;
+  const suffix = remainingCount > 0 ? `\n\nและอีก ${remainingCount} รายการ` : "";
+
+  return `⚠️ แจ้งเตือนสต็อกต่ำ\nมี ${items.length} รายการต่ำกว่าระดับสำรอง\n\n${itemLines.join("\n")}${suffix}`;
+}
+
+function formatWeeklyStockSummaryMessage(vendor: string, items: WeeklyStockSummaryItem[]) {
+  const visibleItems = items.slice(0, 15);
+  const itemLines = visibleItems.map((item) => (
+    `• ${item.name}: ${item.quantity} ${item.unit} (เป้าหมาย ${item.weeklyTarget} ${item.unit})`
+  ));
+  const remainingCount = items.length - visibleItems.length;
+  const suffix = remainingCount > 0 ? `\n\nและอีก ${remainingCount} รายการ` : "";
+
+  return `📊 สรุปสต๊อกรายสัปดาห์\n${vendor}\nทั้งหมด ${items.length} รายการ\n\n${itemLines.join("\n")}${suffix}`;
+}
 
 export async function sendLinePush(to: string, messages: messagingApi.Message[]) {
   if (!process.env.LINE_CHANNEL_ACCESS_TOKEN || process.env.LINE_CHANNEL_ACCESS_TOKEN === "DUMMY_TOKEN") {
@@ -86,8 +106,10 @@ export async function pushTrackingUpdate(lineUserId: string, tracking: TrackingR
 }
 
 export async function pushLowStockAlert(lineUserId: string, items: LowStockItem[]) {
-  const template = generateLowStockTemplate(items);
-  await sendLinePush(lineUserId, [template as messagingApi.Message]);
+  await sendLinePush(lineUserId, [{
+    type: "text",
+    text: formatLowStockMessage(items),
+  }]);
 }
 
 export async function pushExpiringSoonAlert(lineUserId: string, items: ExpiringSoonItem[]) {
@@ -96,8 +118,10 @@ export async function pushExpiringSoonAlert(lineUserId: string, items: ExpiringS
 }
 
 export async function pushWeeklyStockSummary(lineUserId: string, vendor: string, items: WeeklyStockSummaryItem[]) {
-  const template = generateWeeklyStockSummaryTemplate(vendor, items);
-  await sendLinePush(lineUserId, [template as messagingApi.Message]);
+  await sendLinePush(lineUserId, [{
+    type: "text",
+    text: formatWeeklyStockSummaryMessage(vendor, items),
+  }]);
 }
 
 export async function replyPODetail(replyToken: string, po: PurchaseOrder) {
@@ -111,8 +135,10 @@ export async function replyTrackingStatus(replyToken: string, tracking: Tracking
 }
 
 export async function replyLowStock(replyToken: string, items: LowStockItem[]) {
-  const template = generateLowStockTemplate(items);
-  await sendLineReply(replyToken, [template as messagingApi.Message]);
+  await sendLineReply(replyToken, [{
+    type: "text",
+    text: formatLowStockMessage(items),
+  }]);
 }
 
 export async function replyDispenseMenu(replyToken: string) {
@@ -167,6 +193,8 @@ export async function replyHelp(replyToken: string) {
       "- พิมพ์เลขพัสดุ (เช่น EY123456789TH) เพื่อดู Tracking",
       "- พิมพ์ 'stock' หรือ 'สต๊อก' เพื่อดูรายการน้ำยาที่ต่ำกว่า Min Stock",
       "- พิมพ์ 'stock <คำค้น>' หรือ 'สต๊อก <คำค้น>' เพื่อค้นหายอดน้ำยาตามรหัส/ชื่อ/บาร์โค้ด",
+      "- พิมพ์ 'สต๊อกงาน <ชื่องาน>' เพื่อดูทุกรายการและยอดคงเหลือของงานนั้น",
+      "- พิมพ์ 'จำนวนสต๊อกคงเหลือ <คำค้น>' หรือ '<ชื่อน้ำยา> เหลือเท่าไหร่' เพื่อดูยอดคงเหลือ",
       "- พิมพ์ 'สั่งซื้อ' เพื่อเอาลิงก์ไปสร้างใบสั่งซื้อ",
       "- สำหรับ Vendor สามารถกดยืนยัน/ปฏิเสธ PO จากการ์ดแจ้งเตือนได้เลย",
     ].join("\n"),

@@ -17,18 +17,22 @@ const savedCameraKey = 'labstock.preferredCameraId';
 function getPreferredCamera(cameras: CameraDevice[]) {
   const savedCameraId = typeof window !== 'undefined' ? localStorage.getItem(savedCameraKey) : null;
   const savedCamera = cameras.find((camera) => camera.id === savedCameraId);
-  if (savedCamera) return savedCamera;
+  if (savedCamera && !/macro/i.test(savedCamera.label || '')) return savedCamera;
+
+  const backCamera = cameras.find((camera) => (
+    /(back|rear|environment)/i.test(camera.label || '') && !/macro/i.test(camera.label || '')
+  ));
+  if (backCamera) return backCamera;
 
   const macroCamera = cameras.find((camera) => /macro/i.test(camera.label || ''));
   if (macroCamera) return macroCamera;
 
-  const backCamera = cameras.find((camera) => /(back|rear|environment)/i.test(camera.label || ''));
-  return backCamera || cameras[cameras.length - 1];
+  return cameras[cameras.length - 1];
 }
 
 function getScannerConfig() {
   return {
-    fps: 60,
+    fps: 30,
     qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
       const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
       const boxSize = Math.floor(minEdge * 0.8);
@@ -43,6 +47,23 @@ function getScannerConfig() {
       Html5QrcodeSupportedFormats.DATA_MATRIX,
     ],
   };
+}
+
+async function enableContinuousFocus(scanner: Html5Qrcode) {
+  try {
+    const capabilities = scanner.getRunningTrackCapabilities() as MediaTrackCapabilities & {
+      focusMode?: string[];
+    };
+
+    if (!capabilities.focusMode?.includes('continuous')) return;
+
+    await scanner.applyVideoConstraints({
+      advanced: [{ focusMode: 'continuous' } as MediaTrackConstraintSet],
+    });
+  } catch (error) {
+    // Some mobile browsers do not expose focus controls. Scanning still works with their default focus mode.
+    console.info('Continuous camera focus is not available on this device', error);
+  }
 }
 
 function playBeep() {
@@ -146,6 +167,8 @@ export default function QRScanner({ onScan, onClose }: QRScannerProps) {
             // Keep scanning through frames that do not decode cleanly.
           },
         );
+
+        await enableContinuousFocus(scanner);
 
         if (!cancelled) {
           setIsScannerStarted(true);

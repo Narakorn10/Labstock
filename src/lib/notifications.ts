@@ -144,7 +144,8 @@ export async function notifyUsers(event: NotifyEvent, data: NotifyPayload, setti
         } else if (event === 'EXPIRING_SOON') {
           await pushExpiringSoonAlert(setting.line_user_id, data as ExpiringSoonItem[]);
         } else if (event === 'WEEKLY_STOCK' && isWeeklyStockPayload(data)) {
-          const vendor = data[0]?.vendor || setting.username;
+          const vendors = new Set(data.map((item) => item.vendor));
+          const vendor = vendors.size === 1 ? data[0]?.vendor || setting.username : "ภาพรวมสต็อก";
           await pushWeeklyStockSummary(setting.line_user_id, vendor, data);
         } else if (isPurchaseOrderPayload(data)) {
           const { messagingApi } = await import('@line/bot-sdk');

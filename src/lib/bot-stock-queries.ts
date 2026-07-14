@@ -87,3 +87,29 @@ export async function searchStockRows(keyword: string, limit = 10) {
     LIMIT ${limit}
   ` as BotStockRow[];
 }
+
+export async function searchStockRowsByJob(jobKeyword: string) {
+  const likeKeyword = `%${jobKeyword}%`;
+
+  return await sql`
+    WITH InventorySummary AS (
+      SELECT
+        item_id,
+        SUM(quantity) as current_qty
+      FROM inventory
+      GROUP BY item_id
+    )
+    SELECT
+      m.item_id as "itemId",
+      m.name,
+      COALESCE(NULLIF(m.job_type, ''), 'Unassigned job') as "jobType",
+      COALESCE(NULLIF(m.machine_type, ''), 'Unassigned machine') as "machineType",
+      m.unit,
+      m.min_threshold as "minThreshold",
+      COALESCE(i.current_qty, 0) as quantity
+    FROM master_data m
+    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)
+    WHERE COALESCE(m.job_type, '') ILIKE ${likeKeyword}
+    ORDER BY m.name ASC, m.item_id ASC
+  ` as BotStockRow[];
+}

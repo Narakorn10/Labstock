@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { validateSignature, webhook } from "@line/bot-sdk";
 import { neon } from "@neondatabase/serverless";
-import { getLowStockRows, searchStockRows } from "@/lib/bot-stock-queries";
+import { getLowStockRows, searchStockRows, searchStockRowsByJob } from "@/lib/bot-stock-queries";
 import { replyDispenseMenu, replyHelp, replyLowStock, replyPODetail, replyStockSummary, replyTrackingStatus } from "@/lib/line-bot";
 import { LowStockItem, PurchaseOrder, TrackingResult } from "@/lib/line-flex-templates";
 
@@ -28,19 +28,50 @@ type PurchaseOrderRow = {
   expected_date?: string | null;
 };
 
-function parseStockCommand(text: string) {
+function parseStockCommand(text: string): { keyword: string | null; searchByJob: boolean } | null {
   const trimmed = text.trim();
+  const jobMatch =
+    trimmed.match(/^stock\s+(?:job|งาน)\s+(.+)$/i) ??
+    trimmed.match(/^สต๊อก\s*งาน\s+(.+)$/) ??
+    trimmed.match(/^สต็อก\s*งาน\s+(.+)$/) ??
+    trimmed.match(/^สต๊อกตามงาน\s+(.+)$/) ??
+    trimmed.match(/^สต็อกตามงาน\s+(.+)$/);
+
+  if (jobMatch) {
+    return { keyword: jobMatch[1].trim(), searchByJob: true };
+  }
+
   const match =
     trimmed.match(/^stock(?:\s+(.+))?$/i) ??
     trimmed.match(/^สต๊อก(?:\s+(.+))?$/) ??
     trimmed.match(/^สต็อก(?:\s+(.+))?$/);
 
   if (!match) {
+    const remainingStockPhrases = [
+      "จำนวนสต๊อกคงเหลือ",
+      "จำนวนสต็อกคงเหลือ",
+      "สต๊อกคงเหลือ",
+      "สต็อกคงเหลือ",
+      "สต๊อกเหลือ",
+      "สต็อกเหลือ",
+    ];
+    const matchingPhrase = remainingStockPhrases.find((phrase) => trimmed.startsWith(phrase));
+
+    if (matchingPhrase) {
+      const keyword = trimmed.slice(matchingPhrase.length).trim();
+      return keyword ? { keyword, searchByJob: false } : { keyword: null, searchByJob: false };
+    }
+
+    const remainingQuestion = trimmed.match(/^(.+?)\s+(?:เหลือเท่าไหร่|เหลือกี่(?:ขวด|กล่อง|ชิ้น)?|คงเหลือเท่าไหร่)$/);
+    if (remainingQuestion) {
+      return { keyword: remainingQuestion[1].trim(), searchByJob: false };
+    }
+
     return null;
   }
 
   const keyword = match[1]?.trim();
-  return keyword ? { keyword } : { keyword: null };
+  return keyword ? { keyword, searchByJob: false } : { keyword: null, searchByJob: false };
 }
 
 function isDispenseMenuCommand(text: string) {
@@ -136,10 +167,14 @@ export async function POST(req: Request) {
         const stockCommand = parseStockCommand(text);
         if (stockCommand) {
           if (stockCommand.keyword) {
-            const stockRows = await searchStockRows(stockCommand.keyword, 10);
+            const stockRows = stockCommand.searchByJob
+              ? await searchStockRowsByJob(stockCommand.keyword)
+              : await searchStockRows(stockCommand.keyword, 10);
             await replyStockSummary(
               replyToken,
-              `ผลค้นหาสต๊อกสำหรับ "${stockCommand.keyword}"`,
+              stockCommand.searchByJob
+                ? `สต๊อกงาน "${stockCommand.keyword}" ทั้งหมด ${stockRows.length} รายการ`
+                : `ผลค้นหาสต๊อกสำหรับ "${stockCommand.keyword}"`,
               stockRows,
             );
           } else {

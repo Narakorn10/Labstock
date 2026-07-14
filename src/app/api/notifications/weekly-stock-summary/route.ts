@@ -8,10 +8,16 @@ import { ensureVendorNotificationSchema } from "@/lib/vendor-notification-utils"
 type RequestItem = WeeklyStockSummaryItem;
 
 async function isAuthorized(request: Request) {
-  const cronSecret = process.env.WEEKLY_STOCK_NOTIFICATION_CRON_SECRET;
+  const cronSecrets = [
+    process.env.WEEKLY_STOCK_NOTIFICATION_CRON_SECRET,
+    process.env.CRON_SECRET,
+  ].filter((secret): secret is string => Boolean(secret));
   const requestSecret = request.headers.get("x-cron-secret");
+  const authorization = request.headers.get("authorization");
 
-  if (cronSecret && requestSecret === cronSecret) {
+  if (cronSecrets.some((secret) => (
+    requestSecret === secret || authorization === `Bearer ${secret}`
+  ))) {
     return true;
   }
 
@@ -86,6 +92,24 @@ export async function POST(request: Request) {
       itemsByVendor.get(item.vendor)?.push(item);
     });
 
+    const generalSettingsRows = await sql`
+      SELECT
+        n.username,
+        n.email,
+        n.line_user_id,
+        n.notify_weekly_summary
+      FROM notification_settings n
+      JOIN users u ON u.username = n.username
+      WHERE u.role <> 'Vendor'
+        AND n.notify_weekly_summary = true
+        AND (n.line_user_id IS NOT NULL OR n.email IS NOT NULL)
+    `;
+    const generalSettings = normalizeNotificationSettings(generalSettingsRows);
+
+    if (generalSettings.length > 0) {
+      await notifyUsers("WEEKLY_STOCK", items, generalSettings);
+    }
+
     let notifiedVendors = 0;
     let notifiedItems = 0;
 
@@ -117,6 +141,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
+      notifiedUsers: generalSettings.length,
       notifiedVendors,
       notifiedItems
     });
@@ -125,4 +150,8 @@ export async function POST(request: Request) {
     const message = error instanceof Error ? error.message : "Failed to send weekly stock summary";
     return NextResponse.json({ error: message }, { status: 500 });
   }
+}
+
+export async function GET(request: Request) {
+  return POST(request);
 }
