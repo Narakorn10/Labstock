@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@line/bot-sdk": "^11.0.1",
+    "@line/liff": "^2.29.1",
     "@neondatabase/serverless": "^1.1.0",
     "axios": "^1.16.0",
     "bcryptjs": "^3.0.3",

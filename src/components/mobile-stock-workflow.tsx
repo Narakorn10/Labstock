@@ -25,6 +25,8 @@ interface MobileStockWorkflowProps {
   mode: WorkflowMode;
   deepLinkCode?: string;
   deepLinkLot?: string;
+  lineApprover?: { username: string; name: string; role: string } | null;
+  lineIdToken?: string;
 }
 
 interface MobileCartItem {
@@ -46,7 +48,7 @@ interface MobileLookupResponse {
 
 const createCartId = (itemId: string) => `${itemId}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-export default function MobileStockWorkflow({ mode }: MobileStockWorkflowProps) {
+export default function MobileStockWorkflow({ mode, lineApprover, lineIdToken }: MobileStockWorkflowProps) {
   const [reagents, setReagents] = useState<Reagent[]>([]);
   const [patterns, setPatterns] = useState<BarcodePattern[]>([]);
   const [loading, setLoading] = useState(true);
@@ -296,7 +298,7 @@ export default function MobileStockWorkflow({ mode }: MobileStockWorkflowProps) 
       return;
     }
 
-    if (!approverUsername.trim() || !approverPin.trim()) {
+    if (!lineIdToken && (!approverUsername.trim() || !approverPin.trim())) {
       setConfirmError('กรุณากรอกชื่อผู้ใช้และ PIN');
       return;
     }
@@ -312,6 +314,7 @@ export default function MobileStockWorkflow({ mode }: MobileStockWorkflowProps) 
           mode,
           username: approverUsername.trim(),
           pin: approverPin.trim(),
+          lineIdToken,
           batchItems: validItems,
         }),
       });
@@ -325,7 +328,7 @@ export default function MobileStockWorkflow({ mode }: MobileStockWorkflowProps) 
         type: 'success',
         msg: isReceive
           ? `รับเข้า ${validItems.length} รายการเรียบร้อย อนุมัติโดย ${result.approver?.name || approverUsername}`
-          : `เบิกจ่าย ${validItems.length} รายการเรียบร้อย อนุมัติโดย ${result.approver?.name || approverUsername}`,
+          : `เบิกจ่าย ${validItems.length} รายการเรียบร้อย อนุมัติโดย ${result.approver?.name || lineApprover?.name || approverUsername}`,
       });
       setCart([]);
       setApproverPin('');
@@ -582,11 +585,11 @@ export default function MobileStockWorkflow({ mode }: MobileStockWorkflowProps) 
           <div className="rounded-2xl bg-gray-50 border border-gray-100 p-4">
             <p className="text-xs font-black text-gray-400 uppercase tracking-widest">ต้องมีการอนุมัติ</p>
             <p className="mt-2 text-sm font-medium text-gray-600">
-              กรอกชื่อผู้ใช้และ PIN เพื่ออนุมัติรายการ{isReceive ? 'รับเข้า' : 'เบิกจ่าย'}นี้
+              {lineApprover ? `ยืนยันผ่าน LINE ในชื่อ ${lineApprover.name}` : `กรอกชื่อผู้ใช้และ PIN เพื่ออนุมัติรายการ${isReceive ? 'รับเข้า' : 'เบิกจ่าย'}นี้`}
             </p>
           </div>
 
-          <div className="space-y-1.5">
+          {!lineApprover && <><div className="space-y-1.5">
             <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">ชื่อผู้ใช้</label>
             <input
               type="text"
@@ -609,6 +612,7 @@ export default function MobileStockWorkflow({ mode }: MobileStockWorkflowProps) 
               className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
             />
           </div>
+          </>}
 
           {confirmError && (
             <div className="rounded-2xl bg-red-50 border border-red-100 p-4 text-sm font-bold text-red-700">
@@ -625,7 +629,7 @@ export default function MobileStockWorkflow({ mode }: MobileStockWorkflowProps) 
             }`}
           >
             {submitting ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle size={20} />}
-            ยืนยันด้วย PIN
+            {lineApprover ? "ยืนยันด้วย LINE" : "ยืนยันด้วย PIN"}
           </button>
         </div>
       </Modal>
