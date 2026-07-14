@@ -35,7 +35,7 @@ export const getLineDispenseUrl = () => {
   if (explicitLiffUrl) return explicitLiffUrl;
 
   const liffId = process.env.NEXT_PUBLIC_LINE_DISPENSE_LIFF_ID?.trim();
-  if (liffId) return `https://liff.line.me/${liffId}/liff/dispense`;
+  if (liffId) return `https://liff.line.me/${liffId}`;
 
   return `${getAppBaseUrl()}/liff/dispense`;
 };
