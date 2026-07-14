@@ -41,7 +41,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const pathname = usePathname();
-  const isPublicPath = pathname === '/login' || pathname.startsWith('/mobile');
+  const isPublicPath = pathname === '/login' || pathname.startsWith('/mobile') || pathname.startsWith('/liff');
 
   const clearStoredAuth = React.useCallback(() => {
     localStorage.removeItem('labstock_user');
