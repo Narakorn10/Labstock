@@ -10,6 +10,11 @@ function New-Pen($hex, $width = 1) {
   return New-Object System.Drawing.Pen ([System.Drawing.ColorTranslator]::FromHtml($hex)), $width
 }
 
+function S {
+  param([int[]]$codes)
+  return -join ($codes | ForEach-Object { [char]$_ })
+}
+
 function Draw-RoundedRectangle {
   param($graphics, $brush, [single]$x, [single]$y, [single]$width, [single]$height, [single]$radius)
   $path = New-Object System.Drawing.Drawing2D.GraphicsPath
@@ -50,10 +55,10 @@ function Save-DispenseMenu() {
   $titleFont = New-Object System.Drawing.Font "Tahoma", 92, ([System.Drawing.FontStyle]::Bold)
   $subFont = New-Object System.Drawing.Font "Tahoma", 34, ([System.Drawing.FontStyle]::Regular)
   $metaFont = New-Object System.Drawing.Font "Tahoma", 28, ([System.Drawing.FontStyle]::Bold)
-  Draw-Label $graphics "Quick Issue" $titleFont $whiteBrush 230 245 1500 120
-  Draw-Label $graphics "Open dispense workflow from LINE" $subFont $mutedBrush 235 375 1500 70
-  Draw-Label $graphics "LABSTOCK DISPENSE" $metaFont $accentBrush 235 185 1000 50
-  Draw-Label $graphics "Tap to open" $metaFont $whiteBrush 1760 560 480 70 "Center"
+  Draw-Label $graphics (S @(0x0E40,0x0E1A,0x0E34,0x0E01,0x0E19,0x0E49,0x0E33,0x0E22,0x0E32)) $titleFont $whiteBrush 230 245 1500 120
+  Draw-Label $graphics (S @(0x0E40,0x0E1B,0x0E34,0x0E14,0x20,0x77,0x6F,0x72,0x6B,0x66,0x6C,0x6F,0x77,0x20,0x0E40,0x0E1A,0x0E34,0x0E01,0x0E08,0x0E48,0x0E32,0x0E22,0x0E08,0x0E32,0x0E01,0x20,0x4C,0x49,0x4E,0x45)) $subFont $mutedBrush 235 375 1500 70
+  Draw-Label $graphics (S @(0x0E23,0x0E30,0x0E1A,0x0E1A,0x0E04,0x0E25,0x0E31,0x0E07,0x0E19,0x0E49,0x0E33,0x0E22,0x0E32)) $metaFont $accentBrush 235 185 1000 50
+  Draw-Label $graphics (S @(0x0E41,0x0E15,0x0E30,0x0E40,0x0E1E,0x0E37,0x0E48,0x0E2D,0x0E40,0x0E1B,0x0E34,0x0E14)) $metaFont $whiteBrush 1760 560 480 70 "Center"
   Draw-RoundedRectangle $graphics (New-Brush "#0B2727") 1780 225 350 260 36
   Draw-RoundedRectangle $graphics $accentBrush 1845 285 220 42 20
   Draw-RoundedRectangle $graphics $accentBrush 1845 370 220 42 20
@@ -84,15 +89,15 @@ function Save-PurchasingMenu() {
   Draw-RoundedRectangle $graphics $greenBrush 132 146 22 520 11
   Draw-RoundedRectangle $graphics $lineBrush 1370 146 22 520 11
 
-  Draw-Label $graphics "QUICK ISSUE" $smallFont $greenBrush 190 165 640 50
-  Draw-Label $graphics "Quick Issue" $titleFont $whiteBrush 190 278 820 105
-  Draw-Label $graphics "Scan and confirm dispense" $subFont (New-Brush "#A7F3D0") 195 395 820 60
-  Draw-Label $graphics "Open dispense workflow" $smallFont $whiteBrush 195 585 620 60
+  Draw-Label $graphics (S @(0x0E07,0x0E32,0x0E19,0x0E40,0x0E1A,0x0E34,0x0E01,0x0E08,0x0E48,0x0E32,0x0E22)) $smallFont $greenBrush 190 165 640 50
+  Draw-Label $graphics (S @(0x0E40,0x0E1A,0x0E34,0x0E01,0x0E19,0x0E49,0x0E33,0x0E22,0x0E32)) $titleFont $whiteBrush 190 278 820 105
+  Draw-Label $graphics (S @(0x0E2A,0x0E41,0x0E01,0x0E19,0x0E41,0x0E25,0x0E30,0x0E22,0x0E37,0x0E19,0x0E22,0x0E31,0x0E19,0x0E01,0x0E32,0x0E23,0x0E40,0x0E1A,0x0E34,0x0E01)) $subFont (New-Brush "#A7F3D0") 195 395 820 60
+  Draw-Label $graphics (S @(0x0E40,0x0E1B,0x0E34,0x0E14,0x0E40,0x0E21,0x0E19,0x0E39,0x0E40,0x0E1A,0x0E34,0x0E01,0x0E08,0x0E48,0x0E32,0x0E22)) $smallFont $whiteBrush 195 585 620 60
 
-  Draw-Label $graphics "PURCHASE CONTROL" $smallFont $lineBrush 1430 165 720 50
-  Draw-Label $graphics "Order Reagents" $titleFont $whiteBrush 1430 278 820 105
-  Draw-Label $graphics "Low stock PO and vendor review" $subFont $mutedBrush 1435 395 840 60
-  Draw-Label $graphics "Admin / Manager only" $smallFont $whiteBrush 1435 585 700 60
+  Draw-Label $graphics (S @(0x0E07,0x0E32,0x0E19,0x0E2A,0x0E31,0x0E48,0x0E07,0x0E19,0x0E49,0x0E33,0x0E22,0x0E32)) $smallFont $lineBrush 1430 165 720 50
+  Draw-Label $graphics (S @(0x0E2A,0x0E31,0x0E48,0x0E07,0x0E19,0x0E49,0x0E33,0x0E22,0x0E32)) $titleFont $whiteBrush 1430 278 820 105
+  Draw-Label $graphics (S @(0x0E2A,0x0E15,0x0E47,0x0E2D,0x0E01,0x0E15,0x0E48,0x0E33,0x20,0x00B7,0x20,0x0E43,0x0E1A,0x0E2A,0x0E31,0x0E48,0x0E07,0x0E0B,0x0E37,0x0E49,0x0E2D,0x20,0x00B7,0x20,0x0E15,0x0E23,0x0E27,0x0E08,0x0E23,0x0E32,0x0E22,0x0E01,0x0E32,0x0E23)) $subFont $mutedBrush 1435 395 840 60
+  Draw-Label $graphics (S @(0x0E40,0x0E09,0x0E1E,0x0E32,0x0E30,0x20,0x41,0x64,0x6D,0x69,0x6E,0x20,0x2F,0x20,0x4D,0x61,0x6E,0x61,0x67,0x65,0x72)) $smallFont $whiteBrush 1435 585 700 60
 
   Draw-RoundedRectangle $graphics (New-Brush "#0F172A") 1066 155 58 520 29
   Draw-RoundedRectangle $graphics $lineBrush 1083 295 24 240 12
