@@ -1,6 +1,6 @@
 import nodemailer from 'nodemailer';
 import { messagingApi } from '@line/bot-sdk';
-import { PurchaseOrder, LowStockItem, ExpiringSoonItem, WeeklyStockSummaryItem } from './line-flex-templates';
+import { PurchaseOrder, LowStockItem, ExpiringSoonItem, WeeklyStockSummaryItem, WeeklyStockAlertPayload } from './line-flex-templates';
 import { ReagentUsageInsight } from './reagent-usage-insights';
 
 // For Email (Nodemailer)
@@ -33,12 +33,15 @@ export async function sendEmail(to: string, subject: string, html: string) {
 
 export type NotifyEvent =
   | 'PO_CREATED'
+  | 'PO_REVIEW_REQUIRED'
   | 'PO_CONFIRMED'
+  | 'PO_STATUS_UPDATED'
   | 'PO_SHIPPED'
   | 'PO_RECEIVED'
   | 'LOW_STOCK'
   | 'EXPIRING_SOON'
   | 'WEEKLY_STOCK'
+  | 'WEEKLY_STOCK_ALERTS'
   | 'REORDER_RISK'
   | 'STOCK_RECEIVED'
   | 'STOCK_DISPENSED'
@@ -74,6 +77,7 @@ type NotifyPayload =
   | LowStockItem[]
   | ExpiringSoonItem[]
   | WeeklyStockSummaryItem[]
+  | WeeklyStockAlertPayload
   | ReagentUsageInsight[]
   | StockActivityPayload
   | Record<string, never>;
@@ -123,12 +127,15 @@ export async function notifyUsers(event: NotifyEvent, data: NotifyPayload, setti
     let shouldNotify = false;
     switch (event) {
       case 'PO_CREATED':   shouldNotify = Boolean(setting.notify_po_created);   break;
+      case 'PO_REVIEW_REQUIRED': shouldNotify = Boolean(setting.notify_po_created); break;
       case 'PO_CONFIRMED': shouldNotify = Boolean(setting.notify_po_confirmed); break;
+      case 'PO_STATUS_UPDATED': shouldNotify = Boolean(setting.notify_po_confirmed); break;
       case 'PO_SHIPPED':   shouldNotify = Boolean(setting.notify_po_shipped);   break;
       case 'PO_RECEIVED':  shouldNotify = Boolean(setting.notify_po_received);  break;
       case 'LOW_STOCK':    shouldNotify = Boolean(setting.notify_low_stock);    break;
       case 'EXPIRING_SOON': shouldNotify = Boolean(setting.notify_expiring_soon); break;
       case 'WEEKLY_STOCK': shouldNotify = Boolean(setting.notify_weekly_summary); break;
+      case 'WEEKLY_STOCK_ALERTS': shouldNotify = Boolean(setting.notify_weekly_summary); break;
       case 'REORDER_RISK': shouldNotify = Boolean(setting.notify_reorder_risk); break;
       case 'TEST':         shouldNotify = true;                        break;
     }
@@ -138,7 +145,7 @@ export async function notifyUsers(event: NotifyEvent, data: NotifyPayload, setti
     // Send LINE Push
     if (setting.line_user_id) {
       try {
-        const { pushPONotification, pushLowStockAlert, pushExpiringSoonAlert, pushWeeklyStockSummary, sendLinePush } = await import('./line-bot');
+        const { pushPONotification, pushLowStockAlert, pushExpiringSoonAlert, pushWeeklyStockSummary, pushWeeklyStockAlerts, sendLinePush } = await import('./line-bot');
         const { generatePOStatusTemplate } = await import('./line-flex-templates');
 
         if (event === 'TEST') {
@@ -153,6 +160,8 @@ export async function notifyUsers(event: NotifyEvent, data: NotifyPayload, setti
           const vendors = new Set(data.map((item) => item.vendor));
           const vendor = vendors.size === 1 ? data[0]?.vendor || setting.username : "ภาพรวมสต็อก";
           await pushWeeklyStockSummary(setting.line_user_id, vendor, data);
+        } else if (event === 'WEEKLY_STOCK_ALERTS') {
+          await pushWeeklyStockAlerts(setting.line_user_id, data as WeeklyStockAlertPayload);
         } else if (event === 'REORDER_RISK') {
           const items = data as ReagentUsageInsight[];
           const lines = items.slice(0, 8).map((item) => {
