@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { verifyUserPin } from "@/lib/auth-utils";
 import { getLineLinkedUser, hasUserLineIdColumn, verifyLineIdToken } from "@/lib/line-liff-auth";
+import { linkLineRichMenuForRole } from "@/lib/line-bot";
 import sql from "@/lib/db";
 
 export async function POST(request: Request) {
@@ -30,6 +31,7 @@ export async function POST(request: Request) {
       SET line_user_id = ${identity.sub}
       WHERE username = ${user.username}
     `;
+    await linkLineRichMenuForRole(identity.sub, user.role);
 
     return NextResponse.json({ linked: true, user });
   } catch (error) {

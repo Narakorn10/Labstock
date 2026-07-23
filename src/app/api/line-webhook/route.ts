@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { validateSignature, webhook } from "@line/bot-sdk";
 import { neon } from "@neondatabase/serverless";
 import { getLowStockRows, searchStockRows, searchStockRowsByJob } from "@/lib/bot-stock-queries";
-import { replyDispenseMenu, replyHelp, replyLowStock, replyPODetail, replyStockSummary, replyTrackingStatus } from "@/lib/line-bot";
+import { replyDispenseMenu, replyHelp, replyLowStock, replyOrderingMenu, replyPODetail, replyStockSummary, replyTrackingStatus } from "@/lib/line-bot";
 import { LowStockItem, PurchaseOrder, TrackingResult } from "@/lib/line-flex-templates";
 
 const sql = neon(process.env.DATABASE_URL || "");
@@ -145,6 +145,11 @@ export async function POST(req: Request) {
 
         if (isDispenseMenuCommand(text)) {
           await replyDispenseMenu(replyToken);
+          return;
+        }
+
+        if (text.toLowerCase() === "order") {
+          await replyOrderingMenu(replyToken);
           return;
         }
 

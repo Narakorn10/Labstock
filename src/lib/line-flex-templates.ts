@@ -52,6 +52,122 @@ export interface WeeklyStockSummaryItem {
   vendor: string;
 }
 
+export interface WeeklyLowStockItem extends LowStockItem {
+  jobType: string;
+  vendor: string;
+}
+
+export interface WeeklyStockAlertPayload {
+  lowStockItems: WeeklyLowStockItem[];
+  expiringSoonItems: Array<ExpiringSoonItem & { jobType: string; vendor: string }>;
+  orderUrl?: string;
+}
+
+const chunk = <T,>(items: T[], size: number) => Array.from(
+  { length: Math.ceil(items.length / size) },
+  (_, index) => items.slice(index * size, (index + 1) * size),
+);
+
+function weeklyAlertBubble(title: string, subtitle: string, color: string, rows: Array<Record<string, unknown>>) {
+  return {
+    type: "flex",
+    altText: title,
+    contents: {
+      type: "bubble",
+      header: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: color,
+        contents: [
+          { type: "text", text: "WEEKLY STOCK ALERT", color: "#ffffff", size: "xs", weight: "bold" },
+          { type: "text", text: title, color: "#ffffff", size: "lg", weight: "bold", margin: "sm", wrap: true },
+          { type: "text", text: subtitle, color: "#ffffff", size: "xs", margin: "sm", wrap: true },
+        ],
+      },
+      body: {
+        type: "box",
+        layout: "vertical",
+        contents: rows.length ? rows : [{ type: "text", text: "ไม่มีรายการที่ต้องดำเนินการ", size: "sm", color: "#16A34A", wrap: true }],
+      },
+    },
+  };
+}
+
+function addWeeklyOrderFooter(bubble: Record<string, unknown>, orderUrl?: string) {
+  if (!orderUrl) return bubble;
+
+  const contents = bubble.contents as Record<string, unknown>;
+  contents.footer = {
+    type: "box",
+    layout: "vertical",
+    spacing: "sm",
+    contents: [{
+      type: "button",
+      style: "primary",
+      color: "#0F766E",
+      action: {
+        type: "uri",
+        label: "เปิดเมนูสั่งน้ำยา",
+        uri: orderUrl,
+      },
+    }],
+  };
+
+  return bubble;
+}
+
+export function generateWeeklyStockAlertTemplates(alerts: WeeklyStockAlertPayload) {
+  const messages: Array<Record<string, unknown>> = [];
+  const totalLowStock = alerts.lowStockItems.length;
+  const totalExpiring = alerts.expiringSoonItems.length;
+  messages.push(addWeeklyOrderFooter(weeklyAlertBubble(
+    "สรุปความเสี่ยงสต็อกรายสัปดาห์",
+    `สต็อกใกล้หมด ${totalLowStock} รายการ • ใกล้หมดอายุ ${totalExpiring} lot`,
+    "#1D4ED8",
+    [
+      { type: "text", text: `สต็อกใกล้หมด: ${totalLowStock} รายการ`, size: "md", weight: "bold", color: "#DC2626" },
+      { type: "text", text: `ใกล้หมดอายุภายใน 30 วัน: ${totalExpiring} lot`, size: "md", weight: "bold", color: "#EA580C", margin: "md" },
+      { type: "text", text: "รายละเอียดอยู่ในการ์ดถัดไป", size: "xs", color: "#6B7280", margin: "lg" },
+    ],
+  ), alerts.orderUrl));
+
+  const byJob = new Map<string, WeeklyLowStockItem[]>();
+  alerts.lowStockItems.forEach((item) => {
+    const job = item.jobType || "ไม่ระบุงาน";
+    byJob.set(job, [...(byJob.get(job) ?? []), item]);
+  });
+  for (const [jobType, items] of byJob) {
+    const pages = chunk(items, 10);
+    pages.forEach((page, pageIndex) => messages.push(weeklyAlertBubble(
+      `สต็อกใกล้หมด • ${jobType}`,
+      `${items.length} รายการ${pages.length > 1 ? ` • หน้า ${pageIndex + 1}/${pages.length}` : ""}`,
+      "#DC2626",
+      page.map((item, index) => ({
+        type: "box", layout: "vertical", margin: index === 0 ? "none" : "md", contents: [
+          { type: "text", text: `${pageIndex * 10 + index + 1}. ${item.name}`, size: "sm", weight: "bold", wrap: true, color: "#111827" },
+          { type: "text", text: `คงเหลือ ${item.quantity} ${item.unit} • ขั้นต่ำ ${item.minThreshold} ${item.unit}`, size: "xs", color: "#DC2626", margin: "sm", wrap: true },
+        ],
+      })),
+    )));
+  }
+
+  const expiryPages = chunk(alerts.expiringSoonItems, 10);
+  expiryPages.forEach((page, pageIndex) => messages.push(weeklyAlertBubble(
+    "น้ำยาใกล้หมดอายุ",
+    `${alerts.expiringSoonItems.length} lot ภายใน 30 วัน${expiryPages.length > 1 ? ` • หน้า ${pageIndex + 1}/${expiryPages.length}` : ""}`,
+    "#EA580C",
+    page.map((item, index) => ({
+      type: "box", layout: "vertical", margin: index === 0 ? "none" : "md", contents: [
+        { type: "text", text: `${pageIndex * 10 + index + 1}. ${item.name}`, size: "sm", weight: "bold", wrap: true, color: "#111827" },
+        { type: "text", text: `งาน: ${item.jobType || "ไม่ระบุงาน"} • Lot ${item.lotNo}`, size: "xs", color: "#6B7280", margin: "sm", wrap: true },
+        { type: "text", text: `หมดอายุ ${item.expDate} • เหลือ ${item.quantity} ${item.unit} • อีก ${item.daysUntilExpiry} วัน`, size: "xs", color: "#EA580C", margin: "sm", wrap: true },
+      ],
+    })),
+  )));
+
+  return messages;
+}
+
 export function generatePONotificationTemplate(po: PurchaseOrder) {
   const itemComponents = po.items?.map(item => ({
     type: "box",

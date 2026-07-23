@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "line:generate-rich-menu": "powershell -ExecutionPolicy Bypass -File scripts/generate-line-rich-menu-assets.ps1",
     "line:setup-rich-menu": "node scripts/setup-line-rich-menu.mjs",
     "lint": "eslint"
   },

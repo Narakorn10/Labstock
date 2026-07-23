@@ -9,6 +9,8 @@ import {
   PurchaseOrder,
   TrackingResult,
   WeeklyStockSummaryItem,
+  WeeklyStockAlertPayload,
+  generateWeeklyStockAlertTemplates,
 } from "./line-flex-templates";
 
 const config = {
@@ -38,6 +40,16 @@ export const getLineDispenseUrl = () => {
   if (liffId) return `https://liff.line.me/${liffId}`;
 
   return `${getAppBaseUrl()}/liff/dispense`;
+};
+
+export const getLineOrderUrl = () => {
+  const explicitLiffUrl = process.env.NEXT_PUBLIC_LINE_ORDER_LIFF_URL?.trim();
+  if (explicitLiffUrl) return explicitLiffUrl;
+
+  const liffId = process.env.NEXT_PUBLIC_LINE_ORDER_LIFF_ID?.trim();
+  if (liffId) return `https://liff.line.me/${liffId}`;
+
+  return `${getAppBaseUrl()}/liff/orders`;
 };
 
 type StockSummaryLineItem = {
@@ -95,6 +107,28 @@ export async function sendLineReply(replyToken: string, messages: messagingApi.M
   }
 }
 
+export async function linkLineRichMenuForRole(lineUserId: string, role: string) {
+  const channelAccessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim();
+  if (!channelAccessToken || channelAccessToken === "DUMMY_TOKEN") return;
+
+  const richMenuId = role === "Admin" || role === "Manager"
+    ? process.env.LINE_PURCHASING_RICH_MENU_ID?.trim()
+    : process.env.LINE_DISPENSE_RICH_MENU_ID?.trim();
+  if (!richMenuId) return;
+
+  try {
+    const response = await fetch(`https://api.line.me/v2/bot/user/${encodeURIComponent(lineUserId)}/richmenu/${richMenuId}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${channelAccessToken}` },
+    });
+    if (!response.ok) {
+      console.warn("Unable to link LINE rich menu:", response.status, await response.text());
+    }
+  } catch (error) {
+    console.warn("Unable to link LINE rich menu:", error);
+  }
+}
+
 export async function pushPONotification(lineUserId: string, po: PurchaseOrder) {
   const template = generatePONotificationTemplate(po);
   await sendLinePush(lineUserId, [template as messagingApi.Message]);
@@ -122,6 +156,13 @@ export async function pushWeeklyStockSummary(lineUserId: string, vendor: string,
     type: "text",
     text: formatWeeklyStockSummaryMessage(vendor, items),
   }]);
+}
+
+export async function pushWeeklyStockAlerts(lineUserId: string, alerts: WeeklyStockAlertPayload) {
+  const cards = generateWeeklyStockAlertTemplates(alerts) as messagingApi.Message[];
+  for (let start = 0; start < cards.length; start += 5) {
+    await sendLinePush(lineUserId, cards.slice(start, start + 5));
+  }
 }
 
 export async function replyPODetail(replyToken: string, po: PurchaseOrder) {
@@ -153,6 +194,23 @@ export async function replyDispenseMenu(replyToken: string) {
         type: "uri",
         label: "เปิดเมนูเบิก",
         uri: getLineDispenseUrl(),
+      }],
+    },
+  } as messagingApi.Message]);
+}
+
+export async function replyOrderingMenu(replyToken: string) {
+  await sendLineReply(replyToken, [{
+    type: "template",
+    altText: "Open LabStock ordering menu",
+    template: {
+      type: "buttons",
+      title: "LabStock Orders",
+      text: "เปิดเมนูสั่งน้ำยาและติดตามใบสั่งซื้อใน LINE",
+      actions: [{
+        type: "uri",
+        label: "เปิดเมนูสั่งน้ำยา",
+        uri: getLineOrderUrl(),
       }],
     },
   } as messagingApi.Message]);

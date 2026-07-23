@@ -8,12 +8,14 @@ type VerifiedLineIdentity = {
   name?: string;
 };
 
-function getLineChannelId() {
-  const configuredId = process.env.LINE_LIFF_CHANNEL_ID?.trim();
-  if (configuredId) return configuredId;
+function getLineChannelIds() {
+  const candidates = [
+    process.env.LINE_LIFF_CHANNEL_ID?.trim(),
+    process.env.NEXT_PUBLIC_LINE_ORDER_LIFF_ID?.trim().split("-")[0],
+    process.env.NEXT_PUBLIC_LINE_DISPENSE_LIFF_ID?.trim().split("-")[0],
+  ].filter((candidate): candidate is string => Boolean(candidate));
 
-  const liffId = process.env.NEXT_PUBLIC_LINE_DISPENSE_LIFF_ID?.trim();
-  return liffId?.split("-")[0] || "";
+  return Array.from(new Set(candidates));
 }
 
 export async function hasUserLineIdColumn() {
@@ -29,29 +31,32 @@ export async function hasUserLineIdColumn() {
 }
 
 export async function verifyLineIdToken(idToken: string): Promise<VerifiedLineIdentity | null> {
-  const channelId = getLineChannelId();
-  if (!channelId || !idToken) return null;
+  const channelIds = getLineChannelIds();
+  if (!channelIds.length || !idToken) return null;
 
-  try {
-    const response = await fetch(LINE_ID_TOKEN_VERIFY_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ id_token: idToken, client_id: channelId }),
-      cache: "no-store",
-    });
+  for (const channelId of channelIds) {
+    try {
+      const response = await fetch(LINE_ID_TOKEN_VERIFY_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ id_token: idToken, client_id: channelId }),
+        cache: "no-store",
+      });
 
-    if (!response.ok) return null;
-    const data = await response.json() as { sub?: unknown; name?: unknown };
-    if (typeof data.sub !== "string" || !data.sub.trim()) return null;
+      if (!response.ok) continue;
+      const data = await response.json() as { sub?: unknown; name?: unknown };
+      if (typeof data.sub !== "string" || !data.sub.trim()) continue;
 
-    return {
-      sub: data.sub,
-      name: typeof data.name === "string" ? data.name : undefined,
-    };
-  } catch (error) {
-    console.error("LINE ID token verification failed:", error);
-    return null;
+      return {
+        sub: data.sub,
+        name: typeof data.name === "string" ? data.name : undefined,
+      };
+    } catch (error) {
+      console.error("LINE ID token verification failed:", error);
+    }
   }
+
+  return null;
 }
 
 export async function getLineLinkedUser(lineUserId: string): Promise<AuthenticatedUser | null> {
@@ -70,4 +75,10 @@ export async function getLineLinkedUser(lineUserId: string): Promise<Authenticat
     role: user.role,
     vendor: user.vendor,
   };
+}
+
+export async function getLineLinkedPurchasingUser(lineUserId: string): Promise<AuthenticatedUser | null> {
+  const user = await getLineLinkedUser(lineUserId);
+  if (!user || (user.role !== "Admin" && user.role !== "Manager")) return null;
+  return user;
 }
