@@ -131,7 +131,6 @@ export async function notifyUsers(event: NotifyEvent, data: NotifyPayload, setti
     let shouldNotify = false;
     switch (event) {
       case 'PO_CREATED':
-      case 'PO_CREATED':
       case 'PO_REVIEW_REQUIRED': shouldNotify = Boolean(setting.notify_po_created); break;
       case 'PO_CONFIRMED': shouldNotify = Boolean(setting.notify_po_confirmed); break;
       case 'PO_STATUS_UPDATED': shouldNotify = Boolean(setting.notify_po_confirmed); break;
