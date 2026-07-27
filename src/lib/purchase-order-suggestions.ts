@@ -16,6 +16,7 @@ export type PurchaseOrderSuggestion = {
   minimum_projected_balance: number;
   safety_stock_boxes: number;
   monthly_target_boxes: number;
+  planned_order_qty_boxes: number;
   orders_per_month: number;
   lead_time_days: number;
   review_days: number;
@@ -47,6 +48,7 @@ type SuggestionRow = {
   avg_patient_tests_per_month?: unknown;
   iqc_tests_per_month?: unknown;
   approved_monthly_target_boxes?: unknown;
+  approved_order_qty_boxes?: unknown;
   orders_per_month?: unknown;
   lead_time_days?: unknown;
   safety_stock_boxes?: unknown;
@@ -74,7 +76,7 @@ type FetchSuggestionOptions = {
   limit?: number;
 };
 
-const CALCULATION_VERSION = "reagent-order-suggestion-v2";
+const CALCULATION_VERSION = "reagent-order-suggestion-v3";
 const DEFAULT_LEAD_TIME_DAYS = 7;
 const DAYS_PER_MONTH = 30;
 
@@ -181,6 +183,8 @@ function calculateSuggestion(row: SuggestionRow, now = new Date()): PurchaseOrde
   const avgPatientTests = toNumber(row.avg_patient_tests_per_month);
   const iqcTests = toNumber(row.iqc_tests_per_month);
   const approvedMonthlyTarget = toNumber(row.approved_monthly_target_boxes);
+  const hasApprovedOrderQty = row.approved_order_qty_boxes !== undefined && row.approved_order_qty_boxes !== null;
+  const approvedOrderQty = Math.max(0, toNumber(row.approved_order_qty_boxes));
   const policyFormulaMonthlyTarget = testsPerBox > 0 ? (avgPatientTests + iqcTests) / testsPerBox : 0;
   const fallbackMonthlyTarget = weeklyTarget * 4;
   const monthlyTargetBoxes = approvedMonthlyTarget > 0
@@ -227,9 +231,15 @@ function calculateSuggestion(row: SuggestionRow, now = new Date()): PurchaseOrde
   const bridgeRequirementBoxes = Math.max(0, -projectedBalanceAtLead);
   const endingSafetyGapBoxes = Math.max(0, safetyStockBoxes - projectedBalanceAtHorizon);
   const rawOrderBoxes = Math.max(bridgeRequirementBoxes, endingSafetyGapBoxes);
-  const systemSuggestedQty = rawOrderBoxes === 0
+  const calculatedOrderQty = rawOrderBoxes === 0
     ? 0
     : Math.max(minOrderQtyBoxes, roundUpToMultiple(rawOrderBoxes, orderMultipleBoxes));
+  // The lab-approved quantity per cycle takes precedence once the item reaches its reorder trigger.
+  const plannedOrderQty = hasApprovedOrderQty
+    ? approvedOrderQty
+    : Math.max(minOrderQtyBoxes, roundUpToMultiple(monthlyTargetBoxes / ordersPerMonth, orderMultipleBoxes));
+  const orderRecommended = rawOrderBoxes > 0 || Boolean(stockoutDate);
+  const systemSuggestedQty = orderRecommended ? plannedOrderQty : calculatedOrderQty;
   const warnings: string[] = [];
   const stockoutParsed = parseDateOnly(stockoutDate);
   const leadDate = addDays(now, leadTimeDays);
@@ -260,6 +270,7 @@ function calculateSuggestion(row: SuggestionRow, now = new Date()): PurchaseOrde
     minimum_projected_balance: Math.round(minimumProjectedBalance * 100) / 100,
     safety_stock_boxes: safetyStockBoxes,
     monthly_target_boxes: Math.round(monthlyTargetBoxes * 100) / 100,
+    planned_order_qty_boxes: Math.round(plannedOrderQty * 100) / 100,
     orders_per_month: ordersPerMonth,
     lead_time_days: leadTimeDays,
     review_days: reviewDays,
@@ -315,7 +326,7 @@ export async function getPurchaseOrderSuggestions(sql: SqlClient, options: Fetch
           SELECT m.item_id, m.name, m.unit, m.vendor, m.min_threshold, m.weekly_target,
             COALESCE(i.current_qty, 0) AS quantity,
             p.tests_per_box, p.avg_patient_tests_per_month, p.iqc_tests_per_month,
-            p.approved_monthly_target_boxes, p.orders_per_month, p.lead_time_days,
+            p.approved_monthly_target_boxes, p.approved_order_qty_boxes, p.orders_per_month, p.lead_time_days,
             p.safety_stock_boxes, p.min_order_qty_boxes, p.order_multiple_boxes,
             COALESCE(i.lots, '[]'::jsonb) AS inventory_lots,
             COALESCE(o.lots, '[]'::jsonb) AS on_order_lots,
@@ -350,7 +361,7 @@ export async function getPurchaseOrderSuggestions(sql: SqlClient, options: Fetch
           SELECT m.item_id, m.name, m.unit, m.vendor, m.min_threshold, m.weekly_target,
             COALESCE(i.current_qty, 0) AS quantity,
             p.tests_per_box, p.avg_patient_tests_per_month, p.iqc_tests_per_month,
-            p.approved_monthly_target_boxes, p.orders_per_month, p.lead_time_days,
+            p.approved_monthly_target_boxes, p.approved_order_qty_boxes, p.orders_per_month, p.lead_time_days,
             p.safety_stock_boxes, p.min_order_qty_boxes, p.order_multiple_boxes,
             COALESCE(i.lots, '[]'::jsonb) AS inventory_lots,
             COALESCE(o.lots, '[]'::jsonb) AS on_order_lots,
@@ -384,7 +395,7 @@ export async function getPurchaseOrderSuggestions(sql: SqlClient, options: Fetch
         SELECT m.item_id, m.name, m.unit, m.vendor, m.min_threshold, m.weekly_target,
           COALESCE(i.current_qty, 0) AS quantity,
           p.tests_per_box, p.avg_patient_tests_per_month, p.iqc_tests_per_month,
-          p.approved_monthly_target_boxes, p.orders_per_month, p.lead_time_days,
+          p.approved_monthly_target_boxes, p.approved_order_qty_boxes, p.orders_per_month, p.lead_time_days,
           p.safety_stock_boxes, p.min_order_qty_boxes, p.order_multiple_boxes,
           COALESCE(i.lots, '[]'::jsonb) AS inventory_lots,
           COALESCE(o.lots, '[]'::jsonb) AS on_order_lots,
@@ -491,5 +502,5 @@ export async function getPurchaseOrderSuggestions(sql: SqlClient, options: Fetch
 
   return (rows as SuggestionRow[])
     .map((row) => calculateSuggestion(row))
-    .filter((item) => options.includeAll || item.suggested_order_qty > 0 || item.expedite_required);
+    .filter((item) => options.includeAll || item.system_suggested_order_qty > 0 || item.expedite_required);
 }
