@@ -4,11 +4,13 @@ import { normalizeNotificationSettings, notifyUsers } from "@/lib/notifications"
 import type { LowStockItem } from "@/lib/line-flex-templates";
 
 export interface StockBatchItem {
+  inventoryId?: number;
   itemId: string;
   lotNo: string;
   qty: number;
   name?: string;
   expDate?: string;
+  receivedOn?: string;
 }
 
 interface AuditContext {
@@ -92,13 +94,13 @@ export async function runReceiveBatch(
 
     await sql`
       WITH upserted AS (
-        INSERT INTO inventory (item_id, lot_no, exp_date, quantity)
-        VALUES (${targetItemId}, ${targetLotNo}, ${expDate}, ${qty})
-        ON CONFLICT (item_id, lot_no)
+        INSERT INTO inventory (item_id, lot_no, exp_date, quantity, received_on)
+        VALUES (${targetItemId}, ${targetLotNo}, ${expDate}, ${qty}, CURRENT_DATE)
+        ON CONFLICT (item_id, lot_no, received_on)
         DO UPDATE SET
           quantity = inventory.quantity + ${qty},
           exp_date = COALESCE(EXCLUDED.exp_date, inventory.exp_date)
-        RETURNING item_id, lot_no
+        RETURNING id, item_id, lot_no, received_on
       )
       INSERT INTO logs (item_id, name, lot_no, action, quantity, username, user_agent, ip_address)
       SELECT item_id, ${itemName}, lot_no, 'รับเข้าสต๊อกหลัก', ${qty}, ${actor}, ${audit.userAgent}, ${audit.ipAddress}
@@ -149,6 +151,7 @@ export async function runDispenseBatch(
   });
 
   for (const item of batchItems) {
+    let inventoryId = Number(item.inventoryId);
     const targetItemId = item.itemId.toString();
     const targetLotNo = item.lotNo.toString();
     const qtyToSubtract = parseFloat(String(item.qty));
@@ -158,12 +161,30 @@ export async function runDispenseBatch(
     const itemName = masterMap[targetItemId.toLowerCase()] || "Unknown";
     const actor = getActorName(user);
 
+    if (!Number.isInteger(inventoryId) || inventoryId <= 0) {
+      const candidateRows = await sql`
+        SELECT id
+        FROM inventory
+        WHERE LOWER(item_id) = LOWER(${targetItemId})
+          AND lot_no = ${targetLotNo}
+          AND quantity > 0
+        ORDER BY exp_date ASC NULLS LAST, received_on ASC, id ASC
+        LIMIT 1
+      `;
+
+      if (candidateRows.length === 0) {
+        throw new Error(`เบิกไม่สำเร็จ: ${item.name || targetItemId} (Lot: ${item.lotNo}) ไม่พบรอบรับเข้าที่พร้อมใช้งาน`);
+      }
+
+      inventoryId = Number(candidateRows[0].id);
+    }
+
     const result = await sql`
       WITH updated AS (
         UPDATE inventory
         SET quantity = quantity - ${qtyToSubtract}
-        WHERE LOWER(item_id) = LOWER(${targetItemId})
-          AND lot_no = ${targetLotNo}
+        WHERE id = ${inventoryId}
+          AND LOWER(item_id) = LOWER(${targetItemId})
           AND quantity >= ${qtyToSubtract}
         RETURNING item_id, lot_no
       )
