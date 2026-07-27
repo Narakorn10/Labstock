@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import sql from '@/lib/db';
 import { getAuthenticatedUser } from '@/lib/auth-utils';
+import { getPurchaseOrderSuggestions } from '@/lib/purchase-order-suggestions';
 
 export async function GET(request: Request) {
   try {
@@ -17,52 +18,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Vendor profile is not configured' }, { status: 403 });
     }
 
-    let query;
-    if (vendor) {
-      query = await sql`
-        WITH InventorySummary AS (
-          SELECT 
-            item_id,
-            SUM(quantity) as current_qty
-          FROM inventory
-          GROUP BY item_id
-        )
-        SELECT 
-          m.item_id,
-          m.name,
-          m.unit,
-          m.min_threshold,
-          m.weekly_target,
-          COALESCE(i.current_qty, 0) as quantity,
-          GREATEST(0, (m.weekly_target * 4) - COALESCE(i.current_qty, 0)) as suggested_order_qty
-        FROM master_data m
-        LEFT JOIN InventorySummary i ON m.item_id = i.item_id
-        WHERE COALESCE(i.current_qty, 0) <= m.min_threshold
-        AND m.vendor = ${vendor}
-      `;
-    } else {
-      query = await sql`
-        WITH InventorySummary AS (
-          SELECT 
-            item_id,
-            SUM(quantity) as current_qty
-          FROM inventory
-          GROUP BY item_id
-        )
-        SELECT 
-          m.item_id,
-          m.name,
-          m.unit,
-          m.vendor,
-          m.min_threshold,
-          m.weekly_target,
-          COALESCE(i.current_qty, 0) as quantity,
-          GREATEST(0, (m.weekly_target * 4) - COALESCE(i.current_qty, 0)) as suggested_order_qty
-        FROM master_data m
-        LEFT JOIN InventorySummary i ON m.item_id = i.item_id
-        WHERE COALESCE(i.current_qty, 0) <= m.min_threshold
-      `;
-    }
+    const query = await getPurchaseOrderSuggestions(sql, { vendor });
 
     return NextResponse.json(query);
   } catch (error: unknown) {
