@@ -3,7 +3,7 @@
   "crons": [
     {
       "path": "/api/notifications/weekly-stock-summary",
-      "schedule": "0 1 * * 1"
+      "schedule": "0 8 * * 1"
     },
     {
       "path": "/api/notifications/reorder-risk",

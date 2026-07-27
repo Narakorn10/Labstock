@@ -1,305 +1,186 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth-provider";
-import {
-  ShoppingCart,
-  Clock,
-  Package,
-  CheckCircle2,
-  XCircle,
-  Calendar,
-  AlertCircle,
-  RefreshCw,
-  FileText,
-  ChevronRight,
-  Loader2,
-  Inbox,
-} from "lucide-react";
 
-interface VendorPurchaseOrderItem {
+type OrderItem = { item_id: string; item_name: string; quantity: number; unit: string };
+type SuggestedItem = OrderItem & { current_qty: number; min_threshold: number; suggested_order_qty: number };
+type PurchaseOrder = {
   id: number;
-  item_id: string;
-  item_name: string;
-  quantity: number;
-  unit: string;
-}
-
-interface VendorPurchaseOrder {
-  id: string;
   po_number: string;
-  status: "SUBMITTED" | "CONFIRMED" | "SHIPPED" | "RECEIVED" | "REJECTED";
+  status: string;
+  proposal_origin?: "LAB" | "VENDOR";
+  note?: string;
+  vendor_note?: string;
+  expected_date?: string;
   created_at: string;
-  expected_date?: string | null;
-  note?: string | null;
-  items?: VendorPurchaseOrderItem[];
-}
+  items: OrderItem[];
+};
+
+const statusLabel: Record<string, string> = {
+  PENDING_LAB_REVIEW: "รอ Lab ตรวจสอบ",
+  SUBMITTED: "Lab ส่งรายการแล้ว",
+  REVISION_REQUESTED: "Vendor แก้ไข รอ Lab ยืนยัน",
+  CONFIRMED: "ยืนยันแล้ว",
+  SHIPPED: "จัดส่งแล้ว",
+  RECEIVED: "Lab รับเข้าแล้ว",
+  REJECTED: "ปฏิเสธ",
+};
 
 export default function VendorOrdersPage() {
-  const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
-  const [orders, setOrders] = useState<VendorPurchaseOrder[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [updating, setUpdating] = useState<string | null>(null);
+  const { user } = useAuth();
+  const [orders, setOrders] = useState<PurchaseOrder[]>([]);
+  const [suggestions, setSuggestions] = useState<SuggestedItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [draftItems, setDraftItems] = useState<OrderItem[]>([]);
+  const [draftNote, setDraftNote] = useState("");
+  const [editingOrder, setEditingOrder] = useState<PurchaseOrder | null>(null);
 
-  const fetchOrders = useCallback(async (vendor: string) => {
+  const getAuthHeaders = (): Record<string, string> => {
+    const token = localStorage.getItem("labstock_token");
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
+  const loadData = useCallback(async () => {
+    if (!user?.vendor) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/purchase-orders?vendor=${vendor}`);
-      if (res.ok) {
-        const data = (await res.json()) as VendorPurchaseOrder[];
-        setOrders(Array.isArray(data) ? data : []);
+      const headers = getAuthHeaders();
+      const [ordersResponse, suggestionsResponse] = await Promise.all([
+        fetch("/api/purchase-orders", { headers }),
+        fetch(`/api/purchase-orders/suggest?vendor=${encodeURIComponent(user.vendor)}`, { headers }),
+      ]);
+      if (ordersResponse.ok) setOrders(await ordersResponse.json());
+      if (suggestionsResponse.ok) {
+        const data = (await suggestionsResponse.json()) as Array<{
+          item_id: string; name: string; unit: string; quantity: number; min_threshold: number; suggested_order_qty: number;
+        }>;
+        setSuggestions(data.map((item) => ({
+          item_id: item.item_id,
+          item_name: item.name,
+          unit: item.unit,
+          quantity: Number(item.suggested_order_qty),
+          current_qty: Number(item.quantity),
+          min_threshold: Number(item.min_threshold),
+          suggested_order_qty: Number(item.suggested_order_qty),
+        })));
       }
-    } catch (e) {
-      console.error(e);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user?.vendor]);
 
   useEffect(() => {
-    if (authLoading || user?.role !== "Vendor" || !user.vendor) {
+    const timer = window.setTimeout(() => void loadData(), 0);
+    return () => window.clearTimeout(timer);
+  }, [loadData]);
+
+  const openNewProposal = () => {
+    if (suggestions.length === 0) {
+      alert("ยังไม่มีน้ำยาที่ถึงจุดสั่งซื้อ");
+      return;
+    }
+    setEditingOrder(null);
+    setDraftItems(suggestions.map(({ item_id, item_name, quantity, unit }) => ({ item_id, item_name, quantity, unit })));
+    setDraftNote("เสนอรายการจากปริมาณคงเหลือปัจจุบัน");
+  };
+
+  const openRevision = (order: PurchaseOrder) => {
+    setEditingOrder(order);
+    setDraftItems(order.items.map((item) => ({ ...item, quantity: Number(item.quantity) })));
+    setDraftNote(order.vendor_note ?? "");
+  };
+
+  const saveDraft = async () => {
+    if (!user?.vendor || draftItems.length === 0 || draftItems.some((item) => !Number.isInteger(item.quantity) || item.quantity <= 0)) {
+      alert("กรุณาระบุจำนวนที่ถูกต้องทุกรายการ");
+      return;
+    }
+    if (editingOrder && !draftNote.trim()) {
+      alert("กรุณาระบุเหตุผลที่แก้ไขรายการเพื่อให้ Lab ตรวจสอบ");
       return;
     }
 
-    let active = true;
-
-    const loadOrders = async () => {
-      if (active) {
-        setLoading(true);
-      }
-
-      try {
-        const res = await fetch(`/api/purchase-orders?vendor=${user.vendor}`);
-        if (res.ok) {
-          const data = (await res.json()) as VendorPurchaseOrder[];
-          if (active) {
-            setOrders(Array.isArray(data) ? data : []);
-          }
-        }
-      } catch (e) {
-        console.error(e);
-      } finally {
-        if (active) {
-          setLoading(false);
-        }
-      }
-    };
-
-    void loadOrders();
-
-    return () => {
-      active = false;
-    };
-  }, [authLoading, fetchOrders, user]);
-
-  const updatePOStatus = async (id: string, status: string, note: string = "") => {
-    if (!confirm(`à¸•à¹‰à¸­à¸‡à¸à¸²à¸£à¹€à¸›à¸¥à¸µà¹ˆà¸¢à¸™à¸ªà¸–à¸²à¸™à¸°à¹ƒà¸šà¸ªà¸±à¹ˆà¸‡à¸‹à¸·à¹‰à¸­à¹€à¸›à¹‡à¸™ ${status} à¸«à¸£à¸·à¸­à¹„à¸¡à¹ˆ?`)) {
-      return;
-    }
-
-    setUpdating(id);
+    setSaving(true);
     try {
-      const res = await fetch(`/api/purchase-orders/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status, vendor_note: note }),
+      const url = editingOrder ? `/api/purchase-orders/${editingOrder.id}` : "/api/purchase-orders";
+      const response = await fetch(url, {
+        method: editingOrder ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify(editingOrder
+          ? { status: "REVISION_REQUESTED", vendor_note: draftNote, items: draftItems }
+          : { vendor: user.vendor, note: draftNote, items: draftItems }),
       });
-      if (res.ok) {
-        if (user?.vendor) {
-          await fetchOrders(user.vendor);
-        }
-      } else {
-        alert("à¸­à¸±à¸žà¹€à¸”à¸—à¹„à¸¡à¹ˆà¸ªà¸³à¹€à¸£à¹‡à¸ˆ");
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        alert(data?.error ?? "ส่งรายการไม่สำเร็จ");
+        return;
       }
-    } catch (e) {
-      console.error(e);
-      alert("à¹€à¸à¸´à¸”à¸‚à¹‰à¸­à¸œà¸´à¸”à¸žà¸¥à¸²à¸”à¹ƒà¸™à¸à¸²à¸£à¹€à¸Šà¸·à¹ˆà¸­à¸¡à¸•à¹ˆà¸­");
+      setDraftItems([]);
+      setDraftNote("");
+      setEditingOrder(null);
+      await loadData();
     } finally {
-      setUpdating(null);
+      setSaving(false);
     }
   };
 
-  if (authLoading || (user?.role === "Vendor" && loading && !orders.length)) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
-        <Loader2 className="animate-spin text-blue-600" size={40} />
-        <p className="text-gray-500 font-bold">à¸à¸³à¸¥à¸±à¸‡à¹‚à¸«à¸¥à¸”à¹ƒà¸šà¸ªà¸±à¹ˆà¸‡à¸‹à¸·à¹‰à¸­...</p>
-      </div>
-    );
-  }
+  const confirmLabOrder = async (order: PurchaseOrder) => {
+    if (!confirm("ยืนยันว่า Vendor สามารถจัดรายการนี้ได้ตามเดิมหรือไม่?")) return;
+    const response = await fetch(`/api/purchase-orders/${order.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+      body: JSON.stringify({ status: "CONFIRMED" }),
+    });
+    if (!response.ok) {
+      alert("ยืนยันรายการไม่สำเร็จ");
+      return;
+    }
+    await loadData();
+  };
 
-  if (!user || user.role !== "Vendor") {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
-        <AlertCircle className="text-red-500" size={48} />
-        <p className="text-gray-900 font-bold text-xl">à¸ªà¸´à¸—à¸˜à¸´à¹Œà¸à¸²à¸£à¹€à¸‚à¹‰à¸²à¸–à¸¶à¸‡à¹€à¸‰à¸žà¸²à¸° Vendor à¹€à¸—à¹ˆà¸²à¸™à¸±à¹‰à¸™</p>
-      </div>
-    );
-  }
+  if (!user || user.role !== "Vendor") return <div className="p-8 text-center">สิทธิ์การเข้าถึงเฉพาะ Vendor</div>;
 
   return (
-    <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in pb-12">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-3">
-            <div className="bg-blue-600 p-2 rounded-xl text-white shadow-lg shadow-blue-200">
-              <ShoppingCart size={24} />
-            </div>
-            <h1 className="text-3xl font-bold tracking-tight text-gray-900">à¸£à¸±à¸šà¹ƒà¸šà¸ªà¸±à¹ˆà¸‡à¸‹à¸·à¹‰à¸­ (Purchase Orders)</h1>
-          </div>
-          <p className="text-gray-500 text-sm ml-12">à¸£à¸²à¸¢à¸à¸²à¸£à¹ƒà¸šà¸ªà¸±à¹ˆà¸‡à¸‹à¸·à¹‰à¸­à¸ˆà¸²à¸à¸«à¹‰à¸­à¸‡ Lab à¸—à¸µà¹ˆà¸ªà¹ˆà¸‡à¸–à¸¶à¸‡ {user.vendor}</p>
+    <div className="mx-auto max-w-6xl space-y-6 p-6">
+      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">สั่งน้ำยาและรับใบสั่งน้ำยา</h1>
+          <p className="text-sm text-gray-500">{user.vendor} · ตรวจปริมาณคงเหลือก่อนส่งรายการให้ Lab ยืนยัน</p>
         </div>
-
-        <button
-          onClick={() => user.vendor && void fetchOrders(user.vendor)}
-          className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-bold text-gray-600 hover:bg-gray-50 transition-all shadow-sm"
-        >
-          <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
-          à¸£à¸µà¹€à¸Ÿà¸£à¸Šà¸‚à¹‰à¸­à¸¡à¸¹à¸¥
-        </button>
+        <button onClick={() => void loadData()} className="rounded-lg border px-4 py-2 text-sm font-medium hover:bg-gray-50">รีเฟรช</button>
       </div>
 
-      <div className="space-y-6">
-        {orders.length === 0 ? (
-          <div className="bg-white p-16 text-center rounded-3xl border border-gray-100 shadow-sm flex flex-col items-center gap-4">
-            <div className="bg-gray-50 p-6 rounded-full text-gray-300">
-              <Inbox size={64} />
+      <section className="overflow-hidden rounded-xl border bg-white">
+        <div className="flex flex-col justify-between gap-3 border-b p-4 sm:flex-row sm:items-center">
+          <div><h2 className="font-bold">น้ำยาที่ต้องพิจารณาสั่ง</h2><p className="text-sm text-gray-500">ข้อมูลคงเหลือจากคลัง Lab</p></div>
+          <button onClick={openNewProposal} disabled={suggestions.length === 0} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">ส่งรายการเสนอให้ Lab ตรวจสอบ</button>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm"><thead className="bg-gray-50 text-left text-gray-500"><tr><th className="px-4 py-3">น้ำยา</th><th className="px-4 py-3 text-right">คงเหลือ</th><th className="px-4 py-3 text-right">Min</th><th className="px-4 py-3 text-right">แนะนำสั่ง</th></tr></thead>
+            <tbody>{suggestions.map((item) => <tr key={item.item_id} className="border-t"><td className="px-4 py-3"><div className="font-medium">{item.item_name}</div><div className="text-xs text-gray-500">{item.item_id}</div></td><td className="px-4 py-3 text-right">{item.current_qty} {item.unit}</td><td className="px-4 py-3 text-right">{item.min_threshold}</td><td className="px-4 py-3 text-right font-semibold text-indigo-700">{item.suggested_order_qty} {item.unit}</td></tr>)}</tbody>
+          </table>
+          {!loading && suggestions.length === 0 && <p className="p-6 text-center text-sm text-gray-500">ไม่มีรายการที่ถึงจุดสั่งซื้อ</p>}
+        </div>
+      </section>
+
+      <section className="space-y-3"><h2 className="font-bold">รายการสั่งซื้อ</h2>
+        {loading ? <p className="text-sm text-gray-500">กำลังโหลด...</p> : orders.map((order) => (
+          <article key={order.id} className="rounded-xl border bg-white p-4">
+            <div className="flex flex-col justify-between gap-3 sm:flex-row"><div><div className="flex items-center gap-2"><h3 className="font-semibold">{order.po_number}</h3><span className="rounded bg-gray-100 px-2 py-1 text-xs">{statusLabel[order.status] ?? order.status}</span></div><p className="mt-1 text-sm text-gray-500">{order.proposal_origin === "VENDOR" ? "Vendor เสนอรายการ" : "Lab สร้างใบสั่งน้ำยา"} · {order.items.length} รายการ</p>{order.vendor_note && <p className="mt-2 text-sm text-amber-700">หมายเหตุ: {order.vendor_note}</p>}</div>
+              {order.status === "SUBMITTED" && order.proposal_origin === "LAB" && <div className="flex gap-2"><button onClick={() => confirmLabOrder(order)} className="rounded-lg bg-green-600 px-3 py-2 text-sm font-medium text-white">ยืนยันจัดได้</button><button onClick={() => openRevision(order)} className="rounded-lg border border-amber-300 px-3 py-2 text-sm font-medium text-amber-700">แก้ไขแล้วส่ง Lab</button></div>}
             </div>
-            <div className="space-y-1">
-              <h3 className="text-xl font-bold text-gray-900">à¹„à¸¡à¹ˆà¸¡à¸µà¹ƒà¸šà¸ªà¸±à¹ˆà¸‡à¸‹à¸·à¹‰à¸­à¹ƒà¸«à¸¡à¹ˆ</h3>
-              <p className="text-gray-500">à¹€à¸¡à¸·à¹ˆà¸­ Lab à¸ªà¸£à¹‰à¸²à¸‡à¹ƒà¸šà¸ªà¸±à¹ˆà¸‡à¸‹à¸·à¹‰à¸­à¹ƒà¸«à¸¡à¹ˆ à¸£à¸²à¸¢à¸à¸²à¸£à¸ˆà¸°à¸›à¸£à¸²à¸à¸à¸—à¸µà¹ˆà¸™à¸µà¹ˆà¸„à¸£à¸±à¸š</p>
-            </div>
-          </div>
-        ) : (
-          orders.map((po) => {
-            const isSubmitted = po.status === "SUBMITTED";
-            const isConfirmed = po.status === "CONFIRMED";
+          </article>
+        ))}
+        {!loading && orders.length === 0 && <p className="text-sm text-gray-500">ยังไม่มีรายการสั่งซื้อ</p>}
+      </section>
 
-            return (
-              <div
-                key={po.id}
-                className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden hover:border-blue-200 transition-all group"
-              >
-                <div className="p-6 md:p-8 flex flex-col md:flex-row justify-between gap-6">
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-3">
-                      <h2 className="text-2xl font-black text-blue-600 tracking-tight">{po.po_number}</h2>
-                      <span
-                        className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest ${
-                          po.status === "SUBMITTED"
-                            ? "bg-amber-100 text-amber-700"
-                            : po.status === "CONFIRMED"
-                              ? "bg-blue-100 text-blue-700"
-                              : po.status === "SHIPPED"
-                                ? "bg-indigo-100 text-indigo-700"
-                                : po.status === "RECEIVED"
-                                  ? "bg-green-100 text-green-700"
-                                  : "bg-gray-100 text-gray-600"
-                        }`}
-                      >
-                        {po.status}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div className="flex items-center gap-2 text-gray-500">
-                        <Calendar size={16} className="text-gray-400" />
-                        <span className="text-xs font-bold">à¸ªà¸£à¹‰à¸²à¸‡à¹€à¸¡à¸·à¹ˆà¸­: {new Date(po.created_at).toLocaleString("th-TH")}</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-gray-500">
-                        <Clock size={16} className="text-gray-400" />
-                        <span className="text-xs font-bold">
-                          à¸à¸³à¸«à¸™à¸”à¸ªà¹ˆà¸‡: {po.expected_date ? new Date(po.expected_date).toLocaleDateString("th-TH") : "-"}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col justify-center gap-2">
-                    {isSubmitted && (
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => void updatePOStatus(po.id, "CONFIRMED")}
-                          disabled={updating === po.id}
-                          className="flex-1 md:flex-none px-6 py-2.5 bg-green-600 text-white text-sm font-bold rounded-xl shadow-lg shadow-green-100 hover:bg-green-700 transition-all flex items-center justify-center gap-2"
-                        >
-                          {updating === po.id ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle2 size={18} />}
-                          à¸¢à¸·à¸™à¸¢à¸±à¸™à¸£à¸±à¸šà¸­à¸­à¹€à¸”à¸­à¸£à¹Œ
-                        </button>
-                        <button
-                          onClick={() => {
-                            const note = prompt("à¸£à¸°à¸šà¸¸à¹€à¸«à¸•à¸¸à¸œà¸¥à¸—à¸µà¹ˆà¸›à¸à¸´à¹€à¸ªà¸˜ (à¹€à¸Šà¹ˆà¸™ à¸ªà¸´à¸™à¸„à¹‰à¸²à¸«à¸¡à¸”):");
-                            if (note !== null) {
-                              void updatePOStatus(po.id, "REJECTED", note);
-                            }
-                          }}
-                          disabled={updating === po.id}
-                          className="px-4 py-2.5 bg-red-50 text-red-600 text-sm font-bold rounded-xl hover:bg-red-100 transition-all flex items-center justify-center gap-2"
-                        >
-                          <XCircle size={18} />
-                          à¸›à¸à¸´à¹€à¸ªà¸˜
-                        </button>
-                      </div>
-                    )}
-                    {isConfirmed && (
-                      <button
-                        onClick={() => router.push("/vendor/shipments")}
-                        className="w-full px-6 py-2.5 bg-blue-600 text-white text-sm font-bold rounded-xl shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all flex items-center justify-center gap-2"
-                      >
-                        <Package size={18} />
-                        à¸ªà¸£à¹‰à¸²à¸‡à¹ƒà¸šà¸ªà¹ˆà¸‡à¸‚à¸­à¸‡
-                        <ChevronRight size={16} />
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {po.note && (
-                  <div className="mx-6 md:mx-8 mb-6 p-4 bg-amber-50 rounded-2xl border border-amber-100 flex gap-3">
-                    <AlertCircle size={18} className="text-amber-600 shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-[10px] font-black text-amber-700 uppercase tracking-tighter">à¸«à¸¡à¸²à¸¢à¹€à¸«à¸•à¸¸à¸ˆà¸²à¸ Lab</p>
-                      <p className="text-sm text-amber-900 font-medium">{po.note}</p>
-                    </div>
-                  </div>
-                )}
-
-                <div className="border-t border-gray-100 bg-gray-50/30">
-                  <div className="px-6 md:px-8 py-4 flex items-center gap-2 border-b border-gray-100">
-                    <FileText size={16} className="text-gray-400" />
-                    <h3 className="text-xs font-black text-gray-500 uppercase tracking-widest">à¸£à¸²à¸¢à¸à¸²à¸£à¸ªà¸´à¸™à¸„à¹‰à¸² (Items)</h3>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="text-left text-gray-400 text-[10px] font-black uppercase tracking-widest">
-                          <th className="px-8 py-4">à¸£à¸«à¸±à¸ª</th>
-                          <th className="px-8 py-4">à¸Šà¸·à¹ˆà¸­à¸™à¹‰à¸³à¸¢à¸²</th>
-                          <th className="px-8 py-4 text-right">à¸ˆà¸³à¸™à¸§à¸™</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {po.items?.map((item) => (
-                          <tr key={item.id} className="hover:bg-white transition-colors">
-                            <td className="px-8 py-4 font-mono text-gray-500">{item.item_id}</td>
-                            <td className="px-8 py-4 font-bold text-gray-900">{item.item_name}</td>
-                            <td className="px-8 py-4 text-right">
-                              <span className="text-lg font-black text-blue-600">{item.quantity}</span>
-                              <span className="ml-2 text-xs font-bold text-gray-400 uppercase">{item.unit}</span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-            );
-          })
-        )}
-      </div>
+      {draftItems.length > 0 && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"><div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-6"><h2 className="text-xl font-bold">{editingOrder ? "แก้ไขรายการเพื่อส่ง Lab ตรวจสอบ" : "เสนอรายการสั่งน้ำยาให้ Lab"}</h2><p className="mt-1 text-sm text-gray-500">Lab ต้องยืนยันก่อนรายการนี้จะเป็นคำสั่งซื้อที่ตกลงแล้ว</p>
+        <div className="mt-4 space-y-2">{draftItems.map((item, index) => <div key={item.item_id} className="flex items-center gap-3 rounded border p-3"><div className="flex-1"><div className="font-medium">{item.item_name}</div><div className="text-xs text-gray-500">{item.item_id}</div></div><input aria-label={`จำนวน ${item.item_name}`} type="number" min="1" value={item.quantity} onChange={(event) => setDraftItems((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, quantity: Number(event.target.value) } : row))} className="w-24 rounded border p-2 text-right"/><span className="w-12 text-sm text-gray-500">{item.unit}</span></div>)}</div>
+        <label className="mt-4 block text-sm font-medium">หมายเหตุ{editingOrder ? " (จำเป็น)" : ""}</label><textarea value={draftNote} onChange={(event) => setDraftNote(event.target.value)} className="mt-1 w-full rounded border p-2" rows={3}/>
+        <div className="mt-5 flex justify-end gap-2"><button onClick={() => { setDraftItems([]); setEditingOrder(null); }} className="rounded border px-4 py-2">ยกเลิก</button><button onClick={() => void saveDraft()} disabled={saving} className="rounded bg-indigo-600 px-4 py-2 text-white disabled:opacity-50">{saving ? "กำลังส่ง..." : "ส่งให้ Lab ตรวจสอบ"}</button></div>
+      </div></div>}
     </div>
   );
 }

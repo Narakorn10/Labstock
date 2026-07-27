@@ -72,9 +72,9 @@ export default function TrackingBoardPage() {
   }, [fetchShipments]);
 
   const columns: ShipmentColumn[] = [
-    { id: "In Transit", title: "ðŸšš à¸à¸³à¸¥à¸±à¸‡à¸ˆà¸±à¸”à¸ªà¹ˆà¸‡ (In Transit)" },
-    { id: "Received", title: "âœ… à¸£à¸±à¸šà¸‚à¸­à¸‡à¹à¸¥à¹‰à¸§ (Received)" },
-    { id: "Cancelled", title: "âŒ à¸¢à¸à¹€à¸¥à¸´à¸ (Cancelled)" },
+    { id: "In Transit", title: "🚚 กำลังจัดส่ง (In Transit)" },
+    { id: "Received", title: "✅ รับของแล้ว (Received)" },
+    { id: "Cancelled", title: "❌ ยกเลิก (Cancelled)" },
   ];
 
   if (loading) return <div className="p-6">Loading tracking board...</div>;
@@ -82,9 +82,9 @@ export default function TrackingBoardPage() {
   return (
     <div className="p-6 h-screen flex flex-col bg-gray-50">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">ðŸ“¦ Shipment Tracking Board</h1>
+        <h1 className="text-2xl font-bold">📦 Shipment Tracking Board</h1>
         <button onClick={() => router.push("/orders")} className="text-indigo-600">
-          â† à¸à¸¥à¸±à¸šà¹„à¸›à¸«à¸™à¹‰à¸²à¸£à¸°à¸šà¸šà¸ªà¸±à¹ˆà¸‡à¸‹à¸·à¹‰à¸­
+          ← กลับไปหน้าระบบสั่งซื้อ
         </button>
       </div>
 
@@ -141,7 +141,7 @@ export default function TrackingBoardPage() {
                 ))}
                 {columnShipments.length === 0 && (
                   <div className="text-center p-4 text-gray-400 text-sm border-2 border-dashed border-gray-300 rounded">
-                    à¹„à¸¡à¹ˆà¸¡à¸µà¸£à¸²à¸¢à¸à¸²à¸£
+                    ไม่มีรายการ
                   </div>
                 )}
               </div>

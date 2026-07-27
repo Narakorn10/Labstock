@@ -33,13 +33,15 @@ export async function GET(request: Request) {
     // Fetch all inventory where quantity > 0
     const inventoryData = await sql`
       SELECT 
+        id as "inventoryId",
         item_id,
         lot_no as "lotNo",
-        exp_date as "expDate",
+        TO_CHAR(exp_date, 'YYYY-MM-DD') as "expDate",
+        TO_CHAR(received_on, 'YYYY-MM-DD') as "receivedOn",
         quantity as qty
       FROM inventory
       WHERE quantity > 0
-      ORDER BY exp_date ASC -- FEFO order
+      ORDER BY exp_date ASC NULLS LAST, received_on ASC, id ASC
     `;
     console.log(`[Dashboard API] Inventory data rows: ${inventoryData.length}`);
 
@@ -65,8 +67,10 @@ export async function GET(request: Request) {
 
     // Map inventory to master data
     interface DashboardLot {
+      inventoryId: number;
       lotNo: string;
       expDate: string;
+      receivedOn: string;
       qty: number;
     }
 
@@ -93,8 +97,10 @@ export async function GET(request: Request) {
       }
       inventoryMap[id].totalQty += parseFloat(inv.qty as string);
       inventoryMap[id].lots.push({
+        inventoryId: Number(inv.inventoryId),
         lotNo: inv.lotNo as string,
         expDate: formatInventoryDate(inv.expDate),
+        receivedOn: formatInventoryDate(inv.receivedOn),
         qty: parseFloat(inv.qty as string)
       });
     });

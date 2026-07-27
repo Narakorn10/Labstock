@@ -19,6 +19,7 @@ import {
 
 interface CartItem {
   cartId: string;
+  inventoryId: number;
   itemId: string;
   name: string;
   lotNo: string;
@@ -26,6 +27,7 @@ interface CartItem {
   unit: string;
   maxQty: number;
   expDate: string;
+  receivedOn: string;
   availableLots: Lot[];
 }
 
@@ -42,6 +44,21 @@ export default function DispensePage() {
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error', msg: string } | null>(null);
   const [showResults, setShowResults] = useState(false);
   const cartIdRef = useRef(0);
+
+  const formatThaiDate = (value?: string) => {
+    if (!value) return '-';
+
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return value;
+    }
+
+    return date.toLocaleDateString('th-TH', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+  };
 
   const createCartId = (itemId: string) => {
     cartIdRef.current += 1;
@@ -130,10 +147,12 @@ export default function DispensePage() {
 
     const newItem: CartItem = {
       cartId: createCartId(match.itemId),
+      inventoryId: selectedLot.inventoryId,
       itemId: match.itemId,
       name: match.name,
       lotNo: selectedLot.lotNo,
       expDate: selectedLot.expDate,
+      receivedOn: selectedLot.receivedOn,
       qty: 1,
       unit: match.unit,
       maxQty: selectedLot.qty,
@@ -141,7 +160,7 @@ export default function DispensePage() {
     };
 
     setCart(prev => {
-      const existing = prev.find(i => i.itemId === newItem.itemId && i.lotNo === newItem.lotNo);
+      const existing = prev.find(i => i.inventoryId === newItem.inventoryId);
       if (existing) {
         const updatedQty = Math.min(existing.qty + 1, existing.maxQty);
         return prev.map(i => i === existing ? { ...i, qty: updatedQty } : i);
@@ -206,18 +225,17 @@ export default function DispensePage() {
     }));
   };
 
-  const updateLotSelection = (cartId: string, selectedLotNo: string) => {
+  const updateLotSelection = (cartId: string, selectedInventoryId: string) => {
     setCart(prev => {
       const currentItem = prev.find(item => item.cartId === cartId);
       if (!currentItem) return prev;
 
-      const selectedLot = currentItem.availableLots.find(lot => lot.lotNo === selectedLotNo);
+      const selectedLot = currentItem.availableLots.find(lot => String(lot.inventoryId) === selectedInventoryId);
       if (!selectedLot) return prev;
 
       const duplicateItem = prev.find(item =>
         item.cartId !== cartId &&
-        item.itemId === currentItem.itemId &&
-        item.lotNo === selectedLotNo
+        item.inventoryId === selectedLot.inventoryId
       );
 
       if (duplicateItem) {
@@ -237,8 +255,10 @@ export default function DispensePage() {
 
         return {
           ...item,
+          inventoryId: selectedLot.inventoryId,
           lotNo: selectedLot.lotNo,
           expDate: selectedLot.expDate,
+          receivedOn: selectedLot.receivedOn,
           maxQty: selectedLot.qty,
           qty: Math.min(item.qty, selectedLot.qty)
         };
@@ -392,13 +412,13 @@ export default function DispensePage() {
                     <label className="flex items-center gap-2 text-gray-500">
                       <span className="text-red-600 bg-red-50 px-1.5 py-0.5 rounded font-bold">ล็อต</span>
                       <select
-                        value={item.lotNo}
+                        value={String(item.inventoryId)}
                         onChange={(e) => updateLotSelection(item.cartId, e.target.value)}
                         className="min-w-28 bg-white border border-gray-200 rounded-lg px-2 py-1 text-[11px] font-bold text-gray-700 outline-none focus:ring-2 focus:ring-red-500"
                       >
                         {item.availableLots.map((lot) => (
-                          <option key={`${item.itemId}-${lot.lotNo}`} value={lot.lotNo}>
-                            {lot.lotNo}
+                          <option key={lot.inventoryId} value={String(lot.inventoryId)}>
+                            {`${lot.lotNo} | EXP ${formatThaiDate(lot.expDate)} | รับเข้า ${formatThaiDate(lot.receivedOn)}`}
                           </option>
                         ))}
                       </select>

@@ -1,0 +1,5 @@
+<Solution>
+  <Folder Name="/scanner-agent/">
+    <Project Path="scanner-agent/ReagentScannerAgent.Worker/ReagentScannerAgent.Worker.csproj" />
+  </Folder>
+</Solution>

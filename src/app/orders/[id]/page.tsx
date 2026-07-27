@@ -53,6 +53,11 @@ export default function PODetailPage() {
   const [tracking, setTracking] = useState<TrackingDetails | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const getAuthHeaders = (): Record<string, string> => {
+    const token = localStorage.getItem("labstock_token");
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
   const fetchTracking = useCallback(async (trackingNo: string, provider: string) => {
     try {
       const res = await fetch(`/api/tracking/${trackingNo}?provider=${provider || "THAIPOST"}`);
@@ -76,14 +81,15 @@ export default function PODetailPage() {
       }
 
       try {
-        const res = await fetch(`/api/purchase-orders/${id}`);
+        const headers = getAuthHeaders();
+        const res = await fetch(`/api/purchase-orders/${id}`, { headers });
         if (res.ok) {
           const data = (await res.json()) as PurchaseOrderDetail;
           if (active) {
             setPo(data);
           }
 
-          const shipRes = await fetch("/api/vendor/shipments");
+          const shipRes = await fetch("/api/vendor/shipments", { headers });
           if (shipRes.ok) {
             const shipments = (await shipRes.json()) as ShipmentRecord[];
             const poShipment = shipments.find((shipment) => shipment.po_number === data.po_number && shipment.tracking_no);
@@ -108,13 +114,13 @@ export default function PODetailPage() {
     };
   }, [fetchTracking, id]);
 
-  if (loading) return <div className="p-6">Loading...</div>;
-  if (!po) return <div className="p-6">PO not found</div>;
+  if (loading) return <div className="p-6">กำลังโหลดใบสั่งน้ำยา...</div>;
+  if (!po) return <div className="p-6">ไม่พบใบสั่งน้ำยานี้ หรือคุณไม่มีสิทธิ์ดูรายการ</div>;
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
       <button onClick={() => router.push("/orders")} className="text-indigo-600 mb-4">
-        â† à¸à¸¥à¸±à¸šà¹„à¸›à¸«à¸™à¹‰à¸²à¸£à¸²à¸¢à¸à¸²à¸£
+        ← กลับไปหน้ารายการ
       </button>
 
       <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
@@ -122,10 +128,10 @@ export default function PODetailPage() {
           <div>
             <h1 className="text-2xl font-bold mb-2">{po.po_number}</h1>
             <p className="text-gray-600">
-              Vendor: <span className="font-medium text-black">{po.vendor}</span>
+              บริษัท: <span className="font-medium text-black">{po.vendor}</span>
             </p>
             <p className="text-gray-600">
-              Expected Date: {po.expected_date ? new Date(po.expected_date).toLocaleDateString() : "-"}
+              วันที่คาดว่าจะส่ง: {po.expected_date ? new Date(po.expected_date).toLocaleDateString("th-TH") : "-"}
             </p>
           </div>
           <div>
@@ -149,19 +155,19 @@ export default function PODetailPage() {
 
         {po.vendor_note && (
           <div className="bg-yellow-50 p-4 rounded-lg mb-6 border border-yellow-200">
-            <h3 className="font-bold text-yellow-800 mb-1">à¸«à¸¡à¸²à¸¢à¹€à¸«à¸•à¸¸à¸ˆà¸²à¸ Vendor</h3>
+            <h3 className="font-bold text-yellow-800 mb-1">หมายเหตุจากบริษัท</h3>
             <p className="text-sm text-yellow-700">{po.vendor_note}</p>
           </div>
         )}
 
-        <h3 className="font-bold text-lg mb-4">à¸£à¸²à¸¢à¸à¸²à¸£à¸™à¹‰à¸³à¸¢à¸² (Items)</h3>
+        <h3 className="font-bold text-lg mb-4">รายการน้ำยา</h3>
         <table className="min-w-full divide-y divide-gray-200 mb-6 border">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Item ID</th>
-              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Name</th>
-              <th className="px-4 py-2 text-right text-xs font-medium text-gray-500">Ordered</th>
-              <th className="px-4 py-2 text-right text-xs font-medium text-gray-500">Received</th>
+              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">รหัสน้ำยา</th>
+              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">ชื่อน้ำยา</th>
+              <th className="px-4 py-2 text-right text-xs font-medium text-gray-500">จำนวนที่สั่ง</th>
+              <th className="px-4 py-2 text-right text-xs font-medium text-gray-500">จำนวนที่รับแล้ว</th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
@@ -183,7 +189,7 @@ export default function PODetailPage() {
 
       {tracking && (
         <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-indigo-500">
-          <h2 className="text-xl font-bold mb-4">ðŸšš à¸à¸²à¸£à¸ˆà¸±à¸”à¸ªà¹ˆà¸‡ (Tracking)</h2>
+          <h2 className="text-xl font-bold mb-4">🚚 การจัดส่ง (Tracking)</h2>
           <div className="flex gap-4 mb-6">
             <div className="flex-1 bg-gray-50 p-4 rounded">
               <p className="text-sm text-gray-500">Provider</p>

@@ -1,226 +1,142 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { apiClient } from '@/lib/api-client';
-import { useAuth } from '@/components/auth-provider';
-import { FileUp, Truck, CheckCircle2, Clock, Loader2 } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from "react";
+import { apiClient, type ShipmentItem } from "@/lib/api-client";
+import { CheckCircle2, FileText, FileUp, Loader2, Plus, Trash2, Truck, AlertTriangle } from "lucide-react";
 
-interface Shipment {
-  created_at: string;
-  reference_no: string;
-  reagent_name: string;
-  lot_no: string;
-  exp_date: string;
-  quantity: number;
-  unit: string;
-  status: 'In Transit' | 'Received' | 'Cancelled';
-  received_by?: string;
-}
+type OrderItem = { itemId: string; itemName: string; unit: string; orderedQty: number; remainingQty: number };
+type Order = { po_number: string; expected_date?: string; items: OrderItem[] };
+type OcrResult = { items: ShipmentItem[] };
+
+const blankRow = (): ShipmentItem => ({ itemId: "", lotNo: "", expDate: "", qty: 0, confidence: "red", mappingReason: "Manual entry" });
 
 export default function VendorShipmentsPage() {
-  const { user } = useAuth();
-  const [shipments, setShipments] = useState<Shipment[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [poNumber, setPoNumber] = useState("");
+  const [items, setItems] = useState<ShipmentItem[]>([blankRow()]);
+  const [referenceNo, setReferenceNo] = useState("");
+  const [trackingNo, setTrackingNo] = useState("");
   const [loading, setLoading] = useState(true);
-  const [uploading, setUploading] = useState(false);
+  const [processingPdf, setProcessingPdf] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [source, setSource] = useState<{ type: "MANUAL" | "PDF_TEXT" | "AZURE_OCR"; fileName?: string; fileHash?: string }>({ type: "MANUAL" });
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const selectedOrder = orders.find((order) => order.po_number === poNumber);
 
-  const fetchShipments = useCallback(async () => {
+  const authHeaders = (): Record<string, string> => {
+    const token = localStorage.getItem("labstock_token");
+    return token ? { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
+  };
+
+  const load = useCallback(async () => {
     try {
-      setLoading(true);
-      const data = await apiClient.getShipments();
-      if (Array.isArray(data)) {
-        setShipments(data);
-      } else {
-        setShipments([]);
-      }
-    } catch (err) {
-      console.error(err);
-      setShipments([]);
+      const [orderRows, shipmentRows] = await Promise.all([
+        fetch("/api/vendor/shipments/orders", { headers: authHeaders() }),
+        apiClient.getShipments(),
+      ]);
+      if (orderRows.ok) setOrders(await orderRows.json() as Order[]);
+      setNotice(Array.isArray(shipmentRows) ? "" : "Could not load previous shipments.");
+    } catch {
+      setNotice("Could not load shipment data.");
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    let isMounted = true;
-    const load = async () => {
-      if (isMounted) {
-        await fetchShipments();
-      }
-    };
-    load();
-    return () => { isMounted = false; };
-  }, [fetchShipments]);
+    const timer = window.setTimeout(() => { void load(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [load]);
 
-  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setUploading(true);
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      try {
-        const text = event.target?.result as string;
-        const rows = text.split('\n').filter(line => line.trim());
-        
-        // Expected CSV: itemId, lotNo, expDate, qty, referenceNo, poNumber, trackingNo, trackingProvider
-        const items = rows.slice(1).map(row => {
-          const values = row.split(',').map(s => s.trim());
-          return {
-            itemId: values[0],
-            lotNo: values[1],
-            expDate: values[2],
-            qty: parseFloat(values[3]) || 0
-          };
-        }).filter(item => item.itemId && item.qty > 0);
-
-        if (items.length === 0) throw new Error('ไม่พบข้อมูลที่ถูกต้องในไฟล์');
-
-        // Extract additional info from first row of data
-        const firstRow = rows[1].split(',').map(s => s.trim());
-        const referenceNo = firstRow[4] || `SHIP-${Date.now()}`;
-        const poNumber = firstRow[5] || '';
-        const trackingNo = firstRow[6] || '';
-        const trackingProvider = firstRow[7] || '';
-
-        const result = await apiClient.uploadShipments(items, referenceNo, poNumber, trackingNo, trackingProvider);
-        
-        if (result.success) {
-          alert(result.message);
-          fetchShipments();
-        } else {
-          alert(result.error || 'เกิดข้อผิดพลาด');
-        }
-      } catch (err: unknown) {
-        const error = err as { message: string };
-        alert(error.message || 'นำเข้าข้อมูลไม่สำเร็จ');
-      } finally {
-        setUploading(false);
-      }
-    };
-    reader.readAsText(file);
-    if (fileInputRef.current) fileInputRef.current.value = '';
+  const updateItem = (index: number, patch: Partial<ShipmentItem>) => {
+    setItems((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch, confidence: "amber", mappingReason: "Reviewed by vendor" } : item));
   };
 
-  return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-24">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-black text-gray-900 tracking-tight">แจ้งส่งสินค้า (Vendor Portal)</h1>
-          <p className="text-gray-500 text-sm font-bold">แจ้งเลข Lot และวันหมดอายุล่วงหน้าเพื่อให้ห้องแล็บรับของได้ทันที</p>
-        </div>
-        
-        <div className="flex items-center gap-2">
-          <input 
-            type="file" 
-            ref={fileInputRef} 
-            onChange={handleImport} 
-            accept=".csv" 
-            className="hidden" 
-          />
-          <button 
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-            className="flex items-center gap-2 px-6 py-4 bg-blue-600 text-white rounded-2xl shadow-xl shadow-blue-200 hover:bg-blue-700 transition-all font-black text-sm uppercase tracking-widest disabled:bg-blue-300"
-          >
-            {uploading ? <Loader2 className="animate-spin" size={20} /> : <FileUp size={20} />}
-            อัปโหลดใบส่งของ (CSV)
-          </button>
-        </div>
-      </div>
+  const readOcr = async (payload: { text?: string; base64Source?: string }) => {
+    const response = await fetch("/api/vendor/shipments/ocr", { method: "POST", headers: authHeaders(), body: JSON.stringify({ poNumber, ...payload }) });
+    const data = await response.json() as OcrResult & { error?: string };
+    if (!response.ok) throw new Error(data.error || "OCR failed");
+    return data.items;
+  };
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
-          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Vendor</p>
-          <p className="text-2xl font-black text-blue-600">{user?.vendor || 'Vendor'}</p>
-        </div>
-        <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-[10px] font-black text-amber-400 uppercase tracking-widest mb-1">In Transit</p>
-            <p className="text-2xl font-black text-gray-900">{shipments.filter(s => s.status === 'In Transit').length}</p>
-          </div>
-          <Truck className="text-amber-400" size={32} />
-        </div>
-        <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-[10px] font-black text-green-400 uppercase tracking-widest mb-1">Success</p>
-            <p className="text-2xl font-black text-gray-900">{shipments.filter(s => s.status === 'Received').length}</p>
-          </div>
-          <CheckCircle2 className="text-green-400" size={32} />
-        </div>
-      </div>
+  const handlePdf = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!poNumber) { setNotice("Select the confirmed purchase order before uploading a PDF."); return; }
+    if (file.type !== "application/pdf") { setNotice("Only PDF delivery documents are supported."); return; }
+    setProcessingPdf(true); setNotice("");
+    try {
+      const buffer = await file.arrayBuffer();
+      const digest = await crypto.subtle.digest("SHA-256", buffer);
+      const fileHash = Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+      const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+      const pdf = await pdfjs.getDocument({ data: new Uint8Array(buffer) }).promise;
+      let text = "";
+      for (let pageNo = 1; pageNo <= pdf.numPages; pageNo += 1) {
+        const content = await (await pdf.getPage(pageNo)).getTextContent();
+        text += `${content.items.map((item) => "str" in item ? item.str : "").join(" ")}\n`;
+      }
+      let mapped: ShipmentItem[] = [];
+      let sourceType: "PDF_TEXT" | "AZURE_OCR" = "PDF_TEXT";
+      if (text.replace(/\s/g, "").length >= 30) {
+        mapped = await readOcr({ text });
+      } else {
+        sourceType = "AZURE_OCR";
+        for (let pageNo = 1; pageNo <= pdf.numPages; pageNo += 1) {
+          const page = await pdf.getPage(pageNo);
+          const viewport = page.getViewport({ scale: 1.25 });
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.round(viewport.width); canvas.height = Math.round(viewport.height);
+          const context = canvas.getContext("2d");
+          if (!context) throw new Error("Could not prepare PDF page for OCR");
+          await page.render({ canvas, canvasContext: context, viewport }).promise;
+          const base64Source = canvas.toDataURL("image/jpeg", 0.78).split(",")[1];
+          if (Math.ceil(base64Source.length * 0.75) > 3_500_000) throw new Error(`Page ${pageNo} is too large for OCR; enter it manually.`);
+          mapped = mapped.concat(await readOcr({ base64Source }));
+        }
+      }
+      setItems(mapped.length ? mapped : [blankRow()]);
+      setSource({ type: sourceType, fileName: file.name, fileHash });
+      setNotice(mapped.length ? "PDF mapped. Review every amber or red row before submitting." : "No confident rows found. Complete the form manually.");
+    } catch (error: unknown) {
+      setNotice(error instanceof Error ? error.message : "Could not read the PDF. Enter shipment manually.");
+    } finally {
+      setProcessingPdf(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
 
-      <div className="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm overflow-hidden">
-        <div className="p-8 border-b border-gray-50 bg-gray-50/30">
-          <h2 className="font-black text-gray-800 text-xl flex items-center gap-2">
-            <Clock className="text-blue-500" size={24} />
-            ประวัติการแจ้งส่งสินค้า
-          </h2>
-        </div>
-        
-        {loading ? (
-          <div className="py-20 flex flex-col items-center justify-center gap-4">
-            <Loader2 className="animate-spin text-blue-600" size={40} />
-            <p className="text-gray-400 font-bold text-xs uppercase tracking-widest">กำลังดึงข้อมูล...</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-gray-50/50">
-                  <th className="px-8 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">วันที่แจ้ง</th>
-                  <th className="px-8 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Ref No.</th>
-                  <th className="px-8 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">รายการน้ำยา</th>
-                  <th className="px-8 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-center">จำนวน</th>
-                  <th className="px-8 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-right">สถานะ</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {shipments.map((ship, idx) => {
-                  const isInTransit = ship.status === 'In Transit';
-                  const isReceived = ship.status === 'Received';
-                  return (
-                    <tr key={idx} className="hover:bg-gray-50/50 transition-colors">
-                      <td className="px-8 py-4 whitespace-nowrap">
-                        <p className="font-bold text-gray-900 text-xs">{new Date(ship.created_at).toLocaleDateString('th-TH')}</p>
-                      </td>
-                      <td className="px-8 py-4">
-                        <span className="text-[10px] font-black px-2 py-1 bg-gray-100 rounded-lg text-gray-600 uppercase">{ship.reference_no}</span>
-                      </td>
-                      <td className="px-8 py-4">
-                        <p className="font-bold text-gray-800 text-sm">{ship.reagent_name}</p>
-                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter">Lot: {ship.lot_no} | Exp: {ship.exp_date}</p>
-                      </td>
-                      <td className="px-8 py-4 text-center">
-                        <span className="font-black text-gray-900 text-lg">{ship.quantity}</span>
-                        <span className="text-[9px] font-bold text-gray-400 ml-1 uppercase">{ship.unit}</span>
-                      </td>
-                      <td className="px-8 py-4 text-right">
-                        <span className={`
-                          inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-black uppercase
-                          ${isInTransit ? 'bg-amber-100 text-amber-700' : isReceived ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}
-                        `}>
-                          {isInTransit ? 'In Transit' : isReceived ? 'Received' : 'Cancelled'}
-                        </span>
-                        {isReceived && (
-                          <p className="text-[9px] font-bold text-gray-400 mt-1 uppercase">โดย {ship.received_by}</p>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-                {shipments.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="px-8 py-20 text-center text-gray-400 font-bold italic text-sm">
-                       ยังไม่มีประวัติการแจ้งส่งสินค้า
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    </div>
-  );
+  const submit = async () => {
+    if (!selectedOrder) { setNotice("Select a confirmed purchase order."); return; }
+    if (!referenceNo.trim()) { setNotice("Delivery reference is required."); return; }
+    setSubmitting(true); setNotice("");
+    try {
+      const result = await apiClient.uploadShipments(items, referenceNo, poNumber, trackingNo, "Manual", {
+        sourceType: source.type, sourceFileName: source.fileName ?? "", sourceFileHash: source.fileHash ?? "",
+      });
+      if (!result.success) throw new Error(result.error || "Unable to submit shipment");
+      setNotice("Shipment submitted and is waiting for Lab receipt.");
+      setItems([blankRow()]); setReferenceNo(""); setTrackingNo(""); setSource({ type: "MANUAL" });
+      await load();
+    } catch (error: unknown) {
+      setNotice(error instanceof Error ? error.message : "Unable to submit shipment");
+    } finally { setSubmitting(false); }
+  };
+
+  if (loading) return <div className="p-10 flex justify-center"><Loader2 className="animate-spin text-blue-600" /></div>;
+
+  return <div className="max-w-6xl mx-auto space-y-6 pb-24">
+    <div className="flex items-start justify-between gap-4"><div><h1 className="text-3xl font-black text-gray-900">แจ้งส่งสินค้า</h1><p className="text-sm text-gray-500 mt-1">เลือก PO ที่ยืนยันแล้ว เพิ่ม lot ได้หลายรายการ และตรวจทานก่อนส่งเข้าระบบ</p></div><Truck className="text-blue-600" size={36} /></div>
+    {notice && <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 flex gap-2"><AlertTriangle size={18} />{notice}</div>}
+    <section className="bg-white border rounded-2xl p-6 space-y-4 shadow-sm">
+      <div className="grid md:grid-cols-3 gap-4"><label className="text-sm font-bold">Confirmed PO<select value={poNumber} onChange={(event) => { setPoNumber(event.target.value); setItems([blankRow()]); }} className="mt-1 w-full border rounded-lg p-2"><option value="">Select PO</option>{orders.map((order) => <option key={order.po_number} value={order.po_number}>{order.po_number}</option>)}</select></label><label className="text-sm font-bold">Delivery reference<input value={referenceNo} onChange={(event) => setReferenceNo(event.target.value)} className="mt-1 w-full border rounded-lg p-2" placeholder="Delivery note / invoice" /></label><label className="text-sm font-bold">Tracking no. (optional)<input value={trackingNo} onChange={(event) => setTrackingNo(event.target.value)} className="mt-1 w-full border rounded-lg p-2" /></label></div>
+      {selectedOrder && <div className="text-sm rounded-lg bg-slate-50 p-3">Remaining: {selectedOrder.items.map((item) => `${item.itemName} ${item.remainingQty} ${item.unit}`).join(" · ")}</div>}
+      <input ref={fileInputRef} type="file" accept="application/pdf" className="hidden" onChange={handlePdf} />
+      <button disabled={!poNumber || processingPdf} onClick={() => fileInputRef.current?.click()} className="inline-flex items-center gap-2 rounded-lg border border-blue-200 px-4 py-2 text-sm font-bold text-blue-700 disabled:opacity-50">{processingPdf ? <Loader2 size={17} className="animate-spin" /> : <FileUp size={17} />}Read delivery PDF (review required)</button>
+      <p className="text-xs text-gray-500"><FileText className="inline mr-1" size={14} />PDF/text is not retained. Scanned pages use Azure only when text extraction fails.</p>
+    </section>
+    <section className="bg-white border rounded-2xl overflow-hidden shadow-sm"><div className="p-5 flex justify-between items-center border-b"><h2 className="font-black">Shipment lots — review before submit</h2><button onClick={() => setItems((current) => [...current, blankRow()])} className="inline-flex items-center gap-1 text-sm font-bold text-blue-700"><Plus size={16} />Add lot</button></div><div className="overflow-x-auto"><table className="w-full text-sm"><thead className="bg-slate-50 text-left"><tr><th className="p-3">Ordered item</th><th className="p-3">Lot</th><th className="p-3">Expiry</th><th className="p-3">Quantity</th><th className="p-3">Review</th><th /></tr></thead><tbody>{items.map((item, index) => <tr key={index} className="border-t"><td className="p-3"><select value={item.itemId} onChange={(event) => updateItem(index, { itemId: event.target.value })} className="border rounded p-2 min-w-48"><option value="">Select item</option>{selectedOrder?.items.map((option) => <option key={option.itemId} value={option.itemId}>{option.itemName} ({option.remainingQty} {option.unit} left)</option>)}</select></td><td className="p-3"><input value={item.lotNo} onChange={(event) => updateItem(index, { lotNo: event.target.value })} className="border rounded p-2 w-32" /></td><td className="p-3"><input type="date" value={item.expDate} onChange={(event) => updateItem(index, { expDate: event.target.value })} className="border rounded p-2" /></td><td className="p-3"><input type="number" min="0" step="0.01" value={item.qty || ""} onChange={(event) => updateItem(index, { qty: Number(event.target.value) })} className="border rounded p-2 w-24" /></td><td className="p-3"><span className={`rounded-full px-2 py-1 text-xs font-bold ${item.confidence === "green" ? "bg-green-100 text-green-700" : item.confidence === "amber" ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}`}>{item.confidence ?? "red"}</span></td><td className="p-3"><button aria-label="Remove lot" onClick={() => setItems((current) => current.length === 1 ? [blankRow()] : current.filter((_, rowIndex) => rowIndex !== index))} className="text-gray-400 hover:text-red-600"><Trash2 size={17} /></button></td></tr>)}</tbody></table></div></section>
+    <button disabled={submitting || !poNumber} onClick={submit} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-3 font-black text-white disabled:bg-blue-300">{submitting ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle2 size={18} />}Submit reviewed shipment</button>
+  </div>;
 }

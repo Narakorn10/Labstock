@@ -48,8 +48,9 @@ CREATE TABLE IF NOT EXISTS inventory (
     item_id TEXT REFERENCES master_data(item_id) ON DELETE CASCADE,
     lot_no TEXT NOT NULL,
     exp_date TEXT, -- Keeping as TEXT to match original format, or use DATE
+    received_on DATE NOT NULL DEFAULT CURRENT_DATE,
     quantity DECIMAL NOT NULL DEFAULT 0,
-    UNIQUE(item_id, lot_no)
+    UNIQUE(item_id, lot_no, received_on)
 );
 
 -- 5. Logs (Transactions)

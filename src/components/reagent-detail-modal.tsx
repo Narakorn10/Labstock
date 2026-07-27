@@ -33,6 +33,21 @@ export default function ReagentDetailModal({
   const [editingLot, setEditingLot] = useState<Lot | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const formatThaiDate = (value?: string) => {
+    if (!value) return '-';
+
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return value;
+    }
+
+    return parsed.toLocaleDateString('th-TH', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+  };
+
   const formatDateForInput = (value?: string) => {
     if (!value) return '';
     const directMatch = value.match(/^(\d{4}-\d{2}-\d{2})/);
@@ -73,8 +88,8 @@ export default function ReagentDetailModal({
     try {
       setSubmitting(true);
       const result = await apiClient.reconcileInventory({
+        inventoryId: editingLot.inventoryId,
         itemId: reagent.itemId,
-        currentLotNo: editingLot.lotNo,
         newLotNo,
         newExpDate,
         newQty,
@@ -185,6 +200,7 @@ export default function ReagentDetailModal({
                 <tr>
                   <th className="px-6 py-3">Lot Number</th>
                   <th className="px-6 py-3">Expiry Date</th>
+                  <th className="px-6 py-3">Received</th>
                   <th className="px-6 py-3 text-right">Qty</th>
                   {canReconcile && <th className="px-6 py-3 text-right">Action</th>}
                 </tr>
@@ -197,7 +213,7 @@ export default function ReagentDetailModal({
                     const isNear = expDate < thirtyDays && !isExpired;
 
                     return (
-                      <tr key={`${reagent.itemId}-${lot.lotNo}`} className="hover:bg-gray-50 transition-colors">
+                      <tr key={lot.inventoryId} className="hover:bg-gray-50 transition-colors">
                         <td className="px-6 py-4 font-bold text-gray-900">{lot.lotNo}</td>
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-2">
@@ -219,6 +235,7 @@ export default function ReagentDetailModal({
                             </span>
                           </div>
                         </td>
+                        <td className="px-6 py-4 font-medium text-gray-600">{formatThaiDate(lot.receivedOn)}</td>
                         <td className="px-6 py-4 text-right font-black text-gray-900">{lot.qty}</td>
                         {canReconcile && (
                           <td className="px-6 py-4 text-right">
@@ -237,7 +254,7 @@ export default function ReagentDetailModal({
                   })
                 ) : (
                   <tr>
-                    <td colSpan={canReconcile ? 4 : 3} className="px-6 py-10 text-center text-gray-400 font-bold">
+                    <td colSpan={canReconcile ? 5 : 4} className="px-6 py-10 text-center text-gray-400 font-bold">
                       No active batches found in inventory.
                     </td>
                   </tr>
@@ -253,7 +270,7 @@ export default function ReagentDetailModal({
               <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest">Inventory Reconciliation</p>
               <h4 className="text-lg font-black text-blue-900">{reagent.name}</h4>
               <p className="text-xs font-bold text-blue-700">
-                Lot {editingLot.lotNo} | Current Qty {editingLot.qty} {reagent.unit}
+                Lot {editingLot.lotNo} | รับเข้า {formatThaiDate(editingLot.receivedOn)} | Current Qty {editingLot.qty} {reagent.unit}
               </p>
             </div>
 

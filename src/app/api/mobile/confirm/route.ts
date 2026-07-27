@@ -29,6 +29,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No items to submit." }, { status: 400 });
     }
 
+    if (mode === "receive" && lineIdToken) {
+      return NextResponse.json({ error: "Mobile receiving must be approved with username and PIN." }, { status: 400 });
+    }
+
     let user = null;
     if (lineIdToken) {
       const identity = await verifyLineIdToken(lineIdToken);

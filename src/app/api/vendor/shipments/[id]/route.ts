@@ -62,9 +62,9 @@ export async function PATCH(
         RETURNING *
       ),
       inv_update AS (
-        INSERT INTO inventory (item_id, lot_no, exp_date, quantity)
-        SELECT item_id, lot_no, exp_date, quantity FROM claimed
-        ON CONFLICT (item_id, lot_no) 
+        INSERT INTO inventory (item_id, lot_no, exp_date, quantity, received_on)
+        SELECT item_id, lot_no, exp_date, quantity, CURRENT_DATE FROM claimed
+        ON CONFLICT (item_id, lot_no, received_on) 
         DO UPDATE SET 
           quantity = inventory.quantity + EXCLUDED.quantity,
           exp_date = EXCLUDED.exp_date
@@ -88,8 +88,15 @@ export async function PATCH(
               SET received_qty = received_qty + ${shipment.quantity}
               WHERE po_id = ${poData[0].id} AND item_id = ${shipment.item_id}
             `;
-            // Simplified: Update PO status to RECEIVED
-            await sql`UPDATE purchase_orders SET status = 'RECEIVED', received_at = NOW() WHERE id = ${poData[0].id}`;
+            await sql`
+              UPDATE purchase_orders p
+              SET status = CASE WHEN NOT EXISTS (
+                SELECT 1 FROM purchase_order_items poi
+                WHERE poi.po_id = p.id AND COALESCE(poi.received_qty, 0) < poi.quantity
+              ) THEN 'RECEIVED' ELSE 'PARTIALLY_RECEIVED' END,
+              received_at = NOW(), updated_at = NOW()
+              WHERE id = ${poData[0].id}
+            `;
 
             const { notifyUsers } = await import('@/lib/notifications');
             const settingsRows = await sql`SELECT * FROM notification_settings WHERE username = ${shipment.vendor}`;

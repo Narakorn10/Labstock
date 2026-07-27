@@ -120,13 +120,18 @@ function isPurchaseOrderPayload(data: NotifyPayload): data is PurchaseOrder {
   return !Array.isArray(data) && "po_number" in data;
 }
 
+function isWeeklyStockAlertPayload(data: NotifyPayload): data is WeeklyStockAlertPayload {
+  return !Array.isArray(data) && "lowStockItems" in data && "expiringSoonItems" in data;
+}
+
 export async function notifyUsers(event: NotifyEvent, data: NotifyPayload, settings: NotificationSetting[]) {
   console.log(`[Notification] Dispatching event: ${event} to ${settings.length} users`);
   
   for (const setting of settings) {
     let shouldNotify = false;
     switch (event) {
-      case 'PO_CREATED':   shouldNotify = Boolean(setting.notify_po_created);   break;
+      case 'PO_CREATED':
+      case 'PO_CREATED':
       case 'PO_REVIEW_REQUIRED': shouldNotify = Boolean(setting.notify_po_created); break;
       case 'PO_CONFIRMED': shouldNotify = Boolean(setting.notify_po_confirmed); break;
       case 'PO_STATUS_UPDATED': shouldNotify = Boolean(setting.notify_po_confirmed); break;
@@ -150,7 +155,7 @@ export async function notifyUsers(event: NotifyEvent, data: NotifyPayload, setti
 
         if (event === 'TEST') {
           await sendLinePush(setting.line_user_id, [{ type: 'text', text: '🔔 นี่คือข้อความทดสอบจากระบบ LabStock ค่ะ! หากคุณเห็นข้อความนี้ แสดงว่าการตั้งค่า LINE User ID ของคุณถูกต้องแล้ว 🎉' }]);
-        } else if (event === 'PO_CREATED') {
+        } else if (event === 'PO_CREATED' || event === 'PO_REVIEW_REQUIRED') {
           await pushPONotification(setting.line_user_id, data as PurchaseOrder);
         } else if (event === 'LOW_STOCK') {
           await pushLowStockAlert(setting.line_user_id, data as LowStockItem[]);
@@ -160,8 +165,8 @@ export async function notifyUsers(event: NotifyEvent, data: NotifyPayload, setti
           const vendors = new Set(data.map((item) => item.vendor));
           const vendor = vendors.size === 1 ? data[0]?.vendor || setting.username : "ภาพรวมสต็อก";
           await pushWeeklyStockSummary(setting.line_user_id, vendor, data);
-        } else if (event === 'WEEKLY_STOCK_ALERTS') {
-          await pushWeeklyStockAlerts(setting.line_user_id, data as WeeklyStockAlertPayload);
+        } else if (event === 'WEEKLY_STOCK_ALERTS' && isWeeklyStockAlertPayload(data)) {
+          await pushWeeklyStockAlerts(setting.line_user_id, data);
         } else if (event === 'REORDER_RISK') {
           const items = data as ReagentUsageInsight[];
           const lines = items.slice(0, 8).map((item) => {
@@ -194,6 +199,9 @@ export async function notifyUsers(event: NotifyEvent, data: NotifyPayload, setti
         } else if (event === 'PO_CREATED') {
           subject = `New Purchase Order: ${(data as PurchaseOrder).po_number}`;
           html = `<h3>A new purchase order has been created</h3><p>PO Number: ${(data as PurchaseOrder).po_number}</p><p>Vendor: ${(data as PurchaseOrder).vendor}</p>`;
+        } else if (event === 'PO_REVIEW_REQUIRED') {
+          subject = `Purchase order needs Lab review: ${(data as PurchaseOrder).po_number}`;
+          html = `<h3>Vendor submitted or revised a purchase-order list for Lab review</h3><p>PO Number: ${(data as PurchaseOrder).po_number}</p><p>Status: ${(data as PurchaseOrder).status}</p>`;
         } else if (event === 'PO_CONFIRMED') {
           subject = `PO Confirmed: ${(data as PurchaseOrder).po_number}`;
           html = `<h3>Purchase order confirmed by vendor</h3><p>PO Number: ${(data as PurchaseOrder).po_number}</p>`;
@@ -215,10 +223,16 @@ export async function notifyUsers(event: NotifyEvent, data: NotifyPayload, setti
           subject = 'Weekly Stock Summary';
           const items = data as WeeklyStockSummaryItem[];
           html = `<h3>Weekly stock summary</h3><ul>${items.map((item) => `<li>${item.name}: ${item.quantity} ${item.unit} remaining (weekly target ${item.weeklyTarget})</li>`).join('')}</ul>`;
+        } else if (event === 'WEEKLY_STOCK_ALERTS' && isWeeklyStockAlertPayload(data)) {
+          subject = 'Weekly stock risk summary';
+          html = `<h3>Weekly stock risk summary</h3><p>Low stock: ${data.lowStockItems.length} items</p><p>Expiring within 30 days: ${data.expiringSoonItems.length} lots</p>`;
         } else if (event === 'REORDER_RISK') {
           const items = data as ReagentUsageInsight[];
           subject = 'Reagent reorder risk';
           html = `<h3>Reagent reorder risk</h3><ul>${items.map((item) => `<li>${item.name}: ${item.status}, recommended order ${Math.ceil(item.recommendedOrderQty)} ${item.unit}</li>`).join('')}</ul>`;
+        } else if (event === 'PO_STATUS_UPDATED') {
+          subject = `Purchase order status updated: ${(data as PurchaseOrder).po_number}`;
+          html = `<h3>Purchase order status updated</h3><p>PO Number: ${(data as PurchaseOrder).po_number}</p><p>Status: ${(data as PurchaseOrder).status}</p>`;
         } else {
           subject = `PO Status Update: ${isPurchaseOrderPayload(data) ? data.po_number : ''}`;
           html = `<h3>Order status updated</h3><p>Status: ${event}</p>`;

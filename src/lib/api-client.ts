@@ -46,9 +46,10 @@ export interface Reagent {
 }
 
 export interface Lot {
-  rowIndex: number;
+  inventoryId: number;
   lotNo: string;
   expDate: string;
+  receivedOn: string;
   qty: number;
 }
 
@@ -104,12 +105,14 @@ export interface UsageResponse {
 }
 
 export interface BatchItem {
+  inventoryId?: number;
   itemId: string;
   lotNo: string;
   qty: number;
   name?: string;
   unit?: string;
   expDate?: string;
+  receivedOn?: string;
   note?: string;
 }
 
@@ -146,6 +149,8 @@ export interface ShipmentItem {
   lotNo: string;
   expDate: string;
   qty: number;
+  confidence?: "green" | "amber" | "red";
+  mappingReason?: string;
 }
 
 export interface LogEntry {
@@ -316,8 +321,8 @@ export const apiClient = {
   },
 
   reconcileInventory: async (data: {
+    inventoryId: number;
     itemId: string;
-    currentLotNo: string;
     newLotNo: string;
     newExpDate?: string;
     newQty: number;
@@ -337,8 +342,8 @@ export const apiClient = {
     return res.data;
   },
 
-  uploadShipments: async (items: ShipmentItem[], referenceNo: string, poNumber?: string, trackingNo?: string, trackingProvider?: string) => {
-    const res = await instance.post<ApiResponse>('/api/vendor/shipments', { items, referenceNo, poNumber, trackingNo, trackingProvider });
+  uploadShipments: async (items: ShipmentItem[], referenceNo: string, poNumber?: string, trackingNo?: string, trackingProvider?: string, metadata?: Record<string, string>) => {
+    const res = await instance.post<ApiResponse>('/api/vendor/shipments', { items, referenceNo, poNumber, trackingNo, trackingProvider, ...metadata });
     return res.data;
   },
 

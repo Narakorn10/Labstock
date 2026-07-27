@@ -3,6 +3,26 @@ import sql from "@/lib/db";
 
 export async function GET() {
   try {
+    const formatInventoryDate = (value: unknown) => {
+      if (!value) return "";
+      if (value instanceof Date) {
+        return value.toISOString().slice(0, 10);
+      }
+
+      const text = String(value);
+      const directMatch = text.match(/^(\d{4}-\d{2}-\d{2})/);
+      if (directMatch) {
+        return directMatch[1];
+      }
+
+      const parsed = new Date(text);
+      if (Number.isNaN(parsed.getTime())) {
+        return text;
+      }
+
+      return parsed.toISOString().slice(0, 10);
+    };
+
     const [masterData, inventoryData, patterns] = await Promise.all([
       sql`
         SELECT
@@ -21,13 +41,15 @@ export async function GET() {
       `,
       sql`
         SELECT
+          id as "inventoryId",
           item_id,
           lot_no as "lotNo",
-          exp_date as "expDate",
+          TO_CHAR(exp_date, 'YYYY-MM-DD') as "expDate",
+          TO_CHAR(received_on, 'YYYY-MM-DD') as "receivedOn",
           quantity as qty
         FROM inventory
         WHERE quantity > 0
-        ORDER BY exp_date ASC
+        ORDER BY exp_date ASC NULLS LAST, received_on ASC, id ASC
       `,
       sql`
         SELECT id, name, regex_pattern, item_id_group, lot_no_group, exp_date_group
@@ -37,8 +59,10 @@ export async function GET() {
     ]);
 
     interface LookupLot {
+      inventoryId: number;
       lotNo: string;
       expDate: string;
+      receivedOn: string;
       qty: number;
     }
 
@@ -65,8 +89,10 @@ export async function GET() {
       }
       inventoryMap[id].totalQty += parseFloat(inv.qty as string);
       inventoryMap[id].lots.push({
+        inventoryId: Number(inv.inventoryId),
         lotNo: inv.lotNo as string,
-        expDate: inv.expDate as string,
+        expDate: formatInventoryDate(inv.expDate),
+        receivedOn: formatInventoryDate(inv.receivedOn),
         qty: parseFloat(inv.qty as string),
       });
     });

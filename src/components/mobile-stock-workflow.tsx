@@ -31,12 +31,14 @@ interface MobileStockWorkflowProps {
 
 interface MobileCartItem {
   cartId: string;
+  inventoryId?: number;
   itemId: string;
   name: string;
   lotNo: string;
   qty: number;
   unit: string;
   expDate: string;
+  receivedOn?: string;
   maxQty?: number;
   availableLots?: Lot[];
 }
@@ -65,6 +67,20 @@ export default function MobileStockWorkflow({ mode, lineApprover, lineIdToken }:
   const [confirmError, setConfirmError] = useState('');
 
   const isReceive = mode === 'receive';
+  const formatThaiDate = (value?: string) => {
+    if (!value) return '-';
+
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return value;
+    }
+
+    return date.toLocaleDateString('th-TH', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+  };
 
   const loadLookupData = useCallback(async () => {
     setLoading(true);
@@ -143,10 +159,12 @@ export default function MobileStockWorkflow({ mode, lineApprover, lineIdToken }:
 
     const newItem: MobileCartItem = {
       cartId: createCartId(match.itemId),
+      inventoryId: selectedLot.inventoryId,
       itemId: match.itemId,
       name: match.name,
       lotNo: selectedLot.lotNo,
       expDate: selectedLot.expDate,
+      receivedOn: selectedLot.receivedOn,
       qty: 1,
       unit: match.unit,
       maxQty: selectedLot.qty,
@@ -154,7 +172,7 @@ export default function MobileStockWorkflow({ mode, lineApprover, lineIdToken }:
     };
 
     setCart((prev) => {
-      const existing = prev.find((item) => item.itemId === newItem.itemId && item.lotNo === newItem.lotNo);
+      const existing = prev.find((item) => item.inventoryId === newItem.inventoryId);
       if (existing) {
         return prev.map((item) =>
           item.cartId === existing.cartId
@@ -240,19 +258,18 @@ export default function MobileStockWorkflow({ mode, lineApprover, lineIdToken }:
     setCart((prev) => prev.map((item) => (item.cartId === cartId ? { ...item, [field]: value } : item)));
   };
 
-  const updateDispenseLot = (cartId: string, selectedLotNo: string) => {
+  const updateDispenseLot = (cartId: string, selectedInventoryId: string) => {
     setCart((prev) => {
       const currentItem = prev.find((item) => item.cartId === cartId);
       if (!currentItem?.availableLots) return prev;
 
-      const selectedLot = currentItem.availableLots.find((lot) => lot.lotNo === selectedLotNo);
+      const selectedLot = currentItem.availableLots.find((lot) => String(lot.inventoryId) === selectedInventoryId);
       if (!selectedLot) return prev;
 
       const duplicateItem = prev.find(
         (item) =>
           item.cartId !== cartId &&
-          item.itemId === currentItem.itemId &&
-          item.lotNo === selectedLot.lotNo
+          item.inventoryId === selectedLot.inventoryId
       );
 
       if (duplicateItem) {
@@ -269,8 +286,10 @@ export default function MobileStockWorkflow({ mode, lineApprover, lineIdToken }:
         item.cartId === cartId
           ? {
               ...item,
+              inventoryId: selectedLot.inventoryId,
               lotNo: selectedLot.lotNo,
               expDate: selectedLot.expDate,
+              receivedOn: selectedLot.receivedOn,
               maxQty: selectedLot.qty,
               qty: Math.min(item.qty, selectedLot.qty),
             }
@@ -514,13 +533,13 @@ export default function MobileStockWorkflow({ mode, lineApprover, lineIdToken }:
                     <div className="space-y-2">
                       <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">ล็อต</label>
                       <select
-                        value={item.lotNo}
+                        value={String(item.inventoryId)}
                         onChange={(e) => updateDispenseLot(item.cartId, e.target.value)}
                         className="w-full h-12 rounded-2xl border border-gray-200 bg-white px-4 text-sm font-bold outline-none focus:ring-2 focus:ring-red-500"
                       >
                         {item.availableLots?.map((lot) => (
-                          <option key={`${item.itemId}-${lot.lotNo}`} value={lot.lotNo}>
-                            {lot.lotNo}
+                          <option key={lot.inventoryId} value={String(lot.inventoryId)}>
+                            {`${lot.lotNo} | EXP ${formatThaiDate(lot.expDate)} | รับเข้า ${formatThaiDate(lot.receivedOn)}`}
                           </option>
                         ))}
                       </select>

@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useAuth } from '@/components/auth-provider';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useAuth } from "@/components/auth-provider";
 import {
   AlertCircle,
   AlertTriangle,
@@ -13,703 +13,248 @@ import {
   ShoppingCart,
   Smile,
   Trash2,
-  XCircle
-} from 'lucide-react';
-import Modal from '@/components/modal';
-import MultiSelect from '@/components/multi-select';
-import { apiClient, BatchItem, Reagent, WeeklyStockNotificationItem } from '@/lib/api-client';
+  XCircle,
+} from "lucide-react";
+import Modal from "@/components/modal";
+import MultiSelect from "@/components/multi-select";
+import { apiClient, type BatchItem, type Reagent } from "@/lib/api-client";
 
 interface CountItem extends Reagent {
-  actual: number | '';
+  actual: number | "";
   refilled?: boolean;
   submitting?: boolean;
 }
 
-type RefreshOptions = {
-  clearActualIds?: string[];
-  refilledIds?: string[];
-};
-
-interface SyncPreviewItem {
-  itemId: string;
-  name: string;
-  unit: string;
+interface RefillPreviewItem {
+  item: CountItem;
   actual: number;
-  weeklyTarget: number;
   needed: number;
-  available: number;
-  dispenseQty: number;
+  dispensed: number;
   shortage: number;
   lots: BatchItem[];
 }
 
-interface SyncDispensePreview {
-  items: SyncPreviewItem[];
+interface RefillPreview {
+  items: RefillPreviewItem[];
   batchItems: BatchItem[];
-  insufficientItems: string[];
-  itemIds: string[];
   totalNeeded: number;
-  totalDispense: number;
+  totalDispensed: number;
   totalShortage: number;
 }
 
-const COUNT_STORAGE_KEY = 'labstock_counts';
+const COUNT_STORAGE_KEY = "labstock_counts";
 
-const sortLotsByFefo = (lots: Reagent['lots']) => {
-  return [...lots].sort((a, b) => new Date(a.expDate).getTime() - new Date(b.expDate).getTime());
+const formatShortDate = (value?: string) => {
+  if (!value) return "-";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : new Intl.DateTimeFormat("th-TH", { day: "2-digit", month: "short", year: "2-digit" }).format(date);
 };
 
-const buildSyncDispensePreview = (items: CountItem[]): SyncDispensePreview => {
+const sortLotsByFefo = (lots: Reagent["lots"]) => {
+  return [...lots].sort((a, b) => {
+    const expiry = new Date(a.expDate).getTime() - new Date(b.expDate).getTime();
+    if (expiry !== 0) return expiry;
+    const received = new Date(a.receivedOn).getTime() - new Date(b.receivedOn).getTime();
+    if (received !== 0) return received;
+    return a.inventoryId - b.inventoryId;
+  });
+};
+
+const buildRefillPreview = (items: CountItem[]): RefillPreview => {
   const previewItems = items.map((item) => {
-    const actual = item.actual === '' ? 0 : item.actual;
+    const actual = item.actual === "" ? 0 : item.actual;
     const needed = Math.max(item.weeklyTarget - actual, 0);
+    let remaining = needed;
     const lots: BatchItem[] = [];
-    let remainingToDispense = needed;
 
     for (const lot of sortLotsByFefo(item.lots)) {
-      if (remainingToDispense <= 0) break;
-
-      const take = Math.min(remainingToDispense, lot.qty);
-      if (take > 0) {
-        lots.push({
-          itemId: item.itemId,
-          name: item.name,
-          lotNo: lot.lotNo,
-          qty: take,
-          unit: item.unit,
-          expDate: lot.expDate,
-          note: 'เบิกเติมหน้างาน (Sync รวม)'
-        });
-        remainingToDispense -= take;
-      }
+      if (remaining <= 0) break;
+      const qty = Math.min(remaining, lot.qty);
+      if (qty <= 0) continue;
+      lots.push({
+        inventoryId: lot.inventoryId,
+        itemId: item.itemId,
+        name: item.name,
+        lotNo: lot.lotNo,
+        qty,
+        unit: item.unit,
+        expDate: lot.expDate,
+        receivedOn: lot.receivedOn,
+        note: "เบิกเติมหน้างาน (Sync รวม)",
+      });
+      remaining -= qty;
     }
 
-    const dispenseQty = lots.reduce((sum, lot) => sum + lot.qty, 0);
-    const available = item.lots.reduce((sum, lot) => sum + lot.qty, 0);
-    const shortage = Math.max(needed - dispenseQty, 0);
-
-    return {
-      itemId: item.itemId,
-      name: item.name,
-      unit: item.unit,
-      actual,
-      weeklyTarget: item.weeklyTarget,
-      needed,
-      available,
-      dispenseQty,
-      shortage,
-      lots
-    };
+    const dispensed = lots.reduce((sum, lot) => sum + lot.qty, 0);
+    return { item, actual, needed, dispensed, shortage: Math.max(needed - dispensed, 0), lots };
   });
-
-  const batchItems = previewItems.flatMap((item) => item.lots);
-  const insufficientItems = previewItems.filter((item) => item.shortage > 0).map((item) => item.name);
 
   return {
     items: previewItems,
-    batchItems,
-    insufficientItems,
-    itemIds: items.map((item) => item.itemId),
+    batchItems: previewItems.flatMap((item) => item.lots),
     totalNeeded: previewItems.reduce((sum, item) => sum + item.needed, 0),
-    totalDispense: previewItems.reduce((sum, item) => sum + item.dispenseQty, 0),
-    totalShortage: previewItems.reduce((sum, item) => sum + item.shortage, 0)
+    totalDispensed: previewItems.reduce((sum, item) => sum + item.dispensed, 0),
+    totalShortage: previewItems.reduce((sum, item) => sum + item.shortage, 0),
   };
-};
-
-const formatExpDate = (value?: string) => {
-  if (!value) return '-';
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-
-  return date.toLocaleDateString('th-TH');
 };
 
 export default function CountPage() {
   const { user, loading: authLoading } = useAuth();
   const [reagents, setReagents] = useState<CountItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [filterType, setFilterType] = useState<string[]>(['ALL']);
-  const [filterJob, setFilterJob] = useState<string[]>(['ALL']);
-  const [feedback, setFeedback] = useState<{ type: 'success' | 'error', msg: string } | null>(null);
-  const [submittingAll, setSubmittingAll] = useState(false);
-  const [sendingSummary, setSendingSummary] = useState(false);
-  const [batchPreview, setBatchPreview] = useState<SyncDispensePreview | null>(null);
-  const [isBatchSummaryOpen, setIsBatchSummaryOpen] = useState(false);
-  void sendingSummary;
+  const [search, setSearch] = useState("");
+  const [filterType, setFilterType] = useState<string[]>(["ALL"]);
+  const [filterJob, setFilterJob] = useState<string[]>(["ALL"]);
+  const [feedback, setFeedback] = useState<{ type: "success" | "error"; msg: string } | null>(null);
+  const [preview, setPreview] = useState<RefillPreview | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  const mergeDashboardState = useCallback((dashboardData: Reagent[], previous: CountItem[], options?: RefreshOptions) => {
+  const mergeDashboardState = useCallback((dashboard: Reagent[], previous: CountItem[], clearIds: string[] = [], refilledIds: string[] = []) => {
     const previousMap = new Map(previous.map((item) => [item.itemId, item]));
-    const clearActualIds = new Set(options?.clearActualIds || []);
-    const refilledIds = new Set(options?.refilledIds || []);
-
-    return dashboardData.map((item) => {
-      const previousItem = previousMap.get(item.itemId);
-      return {
-        ...item,
-        actual: clearActualIds.has(item.itemId) ? '' : (previousItem?.actual ?? ''),
-        refilled: refilledIds.has(item.itemId) ? true : (previousItem?.refilled ?? false),
-        submitting: false
-      };
-    });
+    const clearSet = new Set(clearIds);
+    const refilledSet = new Set(refilledIds);
+    return dashboard.map((item) => ({
+      ...item,
+      actual: clearSet.has(item.itemId) ? "" : (previousMap.get(item.itemId)?.actual ?? ""),
+      refilled: refilledSet.has(item.itemId) || previousMap.get(item.itemId)?.refilled || false,
+      submitting: false,
+    }));
   }, []);
 
-  const refreshFromServer = useCallback(async (options?: RefreshOptions) => {
-    const dashboardData = await apiClient.getDashboard();
-    setReagents((prev) => mergeDashboardState(dashboardData, prev, options));
+  const refreshFromServer = useCallback(async (clearIds: string[] = [], refilledIds: string[] = []) => {
+    const dashboard = await apiClient.getDashboard();
+    setReagents((previous) => mergeDashboardState(dashboard, previous, clearIds, refilledIds));
   }, [mergeDashboardState]);
 
   useEffect(() => {
-    if (authLoading) {
-      return;
-    }
-
-    if (!user) {
-      return;
-    }
-
-    apiClient.getDashboard().then((data) => {
-      const savedCounts = JSON.parse(localStorage.getItem(COUNT_STORAGE_KEY) || '{}') as Record<string, number>;
-      const items = data.map((item) => ({
+    if (authLoading || !user) return;
+    apiClient.getDashboard().then((dashboard) => {
+      const saved = JSON.parse(localStorage.getItem(COUNT_STORAGE_KEY) || "{}") as Record<string, number>;
+      setReagents(dashboard.map((item) => ({
         ...item,
-        actual: savedCounts[item.itemId] !== undefined ? savedCounts[item.itemId] : '' as number | '',
+        actual: saved[item.itemId] ?? "",
         refilled: false,
-        submitting: false
-      }));
-
-      setReagents(items);
-      setLoading(false);
-    }).catch((err) => {
-      console.error(err);
-      setLoading(false);
-    });
+        submitting: false,
+      })));
+    }).catch((error) => {
+      console.error(error);
+      setFeedback({ type: "error", msg: "โหลดรายการน้ำยาไม่สำเร็จ" });
+    }).finally(() => setLoading(false));
   }, [authLoading, user]);
 
   useEffect(() => {
-    if (reagents.length === 0) return;
-
-    const countsToSave: Record<string, number | ''> = {};
+    if (!reagents.length) return;
+    const saved: Record<string, number> = {};
     reagents.forEach((item) => {
-      if (item.actual !== '') {
-        countsToSave[item.itemId] = item.actual;
-      }
+      if (item.actual !== "") saved[item.itemId] = item.actual;
     });
-    localStorage.setItem(COUNT_STORAGE_KEY, JSON.stringify(countsToSave));
+    localStorage.setItem(COUNT_STORAGE_KEY, JSON.stringify(saved));
   }, [reagents]);
 
-  const categories = useMemo(() => {
-    return {
-      types: Array.from(new Set(reagents.map((item) => item.reagentType).filter(Boolean))).sort(),
-      jobs: Array.from(new Set(reagents.map((item) => item.jobType).filter(Boolean))).sort()
-    };
-  }, [reagents]);
+  const categories = useMemo(() => ({
+    types: Array.from(new Set(reagents.map((item) => item.reagentType).filter(Boolean))).sort(),
+    jobs: Array.from(new Set(reagents.map((item) => item.jobType).filter(Boolean))).sort(),
+  }), [reagents]);
 
-  const filteredItems = useMemo(() => {
-    return reagents.filter((item) => {
-      const terms = search.toLowerCase().trim().split(/\s+/).filter(Boolean);
-      const text = `${item.itemId} ${item.name} ${item.qrCode || ''}`.toLowerCase();
-      const matchSearch = terms.length === 0 || terms.every((term) => text.includes(term));
-      const matchType = filterType.includes('ALL') || filterType.includes(item.reagentType);
-      const matchJob = filterJob.includes('ALL') || filterJob.includes(item.jobType);
+  const filteredItems = useMemo(() => reagents.filter((item) => {
+    const terms = search.toLowerCase().trim().split(/\s+/).filter(Boolean);
+    const searchText = `${item.itemId} ${item.name} ${item.qrCode || ""}`.toLowerCase();
+    return (terms.length === 0 || terms.every((term) => searchText.includes(term)))
+      && (filterType.includes("ALL") || filterType.includes(item.reagentType))
+      && (filterJob.includes("ALL") || filterJob.includes(item.jobType));
+  }), [filterJob, filterType, reagents, search]);
 
-      return matchSearch && matchType && matchJob;
-    });
-  }, [filterJob, filterType, reagents, search]);
-
-  const countedCount = reagents.filter((item) => item.actual !== '').length;
-  const progress = reagents.length > 0 ? (countedCount / reagents.length) * 100 : 0;
-
-  const syncItems = useMemo(() => {
-    return reagents.filter((item) => item.actual !== '' && (item.actual as number) < item.weeklyTarget && !item.refilled);
-  }, [reagents]);
-
-  const weeklySummaryItems = useMemo<WeeklyStockNotificationItem[]>(() => {
-    return reagents
-      .filter((item) => item.actual !== '' && item.vendor)
-      .map((item) => ({
-        itemId: item.itemId,
-        name: item.name,
-        quantity: Number(item.actual),
-        unit: item.unit,
-        weeklyTarget: item.weeklyTarget,
-        vendor: item.vendor || ''
-      }));
-  }, [reagents]);
+  const countedCount = reagents.filter((item) => item.actual !== "").length;
+  const progress = reagents.length ? (countedCount / reagents.length) * 100 : 0;
+  const refillItems = reagents.filter((item) => item.actual !== "" && item.actual < item.weeklyTarget && !item.refilled);
 
   const handleInput = (itemId: string, value: string) => {
-    const actual = value === '' ? '' : parseInt(value.replace(/[^0-9]/g, ''), 10) || 0;
-    setReagents((prev) => prev.map((item) => (
-      item.itemId === itemId ? { ...item, actual, refilled: false } : item
-    )));
-  };
-
-  const handleSyncAll = () => {
-    if (syncItems.length === 0) return;
-
-    const preview = buildSyncDispensePreview(syncItems);
-    if (preview.batchItems.length === 0) {
-      setFeedback({ type: 'error', msg: 'สต็อกคลังใหญ่ไม่พอ ไม่มี lot ที่สามารถเบิกเติมได้' });
-      return;
-    }
-
-    setBatchPreview(preview);
-    setIsBatchSummaryOpen(true);
-  };
-
-  const closeBatchSummary = () => {
-    if (submittingAll) return;
-
-    setIsBatchSummaryOpen(false);
-    setBatchPreview(null);
-  };
-
-  const handleConfirmSyncAll = async () => {
-    if (!batchPreview || batchPreview.batchItems.length === 0) return;
-
-    setSubmittingAll(true);
-
-    try {
-      await apiClient.dispenseBatch(batchPreview.batchItems);
-
-      let msg = `Sync สำเร็จ! เบิกเติม ${batchPreview.items.length} รายการเรียบร้อยแล้ว`;
-      if (batchPreview.insufficientItems.length > 0) {
-        msg += ` (บางรายการสต็อกไม่พอ: ${batchPreview.insufficientItems.slice(0, 2).join(', ')}...)`;
-      }
-      setFeedback({ type: 'success', msg });
-      setIsBatchSummaryOpen(false);
-      setBatchPreview(null);
-
-      await refreshFromServer({
-        clearActualIds: batchPreview.itemIds,
-        refilledIds: batchPreview.itemIds
-      });
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } }, message: string };
-      setFeedback({ type: 'error', msg: 'Sync ไม่สำเร็จ: ' + (error.response?.data?.error || error.message) });
-    } finally {
-      setSubmittingAll(false);
-    }
+    const actual = value === "" ? "" : Math.max(0, Number.parseInt(value.replace(/[^0-9]/g, ""), 10) || 0);
+    setReagents((items) => items.map((item) => item.itemId === itemId ? { ...item, actual, refilled: false } : item));
   };
 
   const handleClearAll = () => {
-    if (confirm('คุณต้องการล้างยอดนับทั้งหมดที่พิมพ์ค้างไว้ใช่หรือไม่?')) {
-      setReagents((prev) => prev.map((item) => ({ ...item, actual: '', refilled: false })));
-      localStorage.removeItem(COUNT_STORAGE_KEY);
-      setFeedback({ type: 'success', msg: 'ล้างยอดนับทั้งหมดเรียบร้อยแล้ว' });
-    }
+    if (!window.confirm("ต้องการล้างยอดนับค้างทั้งหมดหรือไม่? รายการในคลังและประวัติการเบิกจะไม่ถูกเปลี่ยน")) return;
+    setReagents((items) => items.map((item) => ({ ...item, actual: "", refilled: false })));
+    localStorage.removeItem(COUNT_STORAGE_KEY);
+    setFeedback({ type: "success", msg: "ล้างยอดนับค้างแล้ว" });
   };
 
-  const handleSendWeeklySummary = async () => {
-    if (weeklySummaryItems.length === 0) {
-      setFeedback({ type: 'error', msg: 'ยังไม่มีรายการที่นับจริงสำหรับส่งสรุปรายสัปดาห์' });
+  const openPreview = (items: CountItem[]) => {
+    const nextPreview = buildRefillPreview(items);
+    if (!nextPreview.batchItems.length) {
+      setFeedback({ type: "error", msg: "สต็อกคลังกลางไม่พอ ไม่มี Lot ที่สามารถเบิกเติมได้" });
       return;
     }
-
-    setSendingSummary(true);
-    try {
-      const result = await apiClient.sendWeeklyStockSummary(weeklySummaryItems);
-      const vendorCount = typeof result.data === 'object' && result.data && 'notifiedVendors' in result.data
-        ? Number((result.data as { notifiedVendors?: number }).notifiedVendors || 0)
-        : 0;
-      setFeedback({
-        type: 'success',
-        msg: vendorCount > 0
-          ? `ส่งสรุปสต๊อกรายสัปดาห์ให้ Vendor ${vendorCount} รายแล้ว`
-          : 'ส่งคำขอสรุปรายสัปดาห์เรียบร้อยแล้ว'
-      });
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } }, message: string };
-      setFeedback({ type: 'error', msg: 'ส่งสรุปรายสัปดาห์ไม่สำเร็จ: ' + (error.response?.data?.error || error.message) });
-    } finally {
-      setSendingSummary(false);
-    }
+    setPreview(nextPreview);
   };
-  void handleSendWeeklySummary;
 
-  const handleRefillSingle = async (itemId: string) => {
-    const item = reagents.find((reagent) => reagent.itemId === itemId);
-    if (!item || item.actual === '') return;
-
-    const needed = item.weeklyTarget - (item.actual as number);
-    if (needed <= 0) return;
-
-    setReagents((prev) => prev.map((reagent) => (
-      reagent.itemId === itemId ? { ...reagent, submitting: true } : reagent
-    )));
-
-    const batchToDispense: BatchItem[] = [];
-    let remainingToDispense = needed;
-    let takenTotal = 0;
-
-    for (const lot of sortLotsByFefo(item.lots)) {
-      if (remainingToDispense <= 0) break;
-
-      const take = Math.min(remainingToDispense, lot.qty);
-      if (take > 0) {
-        batchToDispense.push({
-          itemId: item.itemId,
-          name: item.name,
-          lotNo: lot.lotNo,
-          qty: take,
-          unit: item.unit,
-          expDate: lot.expDate,
-          note: needed > item.quantity
-            ? `เบิกเติมหน้างาน (สต็อกไม่พอ: เบิก ${item.quantity} จาก ${needed})`
-            : 'เบิกเติมหน้างานอัตโนมัติ'
-        });
-        remainingToDispense -= take;
-        takenTotal += take;
-      }
-    }
-
+  const handleConfirmRefill = async () => {
+    if (!preview?.batchItems.length) return;
+    setSubmitting(true);
     try {
-      if (batchToDispense.length > 0) {
-        await apiClient.dispenseBatch(batchToDispense);
-
-        let msg = `เติม ${item.name} สำเร็จ! (${takenTotal} ${item.unit})`;
-        if (takenTotal < needed) {
-          msg = `เติม ${item.name} บางส่วน (${takenTotal}/${needed}) เนื่องจากสต็อกคลังใหญ่ไม่พอ`;
-        }
-
-        setFeedback({ type: 'success', msg });
-        await refreshFromServer({
-          clearActualIds: [itemId],
-          refilledIds: [itemId]
-        });
-      } else {
-        setFeedback({ type: 'error', msg: 'สต็อกในคลังใหญ่ไม่มีรายการนี้เหลืออยู่' });
-        setReagents((prev) => prev.map((reagent) => (
-          reagent.itemId === itemId ? { ...reagent, submitting: false } : reagent
-        )));
-      }
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } }, message: string };
-      setFeedback({ type: 'error', msg: 'Sync ไม่สำเร็จ: ' + (error.response?.data?.error || error.message) });
-      setReagents((prev) => prev.map((reagent) => (
-        reagent.itemId === itemId ? { ...reagent, submitting: false } : reagent
-      )));
+      await apiClient.dispenseBatch(preview.batchItems);
+      const ids = preview.items.map((item) => item.item.itemId);
+      await refreshFromServer(ids, ids);
+      setPreview(null);
+      setFeedback({
+        type: "success",
+        msg: preview.totalShortage > 0
+          ? `เบิกเติมบางส่วนแล้ว สต็อกคลังกลางขาดอีก ${preview.totalShortage} หน่วย`
+          : `เบิกเติม ${preview.items.length} รายการเรียบร้อยแล้ว`,
+      });
+    } catch (error: unknown) {
+      const response = error as { response?: { data?: { error?: string } }; message?: string };
+      setFeedback({ type: "error", msg: `เบิกเติมไม่สำเร็จ: ${response.response?.data?.error || response.message || "ไม่ทราบสาเหตุ"}` });
+    } finally {
+      setSubmitting(false);
     }
   };
 
   if (authLoading || (user && loading)) {
-    return (
-      <div className="flex flex-col items-center justify-center h-96 gap-4">
-        <Loader2 className="animate-spin text-blue-600" size={48} />
-        <p className="text-gray-500 animate-pulse font-bold text-xs uppercase tracking-widest">
-          กำลังโหลดรายการน้ำยาทั้งหมด...
-        </p>
-      </div>
-    );
+    return <div className="flex h-96 flex-col items-center justify-center gap-4"><Loader2 className="animate-spin text-blue-600" size={48} /><p className="text-xs font-bold uppercase tracking-widest text-gray-500">กำลังโหลดรายการน้ำยา...</p></div>;
   }
-
-  if (!user) {
-    return null;
-  }
+  if (!user) return null;
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-4xl mx-auto pb-40">
-      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-8 rounded-[2.5rem] shadow-xl text-white relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-48 h-48 bg-white/10 -mr-16 -mt-16 rounded-full blur-3xl" />
+    <div className="mx-auto max-w-4xl space-y-6 pb-40">
+      <section className="relative overflow-hidden rounded-[2.5rem] bg-gradient-to-r from-blue-600 to-indigo-600 p-8 text-white shadow-xl">
         <div className="relative z-10">
-          <div className="flex items-center justify-between gap-3 mb-2">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-white/20 rounded-xl backdrop-blur-md">
-                <ClipboardList size={24} />
-              </div>
-              <h1 className="text-2xl font-black">นับสต็อกหน้างาน</h1>
-            </div>
-            {countedCount > 0 && (
-              <button
-                onClick={handleClearAll}
-                className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-xl backdrop-blur-md transition-all text-[10px] font-black uppercase tracking-widest border border-white/10"
-              >
-                <Trash2 size={14} />
-                ล้างยอดนับ
-              </button>
-            )}
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3"><div className="rounded-xl bg-white/20 p-2"><ClipboardList size={24} /></div><h1 className="text-2xl font-black">นับสต็อกหน้างาน</h1></div>
+            {countedCount > 0 && <button onClick={handleClearAll} className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/10 px-4 py-2 text-[10px] font-black uppercase tracking-widest hover:bg-white/20"><Trash2 size={14} />ล้างยอดนับค้าง</button>}
           </div>
-          <p className="text-blue-100 text-sm font-bold opacity-90">
-            คำนวณยอดเบิกเติมอัตโนมัติจากเป้าหมายรายสัปดาห์ (Weekly Target)
-          </p>
-
-          <div className="mt-6">
-            <div className="flex justify-between text-[10px] font-black uppercase tracking-widest mb-2 text-blue-100">
-              <span>ความคืบหน้าการนับรวม</span>
-              <span>{countedCount} / {reagents.length} รายการ</span>
-            </div>
-            <div className="w-full h-2.5 bg-blue-900/30 rounded-full overflow-hidden border border-white/10">
-              <div
-                className="h-full bg-white rounded-full transition-all duration-700 ease-out shadow-[0_0_10px_rgba(255,255,255,0.5)]"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-          </div>
+          <p className="text-sm font-bold text-blue-100">นับยอดจริง แล้วคำนวณการเบิกเติมจากเป้าหมายรายสัปดาห์</p>
+          <div className="mt-6"><div className="mb-2 flex justify-between text-[10px] font-black uppercase tracking-widest text-blue-100"><span>ความคืบหน้าการนับรวม</span><span>{countedCount} / {reagents.length} รายการ</span></div><div className="h-2.5 overflow-hidden rounded-full bg-blue-900/30"><div className="h-full rounded-full bg-white transition-all" style={{ width: `${progress}%` }} /></div></div>
         </div>
-      </div>
+      </section>
 
-      <div className="bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-sm space-y-6">
-        <div className="relative group">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-blue-600 transition-colors" size={18} />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="พิมพ์รหัส ชื่อ หรือสแกนเพื่อค้นหา..."
-            className="w-full pl-11 pr-10 py-4 bg-gray-50 border border-gray-100 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-          />
-          {search && (
-            <button onClick={() => setSearch('')} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-              <XCircle size={18} />
-            </button>
-          )}
-        </div>
+      <section className="space-y-6 rounded-[2.5rem] border border-gray-100 bg-white p-6 shadow-sm">
+        <div className="group relative"><Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="พิมพ์รหัส ชื่อ หรือสแกนเพื่อค้นหา..." className="w-full rounded-2xl border border-gray-100 bg-gray-50 py-4 pl-11 pr-10 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500" />{search && <button onClick={() => setSearch("")} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400"><XCircle size={18} /></button>}</div>
+        <div className="grid gap-6 md:grid-cols-2"><MultiSelect label="ประเภทน้ำยา" options={categories.types} selected={filterType} onChange={setFilterType} /><MultiSelect label="ประเภทงาน" options={categories.jobs} selected={filterJob} onChange={setFilterJob} /></div>
+      </section>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <MultiSelect
-            label="ประเภทน้ำยา"
-            options={categories.types}
-            selected={filterType}
-            onChange={setFilterType}
-          />
-          <MultiSelect
-            label="ประเภทงาน"
-            options={categories.jobs}
-            selected={filterJob}
-            onChange={setFilterJob}
-          />
-        </div>
-      </div>
-
-      {feedback && (
-        <div className={`p-4 rounded-[1.5rem] flex items-center gap-3 animate-in slide-in-from-top-4 duration-300 ${
-          feedback.type === 'success' ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-700 border border-red-100'
-        }`}>
-          {feedback.type === 'success' ? <CheckCircle size={20} /> : <AlertCircle size={20} />}
-          <p className="text-sm font-bold flex-1">{feedback.msg}</p>
-          <button onClick={() => setFeedback(null)} className="text-xs font-black uppercase px-2 py-1">ปิด</button>
-        </div>
-      )}
+      {feedback && <div className={`flex items-center gap-3 rounded-2xl border p-4 ${feedback.type === "success" ? "border-green-100 bg-green-50 text-green-700" : "border-red-100 bg-red-50 text-red-700"}`}><>{feedback.type === "success" ? <CheckCircle size={20} /> : <AlertCircle size={20} />}</><p className="flex-1 text-sm font-bold">{feedback.msg}</p><button onClick={() => setFeedback(null)} className="text-xs font-black">ปิด</button></div>}
 
       <div className="space-y-4">
-        {filteredItems.length === 0 && !loading ? (
-          <div className="text-center py-20 text-gray-300 bg-white rounded-[2.5rem] border border-gray-100 shadow-sm animate-in fade-in">
-            <ClipboardList className="mx-auto mb-4 opacity-20" size={64} />
-            <p className="font-bold">ไม่พบรายการที่ตรงกับเงื่อนไข</p>
-          </div>
-        ) : (
-          filteredItems.map((item, idx) => {
-            const target = item.weeklyTarget || 0;
-            const current = item.actual;
-            const diff = current !== '' && current < target ? target - current : 0;
-
-            return (
-              <div key={`${item.itemId}-${idx}`} className="bg-white p-5 rounded-[2rem] border border-gray-100 shadow-sm transition-all focus-within:ring-2 focus-within:ring-blue-500/20 animate-in fade-in slide-in-from-bottom-2">
-                <div className="flex justify-between items-start mb-5 border-b border-gray-50 pb-4">
-                  <div className="pr-4 min-w-0">
-                    <h3 className="font-black text-gray-800 text-base leading-tight mb-1 truncate">{item.name}</h3>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter bg-gray-50 px-1.5 py-0.5 rounded">ID: {item.itemId}</span>
-                      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter bg-gray-50 px-1.5 py-0.5 rounded">{item.reagentType}</span>
-                      <span className="text-[10px] font-bold text-blue-400 uppercase tracking-tighter bg-blue-50/50 px-1.5 py-0.5 rounded">{item.jobType}</span>
-                    </div>
-                  </div>
-                  <div className="flex gap-2 shrink-0">
-                    <div className="bg-blue-50 px-3 py-2 rounded-xl text-center border border-blue-100">
-                      <p className="text-[8px] text-blue-400 font-black uppercase tracking-widest mb-0.5">ในระบบ</p>
-                      <p className="font-black text-blue-700 text-sm">{item.quantity} <span className="text-[10px] font-bold">{item.unit}</span></p>
-                    </div>
-                    <div className="bg-gray-50 px-3 py-2 rounded-xl text-center border border-gray-100">
-                      <p className="text-[8px] text-gray-400 font-black uppercase tracking-widest mb-0.5">เป้าหมาย</p>
-                      <p className="font-black text-gray-700 text-sm">{target} <span className="text-[10px] font-bold">{item.unit}</span></p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex flex-col sm:flex-row items-center gap-4">
-                  <div className="w-full sm:flex-1 relative">
-                    <label className="absolute -top-2 left-4 bg-white px-1 text-[9px] font-black text-blue-600 uppercase tracking-widest">นับได้จริง</label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={item.actual}
-                      onChange={(e) => handleInput(item.itemId, e.target.value)}
-                      placeholder="ระบุจำนวน"
-                      className="w-full border border-blue-200 rounded-2xl px-5 py-4 text-center font-black text-xl text-blue-900 focus:bg-blue-50/50 transition outline-none"
-                    />
-                  </div>
-                  <div className="w-full sm:flex-1 flex flex-col justify-end">
-                    {item.refilled ? (
-                      <div className="w-full bg-green-50 text-green-600 py-4 rounded-2xl font-black text-sm text-center border border-green-100 flex justify-center items-center gap-2 animate-in zoom-in-95 duration-300">
-                        <CheckCircle size={18} /> เติมสต็อกแล้ว
-                      </div>
-                    ) : diff > 0 ? (
-                      <button
-                        onClick={() => handleRefillSingle(item.itemId)}
-                        disabled={item.submitting}
-                        className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black text-sm text-center shadow-lg shadow-blue-200 hover:bg-blue-700 active:scale-95 transition-all flex justify-center items-center gap-2 disabled:opacity-50 disabled:active:scale-100"
-                      >
-                        {item.submitting ? (
-                          <Loader2 size={18} className="animate-spin" />
-                        ) : (
-                          <ShoppingCart size={18} />
-                        )}
-                        {item.quantity < diff ? (
-                          <span className="flex flex-col text-[10px] leading-tight text-left">
-                            <span>เบิกเท่าที่มี ({item.quantity})</span>
-                            <span className="opacity-70 font-bold">ต้องการ {diff}</span>
-                          </span>
-                        ) : (
-                          `กดเบิกเติม ${diff} ${item.unit}`
-                        )}
-                      </button>
-                    ) : item.actual !== '' ? (
-                      <div className="w-full bg-green-50 text-green-600 py-4 rounded-2xl font-black text-sm text-center border border-green-100 flex justify-center items-center gap-2">
-                        <Smile size={18} /> สต็อกหน้างานพอใช้
-                      </div>
-                    ) : (
-                      <div className="w-full bg-gray-50 text-gray-400 py-4 rounded-2xl font-bold text-sm text-center border border-gray-100 flex justify-center items-center gap-2 opacity-50">
-                        รอนับรายการนี้
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })
-        )}
+        {filteredItems.map((item) => {
+          const target = item.weeklyTarget || 0;
+          const diff = item.actual !== "" && item.actual < target ? target - item.actual : 0;
+          return <article key={item.itemId} className="rounded-[2rem] border border-gray-100 bg-white p-5 shadow-sm">
+            <div className="mb-5 flex items-start justify-between gap-3 border-b border-gray-50 pb-4"><div className="min-w-0"><h3 className="mb-1 truncate text-base font-black text-gray-800">{item.name}</h3><div className="flex flex-wrap gap-2"><span className="rounded bg-gray-50 px-1.5 py-0.5 text-[10px] font-bold text-gray-400">ID: {item.itemId}</span><span className="rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-500">{item.reagentType}</span><span className="rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-500">{item.jobType}</span></div></div><div className="flex shrink-0 gap-2"><div className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-center"><p className="text-[8px] font-black uppercase text-blue-400">คงเหลือคลังกลาง</p><p className="text-sm font-black text-blue-700">{item.quantity} <span className="text-[10px]">{item.unit}</span></p></div><div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 text-center"><p className="text-[8px] font-black uppercase text-gray-400">เป้าหมาย</p><p className="text-sm font-black text-gray-700">{target} <span className="text-[10px]">{item.unit}</span></p></div></div></div>
+            <div className="flex flex-col items-center gap-4 sm:flex-row"><div className="relative w-full sm:flex-1"><label className="absolute -top-2 left-4 bg-white px-1 text-[9px] font-black uppercase tracking-widest text-blue-600">นับได้จริง</label><input type="number" min="0" value={item.actual} onChange={(event) => handleInput(item.itemId, event.target.value)} placeholder="ระบุจำนวน" className="w-full rounded-2xl border border-blue-200 px-5 py-4 text-center text-xl font-black text-blue-900 outline-none focus:bg-blue-50" /></div><div className="flex w-full sm:flex-1">{item.refilled ? <div className="flex w-full items-center justify-center gap-2 rounded-2xl border border-green-100 bg-green-50 py-4 text-sm font-black text-green-600"><CheckCircle size={18} />เติมสต็อกแล้ว</div> : diff > 0 ? <button onClick={() => openPreview([item])} disabled={submitting} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 py-4 text-sm font-black text-white shadow-lg shadow-blue-200 hover:bg-blue-700 disabled:opacity-50"><ShoppingCart size={18} />กดเบิกเติม {diff} {item.unit}</button> : item.actual !== "" ? <div className="flex w-full items-center justify-center gap-2 rounded-2xl border border-green-100 bg-green-50 py-4 text-sm font-black text-green-600"><Smile size={18} />สต็อกหน้างานพอใช้</div> : <div className="w-full rounded-2xl border border-gray-100 bg-gray-50 py-4 text-center text-sm font-bold text-gray-400">รอนับรายการนี้</div>}</div></div>
+          </article>;
+        })}
+        {!filteredItems.length && !loading && <div className="rounded-[2.5rem] border border-gray-100 bg-white py-20 text-center text-gray-400"><ClipboardList className="mx-auto mb-4 opacity-30" size={64} /><p className="font-bold">ไม่พบรายการที่ตรงกับเงื่อนไข</p></div>}
       </div>
 
-      <Modal
-        isOpen={isBatchSummaryOpen}
-        onClose={closeBatchSummary}
-        title="สรุปรายการก่อนยืนยันเบิก"
-        maxWidth="max-w-4xl"
-      >
-        {batchPreview && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4">
-                <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest">รายการที่จะเติม</p>
-                <p className="text-2xl font-black text-blue-800">{batchPreview.items.length}</p>
-              </div>
-              <div className="bg-gray-50 border border-gray-100 rounded-2xl p-4">
-                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">ต้องการรวม</p>
-                <p className="text-2xl font-black text-gray-800">{batchPreview.totalNeeded}</p>
-              </div>
-              <div className="bg-green-50 border border-green-100 rounded-2xl p-4">
-                <p className="text-[10px] font-black text-green-500 uppercase tracking-widest">จะเบิกได้</p>
-                <p className="text-2xl font-black text-green-700">{batchPreview.totalDispense}</p>
-              </div>
-            </div>
-
-            {batchPreview.totalShortage > 0 && (
-              <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-2xl p-4 flex gap-3">
-                <AlertTriangle size={20} className="shrink-0 mt-0.5" />
-                <p className="text-sm font-bold">
-                  สต็อกคลังใหญ่ไม่พอบางรายการ ระบบจะแสดงยอดที่เบิกได้จริงก่อนยืนยัน และขาดอีก {batchPreview.totalShortage} หน่วย
-                </p>
-              </div>
-            )}
-
-            <div className="space-y-3 max-h-[52vh] overflow-y-auto pr-1">
-              {batchPreview.items.map((item) => (
-                <div key={item.itemId} className="border border-gray-100 rounded-2xl p-4">
-                  <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="font-black text-gray-900 truncate">{item.name}</p>
-                      <p className="text-[11px] font-bold text-gray-400">ID: {item.itemId}</p>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2 text-center shrink-0">
-                      <div className="bg-gray-50 rounded-xl px-3 py-2">
-                        <p className="text-[9px] font-black text-gray-400 uppercase">นับได้</p>
-                        <p className="text-sm font-black text-gray-800">{item.actual}</p>
-                      </div>
-                      <div className="bg-gray-50 rounded-xl px-3 py-2">
-                        <p className="text-[9px] font-black text-gray-400 uppercase">Target</p>
-                        <p className="text-sm font-black text-gray-800">{item.weeklyTarget}</p>
-                      </div>
-                      <div className="bg-blue-50 rounded-xl px-3 py-2">
-                        <p className="text-[9px] font-black text-blue-400 uppercase">เบิก</p>
-                        <p className="text-sm font-black text-blue-800">{item.dispenseQty} {item.unit}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 space-y-2">
-                    {item.lots.length > 0 ? (
-                      item.lots.map((lot) => (
-                        <div key={`${item.itemId}-${lot.lotNo}`} className="flex items-center justify-between gap-3 bg-gray-50 rounded-xl px-3 py-2">
-                          <div className="min-w-0">
-                            <p className="text-xs font-black text-gray-700 truncate">Lot {lot.lotNo}</p>
-                            <p className="text-[10px] font-bold text-gray-400">EXP {formatExpDate(lot.expDate)}</p>
-                          </div>
-                          <p className="text-sm font-black text-gray-900 shrink-0">{lot.qty} {lot.unit}</p>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="bg-red-50 text-red-700 border border-red-100 rounded-xl px-3 py-2 text-xs font-bold">
-                        ไม่มี lot ในคลังใหญ่ให้เบิก
-                      </div>
-                    )}
-
-                    {item.shortage > 0 && (
-                      <div className="bg-amber-50 text-amber-700 border border-amber-100 rounded-xl px-3 py-2 text-xs font-bold">
-                        สต็อกไม่พอ ขาดอีก {item.shortage} {item.unit}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="flex flex-col sm:flex-row gap-3 pt-2">
-              <button
-                type="button"
-                onClick={closeBatchSummary}
-                disabled={submittingAll}
-                className="w-full sm:w-auto px-6 py-4 rounded-2xl border border-gray-200 text-gray-600 font-black text-sm hover:bg-gray-50 disabled:opacity-50"
-              >
-                ยกเลิก
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmSyncAll}
-                disabled={submittingAll || batchPreview.batchItems.length === 0}
-                className="w-full flex-1 px-6 py-4 rounded-2xl bg-gray-900 text-white font-black text-sm hover:bg-gray-800 disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {submittingAll ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle size={18} />}
-                ยืนยันเบิก {batchPreview.totalDispense} รายการ
-              </button>
-            </div>
-          </div>
-        )}
+      <Modal isOpen={Boolean(preview)} onClose={() => !submitting && setPreview(null)} title="สรุปรายการก่อนยืนยันเบิก" maxWidth="max-w-4xl">
+        {preview && <div className="space-y-5"><div className="grid gap-3 sm:grid-cols-3"><div className="rounded-2xl border border-blue-100 bg-blue-50 p-4"><p className="text-[10px] font-black uppercase text-blue-400">รายการที่จะเติม</p><p className="text-2xl font-black text-blue-800">{preview.items.length}</p></div><div className="rounded-2xl border border-gray-100 bg-gray-50 p-4"><p className="text-[10px] font-black uppercase text-gray-400">ต้องการรวม</p><p className="text-2xl font-black text-gray-800">{preview.totalNeeded}</p></div><div className="rounded-2xl border border-green-100 bg-green-50 p-4"><p className="text-[10px] font-black uppercase text-green-500">จะเบิกได้</p><p className="text-2xl font-black text-green-700">{preview.totalDispensed}</p></div></div>{preview.totalShortage > 0 && <div className="flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-800"><AlertTriangle size={20} /><p className="text-sm font-bold">สต็อกคลังกลางไม่พอ ขาดอีก {preview.totalShortage} หน่วย ระบบจะเบิกเท่าที่มี</p></div>}<div className="max-h-[46vh] space-y-3 overflow-y-auto">{preview.items.map((entry) => <div key={entry.item.itemId} className="rounded-2xl border border-gray-100 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-black text-gray-900">{entry.item.name}</p><p className="text-[11px] font-bold text-gray-400">นับได้ {entry.actual} / เป้าหมาย {entry.item.weeklyTarget} {entry.item.unit}</p></div><p className="rounded-xl bg-blue-50 px-3 py-2 text-sm font-black text-blue-800">เบิก {entry.dispensed} {entry.item.unit}</p></div><div className="mt-3 space-y-2">{entry.lots.map((lot) => <div key={lot.inventoryId} className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2"><p className="text-xs font-bold text-gray-600">Lot {lot.lotNo} · EXP {formatShortDate(lot.expDate)} · รับ {formatShortDate(lot.receivedOn)}</p><p className="text-sm font-black text-gray-900">{lot.qty} {lot.unit}</p></div>)}</div></div>)}</div><div className="flex flex-col gap-3 pt-2 sm:flex-row"><button onClick={() => setPreview(null)} disabled={submitting} className="rounded-2xl border border-gray-200 px-6 py-4 text-sm font-black text-gray-600 disabled:opacity-50">ยกเลิก</button><button onClick={handleConfirmRefill} disabled={submitting || !preview.batchItems.length} className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-gray-900 px-6 py-4 text-sm font-black text-white disabled:opacity-50">{submitting ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle size={18} />}ยืนยันเบิก {preview.totalDispensed} รายการ</button></div></div>}
       </Modal>
 
-      {syncItems.length > 0 && (
-        <div className="fixed bottom-8 left-0 right-0 px-4 z-40 animate-in slide-in-from-bottom-10 duration-500">
-          <div className="max-w-md mx-auto">
-            <button
-              onClick={handleSyncAll}
-              disabled={submittingAll}
-              className="w-full bg-gray-900 text-white p-6 rounded-[2.5rem] shadow-2xl flex items-center justify-between gap-4 active:scale-95 transition-all hover:bg-gray-800 border-2 border-white/10"
-            >
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center shadow-lg shadow-blue-500/50">
-                  <ArrowRightLeft size={24} className="text-white" />
-                </div>
-                <div className="text-left">
-                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">ในตะกร้าเบิกเติม</p>
-                  <p className="text-xl font-black">{syncItems.length} รายการ</p>
-                </div>
-              </div>
-              <div className="bg-white/10 px-6 py-3 rounded-2xl font-black text-sm flex items-center gap-2 backdrop-blur-md">
-                {submittingAll ? <Loader2 className="animate-spin" size={20} /> : 'ดูสรุปก่อนเบิก'}
-              </div>
-            </button>
-          </div>
-        </div>
-      )}
+      {refillItems.length > 0 && <div className="fixed bottom-8 left-0 right-0 z-40 px-4"><div className="mx-auto max-w-md"><button onClick={() => openPreview(refillItems)} disabled={submitting} className="flex w-full items-center justify-between gap-4 rounded-[2.5rem] border-2 border-white/10 bg-gray-900 p-6 text-white shadow-2xl hover:bg-gray-800 disabled:opacity-50"><div className="flex items-center gap-4"><div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-600"><ArrowRightLeft size={24} /></div><div className="text-left"><p className="text-[10px] font-black uppercase tracking-widest text-gray-400">ในตะกร้าเบิกเติม</p><p className="text-xl font-black">{refillItems.length} รายการ</p></div></div><span className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-black">ดูสรุปก่อนเบิก</span></button></div></div>}
     </div>
   );
 }

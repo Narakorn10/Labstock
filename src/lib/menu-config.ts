@@ -53,7 +53,7 @@ export const NAVIGATION_GROUPS: NavigationGroup[] = [
   {
     title: "Lab Procurement",
     items: [
-      { id: "orders", name: "Purchase Orders", label: "Purchase Orders", href: "/orders", icon: ShoppingCart },
+      { id: "orders", name: "ใบสั่งน้ำยา", label: "ใบสั่งน้ำยา", href: "/orders", icon: ShoppingCart },
       { id: "receive_vendor", name: "Receive from Vendor", label: "Receive from Vendor", href: "/receive/vendor", icon: Package },
     ],
   },

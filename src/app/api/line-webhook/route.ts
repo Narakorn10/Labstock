@@ -4,6 +4,7 @@ import { neon } from "@neondatabase/serverless";
 import { getLowStockRows, searchStockRows, searchStockRowsByJob } from "@/lib/bot-stock-queries";
 import { replyDispenseMenu, replyHelp, replyLowStock, replyOrderingMenu, replyPODetail, replyStockSummary, replyTrackingStatus } from "@/lib/line-bot";
 import { LowStockItem, PurchaseOrder, TrackingResult } from "@/lib/line-flex-templates";
+import { normalizeNotificationSettings, normalizePurchaseOrder, notifyUsers } from "@/lib/notifications";
 
 const sql = neon(process.env.DATABASE_URL || "");
 const channelSecret = process.env.LINE_CHANNEL_SECRET;
@@ -108,6 +109,30 @@ async function ensureExpiryAcknowledgementSchema() {
 async function sendReply(replyToken: string, message: ReplyTextMessage) {
   const { lineClient } = await import("@/lib/line-bot");
   await lineClient.replyMessage({ replyToken, messages: [message] });
+}
+
+async function notifyLabOfPurchaseOrderStatus(poNumber: string) {
+  const poRows = await sql`SELECT * FROM purchase_orders WHERE po_number = ${poNumber}`;
+  if (poRows.length === 0) return;
+
+  const itemRows = await sql`
+    SELECT item_name, quantity, unit
+    FROM purchase_order_items
+    WHERE po_id = ${poRows[0].id}
+    ORDER BY id
+  `;
+  const settingsRows = await sql`
+    SELECT n.* FROM notification_settings n
+    JOIN users u ON u.username = n.username
+    WHERE u.role IN ('Admin', 'Manager')
+  `;
+  const po = normalizePurchaseOrder(poRows[0], itemRows.map((item) => ({
+    item_name: String(item.item_name ?? ""),
+    quantity: Number(item.quantity ?? 0),
+    unit: String(item.unit ?? ""),
+  })));
+
+  await notifyUsers("PO_STATUS_UPDATED", po, normalizeNotificationSettings(settingsRows));
 }
 
 export async function POST(req: Request) {
@@ -276,6 +301,7 @@ export async function POST(req: Request) {
 
         if (action === "confirm_po" && id) {
           await sql`UPDATE purchase_orders SET status = 'CONFIRMED', confirmed_at = NOW() WHERE po_number = ${id}`;
+          await notifyLabOfPurchaseOrderStatus(id);
           await sendReply(replyToken, {
             type: "text",
             text: `ยืนยันใบสั่งซื้อ ${id} เรียบร้อยแล้ว ระบบได้แจ้งเตือนให้ Lab ทราบแล้วค่ะ`,
@@ -285,6 +311,7 @@ export async function POST(req: Request) {
 
         if (action === "reject_po" && id) {
           await sql`UPDATE purchase_orders SET status = 'REJECTED' WHERE po_number = ${id}`;
+          await notifyLabOfPurchaseOrderStatus(id);
           await sendReply(replyToken, {
             type: "text",
             text: `ปฏิเสธใบสั่งซื้อ ${id} เรียบร้อยแล้วค่ะ`,

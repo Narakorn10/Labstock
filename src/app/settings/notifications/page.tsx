@@ -233,10 +233,10 @@ export default function NotificationSettingsPage() {
           
           <div className="space-y-1">
             {[
-              { id: 'notify_po_created', label: 'มีการสร้างใบสั่งซื้อใหม่', sub: 'PO Created' },
-              { id: 'notify_po_confirmed', label: 'Vendor ยืนยัน/ปฏิเสธ ออเดอร์', sub: 'PO Confirmed/Rejected' },
-              { id: 'notify_po_shipped', label: 'Vendor แจ้งส่งสินค้าแล้ว', sub: 'PO Shipped' },
-              { id: 'notify_po_received', label: 'Lab รับสินค้าเข้าสต๊อกแล้ว', sub: 'PO Received' },
+              { id: 'notify_po_created', label: 'มีการสร้างใบสั่งน้ำยาใหม่', sub: 'สร้างใบสั่งน้ำยา' },
+              { id: 'notify_po_confirmed', label: 'Vendor ยืนยัน/ปฏิเสธ ใบสั่งน้ำยา', sub: 'ยืนยันหรือปฏิเสธใบสั่งน้ำยา' },
+              { id: 'notify_po_shipped', label: 'Vendor แจ้งส่งสินค้าแล้ว', sub: 'แจ้งส่งใบสั่งน้ำยา' },
+              { id: 'notify_po_received', label: 'Lab รับสินค้าเข้าสต๊อกแล้ว', sub: 'รับใบสั่งน้ำยาเข้าสต็อก' },
               { id: 'notify_low_stock', label: 'น้ำยาต่ำกว่าระดับสำรอง', sub: 'Low Stock Alert' },
               { id: 'notify_expiring_soon', label: 'น้ำยาใกล้หมดอายุภายใน 30 วัน', sub: 'Expiring Soon Alert' },
               { id: 'notify_weekly_summary', label: 'สรุปปริมาณน้ำยาคงเหลือประจำสัปดาห์', sub: 'Weekly Stock Summary' },

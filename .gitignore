@@ -39,3 +39,16 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# dotnet
+/.dotnet-home/
+/.nuget/
+**/bin/
+**/obj/
+
+# Scanner Agent local state and release output
+/scanner-agent/publish/
+/scanner-agent/**/data/
+
+.vercel
+.env*

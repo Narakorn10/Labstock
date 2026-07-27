@@ -1,125 +1,132 @@
-import { NextResponse } from 'next/server';
-import { neon } from '@neondatabase/serverless';
-import { normalizeNotificationSettings, normalizePurchaseOrder, notifyUsers } from '@/lib/notifications';
-import { getAuthenticatedUser } from '@/lib/auth-utils';
+import { NextResponse } from "next/server";
+import sql from "@/lib/db";
+import { getAuthenticatedUser } from "@/lib/auth-utils";
+import { normalizeNotificationSettings, normalizePurchaseOrder, notifyUsers } from "@/lib/notifications";
+import { isLabPurchasingRole, validatePurchaseOrderItems } from "@/lib/purchase-order-workflow";
 
-const sql = neon(process.env.DATABASE_URL || '');
-
-// Helper to generate a PO number
 async function generatePONumber() {
-  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
   const result = await sql`
-    SELECT COUNT(*) as count 
-    FROM purchase_orders 
-    WHERE po_number LIKE ${'PO-' + dateStr + '-%'}
+    SELECT COUNT(*) as count
+    FROM purchase_orders
+    WHERE po_number LIKE ${`PO-${dateStr}-%`}
   `;
-  const count = parseInt(result[0].count, 10) + 1;
-  return `PO-${dateStr}-${count.toString().padStart(3, '0')}`;
+  const count = Number(result[0]?.count ?? 0) + 1;
+  return `PO-${dateStr}-${count.toString().padStart(3, "0")}`;
+}
+
+async function getVendorSettings(vendor: string) {
+  const rows = await sql`
+    SELECT n.*
+    FROM notification_settings n
+    JOIN users u ON u.username = n.username
+    WHERE u.role = 'Vendor' AND u.vendor = ${vendor}
+  `;
+  return normalizeNotificationSettings(rows);
+}
+
+async function getLabSettings() {
+  const rows = await sql`
+    SELECT n.*
+    FROM notification_settings n
+    JOIN users u ON u.username = n.username
+    WHERE u.role IN ('Admin', 'Manager')
+  `;
+  return normalizeNotificationSettings(rows);
 }
 
 export async function GET(request: Request) {
   try {
     const user = await getAuthenticatedUser(request);
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const requestedVendor = new URL(request.url).searchParams.get("vendor");
+    const vendor = user.role === "Vendor" ? user.vendor : requestedVendor;
+    if (user.role === "Vendor" && !vendor) {
+      return NextResponse.json({ error: "Vendor profile is not configured" }, { status: 403 });
     }
 
-    const { searchParams } = new URL(request.url);
-    const requestedVendor = searchParams.get('vendor');
-    const vendor = user.role === 'Vendor' ? user.vendor : requestedVendor;
-    
-    let orders;
-    if (user.role === 'Vendor') {
-      if (!vendor) {
-        return NextResponse.json({ error: 'Vendor profile is not configured' }, { status: 403 });
-      }
-
-      orders = await sql`
-        SELECT * FROM purchase_orders 
-        WHERE vendor = ${vendor} 
-        ORDER BY created_at DESC
-      `;
-    } else if (vendor) {
-      orders = await sql`
-        SELECT * FROM purchase_orders 
-        WHERE vendor = ${vendor} 
-        ORDER BY created_at DESC
-      `;
-    } else {
-      orders = await sql`
-        SELECT * FROM purchase_orders 
-        ORDER BY created_at DESC
-      `;
-    }
-
-    // Optionally fetch items for each order
-    // In a real app we might just fetch them when requested, but let's join or fetch separately
-    const ordersWithItems = await Promise.all(orders.map(async (po) => {
-      const items = await sql`SELECT * FROM purchase_order_items WHERE po_id = ${po.id}`;
-      return { ...po, items };
-    }));
+    const orders = vendor
+      ? await sql`SELECT * FROM purchase_orders WHERE vendor = ${vendor} ORDER BY created_at DESC`
+      : await sql`SELECT * FROM purchase_orders ORDER BY created_at DESC`;
+    const ordersWithItems = await Promise.all(orders.map(async (po) => ({
+      ...po,
+      items: await sql`SELECT * FROM purchase_order_items WHERE po_id = ${po.id} ORDER BY id`,
+    })));
 
     return NextResponse.json(ordersWithItems);
   } catch (error: unknown) {
-    console.error('Error fetching POs:', error);
-    return NextResponse.json({ error: 'Failed to fetch purchase orders' }, { status: 500 });
+    console.error("Error fetching purchase orders:", error);
+    return NextResponse.json({ error: "Failed to fetch purchase orders" }, { status: 500 });
   }
 }
 
 export async function POST(request: Request) {
   try {
     const user = await getAuthenticatedUser(request);
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-    if (user.role === 'Vendor') {
-      return NextResponse.json({ error: 'Vendors cannot create purchase orders' }, { status: 403 });
-    }
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const body = await request.json();
-    const { vendor, note, expected_date, items } = body;
+    const vendor = String(body.vendor ?? "").trim();
+    const items = validatePurchaseOrderItems(body.items);
+    const note = String(body.note ?? "").trim() || null;
+    const expectedDate = body.expected_date || null;
 
-    if (!vendor || !items || items.length === 0) {
-      return NextResponse.json({ error: 'Vendor and items are required' }, { status: 400 });
+    if (!vendor || !items) {
+      return NextResponse.json({ error: "Vendor and valid order items are required" }, { status: 400 });
     }
 
-    const poNumber = await generatePONumber();
+    if (user.role === "Vendor" && user.vendor !== vendor) {
+      return NextResponse.json({ error: "Vendor can only propose orders for its own company" }, { status: 403 });
+    }
+    if (user.role !== "Vendor" && !isLabPurchasingRole(user.role)) {
+      return NextResponse.json({ error: "Only Admin, Manager, or the assigned Vendor can create an order" }, { status: 403 });
+    }
 
-    // Use a transaction conceptually (Neon supports transactions via array of queries, but for simplicity we can just execute sequentially)
-    // Actually we can do it via a standard query block
+    const catalogRows = await Promise.all(items.map((item) => sql`
+      SELECT item_id, name, unit
+      FROM master_data
+      WHERE item_id = ${item.item_id} AND vendor = ${vendor}
+      LIMIT 1
+    `));
+    if (catalogRows.some((rows) => rows.length === 0)) {
+      return NextResponse.json({ error: "Every item must belong to the selected Vendor" }, { status: 400 });
+    }
+
+    const storedItems = items.map((item, index) => ({
+      ...item,
+      item_name: String(catalogRows[index][0].name),
+      unit: String(catalogRows[index][0].unit),
+    }));
+    const origin = user.role === "Vendor" ? "VENDOR" : "LAB";
+    const status = origin === "VENDOR" ? "PENDING_LAB_REVIEW" : "SUBMITTED";
+    const poNumber = await generatePONumber();
     const poResult = await sql`
-      INSERT INTO purchase_orders (po_number, vendor, note, expected_date, created_by, status)
-      VALUES (${poNumber}, ${vendor}, ${note}, ${expected_date || null}, ${user.username}, 'SUBMITTED')
+      INSERT INTO purchase_orders (
+        po_number, vendor, note, expected_date, created_by, status, proposal_origin, review_requested_at
+      )
+      VALUES (
+        ${poNumber}, ${vendor}, ${note}, ${expectedDate}, ${user.username}, ${status}, ${origin},
+        ${origin === "VENDOR" ? new Date().toISOString() : null}
+      )
       RETURNING *
     `;
-
     const po = poResult[0];
-
-    const itemsData = [];
-    for (const item of items) {
-      const itemRes = await sql`
-        INSERT INTO purchase_order_items (po_id, item_id, item_name, quantity, unit)
-        VALUES (${po.id}, ${item.item_id}, ${item.item_name}, ${item.quantity}, ${item.unit})
-        RETURNING *
-      `;
-      itemsData.push(itemRes[0]);
-    }
-
-    const fullPO = normalizePurchaseOrder(po, itemsData.map((item) => ({
-      item_name: String(item.item_name ?? ''),
-      quantity: Number(item.quantity ?? 0),
-      unit: String(item.unit ?? ''),
+    const itemsData = await Promise.all(storedItems.map((item) => sql`
+      INSERT INTO purchase_order_items (po_id, item_id, item_name, quantity, unit)
+      VALUES (${po.id}, ${item.item_id}, ${item.item_name}, ${item.quantity}, ${item.unit})
+      RETURNING *
+    `));
+    const fullPO = normalizePurchaseOrder(po, itemsData.map((rows) => ({
+      item_name: String(rows[0].item_name),
+      quantity: Number(rows[0].quantity),
+      unit: String(rows[0].unit),
     })));
 
-    // Fetch notification settings for the vendor to notify them
-    // Assuming vendor user has username matching the vendor name or similar
-    const settingsRows = await sql`SELECT * FROM notification_settings WHERE username = ${vendor}`;
-    const settings = normalizeNotificationSettings(settingsRows);
-    await notifyUsers('PO_CREATED', fullPO, settings);
-
+    await notifyUsers(origin === "VENDOR" ? "PO_REVIEW_REQUIRED" : "PO_CREATED", fullPO, origin === "VENDOR" ? await getLabSettings() : await getVendorSettings(vendor));
     return NextResponse.json(fullPO, { status: 201 });
   } catch (error: unknown) {
-    console.error('Error creating PO:', error);
-    return NextResponse.json({ error: 'Failed to create purchase order' }, { status: 500 });
+    console.error("Error creating purchase order:", error);
+    return NextResponse.json({ error: "Failed to create purchase order" }, { status: 500 });
   }
 }

@@ -3,32 +3,45 @@
 @theme inline {
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-  --color-airtable-blue: #166ee1;
-  --color-airtable-bg: #f2f4f7;
-  --color-airtable-border: #d1d5db;
+  --color-clinical-900: #123b3a;
+  --color-clinical-700: #2f6f67;
+  --color-clinical-100: #dcece7;
+  --color-clinical-bg: #f6f8f7;
+  --color-clinical-border: #d9e3df;
 }
 
 :root {
-  --font-geist-sans: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  --font-geist-sans: "Segoe UI", "Noto Sans Thai", Tahoma, Geneva, Verdana, sans-serif;
   --font-geist-mono: Consolas, "Cascadia Mono", "SFMono-Regular", Menlo, Monaco, monospace;
-  --background: #f2f4f7; /* Light gray-blue */
-  --foreground: #111827; /* Near black */
+  --background: #f6f8f7;
+  --foreground: #1d302f;
+  --clinical-900: #123b3a;
+  --clinical-700: #2f6f67;
+  --clinical-100: #dcece7;
+  --clinical-050: #eff6f3;
+  --clinical-border: #d9e3df;
+  --clinical-muted: #687875;
+  --clinical-warning: #a86616;
+  --clinical-critical: #b42318;
 }
 
 body {
-  background-color: var(--background);
+  background:
+    linear-gradient(90deg, rgb(18 59 58 / 0.025) 1px, transparent 1px),
+    linear-gradient(rgb(18 59 58 / 0.025) 1px, transparent 1px),
+    var(--background);
+  background-size: 28px 28px;
   color: var(--foreground);
   -webkit-font-smoothing: antialiased;
+  font-variant-numeric: tabular-nums;
 }
 
-/* Airtable UI: Friendly Rounded Corners */
 * {
-  border-radius: 8px; /* Standard Airtable roundedness */
+  box-sizing: border-box;
 }
 
-/* Override for inputs and specific elements if needed */
 input, select, textarea {
-  border-radius: 6px !important;
+  border-radius: 0.5rem;
 }
 
 /* Custom Scrollbar for Airtable */
@@ -37,14 +50,14 @@ input, select, textarea {
   height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: #f2f4f7;
+  background: #eff3f1;
 }
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 10px !important;
+  background: #b7c8c2;
+  border-radius: 999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #78958c;
 }
 
 .no-scrollbar::-webkit-scrollbar {
@@ -55,11 +68,11 @@ input, select, textarea {
   scrollbar-width: none;
 }
 
-/* Airtable Helper Classes */
+/* Shared clinical surfaces. Existing workflow pages can adopt these incrementally. */
 .air-card {
   background-color: #ffffff;
-  border: 1px solid #e5e7eb;
-  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  border: 1px solid var(--clinical-border);
+  box-shadow: 0 10px 28px -24px rgb(18 59 58 / 0.65);
   padding: 1.25rem;
 }
 
@@ -75,13 +88,21 @@ input, select, textarea {
 }
 
 .air-btn-primary {
-  background-color: #166ee1;
+  background-color: var(--clinical-900);
   color: #ffffff;
   padding: 8px 16px;
   font-weight: 600;
-  border-radius: 6px !important;
-  transition: background-color 0.2s;
+  border-radius: 0.5rem;
+  transition: background-color 0.2s, transform 0.2s;
 }
 .air-btn-primary:hover {
-  background-color: #1256b5;
+  background-color: #0d302f;
+}
+.air-btn-primary:active {
+  transform: translateY(1px);
+}
+
+:focus-visible {
+  outline: 3px solid rgb(47 111 103 / 0.38);
+  outline-offset: 2px;
 }
