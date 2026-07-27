@@ -296,7 +296,7 @@ export async function getPurchaseOrderSuggestions(sql: SqlClient, options: Fetch
       ? keyword
         ? await sql`
           WITH inventory_lots AS (
-            SELECT item_id, jsonb_agg(jsonb_build_object('quantity', quantity::numeric, 'exp_date', NULLIF(exp_date, '')::date) ORDER BY NULLIF(exp_date, '')::date ASC NULLS LAST, received_on ASC, id ASC) AS lots,
+            SELECT item_id, jsonb_agg(jsonb_build_object('quantity', quantity::numeric, 'exp_date', NULLIF(exp_date::text, '')::date) ORDER BY NULLIF(exp_date::text, '')::date ASC NULLS LAST, received_on ASC, id ASC) AS lots,
               COALESCE(SUM(quantity), 0) AS current_qty
             FROM inventory
             WHERE quantity > 0
@@ -304,8 +304,8 @@ export async function getPurchaseOrderSuggestions(sql: SqlClient, options: Fetch
           ),
           on_order AS (
             SELECT poi.item_id,
-              jsonb_agg(jsonb_build_object('quantity', GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0), 'eta_date', p.expected_date::date) ORDER BY p.expected_date ASC) FILTER (WHERE p.expected_date IS NOT NULL) AS lots,
-              COALESCE(SUM(GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0)) FILTER (WHERE p.expected_date IS NULL), 0) AS no_eta_qty
+              jsonb_agg(jsonb_build_object('quantity', GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0), 'eta_date', NULLIF(p.expected_date::text, '')::date) ORDER BY NULLIF(p.expected_date::text, '')::date ASC) FILTER (WHERE NULLIF(p.expected_date::text, '') IS NOT NULL) AS lots,
+              COALESCE(SUM(GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0)) FILTER (WHERE NULLIF(p.expected_date::text, '') IS NULL), 0) AS no_eta_qty
             FROM purchase_order_items poi
             JOIN purchase_orders p ON p.id = poi.po_id
             WHERE p.status IN ('SUBMITTED', 'CONFIRMED', 'PARTIALLY_SHIPPED', 'SHIPPED', 'PARTIALLY_RECEIVED')
@@ -331,7 +331,7 @@ export async function getPurchaseOrderSuggestions(sql: SqlClient, options: Fetch
         `
         : await sql`
           WITH inventory_lots AS (
-            SELECT item_id, jsonb_agg(jsonb_build_object('quantity', quantity::numeric, 'exp_date', NULLIF(exp_date, '')::date) ORDER BY NULLIF(exp_date, '')::date ASC NULLS LAST, received_on ASC, id ASC) AS lots,
+            SELECT item_id, jsonb_agg(jsonb_build_object('quantity', quantity::numeric, 'exp_date', NULLIF(exp_date::text, '')::date) ORDER BY NULLIF(exp_date::text, '')::date ASC NULLS LAST, received_on ASC, id ASC) AS lots,
               COALESCE(SUM(quantity), 0) AS current_qty
             FROM inventory
             WHERE quantity > 0
@@ -339,8 +339,8 @@ export async function getPurchaseOrderSuggestions(sql: SqlClient, options: Fetch
           ),
           on_order AS (
             SELECT poi.item_id,
-              jsonb_agg(jsonb_build_object('quantity', GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0), 'eta_date', p.expected_date::date) ORDER BY p.expected_date ASC) FILTER (WHERE p.expected_date IS NOT NULL) AS lots,
-              COALESCE(SUM(GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0)) FILTER (WHERE p.expected_date IS NULL), 0) AS no_eta_qty
+              jsonb_agg(jsonb_build_object('quantity', GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0), 'eta_date', NULLIF(p.expected_date::text, '')::date) ORDER BY NULLIF(p.expected_date::text, '')::date ASC) FILTER (WHERE NULLIF(p.expected_date::text, '') IS NOT NULL) AS lots,
+              COALESCE(SUM(GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0)) FILTER (WHERE NULLIF(p.expected_date::text, '') IS NULL), 0) AS no_eta_qty
             FROM purchase_order_items poi
             JOIN purchase_orders p ON p.id = poi.po_id
             WHERE p.status IN ('SUBMITTED', 'CONFIRMED', 'PARTIALLY_SHIPPED', 'SHIPPED', 'PARTIALLY_RECEIVED')
@@ -365,7 +365,7 @@ export async function getPurchaseOrderSuggestions(sql: SqlClient, options: Fetch
         `
       : await sql`
         WITH inventory_lots AS (
-          SELECT item_id, jsonb_agg(jsonb_build_object('quantity', quantity::numeric, 'exp_date', NULLIF(exp_date, '')::date) ORDER BY NULLIF(exp_date, '')::date ASC NULLS LAST, received_on ASC, id ASC) AS lots,
+          SELECT item_id, jsonb_agg(jsonb_build_object('quantity', quantity::numeric, 'exp_date', NULLIF(exp_date::text, '')::date) ORDER BY NULLIF(exp_date::text, '')::date ASC NULLS LAST, received_on ASC, id ASC) AS lots,
             COALESCE(SUM(quantity), 0) AS current_qty
           FROM inventory
           WHERE quantity > 0
@@ -373,8 +373,8 @@ export async function getPurchaseOrderSuggestions(sql: SqlClient, options: Fetch
         ),
         on_order AS (
           SELECT poi.item_id,
-            jsonb_agg(jsonb_build_object('quantity', GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0), 'eta_date', p.expected_date::date) ORDER BY p.expected_date ASC) FILTER (WHERE p.expected_date IS NOT NULL) AS lots,
-            COALESCE(SUM(GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0)) FILTER (WHERE p.expected_date IS NULL), 0) AS no_eta_qty
+            jsonb_agg(jsonb_build_object('quantity', GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0), 'eta_date', NULLIF(p.expected_date::text, '')::date) ORDER BY NULLIF(p.expected_date::text, '')::date ASC) FILTER (WHERE NULLIF(p.expected_date::text, '') IS NOT NULL) AS lots,
+            COALESCE(SUM(GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0)) FILTER (WHERE NULLIF(p.expected_date::text, '') IS NULL), 0) AS no_eta_qty
           FROM purchase_order_items poi
           JOIN purchase_orders p ON p.id = poi.po_id
           WHERE p.status IN ('SUBMITTED', 'CONFIRMED', 'PARTIALLY_SHIPPED', 'SHIPPED', 'PARTIALLY_RECEIVED')
@@ -400,7 +400,7 @@ export async function getPurchaseOrderSuggestions(sql: SqlClient, options: Fetch
       ? keyword
         ? await sql`
           WITH inventory_lots AS (
-            SELECT item_id, jsonb_agg(jsonb_build_object('quantity', quantity::numeric, 'exp_date', NULLIF(exp_date, '')::date) ORDER BY NULLIF(exp_date, '')::date ASC NULLS LAST, received_on ASC, id ASC) AS lots,
+            SELECT item_id, jsonb_agg(jsonb_build_object('quantity', quantity::numeric, 'exp_date', NULLIF(exp_date::text, '')::date) ORDER BY NULLIF(exp_date::text, '')::date ASC NULLS LAST, received_on ASC, id ASC) AS lots,
               COALESCE(SUM(quantity), 0) AS current_qty
             FROM inventory
             WHERE quantity > 0
@@ -408,8 +408,8 @@ export async function getPurchaseOrderSuggestions(sql: SqlClient, options: Fetch
           ),
           on_order AS (
             SELECT poi.item_id,
-              jsonb_agg(jsonb_build_object('quantity', GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0), 'eta_date', p.expected_date::date) ORDER BY p.expected_date ASC) FILTER (WHERE p.expected_date IS NOT NULL) AS lots,
-              COALESCE(SUM(GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0)) FILTER (WHERE p.expected_date IS NULL), 0) AS no_eta_qty
+              jsonb_agg(jsonb_build_object('quantity', GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0), 'eta_date', NULLIF(p.expected_date::text, '')::date) ORDER BY NULLIF(p.expected_date::text, '')::date ASC) FILTER (WHERE NULLIF(p.expected_date::text, '') IS NOT NULL) AS lots,
+              COALESCE(SUM(GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0)) FILTER (WHERE NULLIF(p.expected_date::text, '') IS NULL), 0) AS no_eta_qty
             FROM purchase_order_items poi
             JOIN purchase_orders p ON p.id = poi.po_id
             WHERE p.status IN ('SUBMITTED', 'CONFIRMED', 'PARTIALLY_SHIPPED', 'SHIPPED', 'PARTIALLY_RECEIVED')
@@ -431,7 +431,7 @@ export async function getPurchaseOrderSuggestions(sql: SqlClient, options: Fetch
         `
         : await sql`
           WITH inventory_lots AS (
-            SELECT item_id, jsonb_agg(jsonb_build_object('quantity', quantity::numeric, 'exp_date', NULLIF(exp_date, '')::date) ORDER BY NULLIF(exp_date, '')::date ASC NULLS LAST, received_on ASC, id ASC) AS lots,
+            SELECT item_id, jsonb_agg(jsonb_build_object('quantity', quantity::numeric, 'exp_date', NULLIF(exp_date::text, '')::date) ORDER BY NULLIF(exp_date::text, '')::date ASC NULLS LAST, received_on ASC, id ASC) AS lots,
               COALESCE(SUM(quantity), 0) AS current_qty
             FROM inventory
             WHERE quantity > 0
@@ -439,8 +439,8 @@ export async function getPurchaseOrderSuggestions(sql: SqlClient, options: Fetch
           ),
           on_order AS (
             SELECT poi.item_id,
-              jsonb_agg(jsonb_build_object('quantity', GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0), 'eta_date', p.expected_date::date) ORDER BY p.expected_date ASC) FILTER (WHERE p.expected_date IS NOT NULL) AS lots,
-              COALESCE(SUM(GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0)) FILTER (WHERE p.expected_date IS NULL), 0) AS no_eta_qty
+              jsonb_agg(jsonb_build_object('quantity', GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0), 'eta_date', NULLIF(p.expected_date::text, '')::date) ORDER BY NULLIF(p.expected_date::text, '')::date ASC) FILTER (WHERE NULLIF(p.expected_date::text, '') IS NOT NULL) AS lots,
+              COALESCE(SUM(GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0)) FILTER (WHERE NULLIF(p.expected_date::text, '') IS NULL), 0) AS no_eta_qty
             FROM purchase_order_items poi
             JOIN purchase_orders p ON p.id = poi.po_id
             WHERE p.status IN ('SUBMITTED', 'CONFIRMED', 'PARTIALLY_SHIPPED', 'SHIPPED', 'PARTIALLY_RECEIVED')
@@ -461,7 +461,7 @@ export async function getPurchaseOrderSuggestions(sql: SqlClient, options: Fetch
         `
       : await sql`
         WITH inventory_lots AS (
-          SELECT item_id, jsonb_agg(jsonb_build_object('quantity', quantity::numeric, 'exp_date', NULLIF(exp_date, '')::date) ORDER BY NULLIF(exp_date, '')::date ASC NULLS LAST, received_on ASC, id ASC) AS lots,
+          SELECT item_id, jsonb_agg(jsonb_build_object('quantity', quantity::numeric, 'exp_date', NULLIF(exp_date::text, '')::date) ORDER BY NULLIF(exp_date::text, '')::date ASC NULLS LAST, received_on ASC, id ASC) AS lots,
             COALESCE(SUM(quantity), 0) AS current_qty
           FROM inventory
           WHERE quantity > 0
@@ -469,8 +469,8 @@ export async function getPurchaseOrderSuggestions(sql: SqlClient, options: Fetch
         ),
         on_order AS (
           SELECT poi.item_id,
-            jsonb_agg(jsonb_build_object('quantity', GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0), 'eta_date', p.expected_date::date) ORDER BY p.expected_date ASC) FILTER (WHERE p.expected_date IS NOT NULL) AS lots,
-            COALESCE(SUM(GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0)) FILTER (WHERE p.expected_date IS NULL), 0) AS no_eta_qty
+            jsonb_agg(jsonb_build_object('quantity', GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0), 'eta_date', NULLIF(p.expected_date::text, '')::date) ORDER BY NULLIF(p.expected_date::text, '')::date ASC) FILTER (WHERE NULLIF(p.expected_date::text, '') IS NOT NULL) AS lots,
+            COALESCE(SUM(GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0)) FILTER (WHERE NULLIF(p.expected_date::text, '') IS NULL), 0) AS no_eta_qty
           FROM purchase_order_items poi
           JOIN purchase_orders p ON p.id = poi.po_id
           WHERE p.status IN ('SUBMITTED', 'CONFIRMED', 'PARTIALLY_SHIPPED', 'SHIPPED', 'PARTIALLY_RECEIVED')
