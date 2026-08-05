@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ClipboardPlus, LogOut, Menu, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuth } from './auth-provider';
 import { apiClient } from '@/lib/api-client';
 import { NAVIGATION_GROUPS, getRoleFallbackMenus, mergeMenus } from '@/lib/menu-config';
@@ -19,6 +19,8 @@ export default function Sidebar({ desktopHidden = false }: SidebarProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [allowedMenus, setAllowedMenus] = useState<string[]>([]);
   const [isLoadingPerms, setIsLoadingPerms] = useState(true);
+  const sidebarRef = useRef<HTMLElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
   const { user, logout } = useAuth();
 
   useEffect(() => {
@@ -58,35 +60,92 @@ export default function Sidebar({ desktopHidden = false }: SidebarProps) {
     fetchPerms();
   }, [user]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const previouslyFocused = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    const originalOverflow = document.body.style.overflow;
+    const focusFrame = window.requestAnimationFrame(() => closeButtonRef.current?.focus());
+    const focusableSelector = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setIsOpen(false);
+        return;
+      }
+
+      if (event.key !== 'Tab' || !sidebarRef.current) return;
+
+      const focusableElements = Array.from(
+        sidebarRef.current.querySelectorAll<HTMLElement>(focusableSelector),
+      );
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements[focusableElements.length - 1];
+
+      if (!firstElement || !lastElement) return;
+
+      if (event.shiftKey && document.activeElement === firstElement) {
+        event.preventDefault();
+        lastElement.focus();
+      } else if (!event.shiftKey && document.activeElement === lastElement) {
+        event.preventDefault();
+        firstElement.focus();
+      }
+    };
+
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.body.style.overflow = originalOverflow;
+      document.removeEventListener('keydown', handleKeyDown);
+      previouslyFocused?.focus();
+    };
+  }, [isOpen]);
+
   if (!user) return null;
 
   return (
     <>
       <div className="lg:hidden fixed top-4 left-4 z-50">
         <button
-          onClick={() => setIsOpen(!isOpen)}
+          type="button"
+          onClick={() => setIsOpen((current) => !current)}
           aria-label={isOpen ? 'ปิดเมนู' : 'เปิดเมนู'}
-          className="p-3 bg-[#123b3a] text-white rounded-lg shadow-lg shadow-[#123b3a]/20 border border-[#0d302f] active:scale-95 transition-all"
+          aria-controls="primary-navigation"
+          aria-expanded={isOpen}
+          className="flex size-11 items-center justify-center rounded-lg border border-[#0d302f] bg-clinical-900 text-white shadow-lg shadow-[#123b3a]/20 transition-all active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-clinical-700"
         >
-          {isOpen ? <X size={24} /> : <Menu size={24} />}
+          {isOpen ? <X size={22} /> : <Menu size={22} />}
         </button>
       </div>
 
       {isOpen && (
-        <div
+        <button
+          type="button"
+          aria-label="ปิดเมนูหลัก"
           className="fixed inset-0 bg-black/60 z-40 lg:hidden"
           onClick={() => setIsOpen(false)}
         />
       )}
 
-      <aside className={`
-        fixed top-0 left-0 h-full bg-[#123b3a] border-r border-[#0d302f] z-40
-        transition-all duration-300 ease-in-out w-72
-        ${isOpen ? 'translate-x-0' : '-translate-x-full'}
-        ${desktopHidden ? 'lg:-translate-x-full' : 'lg:translate-x-0'}
+      <aside
+        ref={sidebarRef}
+        id="primary-navigation"
+        aria-label="เมนูหลัก"
+        aria-hidden={desktopHidden && !isOpen ? true : undefined}
+        className={`
+        fixed top-0 left-0 z-40 h-full w-72 border-r border-[#0b3034] bg-[#083f46]
+        transition-[opacity,transform,visibility] duration-300 ease-in-out
+        ${isOpen ? 'visible translate-x-0 opacity-100' : 'invisible pointer-events-none -translate-x-full opacity-0'}
+        ${desktopHidden ? 'lg:invisible lg:pointer-events-none lg:-translate-x-full lg:opacity-0' : 'lg:visible lg:pointer-events-auto lg:translate-x-0 lg:opacity-100'}
       `}>
         <div className="flex flex-col h-full">
-          <div className="p-6 border-b border-white/10">
+          <div className="flex items-start justify-between gap-3 border-b border-white/10 p-5">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-white/10 rounded-lg flex items-center justify-center text-[#dcece7] border border-white/15">
                 <ClipboardPlus size={22} strokeWidth={1.8} />
@@ -96,9 +155,18 @@ export default function Sidebar({ desktopHidden = false }: SidebarProps) {
                 <p className="text-[10px] font-medium text-[#b9d6ce] tracking-[0.12em]">CLINICAL INVENTORY</p>
               </div>
             </div>
+            <button
+              ref={closeButtonRef}
+              type="button"
+              onClick={() => setIsOpen(false)}
+              aria-label="ปิดเมนู"
+              className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-white/15 text-[#dcece7] transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#dcece7] lg:hidden"
+            >
+              <X size={18} />
+            </button>
           </div>
 
-          <nav className="flex-1 p-4 space-y-7 overflow-y-auto no-scrollbar">
+          <nav aria-label="เมนูนำทางหลัก" aria-busy={isLoadingPerms} className="flex-1 space-y-7 overflow-y-auto p-4 no-scrollbar">
             {isLoadingPerms && allowedMenus.length === 0 ? (
               <div className="space-y-4 p-4">
                 {[1, 2, 3, 4, 5].map((i) => (
@@ -114,7 +182,7 @@ export default function Sidebar({ desktopHidden = false }: SidebarProps) {
                 return (
                   <div key={group.title} className="space-y-2">
                     <div className="flex items-center px-4 mb-2">
-                      <span className="text-[10px] font-semibold text-[#9dc0b7] tracking-[0.14em]">
+                      <span className="text-[10px] font-semibold text-[#e0f0ec] tracking-[0.14em]">
                         {group.title}
                       </span>
                       <div className="ml-3 flex-1 h-px bg-white/10" />
@@ -129,19 +197,20 @@ export default function Sidebar({ desktopHidden = false }: SidebarProps) {
                             key={item.id}
                             href={item.href}
                             onClick={() => setIsOpen(false)}
+                            aria-current={isActive ? 'page' : undefined}
                             className={`
-                              flex items-center gap-3 px-3.5 py-2.5 rounded-lg transition-all duration-200 group/item
+                              group/item relative flex items-center gap-3 rounded-lg px-3.5 py-2.5 transition-all duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#dcece7]
                               ${isActive
-                                ? 'bg-white text-[#123b3a] font-semibold shadow-sm'
-                                : 'text-[#c3d7d2] hover:bg-white/10 hover:text-white'}
+                                ? 'bg-white font-semibold text-clinical-900 shadow-sm ring-1 ring-white/80'
+                                : '!text-[#d5e5e2] hover:bg-white/10 hover:!text-white'}
                             `}
                           >
                             <Icon
-                              size={18}
-                              className={`transition-colors ${isActive ? 'text-[#2f6f67]' : 'text-[#8eb5aa] group-hover/item:text-white'}`}
+                                size={18}
+                                className={`transition-colors ${isActive ? 'text-[#2f6f67]' : 'text-[#d5ebe5] group-hover/item:text-white'}`}
                             />
                             <span className="text-sm font-semibold tracking-tight">{item.name}</span>
-                            {isActive && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-[#2f6f67]" />}
+                            {isActive && <div className="ml-auto size-1.5 rounded-full bg-[#4aa7b5]" aria-hidden="true" />}
                           </Link>
                         );
                       })}
@@ -165,8 +234,9 @@ export default function Sidebar({ desktopHidden = false }: SidebarProps) {
               </div>
             </div>
             <button
+              type="button"
               onClick={logout}
-              className="w-full flex items-center gap-3 px-3.5 py-3 rounded-lg text-[#f1c2bd] hover:bg-white/10 hover:text-white transition-all font-semibold text-xs tracking-wide active:scale-95"
+              className="flex w-full items-center gap-3 rounded-lg px-3.5 py-3 text-xs font-semibold tracking-wide text-[#f1c2bd] transition-all hover:bg-white/10 hover:text-white active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#dcece7]"
             >
               <LogOut size={16} />
               ออกจากระบบ

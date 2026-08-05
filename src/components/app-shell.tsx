@@ -2,7 +2,7 @@
 
 import { usePathname } from 'next/navigation';
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Sidebar from '@/components/sidebar';
 
 interface AppShellProps {
@@ -14,33 +14,77 @@ export default function AppShell({ children }: AppShellProps) {
   const isMobileSurface = pathname.startsWith('/mobile');
   const [sidebarHidden, setSidebarHidden] = useState(false);
 
+  useEffect(() => {
+    const handleSidebarShortcut = (event: KeyboardEvent) => {
+      const target = event.target;
+      const isTyping = target instanceof HTMLElement && (
+        target.isContentEditable ||
+        ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
+      );
+
+      if (
+        isTyping ||
+        !window.matchMedia('(min-width: 64rem)').matches ||
+        !(event.ctrlKey || event.metaKey) ||
+        event.key.toLowerCase() !== 'b'
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      setSidebarHidden((current) => !current);
+    };
+
+    window.addEventListener('keydown', handleSidebarShortcut);
+    return () => window.removeEventListener('keydown', handleSidebarShortcut);
+  }, []);
+
   if (isMobileSurface) {
     return (
       <div className="min-h-screen bg-[#f6f8f7]">
-        <main className="min-h-screen">{children}</main>
+        <a
+          href="#app-main"
+          className="sr-only z-[60] rounded-lg bg-clinical-900 px-4 py-2 text-sm font-semibold text-white focus:not-sr-only focus:fixed focus:left-4 focus:top-4"
+        >
+          ข้ามไปยังเนื้อหาหลัก
+        </a>
+        <main id="app-main" tabIndex={-1} className="min-h-screen">{children}</main>
       </div>
     );
   }
 
   return (
     <div className="flex min-h-screen bg-transparent">
+      <a
+        href="#app-main"
+        className="sr-only z-[60] rounded-lg bg-clinical-900 px-4 py-2 text-sm font-semibold text-white focus:not-sr-only focus:fixed focus:left-4 focus:top-4"
+      >
+        ข้ามไปยังเนื้อหาหลัก
+      </a>
       <Sidebar desktopHidden={sidebarHidden} />
       <button
         type="button"
         onClick={() => setSidebarHidden((current) => !current)}
         aria-label={sidebarHidden ? 'แสดงเมนูด้านข้าง' : 'ซ่อนเมนูด้านข้าง'}
-        aria-pressed={sidebarHidden}
-        className={`hidden lg:inline-flex fixed top-5 z-30 items-center justify-center w-10 h-10 rounded-lg border border-[#d9e3df] bg-white text-[#2f6f67] shadow-sm hover:bg-[#eff6f3] active:scale-95 transition-all ${sidebarHidden ? 'left-5' : 'left-[19rem]'}`}
+        aria-controls="primary-navigation"
+        aria-expanded={!sidebarHidden}
+        aria-keyshortcuts="Control+B Meta+B"
+        title={sidebarHidden ? 'แสดงเมนูด้านข้าง (Ctrl+B)' : 'ซ่อนเมนูด้านข้าง (Ctrl+B)'}
+        className={`hidden lg:inline-flex fixed top-5 z-30 size-10 items-center justify-center rounded-lg border border-clinical-border bg-white text-clinical-700 shadow-sm transition-all hover:bg-[#eff6f3] active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-clinical-700 ${sidebarHidden ? 'left-5' : 'left-[18.5rem]'}`}
       >
         {sidebarHidden ? <PanelLeftOpen size={19} /> : <PanelLeftClose size={19} />}
       </button>
-      <main className={`flex-1 min-h-screen flex flex-col relative transition-[margin] duration-300 ${sidebarHidden ? 'lg:ml-0' : 'lg:ml-72'}`}>
-        <div className="flex-1 p-5 pt-20 md:p-10 md:pt-10 max-w-[1440px] mx-auto w-full">
+      <main
+        id="app-main"
+        tabIndex={-1}
+        className={`relative flex min-h-screen min-w-0 flex-1 flex-col transition-[margin] duration-300 ${sidebarHidden ? 'lg:ml-0' : 'lg:ml-72'}`}
+      >
+        <div className="mx-auto w-full max-w-[1600px] flex-1 px-4 pb-10 pt-20 sm:px-6 sm:pb-12 sm:pt-20 lg:px-10 lg:pt-8 xl:px-12">
           {children}
         </div>
-        <footer className="px-6 py-5 text-center text-[#687875] text-xs border-t border-[#d9e3df] bg-white/75">
+        <footer className="border-t border-clinical-border bg-white/80 px-6 py-5 text-center text-xs text-[var(--clinical-muted)] backdrop-blur-sm">
           <div className="flex items-center justify-center gap-2.5">
-            <div className="w-2 h-2 rounded-full bg-[#2f6f67]" />
+            <div className="size-2 rounded-full bg-clinical-700" aria-hidden="true" />
             <p className="font-medium tracking-wide">LabStock · ระบบบริหารคลังน้ำยา</p>
           </div>
         </footer>

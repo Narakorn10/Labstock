@@ -199,6 +199,16 @@ export interface Shipment {
   unit: string;
 }
 
+export interface PurchaseOrderSummary {
+  id: number;
+  po_number: string;
+  vendor: string;
+  status: string;
+  expected_date?: string | null;
+  created_at: string;
+  items?: Array<{ item_id: string; item_name?: string; quantity: number; unit?: string }>;
+}
+
 export interface MasterReagentData {
   itemId?: string;
   qrCode?: string;
@@ -235,6 +245,11 @@ export const apiClient = {
 
   getDashboard: async () => {
     const res = await instance.get<Reagent[]>('/api/dashboard');
+    return res.data;
+  },
+
+  getPurchaseOrders: async () => {
+    const res = await instance.get<PurchaseOrderSummary[]>('/api/purchase-orders');
     return res.data;
   },
 

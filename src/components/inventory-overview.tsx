@@ -1,22 +1,39 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import Link from 'next/link';
 import {
   AlertTriangle,
+  ArrowRight,
+  ClipboardCheck,
   Clock,
   FileText,
   Loader2,
   Package,
   RefreshCw,
   Search,
+  ShieldAlert,
+  ShoppingCart,
+  Truck,
+  X,
   XCircle,
 } from 'lucide-react';
-import { apiClient, Reagent } from '@/lib/api-client';
+import { apiClient, PurchaseOrderSummary, Reagent, Shipment } from '@/lib/api-client';
 import ReportModal from '@/components/report-modal';
 import ReagentDetailModal from '@/components/reagent-detail-modal';
 import { useAuth } from '@/components/auth-provider';
 
 type InventoryFilter = 'all' | 'low' | 'nearExpiry' | 'expired';
+
+type TodayWorkItem = {
+  id: InventoryFilter;
+  title: string;
+  detail: string;
+  value: number;
+  icon: typeof ShieldAlert;
+  tone: 'critical' | 'warning' | 'neutral';
+  href: string;
+};
 
 export default function InventoryOverview() {
   const { user, loading: authLoading } = useAuth();
@@ -29,6 +46,12 @@ export default function InventoryOverview() {
   const [selectedReagentType, setSelectedReagentType] = useState<string>('ทั้งหมด');
   const [selectedReagent, setSelectedReagent] = useState<Reagent | null>(null);
   const [statusFilter, setStatusFilter] = useState<InventoryFilter>('all');
+  const [shipments, setShipments] = useState<Shipment[]>([]);
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrderSummary[]>([]);
+  const [selectedWork, setSelectedWork] = useState<TodayWorkItem | null>(null);
+  const closeWorkButtonRef = useRef<HTMLButtonElement>(null);
+  const workTriggerRef = useRef<HTMLElement | null>(null);
+  const workDialogRef = useRef<HTMLElement>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -37,13 +60,21 @@ export default function InventoryOverview() {
     try {
       const dashData = await apiClient.getDashboard();
       setReagents(dashData);
+      if (user?.role === 'Admin' || user?.role === 'Manager') {
+        const [shipmentResult, purchaseOrderResult] = await Promise.allSettled([
+          apiClient.getShipments(),
+          apiClient.getPurchaseOrders(),
+        ]);
+        if (shipmentResult.status === 'fulfilled') setShipments(shipmentResult.value);
+        if (purchaseOrderResult.status === 'fulfilled') setPurchaseOrders(purchaseOrderResult.value);
+      }
     } catch (err) {
       console.error('Inventory overview fetch error:', err);
       setError('ไม่สามารถโหลดข้อมูลภาพรวมคลังได้ กรุณาลองใหม่อีกครั้ง');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     if (authLoading || !user || typeof window === "undefined") {
@@ -71,7 +102,6 @@ export default function InventoryOverview() {
   }, [authLoading, fetchData, user]);
 
   const stats = useMemo(() => {
-    const total = reagents.length;
     const low = reagents.filter((r) => r.quantity <= r.minThreshold).length;
     const now = new Date();
     const thirtyDays = new Date();
@@ -92,10 +122,50 @@ export default function InventoryOverview() {
     });
 
     return [
-      { name: 'รายการคงคลัง', value: total, icon: Package, color: 'text-[#2f6f67]', bg: 'bg-[#eff6f3]', filter: 'all' as InventoryFilter },
-      { name: 'ต่ำกว่าจุดสั่งซื้อ', value: low, icon: AlertTriangle, color: 'text-[#a86616]', bg: 'bg-[#fff7e8]', filter: 'low' as InventoryFilter },
-      { name: 'ใกล้หมดอายุ', value: nearExpiry, icon: Clock, color: 'text-[#a86616]', bg: 'bg-[#fff7e8]', filter: 'nearExpiry' as InventoryFilter },
-      { name: 'Lot หมดอายุ', value: expired, icon: XCircle, color: 'text-[#b42318]', bg: 'bg-[#fff1f0]', filter: 'expired' as InventoryFilter },
+      {
+        name: 'Lot หมดอายุ',
+        value: expired,
+        icon: XCircle,
+        color: 'text-[var(--clinical-critical)]',
+        bg: 'bg-[#fff1f0]',
+        filter: 'expired' as InventoryFilter,
+        label: 'เร่งด่วน',
+        detail: 'lot ที่เกินวันหมดอายุ',
+        unit: 'lot',
+      },
+      {
+        name: 'ต่ำกว่าจุดสั่งซื้อ',
+        value: low,
+        icon: AlertTriangle,
+        color: 'text-[var(--clinical-warning)]',
+        bg: 'bg-[#fff7e8]',
+        filter: 'low' as InventoryFilter,
+        label: 'ต้องสั่งซื้อ',
+        detail: 'รายการต่ำกว่าระดับที่ตั้งไว้',
+        unit: 'รายการ',
+      },
+      {
+        name: 'ใกล้หมดอายุ',
+        value: nearExpiry,
+        icon: Clock,
+        color: 'text-[var(--clinical-warning)]',
+        bg: 'bg-[#fff7e8]',
+        filter: 'nearExpiry' as InventoryFilter,
+        label: 'ตรวจสอบล่วงหน้า',
+        detail: 'lot ที่หมดอายุภายใน 30 วัน',
+        unit: 'lot',
+      },
+      {
+        name: 'รายการคงคลัง',
+        value: reagents.length,
+        icon: Package,
+        color: 'text-clinical-700',
+        bg: 'bg-[#eff6f3]',
+        filter: 'all' as InventoryFilter,
+        label: 'ภาพรวม',
+        detail: 'รายการที่กำลังติดตามทั้งหมด',
+        unit: 'รายการ',
+      },
     ];
   }, [reagents]);
 
@@ -135,6 +205,139 @@ export default function InventoryOverview() {
   }, [reagents, searchTerm, selectedJobType, selectedReagentType, statusFilter]);
 
   const isPowerUser = user?.role === 'Admin' || user?.role === 'Manager';
+  const procurementSnapshot = useMemo(() => {
+    const inTransit = shipments.filter((shipment) => shipment.status === 'In Transit').length;
+    const received = shipments.filter((shipment) => shipment.status === 'Received').length;
+    const pendingOrders = purchaseOrders.filter((order) => ['SUBMITTED', 'PENDING_LAB_REVIEW', 'CONFIRMED', 'PARTIALLY_SHIPPED'].includes(order.status)).length;
+    return { inTransit, received, pendingOrders, recentShipments: shipments.slice(0, 3) };
+  }, [purchaseOrders, shipments]);
+  const activeQueue = stats.find((stat) => stat.filter === statusFilter);
+  const todayWork = useMemo(() => {
+    const expired = stats.find((stat) => stat.filter === 'expired')?.value ?? 0;
+    const low = stats.find((stat) => stat.filter === 'low')?.value ?? 0;
+    const nearExpiry = stats.find((stat) => stat.filter === 'nearExpiry')?.value ?? 0;
+
+    return [
+      {
+        id: 'expired' as InventoryFilter,
+        title: 'แยก lot ที่หมดอายุ',
+        detail: 'ห้ามนำไปเบิกจ่าย และควรตรวจสอบการจัดเก็บ',
+        value: expired,
+        icon: ShieldAlert,
+        tone: 'critical',
+        href: '/master/inventory',
+      },
+      {
+        id: 'low' as InventoryFilter,
+        title: 'ตรวจรายการต่ำกว่าจุดสั่งซื้อ',
+        detail: 'เตรียมข้อมูลสำหรับการสั่งซื้อหรือยืมสำรอง',
+        value: low,
+        icon: AlertTriangle,
+        tone: 'warning',
+        href: '/orders',
+      },
+      {
+        id: 'nearExpiry' as InventoryFilter,
+        title: 'ทบทวน lot ใกล้หมดอายุ',
+        detail: 'วางแผนใช้ก่อนหมดอายุภายใน 30 วัน',
+        value: nearExpiry,
+        icon: Clock,
+        tone: 'warning',
+        href: '/master/inventory',
+      },
+      {
+        id: 'all' as InventoryFilter,
+        title: 'เตรียมรายการสำหรับตรวจนับ',
+        detail: 'เปิดรายการคงคลังเพื่อเริ่มตรวจนับตามรอบ',
+        value: reagents.length,
+        icon: ClipboardCheck,
+        tone: 'neutral',
+        href: '/count',
+      },
+    ] satisfies TodayWorkItem[];
+  }, [reagents.length, stats]);
+
+  const workPreviewItems = useMemo(() => {
+    if (!selectedWork || selectedWork.id === 'all') return [];
+
+    const now = new Date();
+    const nearExpiryDate = new Date();
+    nearExpiryDate.setDate(nearExpiryDate.getDate() + 30);
+
+    const candidates = selectedWork.id === 'low'
+      ? reagents
+        .filter((reagent) => reagent.quantity <= reagent.minThreshold)
+        .flatMap((reagent) => reagent.lots.slice(0, 1).map((lot) => ({ reagent, lot })))
+      : reagents.flatMap((reagent) => reagent.lots.map((lot) => ({ reagent, lot })));
+
+    return candidates
+      .filter(({ reagent, lot }) => {
+        const expiryDate = new Date(lot.expDate);
+        if (selectedWork.id === 'low') return reagent.quantity <= reagent.minThreshold;
+        if (selectedWork.id === 'expired') return expiryDate < now;
+        return expiryDate >= now && expiryDate < nearExpiryDate;
+      })
+      .sort((a, b) => new Date(a.lot.expDate).getTime() - new Date(b.lot.expDate).getTime())
+      .slice(0, 5);
+  }, [reagents, selectedWork]);
+
+  useEffect(() => {
+    if (!selectedWork) return;
+    document.body.style.overflow = 'hidden';
+    requestAnimationFrame(() => closeWorkButtonRef.current?.focus());
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSelectedWork(null);
+      if (event.key !== 'Tab' || !workDialogRef.current) return;
+
+      const focusable = Array.from(workDialogRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+      ));
+      if (focusable.length === 0) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = '';
+    };
+  }, [selectedWork]);
+
+  useEffect(() => {
+    if (selectedWork || !workTriggerRef.current) return;
+    workTriggerRef.current.focus();
+    workTriggerRef.current = null;
+  }, [selectedWork]);
+
+  const inventoryAtRisk = useMemo(() => {
+    const now = new Date();
+    const nearExpiryDate = new Date();
+    nearExpiryDate.setDate(nearExpiryDate.getDate() + 30);
+
+    return reagents
+      .flatMap((reagent) => reagent.lots.map((lot) => ({ reagent, lot })))
+      .filter(({ reagent, lot }) => {
+        const expiryDate = new Date(lot.expDate);
+        return reagent.quantity <= reagent.minThreshold || expiryDate < nearExpiryDate;
+      })
+      .sort((a, b) => new Date(a.lot.expDate).getTime() - new Date(b.lot.expDate).getTime())
+      .slice(0, 6)
+      .map(({ reagent, lot }) => ({
+        reagent,
+        lot,
+        expired: new Date(lot.expDate) < now,
+        nearExpiry: new Date(lot.expDate) >= now && new Date(lot.expDate) < nearExpiryDate,
+        low: reagent.quantity <= reagent.minThreshold,
+      }));
+  }, [reagents]);
   const formatReceivedDate = (value?: string) => {
     if (!value) return '-';
 
@@ -162,28 +365,30 @@ export default function InventoryOverview() {
   }
 
   return (
-    <div className="space-y-7 animate-in fade-in slide-in-from-bottom-3 duration-500 pb-20">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div>
-          <p className="text-xs font-semibold text-[#2f6f67] tracking-[0.12em] mb-2">ภาพรวมระบบ</p>
-          <h1 className="text-3xl font-semibold text-[#1d302f] tracking-tight">
+    <div className="space-y-6 pb-20 animate-in fade-in slide-in-from-bottom-3 duration-500 lg:space-y-7">
+      <div className="flex flex-col justify-between gap-6 md:flex-row md:items-center">
+        <div className="max-w-2xl">
+          <p className="mb-2 text-xs font-semibold tracking-[0.12em] text-clinical-700">OPERATIONS CONSOLE</p>
+          <h1 className="text-3xl font-semibold tracking-tight text-clinical-900">
             คลังน้ำยา
           </h1>
-          <p className="text-[#687875] text-sm mt-2 max-w-2xl leading-6">
+          <p className="mt-2 text-sm leading-6 text-[var(--clinical-muted)]">
             ติดตามปริมาณคงเหลือ รายการที่ต้องสั่งซื้อ และอายุของ lot เพื่อเตรียมงานได้ทันเวลา
           </p>
         </div>
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-wrap gap-3" role="group" aria-label="การดำเนินการภาพรวมคลัง">
           <button
+            type="button"
             onClick={fetchData}
-            className="flex items-center gap-2 px-4 py-2.5 bg-white text-[#425451] border border-[#d9e3df] hover:bg-[#f2f7f5] transition-all font-semibold text-sm rounded-lg"
+            className="flex items-center gap-2 rounded-lg border border-clinical-border bg-white px-4 py-2.5 text-sm font-semibold text-[#425451] transition-all hover:bg-[#f2f7f5] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-clinical-700"
           >
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
             รีเฟรช
           </button>
           <button
+            type="button"
             onClick={() => setReportModalOpen(true)}
-            className="flex items-center gap-2 px-5 py-2.5 bg-[#123b3a] text-white hover:bg-[#0d302f] transition-all font-semibold text-sm rounded-lg shadow-lg shadow-[#123b3a]/15"
+            className="flex items-center gap-2 rounded-lg bg-clinical-900 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-[#123b3a]/15 transition-all hover:bg-[#0d302f] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-clinical-700"
           >
             <FileText size={16} />
             รายงานประจำวัน
@@ -192,46 +397,329 @@ export default function InventoryOverview() {
       </div>
 
       {error && (
-        <div className="bg-[#fff1f0] border border-[#f3c6c2] p-4 rounded-lg flex items-center gap-3 text-[#b42318]">
+        <div role="alert" className="flex items-center gap-3 rounded-lg border border-[#f3c6c2] bg-[#fff1f0] p-4 text-[var(--clinical-critical)]">
           <AlertTriangle size={20} />
           <p className="text-xs font-bold">{error}</p>
         </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {stats.map((stat) => (
-          <button
-            key={stat.name}
-            type="button"
-            onClick={() => setStatusFilter((current) => current === stat.filter ? 'all' : stat.filter)}
-            aria-pressed={statusFilter === stat.filter}
-            className={`text-left bg-white p-5 rounded-xl border transition-all duration-200 shadow-[0_12px_30px_-28px_rgba(18,59,58,0.75)] hover:-translate-y-0.5 hover:border-[#8cbab0] active:translate-y-0 ${statusFilter === stat.filter ? 'border-[#2f6f67] ring-2 ring-[#2f6f67]/15' : 'border-[#d9e3df]'}`}
-          >
-            <div className="flex items-center gap-4">
-              <div className={`w-11 h-11 ${stat.bg} ${stat.color} rounded-lg flex items-center justify-center`}>
-                <stat.icon size={21} strokeWidth={1.8} />
+      <section aria-labelledby="priority-queues-heading" className="space-y-3">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold tracking-[0.12em] text-clinical-700">PRIORITY QUEUES</p>
+            <h2 id="priority-queues-heading" className="mt-1 text-lg font-semibold text-clinical-900">คิวที่ต้องดำเนินการ</h2>
+          </div>
+          <p className="text-xs leading-5 text-[var(--clinical-muted)]">เลือกคิวเพื่อกรองรายการด้านล่าง</p>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {stats.map((stat) => (
+            <button
+              key={stat.name}
+              type="button"
+              onClick={() => setStatusFilter((current) => current === stat.filter ? 'all' : stat.filter)}
+              aria-label={`${stat.name}: ${stat.value} ${stat.unit}. เลือกเพื่อเปิดคิวรายการ`}
+              aria-pressed={statusFilter === stat.filter}
+              className={`group min-h-40 rounded-xl border bg-white p-5 text-left shadow-[0_12px_30px_-28px_rgba(18,59,58,0.75)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[#8cbab0] hover:shadow-[0_16px_34px_-28px_rgba(18,59,58,0.85)] active:translate-y-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-clinical-700 ${statusFilter === stat.filter ? 'border-clinical-700 bg-[#f8fbfa] ring-2 ring-[#2f6f67]/15' : 'border-clinical-border'}`}
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div className={`flex size-11 items-center justify-center rounded-lg ${stat.bg} ${stat.color}`}>
+                  <stat.icon size={21} strokeWidth={1.8} />
+                </div>
+                <span className="rounded-full bg-[#f4f7f6] px-2.5 py-1 text-[10px] font-semibold tracking-wide text-[#52635f]">{stat.label}</span>
               </div>
-              <div>
-                <p className="text-xs font-medium text-[#687875]">{stat.name}</p>
-                <p className="text-2xl font-semibold text-[#1d302f]">{stat.value}</p>
+              <p className="mt-4 text-xs font-medium text-[var(--clinical-muted)]">{stat.name}</p>
+              <div className="mt-1 flex items-baseline gap-2">
+                <p className="text-3xl font-semibold tracking-tight text-clinical-900">{stat.value}</p>
+                <span className="text-xs font-medium text-[var(--clinical-muted)]">{stat.unit}</span>
               </div>
+              <p className="mt-2 text-xs leading-5 text-[#52635f]">{stat.detail}</p>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.85fr)]">
+        <section aria-labelledby="today-work-heading" className="rounded-xl border border-clinical-border bg-white p-5 shadow-[0_14px_36px_-30px_rgba(18,59,58,0.7)] md:p-6">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold tracking-[0.12em] text-clinical-700">TODAY&apos;S WORK</p>
+              <h2 id="today-work-heading" className="mt-1 text-lg font-semibold text-clinical-900">งานที่ควรจัดการก่อน</h2>
+              <p className="mt-1 text-xs leading-5 text-[var(--clinical-muted)]">กดแต่ละรายการเพื่อเปิดคิวจากข้อมูลคลังปัจจุบัน</p>
             </div>
-          </button>
-        ))}
+          </div>
+
+          <div className="mt-4 divide-y divide-[#e5ece9]">
+            {todayWork.map((work) => {
+              const Icon = work.icon;
+              const toneClass = work.tone === 'critical'
+                ? 'bg-[#fff1f0] text-[var(--clinical-critical)]'
+                : work.tone === 'warning'
+                  ? 'bg-[#fff7e8] text-[var(--clinical-warning)]'
+                  : 'bg-[#eff6f3] text-clinical-700';
+
+              return work.id === 'all' ? (
+                <Link
+                  key={work.title}
+                  href={work.href}
+                  aria-label={`${work.title}. เปิดหน้างานจริง`}
+                  className="group flex min-h-16 w-full items-center gap-3 py-3 text-left transition-colors hover:bg-[#f8fbfa] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-clinical-700"
+                >
+                  <span className={`flex size-10 shrink-0 items-center justify-center rounded-full ${toneClass}`} aria-hidden="true">
+                    <Icon size={19} strokeWidth={1.9} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-semibold text-clinical-900">{work.title}</span>
+                    <span className="mt-0.5 block text-xs leading-5 text-[var(--clinical-muted)]">{work.detail}</span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-2 text-sm font-semibold text-clinical-700">
+                    <span className="rounded-full bg-[#f4f7f6] px-2.5 py-1 text-xs text-[#425451]">{work.value}</span>
+                    <ArrowRight size={17} className="transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+                  </span>
+                </Link>
+                ) : (
+                <button
+                  key={work.title}
+                  type="button"
+                  onClick={(event) => {
+                    workTriggerRef.current = event.currentTarget;
+                    setSelectedWork(work);
+                  }}
+                  aria-label={`${work.title}. ดูตัวอย่างรายการก่อนเปิดหน้างานจริง`}
+                  className="group flex min-h-16 w-full items-center gap-3 py-3 text-left transition-colors hover:bg-[#f8fbfa] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-clinical-700"
+                >
+                  <span className={`flex size-10 shrink-0 items-center justify-center rounded-full ${toneClass}`} aria-hidden="true">
+                    <Icon size={19} strokeWidth={1.9} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-semibold text-clinical-900">{work.title}</span>
+                    <span className="mt-0.5 block text-xs leading-5 text-[var(--clinical-muted)]">{work.detail}</span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-2 text-sm font-semibold text-clinical-700">
+                    <span className="rounded-full bg-[#f4f7f6] px-2.5 py-1 text-xs text-[#425451]">{work.value}</span>
+                    <ArrowRight size={17} className="transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+                  </span>
+                </button>
+                );
+            })}
+          </div>
+        </section>
+
+        <section aria-labelledby="inventory-risk-heading" className="rounded-xl border border-clinical-border bg-white p-5 shadow-[0_14px_36px_-30px_rgba(18,59,58,0.7)] md:p-6">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold tracking-[0.12em] text-clinical-700">INVENTORY AT RISK</p>
+              <h2 id="inventory-risk-heading" className="mt-1 text-lg font-semibold text-clinical-900">ล็อตที่ต้องเฝ้าระวัง</h2>
+            </div>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('all')}
+              className="shrink-0 text-xs font-semibold text-clinical-700 underline underline-offset-2 hover:text-clinical-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-clinical-700"
+            >
+              ดูทั้งหมด
+            </button>
+          </div>
+
+          {inventoryAtRisk.length === 0 ? (
+            <p className="mt-6 rounded-lg bg-[#f8fbfa] p-4 text-sm leading-6 text-[var(--clinical-muted)]">ยังไม่พบ lot ที่ต่ำกว่าจุดสั่งซื้อหรือใกล้หมดอายุ</p>
+          ) : (
+            <div className="mt-4 divide-y divide-[#e5ece9]">
+              {inventoryAtRisk.map(({ reagent, lot, expired, nearExpiry, low }) => (
+                <button
+                  key={lot.inventoryId}
+                  type="button"
+                  onClick={() => setSelectedReagent(reagent)}
+                  className="w-full py-3 text-left transition-colors hover:bg-[#f8fbfa] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-clinical-700"
+                >
+                  <span className="flex items-start justify-between gap-3">
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-semibold text-clinical-900">{reagent.name}</span>
+                      <span className="mt-1 block text-xs text-[var(--clinical-muted)]">Lot {lot.lotNo} · หมดอายุ {formatReceivedDate(lot.expDate)}</span>
+                    </span>
+                    <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold ${expired ? 'bg-[#fff1f0] text-[var(--clinical-critical)]' : nearExpiry ? 'bg-[#fff7e8] text-[var(--clinical-warning)]' : 'bg-[#eff6f3] text-clinical-700'}`}>
+                      {expired ? 'หมดอายุ' : nearExpiry ? 'ใกล้หมดอายุ' : low ? 'ต่ำกว่าจุดสั่งซื้อ' : 'ติดตาม'}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
       </div>
 
-      <div className="bg-white border border-[#d9e3df] rounded-xl flex flex-col overflow-hidden shadow-[0_14px_36px_-30px_rgba(18,59,58,0.7)]">
-        <div className="p-5 md:p-6 border-b border-[#e5ece9] space-y-4">
-          <div className="flex flex-col lg:flex-row gap-4 lg:items-center lg:justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-1 h-6 bg-[#2f6f67] rounded-full" />
+      {selectedWork && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#102a2e]/45 p-4"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setSelectedWork(null);
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="today-work-dialog-title"
+            ref={workDialogRef}
+            className="w-full max-w-lg rounded-2xl border border-clinical-border bg-white p-5 shadow-2xl md:p-6"
+          >
+            <div className="flex items-start justify-between gap-4">
               <div>
-                <h2 className="text-lg font-semibold text-[#1d302f]">รายการคงคลังปัจจุบัน</h2>
+                <p className="text-xs font-semibold tracking-[0.12em] text-clinical-700">TODAY&apos;S WORK PREVIEW</p>
+                <h2 id="today-work-dialog-title" className="mt-1 text-xl font-semibold text-clinical-900">{selectedWork.title}</h2>
+                <p className="mt-1 text-sm leading-6 text-[var(--clinical-muted)]">{selectedWork.detail}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedWork(null)}
+                ref={closeWorkButtonRef}
+                aria-label="ปิดตัวอย่างงาน"
+                className="flex size-11 shrink-0 items-center justify-center rounded-lg text-[#52635f] hover:bg-[#f2f7f5] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-clinical-700"
+              >
+                <X size={19} aria-hidden="true" />
+              </button>
+            </div>
+
+            <div className="mt-5 rounded-lg border border-[#e5ece9] bg-[#f8fbfa] p-4">
+              <p className="text-xs font-semibold text-[#52635f]">รายการตัวอย่าง ({selectedWork.value.toLocaleString('th-TH')} รายการทั้งหมด)</p>
+              {workPreviewItems.length === 0 ? (
+                <p className="mt-3 text-sm text-[var(--clinical-muted)]">ไม่พบรายการที่ต้องแสดงในขณะนี้</p>
+              ) : (
+                <ul className="mt-3 divide-y divide-[#e5ece9]">
+                  {workPreviewItems.map(({ reagent, lot }) => (
+                    <li key={lot.inventoryId} className="py-1 first:pt-0 last:pb-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedWork(null);
+                          setSelectedReagent(reagent);
+                        }}
+                        className="flex min-h-14 w-full items-start justify-between gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-clinical-700"
+                        aria-label={`เปิดรายละเอียด ${reagent.name} lot ${lot.lotNo}`}
+                      >
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-semibold text-clinical-900">{reagent.name}</span>
+                          <span className="mt-0.5 block text-xs text-[var(--clinical-muted)]">Lot {lot.lotNo} · หมดอายุ {formatReceivedDate(lot.expDate)}</span>
+                        </span>
+                        <span className="shrink-0 text-xs font-semibold text-clinical-700">คงเหลือ {reagent.quantity} {reagent.unit}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setSelectedWork(null)}
+                className="min-h-11 rounded-lg border border-clinical-border px-4 text-sm font-semibold text-[#425451] hover:bg-[#f2f7f5] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-clinical-700"
+              >
+                ปิด
+              </button>
+              <Link
+                href={selectedWork.href}
+                onClick={() => setSelectedWork(null)}
+                className="inline-flex min-h-11 items-center justify-center rounded-lg bg-[#0f766e] px-4 text-sm font-semibold !text-white hover:bg-[#115e59] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-clinical-700"
+              >
+                ไปหน้าจัดการจริง
+              </Link>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {isPowerUser && (
+        <section aria-labelledby="procurement-pulse-heading" className="rounded-xl border border-clinical-border bg-white p-5 shadow-[0_14px_36px_-30px_rgba(18,59,58,0.7)] md:p-6">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-xs font-semibold tracking-[0.12em] text-clinical-700">PROCUREMENT PULSE</p>
+              <h2 id="procurement-pulse-heading" className="mt-1 text-lg font-semibold text-clinical-900">Purchase orders &amp; shipments</h2>
+              <p className="mt-1 text-xs leading-5 text-[var(--clinical-muted)]">Read-only operational signals from the existing procurement workflows.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <Link
+                href="/orders"
+                className="inline-flex min-h-11 items-center rounded-lg border border-clinical-border px-3 text-xs font-semibold text-clinical-700 transition-colors hover:bg-[#f2f7f5] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-clinical-700"
+              >
+                View purchase orders
+              </Link>
+              <Link
+                href="/orders/tracking"
+                className="inline-flex min-h-11 items-center rounded-lg bg-[#0f766e] px-3 text-xs font-semibold !text-white transition-colors hover:bg-[#115e59] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-clinical-700"
+              >
+                Track shipments
+              </Link>
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {[
+              { label: 'Pending purchase orders', value: procurementSnapshot.pendingOrders, icon: ShoppingCart, tone: 'text-clinical-700 bg-[#eff6f3]' },
+              { label: 'Shipments in transit', value: procurementSnapshot.inTransit, icon: Truck, tone: 'text-[#087f8c] bg-[#edf9fa]' },
+              { label: 'Received shipments', value: procurementSnapshot.received, icon: ClipboardCheck, tone: 'text-[#2f7d3c] bg-[#edf8ef]' },
+            ].map((metric) => (
+              <div key={metric.label} className="flex items-center gap-3 rounded-lg border border-[#e5ece9] bg-[#fbfdfc] p-4">
+                <span className={`flex size-10 shrink-0 items-center justify-center rounded-lg ${metric.tone}`} aria-hidden="true">
+                  <metric.icon size={19} strokeWidth={1.8} />
+                </span>
+                <span>
+                  <span className="block text-2xl font-semibold tracking-tight text-clinical-900">{metric.value}</span>
+                  <span className="block text-xs text-[var(--clinical-muted)]">{metric.label}</span>
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-5 overflow-x-auto rounded-lg border border-[#e5ece9]">
+            <table className="w-full min-w-[620px] text-left text-sm">
+              <caption className="sr-only">Recent shipment status</caption>
+              <thead className="bg-[#f7faf8] text-xs font-semibold text-[#52635f]">
+                <tr>
+                  <th scope="col" className="px-4 py-3">Reference</th>
+                  <th scope="col" className="px-4 py-3">Vendor</th>
+                  <th scope="col" className="px-4 py-3">Reagent</th>
+                  <th scope="col" className="px-4 py-3">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#e5ece9]">
+                {procurementSnapshot.recentShipments.map((shipment) => (
+                  <tr key={shipment.id}>
+                    <td className="px-4 py-3 font-semibold text-clinical-900">{shipment.reference_no}</td>
+                    <td className="px-4 py-3 text-[#52635f]">{shipment.vendor}</td>
+                    <td className="max-w-[240px] truncate px-4 py-3 text-[#52635f]">{shipment.reagent_name}</td>
+                    <td className="px-4 py-3">
+                      <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${shipment.status === 'In Transit' ? 'bg-[#edf9fa] text-[#087f8c]' : shipment.status === 'Received' ? 'bg-[#edf8ef] text-[#2f7d3c]' : 'bg-[#fff1f0] text-[var(--clinical-critical)]'}`}>
+                        {shipment.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+                {procurementSnapshot.recentShipments.length === 0 && (
+                  <tr><td colSpan={4} className="px-4 py-5 text-center text-xs text-[var(--clinical-muted)]">No shipment activity available.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      <div className="flex flex-col overflow-hidden rounded-xl border border-clinical-border bg-white shadow-[0_14px_36px_-30px_rgba(18,59,58,0.7)]">
+        <div className="space-y-4 border-b border-[#e5ece9] p-5 md:p-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="h-8 w-1 rounded-full bg-clinical-700" aria-hidden="true" />
+              <div>
+                <p className="text-xs font-semibold tracking-[0.1em] text-clinical-700">WORKLIST</p>
+                <h2 className="mt-1 text-lg font-semibold text-clinical-900">
+                  {statusFilter === 'all' ? 'รายการคงคลังปัจจุบัน' : `คิว: ${activeQueue?.name}`}
+                </h2>
+                <p aria-live="polite" className="mt-1 text-xs text-[var(--clinical-muted)]">
+                  พบ {filteredItems.length.toLocaleString('th-TH')} {statusFilter === 'expired' || statusFilter === 'nearExpiry' ? 'รายการที่มี lot ตรงเงื่อนไข' : 'รายการตามตัวกรอง'}
+                </p>
                 {statusFilter !== 'all' && (
                   <button
                     type="button"
                     onClick={() => setStatusFilter('all')}
-                    className="mt-1 text-xs font-medium text-[#2f6f67] hover:text-[#123b3a] underline underline-offset-2"
+                    className="mt-1 text-xs font-medium text-clinical-700 underline underline-offset-2 hover:text-clinical-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-clinical-700"
                   >
                     แสดงทุกสถานะ
                   </button>
@@ -243,14 +731,15 @@ export default function InventoryOverview() {
               <input
                 type="text"
                 placeholder="ค้นหาชื่อน้ำยา หรือรหัสรายการ"
-                className="w-full pl-11 pr-4 py-3 bg-[#f4f7f6] rounded-lg text-sm font-medium text-[#1d302f] border border-transparent focus:bg-white focus:border-[#8cbab0] outline-none transition-all"
+                aria-label="ค้นหาชื่อน้ำยา หรือรหัสรายการ"
+                className="w-full rounded-lg border border-transparent bg-[#f4f7f6] py-3 pl-11 pr-4 text-sm font-medium text-clinical-900 transition-all focus:border-[#8cbab0] focus:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-clinical-700"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
           </div>
 
-          <section aria-label="ตัวกรองรายการคงคลัง" className="rounded-lg border border-[#d9e3df] bg-[#f7faf8] p-3 md:p-4 space-y-3">
+          <section aria-label="ตัวกรองรายการคงคลัง" className="space-y-3 rounded-lg border border-clinical-border bg-[#f7faf8] p-3 md:p-4">
             <div className="flex items-center justify-between gap-3">
               <p className="text-xs font-semibold text-[#425451]">กรองรายการ</p>
               {(selectedJobType !== 'ทั้งหมด' || selectedReagentType !== 'ทั้งหมด') && (
@@ -260,7 +749,7 @@ export default function InventoryOverview() {
                     setSelectedJobType('ทั้งหมด');
                     setSelectedReagentType('ทั้งหมด');
                   }}
-                  className="text-xs font-medium text-[#2f6f67] hover:text-[#123b3a] underline underline-offset-2 shrink-0"
+                  className="shrink-0 text-xs font-medium text-clinical-700 underline underline-offset-2 hover:text-clinical-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-clinical-700"
                 >
                   ล้างตัวกรอง
                 </button>
@@ -276,7 +765,7 @@ export default function InventoryOverview() {
                   id="job-filter"
                   value={selectedJobType}
                   onChange={(event) => setSelectedJobType(event.target.value)}
-                  className="w-full h-11 px-3 bg-white text-sm font-medium text-[#1d302f] border border-[#d9e3df] rounded-lg shadow-sm cursor-pointer transition-colors hover:border-[#8cbab0] focus:border-[#2f6f67]"
+                  className="h-11 w-full cursor-pointer rounded-lg border border-clinical-border bg-white px-3 text-sm font-medium text-clinical-900 shadow-sm transition-colors hover:border-[#8cbab0] focus:border-clinical-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-clinical-700"
                 >
                   {jobTypes.map((type) => (
                     <option key={type} value={type}>{type}</option>
@@ -292,7 +781,7 @@ export default function InventoryOverview() {
                   id="reagent-type-filter"
                   value={selectedReagentType}
                   onChange={(event) => setSelectedReagentType(event.target.value)}
-                  className="w-full h-11 px-3 bg-white text-sm font-medium text-[#1d302f] border border-[#d9e3df] rounded-lg shadow-sm cursor-pointer transition-colors hover:border-[#8cbab0] focus:border-[#2f6f67]"
+                  className="h-11 w-full cursor-pointer rounded-lg border border-clinical-border bg-white px-3 text-sm font-medium text-clinical-900 shadow-sm transition-colors hover:border-[#8cbab0] focus:border-clinical-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-clinical-700"
                 >
                   {reagentTypes.map((type) => (
                     <option key={type} value={type}>{type}</option>
@@ -303,8 +792,9 @@ export default function InventoryOverview() {
           </section>
         </div>
 
-        <div className="flex-1 overflow-auto max-h-[680px] no-scrollbar">
+        <div role="region" aria-label="ตารางรายการคงคลัง" tabIndex={0} className="no-scrollbar max-h-[680px] flex-1 overflow-auto focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-clinical-700">
           <table className="w-full text-left border-collapse min-w-[720px]">
+            <caption className="sr-only">รายการคงคลังตามคิวและตัวกรองที่เลือก</caption>
             <thead>
               <tr className="bg-[#f4f7f6] sticky top-0 z-10 border-b border-[#d9e3df]">
                 <th className="px-6 md:px-8 py-4 text-xs font-semibold text-[#52635f] tracking-wide">รายการ / รหัส</th>
