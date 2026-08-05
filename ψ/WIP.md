@@ -1,20 +1,32 @@
-# WIP — 2026-08-05 19:56
+# WIP — 2026-08-05 23:23
 
 ## Git Status
 
 ```text
-3870169 feat: complete reagent order workflow
-?? ψ/
+c3ac623 feat: deliver LabStock UX UI phases
+ M src/app/api/auth/google-token/route.ts
+ M src/app/api/auth/login/route.ts
+ M src/app/login/page.tsx
+ M src/components/auth-provider.tsx
+ M src/lib/auth-utils.ts
+ M src/lib/line-liff-auth.ts
+?? src/app/api/auth/register/
+?? src/app/register/
+?? upgrade_v16_email_auth_registration.sql
+?? ψ/memory/retrospectives/2026-08/05/23.23_labstock-email-auth-registration.md
 ```
 
 ## งานค้าง
 
-- [ ] Run authenticated smoke tests for acknowledgement, availability confirmation, revision approval/rejection, shipment, and receipt.
-- [ ] Verify production logs after the first real workflow transaction.
+- [ ] Apply and verify `upgrade_v16_email_auth_registration.sql` in a non-production database.
+- [ ] Build Admin approval/rejection UI and API for pending accounts.
+- [ ] Add email verification and forgot/reset-password flows.
+- [ ] Run authenticated browser smoke tests for Lab and Vendor registration/login.
 
 ## Context
 
-- Neon schema was checked and v10 plus v15 workflow migrations were applied successfully; v13/v14 were already present.
-- Commit `3870169` was pushed to `origin/agent/reagent-order-suggestions`.
-- Production deployment is READY at `https://labstock-two.vercel.app`.
-- Do not stage or overwrite the existing `ψ/` notes without explicit review.
+- Email Auth Phase 1 is implemented but intentionally uncommitted and unpushed.
+- Registration creates only `User` or `Vendor` accounts with `pending` status; vendor names are validated against approved companies.
+- Password, Google, LINE, and bearer-token paths deny non-active accounts after the status column exists.
+- Lint, TypeScript, diff-check, and production build passed locally.
+- Do not open public enrollment until migration, approval controls, email verification, and reset-password flows are complete.

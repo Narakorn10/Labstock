@@ -1,5 +1,5 @@
 import sql from "@/lib/db";
-import { AuthenticatedUser } from "@/lib/auth-utils";
+import { hasUserAccountStatusColumn, type AuthenticatedUser } from "@/lib/auth-utils";
 
 const LINE_ID_TOKEN_VERIFY_URL = "https://api.line.me/oauth2/v2.1/verify";
 
@@ -7,6 +7,11 @@ type VerifiedLineIdentity = {
   sub: string;
   name?: string;
 };
+
+export type LineLinkedUserAccess =
+  | { state: "unlinked" }
+  | { state: "active"; user: AuthenticatedUser }
+  | { state: "inactive"; accountStatus: string };
 
 function getLineChannelIds() {
   const candidates = [
@@ -59,22 +64,42 @@ export async function verifyLineIdToken(idToken: string): Promise<VerifiedLineId
   return null;
 }
 
-export async function getLineLinkedUser(lineUserId: string): Promise<AuthenticatedUser | null> {
-  const users = await sql`
-    SELECT username, name, role, vendor
-    FROM users
-    WHERE line_user_id = ${lineUserId}
-    LIMIT 1
-  `;
+export async function getLineLinkedUserAccess(lineUserId: string): Promise<LineLinkedUserAccess> {
+  const hasAccountStatus = await hasUserAccountStatusColumn();
+  const users = hasAccountStatus
+    ? await sql`
+        SELECT username, name, role, vendor, account_status
+        FROM users
+        WHERE line_user_id = ${lineUserId}
+        LIMIT 1
+      `
+    : await sql`
+        SELECT username, name, role, vendor
+        FROM users
+        WHERE line_user_id = ${lineUserId}
+        LIMIT 1
+      `;
 
-  if (users.length === 0) return null;
+  if (users.length === 0) return { state: "unlinked" };
   const user = users[0];
+  if (hasAccountStatus && user.account_status !== "active") {
+    return { state: "inactive", accountStatus: String(user.account_status || "unknown") };
+  }
+
   return {
-    username: user.username,
-    name: user.name,
-    role: user.role,
-    vendor: user.vendor,
+    state: "active",
+    user: {
+      username: user.username,
+      name: user.name,
+      role: user.role,
+      vendor: user.vendor,
+    },
   };
+}
+
+export async function getLineLinkedUser(lineUserId: string): Promise<AuthenticatedUser | null> {
+  const access = await getLineLinkedUserAccess(lineUserId);
+  return access.state === "active" ? access.user : null;
 }
 
 export async function getLineLinkedPurchasingUser(lineUserId: string): Promise<AuthenticatedUser | null> {

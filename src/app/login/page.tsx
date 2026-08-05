@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useAuth } from '@/components/auth-provider';
 import { signIn } from 'next-auth/react';
 import { Database, KeyRound, User, Loader2, AlertCircle } from 'lucide-react';
@@ -77,32 +78,40 @@ export default function LoginPage() {
         <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-xl">
           <form onSubmit={handleSubmit} className="space-y-6">
             {error && (
-              <div className="p-4 bg-red-50 text-red-600 rounded-2xl flex items-center gap-3 text-sm font-bold animate-in shake-in duration-300">
+              <div role="alert" className="p-4 bg-red-50 text-red-600 rounded-2xl flex items-center gap-3 text-sm font-bold animate-in shake-in duration-300">
                 <AlertCircle size={18} />
                 {error}
               </div>
             )}
 
             <div className="space-y-2">
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Username</label>
+              <label htmlFor="login-identifier" className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Email or username</label>
               <div className="relative">
                 <User className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
                 <input 
-                  type="text" required
+                  id="login-identifier"
+                  name="username"
+                  type="text"
+                  autoComplete="username"
+                  required
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   className="w-full pl-12 pr-4 py-4 bg-gray-50 border border-gray-100 rounded-2xl text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                  placeholder="กรอกชื่อผู้ใช้"
+                  placeholder="อีเมลหรือชื่อผู้ใช้"
                 />
               </div>
             </div>
 
             <div className="space-y-2">
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Password</label>
+              <label htmlFor="login-password" className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Password</label>
               <div className="relative">
                 <KeyRound className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
                 <input 
-                  type="password" required
+                  id="login-password"
+                  name="password"
+                  type="password"
+                  autoComplete="current-password"
+                  required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full pl-12 pr-4 py-4 bg-gray-50 border border-gray-100 rounded-2xl text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
@@ -134,6 +143,13 @@ export default function LoginPage() {
               {googleLoading ? <Loader2 className="animate-spin" size={20} /> : <span className="text-base font-black">G</span>}
               Continue with Google
             </button>
+
+            <p className="text-center text-xs font-medium text-gray-500">
+              ยังไม่มีบัญชี?{' '}
+              <Link href="/register" className="font-bold text-blue-600 underline underline-offset-4 hover:text-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 rounded-sm">
+                ลงทะเบียนด้วยอีเมล
+              </Link>
+            </p>
           </form>
         </div>
 

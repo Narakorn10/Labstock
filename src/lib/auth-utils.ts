@@ -46,6 +46,18 @@ export async function hasUserPinColumn() {
   return Boolean(result[0]?.exists);
 }
 
+export async function hasUserAccountStatusColumn() {
+  const result = await sql`
+    SELECT EXISTS (
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_name = 'users' AND column_name = 'account_status'
+    ) as exists
+  `;
+
+  return Boolean(result[0]?.exists);
+}
+
 export async function getAuthenticatedUser(request: Request) {
   const authHeader = request.headers.get('Authorization');
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -57,17 +69,31 @@ export async function getAuthenticatedUser(request: Request) {
   try {
     // Hash the token from request to compare with hashed token in DB
     const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+    const hasAccountStatus = await hasUserAccountStatusColumn();
 
-    const users = await sql`
-      SELECT username, name, role, vendor, token_expiry 
-      FROM users 
-      WHERE (token = ${token} OR token = ${hashedToken})
-      LIMIT 1
-    `;
+    const users = hasAccountStatus
+      ? await sql`
+          SELECT username, name, role, vendor, token_expiry, account_status
+          FROM users
+          WHERE (token = ${token} OR token = ${hashedToken})
+          LIMIT 1
+        `
+      : await sql`
+          SELECT username, name, role, vendor, token_expiry
+          FROM users
+          WHERE (token = ${token} OR token = ${hashedToken})
+          LIMIT 1
+        `;
 
     if (users.length === 0) return null;
 
     const user = users[0];
+
+    // Before the migration the column is absent and legacy tokens remain valid.
+    // Once it exists, only explicitly active accounts can use a bearer token.
+    if (hasAccountStatus && user.account_status !== 'active') {
+      return null;
+    }
 
     // Check expiry
     if (user.token_expiry && new Date(user.token_expiry) < new Date()) {
@@ -90,17 +116,26 @@ export async function verifyUserPin(username: string, pin: string): Promise<Auth
   try {
     const pinEnabled = await hasUserPinColumn();
     if (!pinEnabled) return null;
+    const hasAccountStatus = await hasUserAccountStatusColumn();
 
-    const users = await sql`
-      SELECT username, name, role, vendor, pin_hash
-      FROM users
-      WHERE LOWER(username) = LOWER(${username.trim()})
-      LIMIT 1
-    `;
+    const users = hasAccountStatus
+      ? await sql`
+          SELECT username, name, role, vendor, pin_hash, account_status
+          FROM users
+          WHERE LOWER(username) = LOWER(${username.trim()})
+          LIMIT 1
+        `
+      : await sql`
+          SELECT username, name, role, vendor, pin_hash
+          FROM users
+          WHERE LOWER(username) = LOWER(${username.trim()})
+          LIMIT 1
+        `;
 
     if (users.length === 0) return null;
 
     const user = users[0];
+    if (hasAccountStatus && user.account_status !== 'active') return null;
     if (!user.pin_hash) return null;
 
     const isMatch = await comparePassword(pin, user.pin_hash);

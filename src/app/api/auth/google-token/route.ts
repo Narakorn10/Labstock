@@ -15,6 +15,18 @@ async function hasUserEmailColumn() {
   return Boolean(result[0]?.exists);
 }
 
+async function hasUserAccountStatusColumn() {
+  const result = await sql`
+    SELECT EXISTS (
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_name = 'users' AND column_name = 'account_status'
+    ) as exists
+  `;
+
+  return Boolean(result[0]?.exists);
+}
+
 export async function POST() {
   try {
     const session = await auth();
@@ -26,7 +38,17 @@ export async function POST() {
 
     const localPart = email.split("@")[0];
     const hasEmail = await hasUserEmailColumn();
-    const users = hasEmail
+    const hasAccountStatus = await hasUserAccountStatusColumn();
+    const users = hasEmail && hasAccountStatus
+      ? await sql`
+          SELECT username, name, role, vendor, account_status
+          FROM users
+          WHERE LOWER(username) = ${email}
+             OR LOWER(username) = ${localPart}
+             OR LOWER(email) = ${email}
+          LIMIT 1
+        `
+      : hasEmail
       ? await sql`
           SELECT username, name, role, vendor
           FROM users
@@ -51,6 +73,12 @@ export async function POST() {
     }
 
     const user = users[0];
+    if (hasAccountStatus && user.account_status !== "active") {
+      return NextResponse.json(
+        { error: "This account is not active yet." },
+        { status: 403 }
+      );
+    }
     const token = crypto.randomUUID();
     const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
     const expiry = new Date();
