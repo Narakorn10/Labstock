@@ -299,8 +299,27 @@ export async function POST(req: Request) {
 
         if (!replyToken) return;
 
+        const lineUserId = postbackEvent.source?.userId || null;
+        const linkedUserRows = lineUserId
+          ? await sql`SELECT username, role FROM users WHERE line_user_id = ${lineUserId} LIMIT 1`
+          : [];
+        const linkedUser = linkedUserRows[0];
+        if ((action === "confirm_po" || action === "reject_po") && (!linkedUser || (linkedUser.role !== "Admin" && linkedUser.role !== "Manager"))) {
+          await sendReply(replyToken, { type: "text", text: "ไม่พบสิทธิ์ Admin/Manager สำหรับการอนุมัติใบสั่งซื้อนี้ค่ะ" });
+          return;
+        }
+
         if (action === "confirm_po" && id) {
-          await sql`UPDATE purchase_orders SET status = 'CONFIRMED', confirmed_at = NOW() WHERE po_number = ${id}`;
+          const updated = await sql`
+            UPDATE purchase_orders
+            SET status = 'CONFIRMED', confirmed_at = NOW(), reviewed_at = NOW(), reviewed_by = ${linkedUser.username}, updated_at = NOW()
+            WHERE po_number = ${id} AND status IN ('PENDING_LAB_REVIEW', 'REVISION_REQUESTED')
+            RETURNING id
+          `;
+          if (updated.length === 0) {
+            await sendReply(replyToken, { type: "text", text: `ใบสั่งซื้อ ${id} ไม่อยู่ในสถานะรออนุมัติค่ะ` });
+            return;
+          }
           await notifyLabOfPurchaseOrderStatus(id);
           await sendReply(replyToken, {
             type: "text",
@@ -310,7 +329,16 @@ export async function POST(req: Request) {
         }
 
         if (action === "reject_po" && id) {
-          await sql`UPDATE purchase_orders SET status = 'REJECTED' WHERE po_number = ${id}`;
+          const updated = await sql`
+            UPDATE purchase_orders
+            SET status = 'REJECTED', reviewed_at = NOW(), reviewed_by = ${linkedUser.username}, updated_at = NOW()
+            WHERE po_number = ${id} AND status IN ('PENDING_LAB_REVIEW', 'REVISION_REQUESTED')
+            RETURNING id
+          `;
+          if (updated.length === 0) {
+            await sendReply(replyToken, { type: "text", text: `ใบสั่งซื้อ ${id} ไม่อยู่ในสถานะรออนุมัติค่ะ` });
+            return;
+          }
           await notifyLabOfPurchaseOrderStatus(id);
           await sendReply(replyToken, {
             type: "text",

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
-type PurchaseOrderStatus = "PENDING_LAB_REVIEW" | "SUBMITTED" | "REVISION_REQUESTED" | "CONFIRMED" | "SHIPPED" | "RECEIVED" | "REJECTED";
+type PurchaseOrderStatus = "PENDING_LAB_REVIEW" | "SUBMITTED" | "ACKNOWLEDGED" | "REVISION_REQUESTED" | "CONFIRMED" | "PARTIALLY_SHIPPED" | "SHIPPED" | "PARTIALLY_RECEIVED" | "RECEIVED" | "REJECTED";
 
 interface PurchaseOrderItemDraft {
   item_id: string;
@@ -46,9 +46,12 @@ interface CatalogReagent {
 const statusLabels: Record<PurchaseOrderStatus, string> = {
   PENDING_LAB_REVIEW: "รอแล็บตรวจสอบ",
   SUBMITTED: "ส่งให้บริษัทแล้ว",
+  ACKNOWLEDGED: "บริษัทรับทราบแล้ว",
   REVISION_REQUESTED: "บริษัทแก้ไข รอแล็บยืนยัน",
   CONFIRMED: "ยืนยันแล้ว",
+  PARTIALLY_SHIPPED: "จัดส่งบางส่วน",
   SHIPPED: "จัดส่งแล้ว",
+  PARTIALLY_RECEIVED: "รับเข้าแล้วบางส่วน",
   RECEIVED: "รับเข้าคลังแล้ว",
   REJECTED: "ปฏิเสธ",
 };

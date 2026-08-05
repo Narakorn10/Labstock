@@ -337,8 +337,8 @@ export const apiClient = {
     return res.data;
   },
 
-  updateShipment: async (id: number, action: 'receive' | 'cancel') => {
-    const res = await instance.patch<ApiResponse>(`/api/vendor/shipments/${id}`, { action });
+  updateShipment: async (id: number, action: 'receive' | 'cancel', quantities?: { accepted_qty: number; rejected_qty: number; rejection_reason?: string }) => {
+    const res = await instance.patch<ApiResponse>(`/api/vendor/shipments/${id}`, { action, ...quantities });
     return res.data;
   },
 

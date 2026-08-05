@@ -1,17 +1,25 @@
 export const purchaseOrderStatuses = [
   "PENDING_LAB_REVIEW",
   "SUBMITTED",
+  "ACKNOWLEDGED",
   "REVISION_REQUESTED",
   "CONFIRMED",
   "PARTIALLY_SHIPPED",
   "SHIPPED",
   "PARTIALLY_RECEIVED",
   "RECEIVED",
+  "EXPIRED",
   "REJECTED",
 ] as const;
 
 export type PurchaseOrderStatus = (typeof purchaseOrderStatuses)[number];
 export type PurchaseOrderOrigin = "LAB" | "VENDOR";
+export type PurchaseOrderAction =
+  | "ACKNOWLEDGE"
+  | "CONFIRM_AVAILABILITY"
+  | "REQUEST_REVISION"
+  | "APPROVE_REVISION"
+  | "REJECT_REVISION";
 
 export type PurchaseOrderItemInput = {
   item_id: string;
