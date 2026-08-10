@@ -188,7 +188,7 @@ export default function PurchaseOrdersPage() {
         }));
         setItems(suggestedItems);
         setSuggestionNotice(heldForReview.length
-          ? `แสดงผลคำนวณแล้ว ${data.length} รายการ; มี ${heldForReview.length} รายการที่ต้องตรวจทานและระบุเหตุผลก่อนบันทึกใบสั่งซื้อ`
+          ? `แสดงผลคำนวณแล้ว ${data.length} รายการ; มี ${heldForReview.length} รายการที่ควรตรวจทานก่อนบันทึกใบสั่งซื้อ`
           : "");
       } else {
         const error = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -203,7 +203,7 @@ export default function PurchaseOrdersPage() {
   };
 
   const handleCreate = async () => {
-    const missingOverrideReason = items.find((item) => (item.selected_basis === "MANUAL" || item.requires_review) && !item.override_reason?.trim());
+    const missingOverrideReason = items.find((item) => item.selected_basis === "MANUAL" && !item.override_reason?.trim());
     if (missingOverrideReason) {
       alert(`กรุณาระบุเหตุผลที่แก้จำนวนของ ${missingOverrideReason.item_name || missingOverrideReason.item_id}`);
       return;
@@ -575,10 +575,10 @@ export default function PurchaseOrdersPage() {
                 <button onClick={() => removeItem(index)} className="text-red-500 hover:text-red-700 p-2">
                   ✕
                 </button>
-                {(item.selected_basis === "MANUAL" || item.requires_review) && (
+                {item.selected_basis === "MANUAL" && (
                   <input
                     aria-label={`เหตุผลที่แก้จำนวน ${item.item_name || index + 1}`}
-                    placeholder={item.requires_review ? "เหตุผลการทบทวนรายการ*" : "เหตุผลที่แก้จำนวน*"}
+                    placeholder="เหตุผลที่แก้จำนวน*"
                     value={item.override_reason ?? ""}
                     onChange={(event) => updateItem(index, "override_reason", event.target.value)}
                     className="w-48 rounded border border-amber-300 bg-amber-50 p-2 text-sm"

@@ -61,12 +61,10 @@ export function buildAuditedPurchaseOrderItem(
 ): AuditedPurchaseOrderItem {
   const selectedBasis = selectPurchaseOrderBasis(item, suggestion);
   const overrideReason = item.override_reason?.trim() || null;
-  const requiresReviewReason = origin === "LAB" && (selectedBasis === "MANUAL" || !suggestion.auto_selectable);
+  const requiresReviewReason = origin === "LAB" && selectedBasis === "MANUAL";
   if (requiresReviewReason && !overrideReason) {
     throw new PurchaseOrderCreationError(
-      suggestion.committed_no_eta_qty > 0
-        ? `${suggestion.name}: มี PO ค้างที่ยังไม่มี ETA กรุณาตรวจสอบและระบุเหตุผลก่อนสั่งซ้ำ`
-        : `${suggestion.name}: กรุณาระบุเหตุผลเมื่อแก้จำนวนเอง`,
+      `${suggestion.name}: กรุณาระบุเหตุผลเมื่อแก้จำนวนเอง`,
     );
   }
 

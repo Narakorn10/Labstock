@@ -60,7 +60,7 @@ describe("server-authoritative purchase-order item audit", () => {
     }, current, "LAB")).toThrow(PurchaseOrderCreationError);
   });
 
-  it("stores a manual reason and requires review for a pending PO without ETA", () => {
+  it("allows an unchanged policy quantity for a pending PO without ETA", () => {
     const current = suggestion({ committed_no_eta_qty: 10 });
     expect(current.auto_selectable).toBe(false);
 
@@ -70,10 +70,10 @@ describe("server-authoritative purchase-order item audit", () => {
       quantity: current.policy_order_qty,
       unit: current.unit,
       selected_basis: "POLICY",
-      override_reason: "ตรวจสอบ PO ค้างแล้ว ยังต้องสั่งรอบนี้",
     }, current, "LAB");
 
-    expect(result.override_reason).toContain("ตรวจสอบ PO ค้าง");
+    expect(result.selected_basis).toBe("POLICY");
+    expect(result.override_reason).toBeNull();
   });
 
   it("keeps legacy Vendor proposals compatible without forcing a Lab override reason", () => {
