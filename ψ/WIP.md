@@ -1,32 +1,26 @@
-# WIP — 2026-08-05 23:23
+# WIP — 2026-08-10 14:39
 
 ## Git Status
 
 ```text
-c3ac623 feat: deliver LabStock UX UI phases
- M src/app/api/auth/google-token/route.ts
- M src/app/api/auth/login/route.ts
- M src/app/login/page.tsx
- M src/components/auth-provider.tsx
- M src/lib/auth-utils.ts
- M src/lib/line-liff-auth.ts
-?? src/app/api/auth/register/
-?? src/app/register/
-?? upgrade_v16_email_auth_registration.sql
-?? ψ/memory/retrospectives/2026-08/05/23.23_labstock-email-auth-registration.md
+ M src/app/orders/page.tsx
+ M src/lib/purchase-order-suggestions.ts
+ M ψ/WIP.md
+?? ψ/memory/retrospectives/2026-08/10/14.39_labstock-14day-reorder-current-stock-plan.md
 ```
 
 ## งานค้าง
 
-- [ ] Apply and verify `upgrade_v16_email_auth_registration.sql` in a non-production database.
-- [ ] Build Admin approval/rejection UI and API for pending accounts.
-- [ ] Add email verification and forgot/reset-password flows.
-- [ ] Run authenticated browser smoke tests for Lab and Vendor registration/login.
+- [x] Validate the uncommitted 14-day recommendation formula with policy, no-policy, sufficient-stock, zero-usage, and pack-rounding cases.
+- [x] Implement current-stock and minimum-threshold visibility in the `/orders` reagent picker and selected rows.
+- [x] Run TypeScript, ESLint, production build, `git diff --check`, and an unauthenticated local `/orders` HTTP smoke test.
+- [ ] Run an authenticated browser smoke test when a connected browser/session is available.
+- [ ] Add LINE LIFF stock visibility after desktop acceptance.
+- [x] Complete targeted Local RAG rescan and citation-bearing retrieval.
 
 ## Context
 
-- Email Auth Phase 1 is implemented but intentionally uncommitted and unpushed.
-- Registration creates only `User` or `Vendor` accounts with `pending` status; vendor names are validated against approved companies.
-- Password, Google, LINE, and bearer-token paths deny non-active accounts after the status column exists.
-- Lint, TypeScript, diff-check, and production build passed locally.
-- Do not open public enrollment until migration, approval controls, email verification, and reset-password flows are complete.
+- `purchase-order-suggestions.ts` now uses positive `เบิกไปหน้างาน` records from the latest 14 calendar days for the demand projection and reorder trigger. An explicit `approved_order_qty_boxes` remains the authoritative order quantity; the calculated 14-day quantity is used only when no approved quantity exists.
+- `/api/dashboard` already returns current `quantity` and `minThreshold`; `/orders` now preserves and displays both values without changing the purchase-order payload or database schema.
+- Formula checks, TypeScript, ESLint, production build, diff check, and local HTTP `/orders` 200 all pass. Browser discovery returned no connected browser, so authenticated UI behavior is not yet verified.
+- Commit and push were explicitly authorized on 2026-08-10. Do not deploy until authenticated UI/browser validation is complete.

@@ -38,6 +38,8 @@ interface CatalogReagent {
   itemId: string;
   name: string;
   unit: string;
+  quantity: number;
+  minThreshold: number;
   vendor?: string;
   reagentType?: string;
   jobType?: string;
@@ -253,6 +255,11 @@ export default function PurchaseOrdersPage() {
     }, {})).sort(([left], [right]) => left.localeCompare(right, "th"));
   }), [catalog, items, vendor]);
 
+  const catalogByItemId = useMemo(
+    () => new Map(catalog.map((reagent) => [reagent.itemId, reagent])),
+    [catalog]
+  );
+
   const updateItem = (
     index: number,
     field: keyof PurchaseOrderItemDraft,
@@ -421,7 +428,7 @@ export default function PurchaseOrdersPage() {
             </div>
 
             {items.map((item, index) => (
-              <div key={index} className="flex gap-2 mb-2 items-center">
+              <div key={index} className="flex gap-2 mb-2 items-start">
                 <div className="relative flex-1">
                   <input
                     role="combobox"
@@ -459,6 +466,9 @@ export default function PurchaseOrdersPage() {
                             >
                               <span className="block text-sm font-medium text-gray-900">{reagent.name}</span>
                               <span className="block text-xs text-gray-500">{reagent.jobType || "ไม่ระบุงาน"} · {reagent.itemId} · {reagent.unit}</span>
+                              <span className={`mt-1 block text-xs font-semibold ${reagent.quantity <= reagent.minThreshold ? "text-amber-700" : "text-teal-700"}`}>
+                                คงเหลือ {reagent.quantity} {reagent.unit} · ขั้นต่ำ {reagent.minThreshold}
+                              </span>
                             </button>
                           ))}
                         </div>
@@ -466,6 +476,14 @@ export default function PurchaseOrdersPage() {
                         <p className="px-3 py-4 text-center text-sm text-gray-500">ไม่พบรายการน้ำยาที่ตรงกับคำค้นหา</p>
                       )}
                     </div>
+                  )}
+                  {catalogByItemId.get(item.item_id) && (
+                    <p className={`mt-1 text-xs font-semibold ${catalogByItemId.get(item.item_id)!.quantity <= catalogByItemId.get(item.item_id)!.minThreshold ? "text-amber-700" : "text-teal-700"}`}>
+                      คงเหลือ {catalogByItemId.get(item.item_id)!.quantity} {catalogByItemId.get(item.item_id)!.unit}
+                      {catalogByItemId.get(item.item_id)!.quantity <= catalogByItemId.get(item.item_id)!.minThreshold
+                        ? ` · ต่ำกว่าหรือเท่ากับขั้นต่ำ ${catalogByItemId.get(item.item_id)!.minThreshold}`
+                        : ` · ขั้นต่ำ ${catalogByItemId.get(item.item_id)!.minThreshold}`}
+                    </p>
                   )}
                 </div>
                 <input

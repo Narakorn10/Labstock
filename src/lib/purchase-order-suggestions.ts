@@ -26,7 +26,7 @@ export type PurchaseOrderSuggestion = {
   calculation_version: string;
   warnings: string[];
   calculation_breakdown: {
-    demandSource: "approved_policy" | "policy_formula" | "weekly_target";
+    demandSource: "actual_dispense_history" | "approved_policy" | "policy_formula" | "weekly_target";
     dailyDemandBoxes: number;
     bridgeRequirementBoxes: number;
     endingSafetyGapBoxes: number;
@@ -57,6 +57,8 @@ type SuggestionRow = {
   inventory_lots?: unknown;
   on_order_lots?: unknown;
   committed_no_eta_qty?: unknown;
+  dispensed_14d?: unknown;
+  dispense_observation_days?: unknown;
 };
 
 type InventoryLot = {
@@ -76,9 +78,10 @@ type FetchSuggestionOptions = {
   limit?: number;
 };
 
-const CALCULATION_VERSION = "reagent-order-suggestion-v3";
+const CALCULATION_VERSION = "reagent-order-suggestion-v4-actual-dispense-14d-policy-qty";
 const DEFAULT_LEAD_TIME_DAYS = 7;
 const DAYS_PER_MONTH = 30;
+const TARGET_ORDER_COVERAGE_DAYS = 14;
 
 function toNumber(value: unknown, fallback = 0) {
   const numberValue = Number(value);
@@ -171,7 +174,7 @@ function sumLots(lots: InventoryLot[]) {
   return lots.reduce((sum, lot) => sum + lot.quantity, 0);
 }
 
-function calculateSuggestion(row: SuggestionRow, now = new Date()): PurchaseOrderSuggestion {
+export function calculateSuggestion(row: SuggestionRow, now = new Date()): PurchaseOrderSuggestion {
   const minThreshold = Math.max(0, toNumber(row.min_threshold));
   const weeklyTarget = Math.max(0, toNumber(row.weekly_target));
   const currentQty = Math.max(0, toNumber(row.quantity));
@@ -185,14 +188,19 @@ function calculateSuggestion(row: SuggestionRow, now = new Date()): PurchaseOrde
   const approvedMonthlyTarget = toNumber(row.approved_monthly_target_boxes);
   const hasApprovedOrderQty = row.approved_order_qty_boxes !== undefined && row.approved_order_qty_boxes !== null;
   const approvedOrderQty = Math.max(0, toNumber(row.approved_order_qty_boxes));
+  const dispensedFourteenDays = Math.max(0, toNumber(row.dispensed_14d));
+  const dispenseObservationDays = Math.max(1, Math.min(TARGET_ORDER_COVERAGE_DAYS, toNumber(row.dispense_observation_days, 1)));
+  const actualDailyDemand = dispensedFourteenDays > 0 ? dispensedFourteenDays / dispenseObservationDays : 0;
   const policyFormulaMonthlyTarget = testsPerBox > 0 ? (avgPatientTests + iqcTests) / testsPerBox : 0;
   const fallbackMonthlyTarget = weeklyTarget * 4;
-  const monthlyTargetBoxes = approvedMonthlyTarget > 0
+  const monthlyTargetBoxes = actualDailyDemand > 0
+    ? actualDailyDemand * DAYS_PER_MONTH
+    : approvedMonthlyTarget > 0
     ? approvedMonthlyTarget
     : policyFormulaMonthlyTarget > 0
       ? policyFormulaMonthlyTarget
       : fallbackMonthlyTarget;
-  const demandSource = approvedMonthlyTarget > 0 ? "approved_policy" : policyFormulaMonthlyTarget > 0 ? "policy_formula" : "weekly_target";
+  const demandSource = actualDailyDemand > 0 ? "actual_dispense_history" : approvedMonthlyTarget > 0 ? "approved_policy" : policyFormulaMonthlyTarget > 0 ? "policy_formula" : "weekly_target";
   const dailyDemand = monthlyTargetBoxes / DAYS_PER_MONTH;
   const safetyStockBoxes = Math.max(minThreshold, toNumber(row.safety_stock_boxes, minThreshold));
   const minOrderQtyBoxes = Math.max(1, Math.ceil(toNumber(row.min_order_qty_boxes, 1)));
@@ -234,9 +242,12 @@ function calculateSuggestion(row: SuggestionRow, now = new Date()): PurchaseOrde
   const calculatedOrderQty = rawOrderBoxes === 0
     ? 0
     : Math.max(minOrderQtyBoxes, roundUpToMultiple(rawOrderBoxes, orderMultipleBoxes));
-  // The lab-approved quantity per cycle takes precedence once the item reaches its reorder trigger.
+  // Live demand decides when to recommend; the reviewed lab policy remains authoritative for quantity.
+  const actualFourteenDayQty = roundUpToMultiple(actualDailyDemand * TARGET_ORDER_COVERAGE_DAYS, orderMultipleBoxes);
   const plannedOrderQty = hasApprovedOrderQty
     ? approvedOrderQty
+    : actualDailyDemand > 0
+    ? Math.max(minOrderQtyBoxes, actualFourteenDayQty)
     : Math.max(minOrderQtyBoxes, roundUpToMultiple(monthlyTargetBoxes / ordersPerMonth, orderMultipleBoxes));
   const orderRecommended = rawOrderBoxes > 0 || Boolean(stockoutDate);
   const systemSuggestedQty = orderRecommended ? plannedOrderQty : calculatedOrderQty;
@@ -500,7 +511,23 @@ export async function getPurchaseOrderSuggestions(sql: SqlClient, options: Fetch
         LIMIT ${limit}
       `;
 
+  const usageRows = await sql`
+    SELECT
+      item_id,
+      COALESCE(SUM(quantity), 0) AS dispensed_14d,
+      GREATEST(1, LEAST(${TARGET_ORDER_COVERAGE_DAYS}, CURRENT_DATE - MIN(timestamp::date) + 1)) AS dispense_observation_days
+    FROM logs
+    WHERE action = 'เบิกไปหน้างาน'
+      AND quantity > 0
+      AND item_id IS NOT NULL
+      AND timestamp >= CURRENT_DATE - INTERVAL '13 days'
+    GROUP BY item_id
+  `;
+  const usageByItemId = new Map(
+    (usageRows as Array<Record<string, unknown>>).map((usage) => [String(usage.item_id), usage])
+  );
+
   return (rows as SuggestionRow[])
-    .map((row) => calculateSuggestion(row))
+    .map((row) => calculateSuggestion({ ...row, ...(usageByItemId.get(row.item_id) || {}) }))
     .filter((item) => options.includeAll || item.system_suggested_order_qty > 0 || item.expedite_required);
 }
