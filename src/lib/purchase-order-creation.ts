@@ -1,0 +1,225 @@
+import sql from "./db";
+import type { AuthenticatedUser } from "./auth-utils";
+import { getPurchaseOrderSuggestions, type PurchaseOrderSuggestion } from "./purchase-order-suggestions";
+import type { PurchaseOrderItemInput } from "./purchase-order-workflow";
+
+type CreatePurchaseOrderInput = {
+  user: AuthenticatedUser;
+  vendor: string;
+  items: PurchaseOrderItemInput[];
+  note: string | null;
+  expectedDate: string | null;
+  origin: "LAB" | "VENDOR";
+  liffRequestId?: string | null;
+  storeLiffRequestId?: boolean;
+};
+
+type AuditedPurchaseOrderItem = {
+  item_id: string;
+  item_name: string;
+  quantity: number;
+  unit: string;
+  system_suggested_qty: number;
+  override_reason: string | null;
+  calculation_version: string;
+  calculation_snapshot: PurchaseOrderSuggestion & { calculated_at: string };
+  selected_basis: "POLICY" | "DYNAMIC" | "MANUAL";
+  snapshot_on_order_qty: number;
+  snapshot_no_eta_qty: number;
+};
+
+export class PurchaseOrderCreationError extends Error {
+  constructor(message: string, public readonly status = 400) {
+    super(message);
+  }
+}
+
+async function generatePONumber() {
+  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const result = await sql`
+    SELECT COUNT(*) AS count
+    FROM purchase_orders
+    WHERE po_number LIKE ${`PO-${dateStr}-%`}
+  `;
+  return `PO-${dateStr}-${(Number(result[0]?.count ?? 0) + 1).toString().padStart(3, "0")}`;
+}
+
+export function selectPurchaseOrderBasis(item: PurchaseOrderItemInput, suggestion: PurchaseOrderSuggestion) {
+  const requested = item.selected_basis;
+  if (requested === "POLICY" && item.quantity === suggestion.policy_order_qty) return "POLICY" as const;
+  if (requested === "DYNAMIC" && item.quantity === suggestion.dynamic_order_qty) return "DYNAMIC" as const;
+  if (!requested && item.quantity === suggestion.policy_order_qty) return "POLICY" as const;
+  if (!requested && item.quantity === suggestion.dynamic_order_qty) return "DYNAMIC" as const;
+  return "MANUAL" as const;
+}
+
+export function buildAuditedPurchaseOrderItem(
+  item: PurchaseOrderItemInput,
+  suggestion: PurchaseOrderSuggestion,
+  origin: "LAB" | "VENDOR",
+  calculatedAt = new Date().toISOString(),
+): AuditedPurchaseOrderItem {
+  const selectedBasis = selectPurchaseOrderBasis(item, suggestion);
+  const overrideReason = item.override_reason?.trim() || null;
+  const requiresReviewReason = origin === "LAB" && (selectedBasis === "MANUAL" || !suggestion.auto_selectable);
+  if (requiresReviewReason && !overrideReason) {
+    throw new PurchaseOrderCreationError(
+      suggestion.committed_no_eta_qty > 0
+        ? `${suggestion.name}: มี PO ค้างที่ยังไม่มี ETA กรุณาตรวจสอบและระบุเหตุผลก่อนสั่งซ้ำ`
+        : `${suggestion.name}: กรุณาระบุเหตุผลเมื่อแก้จำนวนเอง`,
+    );
+  }
+
+  return {
+    item_id: item.item_id,
+    item_name: suggestion.name,
+    quantity: item.quantity,
+    unit: suggestion.unit,
+    system_suggested_qty: suggestion.dynamic_order_qty,
+    override_reason: overrideReason,
+    calculation_version: suggestion.calculation_version,
+    calculation_snapshot: { ...suggestion, calculated_at: calculatedAt },
+    selected_basis: selectedBasis,
+    snapshot_on_order_qty: suggestion.on_order_qty,
+    snapshot_no_eta_qty: suggestion.committed_no_eta_qty,
+  };
+}
+
+async function recomputeItems(input: CreatePurchaseOrderInput): Promise<AuditedPurchaseOrderItem[]> {
+  const suggestions = await getPurchaseOrderSuggestions(sql, {
+    vendor: input.vendor,
+    includeAll: true,
+    limit: 100,
+  });
+  const byItemId = new Map(suggestions.map((suggestion) => [suggestion.item_id, suggestion]));
+  const calculatedAt = new Date().toISOString();
+
+  return input.items.map((item) => {
+    const suggestion = byItemId.get(item.item_id);
+    if (!suggestion || suggestion.vendor !== input.vendor) {
+      throw new PurchaseOrderCreationError("Every item must belong to the selected Vendor.");
+    }
+
+    return buildAuditedPurchaseOrderItem(item, suggestion, input.origin, calculatedAt);
+  });
+}
+
+export async function createPurchaseOrderWithAudit(input: CreatePurchaseOrderInput) {
+  const auditedItems = await recomputeItems(input);
+  const poNumber = await generatePONumber();
+  const status = input.origin === "VENDOR" ? "PENDING_LAB_REVIEW" : "SUBMITTED";
+  const reviewRequestedAt = input.origin === "VENDOR" ? new Date().toISOString() : null;
+  const itemJson = JSON.stringify(auditedItems);
+  const itemIds = auditedItems.map((item) => item.item_id).sort();
+  const lockQuery = sql`
+    SELECT pg_advisory_xact_lock(hashtextextended(item_id, 0))
+    FROM unnest(${itemIds}::text[]) AS locked(item_id)
+    ORDER BY item_id
+  `;
+
+  const query = input.storeLiffRequestId
+    ? sql`
+      WITH input_rows AS (
+        SELECT * FROM jsonb_to_recordset(${itemJson}::jsonb) AS item(
+          item_id TEXT, item_name TEXT, quantity NUMERIC, unit TEXT,
+          system_suggested_qty NUMERIC, override_reason TEXT, calculation_version TEXT,
+          calculation_snapshot JSONB, selected_basis TEXT,
+          snapshot_on_order_qty NUMERIC, snapshot_no_eta_qty NUMERIC
+        )
+      ), current_open AS (
+        SELECT poi.item_id,
+          COALESCE(SUM(GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0)) FILTER (WHERE p.expected_date IS NOT NULL), 0) AS on_order_qty,
+          COALESCE(SUM(GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0)) FILTER (WHERE p.expected_date IS NULL), 0) AS no_eta_qty
+        FROM purchase_order_items poi
+        JOIN purchase_orders p ON p.id = poi.po_id
+        JOIN input_rows input ON input.item_id = poi.item_id
+        WHERE p.status IN ('SUBMITTED', 'ACKNOWLEDGED', 'REVISION_REQUESTED', 'CONFIRMED', 'PARTIALLY_SHIPPED', 'SHIPPED', 'PARTIALLY_RECEIVED')
+        GROUP BY poi.item_id
+      ), stale_items AS (
+        SELECT input.item_id
+        FROM input_rows input
+        LEFT JOIN current_open current ON current.item_id = input.item_id
+        WHERE COALESCE(current.on_order_qty, 0) IS DISTINCT FROM input.snapshot_on_order_qty
+           OR COALESCE(current.no_eta_qty, 0) IS DISTINCT FROM input.snapshot_no_eta_qty
+      ), new_po AS (
+        INSERT INTO purchase_orders (
+          po_number, vendor, note, expected_date, created_by, status, proposal_origin,
+          review_requested_at, liff_request_id
+        ) SELECT
+          ${poNumber}, ${input.vendor}, ${input.note}, ${input.expectedDate}, ${input.user.username},
+          ${status}, ${input.origin}, ${reviewRequestedAt}, ${input.liffRequestId || null}
+        WHERE NOT EXISTS (SELECT 1 FROM stale_items)
+        RETURNING *
+      ), new_items AS (
+        INSERT INTO purchase_order_items (
+          po_id, item_id, item_name, quantity, unit, system_suggested_qty,
+          override_reason, calculation_version, calculation_snapshot, selected_basis
+        )
+        SELECT new_po.id, item.item_id, item.item_name, item.quantity, item.unit,
+          item.system_suggested_qty, item.override_reason, item.calculation_version,
+          item.calculation_snapshot, item.selected_basis
+        FROM new_po CROSS JOIN input_rows item
+        RETURNING *
+      )
+      SELECT
+        (SELECT to_jsonb(new_po) FROM new_po) AS purchase_order,
+        (SELECT COALESCE(jsonb_agg(to_jsonb(new_items)), '[]'::jsonb) FROM new_items) AS items
+    `
+    : sql`
+      WITH input_rows AS (
+        SELECT * FROM jsonb_to_recordset(${itemJson}::jsonb) AS item(
+          item_id TEXT, item_name TEXT, quantity NUMERIC, unit TEXT,
+          system_suggested_qty NUMERIC, override_reason TEXT, calculation_version TEXT,
+          calculation_snapshot JSONB, selected_basis TEXT,
+          snapshot_on_order_qty NUMERIC, snapshot_no_eta_qty NUMERIC
+        )
+      ), current_open AS (
+        SELECT poi.item_id,
+          COALESCE(SUM(GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0)) FILTER (WHERE p.expected_date IS NOT NULL), 0) AS on_order_qty,
+          COALESCE(SUM(GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0)) FILTER (WHERE p.expected_date IS NULL), 0) AS no_eta_qty
+        FROM purchase_order_items poi
+        JOIN purchase_orders p ON p.id = poi.po_id
+        JOIN input_rows input ON input.item_id = poi.item_id
+        WHERE p.status IN ('SUBMITTED', 'ACKNOWLEDGED', 'REVISION_REQUESTED', 'CONFIRMED', 'PARTIALLY_SHIPPED', 'SHIPPED', 'PARTIALLY_RECEIVED')
+        GROUP BY poi.item_id
+      ), stale_items AS (
+        SELECT input.item_id
+        FROM input_rows input
+        LEFT JOIN current_open current ON current.item_id = input.item_id
+        WHERE COALESCE(current.on_order_qty, 0) IS DISTINCT FROM input.snapshot_on_order_qty
+           OR COALESCE(current.no_eta_qty, 0) IS DISTINCT FROM input.snapshot_no_eta_qty
+      ), new_po AS (
+        INSERT INTO purchase_orders (
+          po_number, vendor, note, expected_date, created_by, status, proposal_origin, review_requested_at
+        ) SELECT
+          ${poNumber}, ${input.vendor}, ${input.note}, ${input.expectedDate}, ${input.user.username},
+          ${status}, ${input.origin}, ${reviewRequestedAt}
+        WHERE NOT EXISTS (SELECT 1 FROM stale_items)
+        RETURNING *
+      ), new_items AS (
+        INSERT INTO purchase_order_items (
+          po_id, item_id, item_name, quantity, unit, system_suggested_qty,
+          override_reason, calculation_version, calculation_snapshot, selected_basis
+        )
+        SELECT new_po.id, item.item_id, item.item_name, item.quantity, item.unit,
+          item.system_suggested_qty, item.override_reason, item.calculation_version,
+          item.calculation_snapshot, item.selected_basis
+        FROM new_po CROSS JOIN input_rows item
+        RETURNING *
+      )
+      SELECT
+        (SELECT to_jsonb(new_po) FROM new_po) AS purchase_order,
+        (SELECT COALESCE(jsonb_agg(to_jsonb(new_items)), '[]'::jsonb) FROM new_items) AS items
+    `;
+
+  const [, transactionRows] = await sql.transaction([lockQuery, query]);
+  const result = transactionRows[0] as { purchase_order?: Record<string, unknown>; items?: Record<string, unknown>[] } | undefined;
+  if (!result?.purchase_order) {
+    throw new PurchaseOrderCreationError("สถานะสต็อกหรือ PO ค้างเปลี่ยนไประหว่างคำนวณ กรุณากดแนะนำอัตโนมัติและตรวจสอบอีกครั้ง", 409);
+  }
+
+  return {
+    purchaseOrder: result.purchase_order,
+    items: Array.isArray(result.items) ? result.items : [],
+  };
+}

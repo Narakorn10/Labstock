@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "test": "vitest run",
     "line:generate-rich-menu": "powershell -ExecutionPolicy Bypass -File scripts/generate-line-rich-menu-assets.ps1",
     "line:setup-rich-menu": "node scripts/setup-line-rich-menu.mjs",
     "lint": "eslint"
@@ -41,6 +42,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.10"
   }
 }

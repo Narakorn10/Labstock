@@ -10,6 +10,12 @@ interface PurchaseOrderItemDraft {
   item_name: string;
   quantity: number;
   unit: string;
+  policy_order_qty?: number;
+  dynamic_order_qty?: number;
+  selected_basis?: "POLICY" | "DYNAMIC" | "MANUAL";
+  override_reason?: string;
+  confidence?: "high" | "low" | "none";
+  review_reasons?: string[];
 }
 
 interface PurchaseOrderSummary {
@@ -28,6 +34,13 @@ interface SuggestedPurchaseOrderItem {
   suggested_order_qty: number;
   unit: string;
   vendor?: string;
+  policy_order_qty: number;
+  dynamic_order_qty: number;
+  variance_percent: number | null;
+  confidence: "high" | "low" | "none";
+  review_reasons: string[];
+  auto_selectable: boolean;
+  expedite_required: boolean;
 }
 
 interface OrderFormOptions {
@@ -72,6 +85,7 @@ export default function PurchaseOrdersPage() {
   const [activeReagentPicker, setActiveReagentPicker] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [suggestLoading, setSuggestLoading] = useState(false);
+  const [suggestionNotice, setSuggestionNotice] = useState("");
 
   const getAuthHeaders = (): Record<string, string> => {
     const token = localStorage.getItem("labstock_token");
@@ -158,13 +172,23 @@ export default function PurchaseOrdersPage() {
       const res = await fetch(`/api/purchase-orders/suggest?vendor=${encodeURIComponent(vendor)}`, { headers: getAuthHeaders() });
       if (res.ok) {
         const data = (await res.json()) as SuggestedPurchaseOrderItem[];
-        const suggestedItems: PurchaseOrderItemDraft[] = data.map((item) => ({
+        const selectable = data.filter((item) => item.auto_selectable);
+        const heldForReview = data.filter((item) => !item.auto_selectable);
+        const suggestedItems: PurchaseOrderItemDraft[] = selectable.map((item) => ({
           item_id: item.item_id,
           item_name: item.name,
           quantity: item.suggested_order_qty,
           unit: item.unit,
+          policy_order_qty: item.policy_order_qty,
+          dynamic_order_qty: item.dynamic_order_qty,
+          selected_basis: "POLICY",
+          confidence: item.confidence,
+          review_reasons: item.review_reasons,
         }));
         setItems(suggestedItems);
+        setSuggestionNotice(heldForReview.length
+          ? `มี ${heldForReview.length} รายการที่ไม่เลือกอัตโนมัติ เพราะต้องตรวจ PO ค้าง/นโยบายก่อน: ${heldForReview.map((item) => item.name).join(", ")}`
+          : "");
       }
     } catch (e) {
       console.error(e);
@@ -174,6 +198,11 @@ export default function PurchaseOrdersPage() {
   };
 
   const handleCreate = async () => {
+    const missingOverrideReason = items.find((item) => item.selected_basis === "MANUAL" && !item.override_reason?.trim());
+    if (missingOverrideReason) {
+      alert(`กรุณาระบุเหตุผลที่แก้จำนวนของ ${missingOverrideReason.item_name || missingOverrideReason.item_id}`);
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch("/api/purchase-orders", {
@@ -207,12 +236,13 @@ export default function PurchaseOrdersPage() {
   };
 
   const addItemRow = () => {
-    setItems((current) => [...current, { item_id: "", item_name: "", quantity: 1, unit: "box" }]);
+    setItems((current) => [...current, { item_id: "", item_name: "", quantity: 1, unit: "box", selected_basis: "MANUAL" }]);
   };
 
   const changeVendor = (nextVendor: string) => {
     setVendor(nextVendor);
     setItems([]);
+    setSuggestionNotice("");
   };
 
   const updateItemName = (index: number, itemName: string) => {
@@ -231,6 +261,7 @@ export default function PurchaseOrdersPage() {
         item_id: reagent.itemId,
         item_name: reagent.name,
         unit: reagent.unit,
+        selected_basis: "MANUAL",
       };
       return next;
     });
@@ -270,6 +301,20 @@ export default function PurchaseOrdersPage() {
       next[index] = { ...next[index], [field]: value };
       return next;
     });
+  };
+
+  const updateQuantity = (index: number, quantity: number) => {
+    setItems((current) => current.map((item, itemIndex) => itemIndex === index
+      ? { ...item, quantity, selected_basis: "MANUAL" }
+      : item));
+  };
+
+  const chooseQuantityBasis = (index: number, basis: "POLICY" | "DYNAMIC") => {
+    setItems((current) => current.map((item, itemIndex) => {
+      if (itemIndex !== index) return item;
+      const quantity = basis === "POLICY" ? item.policy_order_qty : item.dynamic_order_qty;
+      return { ...item, quantity: Number(quantity ?? item.quantity), selected_basis: basis, override_reason: "" };
+    }));
   };
 
   const removeItem = (index: number) => {
@@ -416,7 +461,7 @@ export default function PurchaseOrdersPage() {
                   disabled={suggestLoading}
                   className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded text-sm hover:bg-yellow-200"
                 >
-                  {suggestLoading ? "กำลังประมวลผล..." : "🤖 แนะนำอัตโนมัติ (จากจุดสั่งซื้อ)"}
+                  {suggestLoading ? "กำลังประมวลผล..." : "แนะนำอัตโนมัติ (รอบ 15 วัน)"}
                 </button>
                 <button
                   onClick={addItemRow}
@@ -426,6 +471,12 @@ export default function PurchaseOrdersPage() {
                 </button>
               </div>
             </div>
+
+            {suggestionNotice && (
+              <div role="status" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                {suggestionNotice}
+              </div>
+            )}
 
             {items.map((item, index) => (
               <div key={index} className="flex gap-2 mb-2 items-start">
@@ -485,12 +536,28 @@ export default function PurchaseOrdersPage() {
                         : ` · ขั้นต่ำ ${catalogByItemId.get(item.item_id)!.minThreshold}`}
                     </p>
                   )}
+                  {item.policy_order_qty !== undefined && (
+                    <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs">
+                      <div className="grid grid-cols-2 gap-2">
+                        <button type="button" onClick={() => chooseQuantityBasis(index, "POLICY")} className={`rounded-md border px-2 py-2 text-left ${item.selected_basis === "POLICY" ? "border-teal-600 bg-teal-50 text-teal-900" : "border-slate-200 bg-white"}`}>
+                          <span className="block text-[10px] font-semibold text-slate-500">ค่าที่แล็บอนุมัติ</span>
+                          <span className="font-bold">{item.policy_order_qty} {item.unit}</span>
+                        </button>
+                        <button type="button" onClick={() => chooseQuantityBasis(index, "DYNAMIC")} disabled={!item.dynamic_order_qty} className={`rounded-md border px-2 py-2 text-left disabled:cursor-not-allowed disabled:opacity-50 ${item.selected_basis === "DYNAMIC" ? "border-blue-600 bg-blue-50 text-blue-900" : "border-slate-200 bg-white"}`}>
+                          <span className="block text-[10px] font-semibold text-slate-500">ค่าคำนวณสด</span>
+                          <span className="font-bold">{item.dynamic_order_qty} {item.unit}</span>
+                        </button>
+                      </div>
+                      <p className="mt-2 text-slate-600">ความเชื่อมั่น: {item.confidence === "high" ? "สูง" : item.confidence === "low" ? "ต่ำ" : "ยังไม่มีข้อมูล"}</p>
+                      {!!item.review_reasons?.length && <p className="mt-1 font-semibold text-amber-800">ทบทวนจำนวน: {item.review_reasons.join(", ")}</p>}
+                    </div>
+                  )}
                 </div>
                 <input
                   type="number"
                   placeholder="จำนวน"
                   value={item.quantity}
-                  onChange={(e) => updateItem(index, "quantity", Number.parseInt(e.target.value, 10) || 0)}
+                  onChange={(e) => updateQuantity(index, Number.parseInt(e.target.value, 10) || 0)}
                   className="border rounded p-2 w-24"
                 />
                 <input
@@ -503,6 +570,16 @@ export default function PurchaseOrdersPage() {
                 <button onClick={() => removeItem(index)} className="text-red-500 hover:text-red-700 p-2">
                   ✕
                 </button>
+                {item.selected_basis === "MANUAL" && (
+                  <input
+                    aria-label={`เหตุผลที่แก้จำนวน ${item.item_name || index + 1}`}
+                    placeholder="เหตุผลที่แก้จำนวน*"
+                    value={item.override_reason ?? ""}
+                    onChange={(event) => updateItem(index, "override_reason", event.target.value)}
+                    className="w-48 rounded border border-amber-300 bg-amber-50 p-2 text-sm"
+                    required
+                  />
+                )}
               </div>
             ))}
 
