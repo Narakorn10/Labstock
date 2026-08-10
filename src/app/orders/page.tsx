@@ -189,9 +189,13 @@ export default function PurchaseOrdersPage() {
         setSuggestionNotice(heldForReview.length
           ? `มี ${heldForReview.length} รายการที่ไม่เลือกอัตโนมัติ เพราะต้องตรวจ PO ค้าง/นโยบายก่อน: ${heldForReview.map((item) => item.name).join(", ")}`
           : "");
+      } else {
+        const error = (await res.json().catch(() => null)) as { error?: string } | null;
+        setSuggestionNotice(error?.error ?? "ไม่สามารถคำนวณรายการแนะนำได้ กรุณาลองใหม่อีกครั้ง");
       }
-    } catch (e) {
-      console.error(e);
+    } catch (error) {
+      console.error(error);
+      setSuggestionNotice("ไม่สามารถเชื่อมต่อระบบคำนวณรายการแนะนำได้");
     } finally {
       setSuggestLoading(false);
     }

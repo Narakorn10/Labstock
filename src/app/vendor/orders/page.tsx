@@ -68,6 +68,9 @@ export default function VendorOrdersPage() {
           min_threshold: Number(item.min_threshold),
           suggested_order_qty: Number(item.suggested_order_qty),
         })));
+      } else {
+        const error = (await suggestionsResponse.json().catch(() => null)) as { error?: string } | null;
+        alert(error?.error ?? "ไม่สามารถคำนวณรายการแนะนำได้ กรุณาลองใหม่อีกครั้ง");
       }
     } finally {
       setLoading(false);
