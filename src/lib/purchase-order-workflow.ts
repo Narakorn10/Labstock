@@ -1,4 +1,5 @@
 export const purchaseOrderStatuses = [
+  "PENDING_MANAGER_REVIEW",
   "PENDING_LAB_REVIEW",
   "SUBMITTED",
   "ACKNOWLEDGED",
@@ -15,6 +16,8 @@ export const purchaseOrderStatuses = [
 export type PurchaseOrderStatus = (typeof purchaseOrderStatuses)[number];
 export type PurchaseOrderOrigin = "LAB" | "VENDOR";
 export type PurchaseOrderAction =
+  | "APPROVE_MANAGER_REVIEW"
+  | "REJECT_MANAGER_REVIEW"
   | "ACKNOWLEDGE"
   | "CONFIRM_AVAILABILITY"
   | "REQUEST_REVISION"

@@ -105,8 +105,9 @@ async function recomputeItems(input: CreatePurchaseOrderInput): Promise<AuditedP
 export async function createPurchaseOrderWithAudit(input: CreatePurchaseOrderInput) {
   const auditedItems = await recomputeItems(input);
   const poNumber = await generatePONumber();
-  const status = input.origin === "VENDOR" ? "PENDING_LAB_REVIEW" : "SUBMITTED";
-  const reviewRequestedAt = input.origin === "VENDOR" ? new Date().toISOString() : null;
+  // A Lab-originated PO must be reviewed by a Manager before the Vendor can see it.
+  const status = input.origin === "VENDOR" ? "PENDING_LAB_REVIEW" : "PENDING_MANAGER_REVIEW";
+  const reviewRequestedAt = new Date().toISOString();
   const itemJson = JSON.stringify(auditedItems);
   const itemIds = auditedItems.map((item) => item.item_id).sort();
   const lockQuery = sql`
@@ -131,7 +132,7 @@ export async function createPurchaseOrderWithAudit(input: CreatePurchaseOrderInp
         FROM purchase_order_items poi
         JOIN purchase_orders p ON p.id = poi.po_id
         JOIN input_rows input ON input.item_id = poi.item_id
-        WHERE p.status IN ('SUBMITTED', 'ACKNOWLEDGED', 'REVISION_REQUESTED', 'CONFIRMED', 'PARTIALLY_SHIPPED', 'SHIPPED', 'PARTIALLY_RECEIVED')
+        WHERE p.status IN ('PENDING_MANAGER_REVIEW', 'SUBMITTED', 'ACKNOWLEDGED', 'REVISION_REQUESTED', 'CONFIRMED', 'PARTIALLY_SHIPPED', 'SHIPPED', 'PARTIALLY_RECEIVED')
         GROUP BY poi.item_id
       ), stale_items AS (
         SELECT input.item_id
@@ -178,7 +179,7 @@ export async function createPurchaseOrderWithAudit(input: CreatePurchaseOrderInp
         FROM purchase_order_items poi
         JOIN purchase_orders p ON p.id = poi.po_id
         JOIN input_rows input ON input.item_id = poi.item_id
-        WHERE p.status IN ('SUBMITTED', 'ACKNOWLEDGED', 'REVISION_REQUESTED', 'CONFIRMED', 'PARTIALLY_SHIPPED', 'SHIPPED', 'PARTIALLY_RECEIVED')
+        WHERE p.status IN ('PENDING_MANAGER_REVIEW', 'SUBMITTED', 'ACKNOWLEDGED', 'REVISION_REQUESTED', 'CONFIRMED', 'PARTIALLY_SHIPPED', 'SHIPPED', 'PARTIALLY_RECEIVED')
         GROUP BY poi.item_id
       ), stale_items AS (
         SELECT input.item_id

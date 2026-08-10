@@ -5,22 +5,22 @@ import { normalizeNotificationSettings, normalizePurchaseOrder, notifyUsers } fr
 import { isLabPurchasingRole, validatePurchaseOrderItems } from "@/lib/purchase-order-workflow";
 import { createPurchaseOrderWithAudit, PurchaseOrderCreationError } from "@/lib/purchase-order-creation";
 
-async function getVendorSettings(vendor: string) {
-  const rows = await sql`
-    SELECT n.*
-    FROM notification_settings n
-    JOIN users u ON u.username = n.username
-    WHERE u.role = 'Vendor' AND u.vendor = ${vendor}
-  `;
-  return normalizeNotificationSettings(rows);
-}
-
 async function getLabSettings() {
   const rows = await sql`
     SELECT n.*
     FROM notification_settings n
     JOIN users u ON u.username = n.username
     WHERE u.role IN ('Admin', 'Manager')
+  `;
+  return normalizeNotificationSettings(rows);
+}
+
+async function getManagerSettings() {
+  const rows = await sql`
+    SELECT n.*
+    FROM notification_settings n
+    JOIN users u ON u.username = n.username
+    WHERE u.role = 'Manager'
   `;
   return normalizeNotificationSettings(rows);
 }
@@ -37,7 +37,9 @@ export async function GET(request: Request) {
     }
 
     const orders = vendor
-      ? await sql`SELECT * FROM purchase_orders WHERE vendor = ${vendor} ORDER BY created_at DESC`
+      ? user.role === "Vendor"
+        ? await sql`SELECT * FROM purchase_orders WHERE vendor = ${vendor} AND status <> 'PENDING_MANAGER_REVIEW' ORDER BY created_at DESC`
+        : await sql`SELECT * FROM purchase_orders WHERE vendor = ${vendor} ORDER BY created_at DESC`
       : await sql`SELECT * FROM purchase_orders ORDER BY created_at DESC`;
     const ordersWithItems = await Promise.all(orders.map(async (po) => ({
       ...po,
@@ -88,7 +90,11 @@ export async function POST(request: Request) {
       unit: String(item.unit),
     })));
 
-    await notifyUsers(origin === "VENDOR" ? "PO_REVIEW_REQUIRED" : "PO_CREATED", fullPO, origin === "VENDOR" ? await getLabSettings() : await getVendorSettings(vendor));
+    await notifyUsers(
+      "PO_REVIEW_REQUIRED",
+      fullPO,
+      origin === "VENDOR" ? await getLabSettings() : await getManagerSettings(),
+    );
     return NextResponse.json(fullPO, { status: 201 });
   } catch (error: unknown) {
     console.error("Error creating purchase order:", error);

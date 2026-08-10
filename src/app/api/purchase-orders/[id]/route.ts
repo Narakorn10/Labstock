@@ -38,10 +38,21 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     if (poData.length === 0) return NextResponse.json({ error: "Purchase order not found" }, { status: 404 });
 
     const po = poData[0];
-    if (user.role === "Vendor" && po.vendor !== user.vendor) {
+    if (user.role === "Vendor" && (po.vendor !== user.vendor || po.status === "PENDING_MANAGER_REVIEW")) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
-    const items = await sql`SELECT * FROM purchase_order_items WHERE po_id = ${po.id} ORDER BY id`;
+    const items = await sql`
+      SELECT poi.*, COALESCE(inventory.current_qty, 0) AS current_stock_qty
+      FROM purchase_order_items poi
+      LEFT JOIN (
+        SELECT item_id, SUM(quantity) AS current_qty
+        FROM inventory
+        WHERE quantity > 0
+        GROUP BY item_id
+      ) inventory ON inventory.item_id = poi.item_id
+      WHERE poi.po_id = ${po.id}
+      ORDER BY poi.id
+    `;
     return NextResponse.json({ ...po, items });
   } catch (error: unknown) {
     console.error("Error fetching purchase order:", error);
@@ -70,7 +81,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     }
 
     let recipientSettings;
-    let notificationEvent: "PO_REVIEW_REQUIRED" | "PO_CONFIRMED" | "PO_STATUS_UPDATED";
+    let notificationEvent: "PO_CREATED" | "PO_REVIEW_REQUIRED" | "PO_CONFIRMED" | "PO_STATUS_UPDATED";
     if (isVendor) {
       const canAcknowledge = po.proposal_origin === "LAB" && po.status === "SUBMITTED" && action === "ACKNOWLEDGE";
       const canConfirmAvailability = po.proposal_origin === "LAB" && po.status === "ACKNOWLEDGED" && action === "CONFIRM_AVAILABILITY";
@@ -150,6 +161,33 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
           ? "PO_STATUS_UPDATED"
           : "PO_CONFIRMED";
     } else {
+      const approvingManagerReview = po.proposal_origin === "LAB" && po.status === "PENDING_MANAGER_REVIEW" && action === "APPROVE_MANAGER_REVIEW";
+      const rejectingManagerReview = po.proposal_origin === "LAB" && po.status === "PENDING_MANAGER_REVIEW" && action === "REJECT_MANAGER_REVIEW";
+      if (approvingManagerReview || rejectingManagerReview) {
+        if (user.role !== "Manager") {
+          return NextResponse.json({ error: "Only a Manager can approve a purchase order before it is sent to the Vendor" }, { status: 403 });
+        }
+        if (rejectingManagerReview && !note) {
+          return NextResponse.json({ error: "Please provide a reason when rejecting a purchase order" }, { status: 400 });
+        }
+
+        status = approvingManagerReview ? "SUBMITTED" : "REJECTED";
+        const updated = await sql`
+          UPDATE purchase_orders
+          SET status = ${status}, reviewed_at = NOW(), reviewed_by = ${user.username},
+              review_requested_at = COALESCE(review_requested_at, NOW()),
+              vendor_note = ${rejectingManagerReview ? note : po.vendor_note},
+              updated_at = NOW()
+          WHERE id = ${po.id} AND status = 'PENDING_MANAGER_REVIEW'
+          RETURNING *
+        `;
+        if (!updated.length) return NextResponse.json({ error: "This order was already reviewed." }, { status: 409 });
+
+        recipientSettings = approvingManagerReview
+          ? await getVendorSettings(String(po.vendor))
+          : await getLabSettings();
+        notificationEvent = approvingManagerReview ? "PO_CREATED" : "PO_STATUS_UPDATED";
+      } else {
       const awaitingLabReview = po.status === "PENDING_LAB_REVIEW" || po.status === "REVISION_REQUESTED";
       const approvingRevision = po.status === "REVISION_REQUESTED" && action === "APPROVE_REVISION";
       const rejectingRevision = po.status === "REVISION_REQUESTED" && action === "REJECT_REVISION";
@@ -173,6 +211,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       }
       recipientSettings = await getVendorSettings(String(po.vendor));
       notificationEvent = status === "CONFIRMED" ? "PO_CONFIRMED" : "PO_STATUS_UPDATED";
+      }
     }
 
     const updatedRows = await sql`SELECT * FROM purchase_orders WHERE id = ${po.id}`;

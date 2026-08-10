@@ -5,12 +5,12 @@ import { validatePurchaseOrderItems } from "@/lib/purchase-order-workflow";
 import { getLinePurchasingUserFromRequest, purchaseOrderHasLiffRequestColumn } from "@/lib/line-liff-ordering";
 import { createPurchaseOrderWithAudit, PurchaseOrderCreationError } from "@/lib/purchase-order-creation";
 
-async function getVendorSettings(vendor: string) {
+async function getManagerSettings() {
   const rows = await sql`
     SELECT n.*
     FROM notification_settings n
     JOIN users u ON u.username = n.username
-    WHERE u.role = 'Vendor' AND u.vendor = ${vendor}
+    WHERE u.role = 'Manager'
   `;
   return normalizeNotificationSettings(rows);
 }
@@ -58,7 +58,7 @@ export async function POST(request: Request) {
       quantity: Number(item.quantity),
       unit: String(item.unit),
     })));
-    await notifyUsers("PO_CREATED", fullPO, await getVendorSettings(vendor));
+    await notifyUsers("PO_REVIEW_REQUIRED", fullPO, await getManagerSettings());
 
     return NextResponse.json(fullPO, { status: 201 });
   } catch (error) {

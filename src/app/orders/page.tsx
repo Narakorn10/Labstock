@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
-type PurchaseOrderStatus = "PENDING_LAB_REVIEW" | "SUBMITTED" | "ACKNOWLEDGED" | "REVISION_REQUESTED" | "CONFIRMED" | "PARTIALLY_SHIPPED" | "SHIPPED" | "PARTIALLY_RECEIVED" | "RECEIVED" | "REJECTED";
+type PurchaseOrderStatus = "PENDING_MANAGER_REVIEW" | "PENDING_LAB_REVIEW" | "SUBMITTED" | "ACKNOWLEDGED" | "REVISION_REQUESTED" | "CONFIRMED" | "PARTIALLY_SHIPPED" | "SHIPPED" | "PARTIALLY_RECEIVED" | "RECEIVED" | "REJECTED";
 
 interface PurchaseOrderItemDraft {
   item_id: string;
@@ -96,6 +96,7 @@ interface CatalogReagent {
 }
 
 const statusLabels: Record<PurchaseOrderStatus, string> = {
+  PENDING_MANAGER_REVIEW: "รอหัวหน้าตรวจสอบก่อนส่งบริษัท",
   PENDING_LAB_REVIEW: "รอแล็บตรวจสอบ",
   SUBMITTED: "ส่งให้บริษัทแล้ว",
   ACKNOWLEDGED: "บริษัทรับทราบแล้ว",
@@ -428,7 +429,7 @@ export default function PurchaseOrdersPage() {
                 <td className="px-6 py-4">
                   <span
                     className={`px-2 py-1 rounded text-xs font-bold ${
-                      po.status === "PENDING_LAB_REVIEW" || po.status === "REVISION_REQUESTED"
+                      po.status === "PENDING_MANAGER_REVIEW" || po.status === "PENDING_LAB_REVIEW" || po.status === "REVISION_REQUESTED"
                         ? "bg-orange-100 text-orange-800"
                         : po.status === "SUBMITTED"
                         ? "bg-yellow-100 text-yellow-800"
@@ -447,6 +448,11 @@ export default function PurchaseOrdersPage() {
                 <td className="px-6 py-4 text-sm text-gray-500">{po.items?.length || 0} รายการ</td>
                 <td className="px-6 py-4 text-sm text-gray-500">{new Date(po.created_at).toLocaleDateString("th-TH")}</td>
                 <td className="px-6 py-4 text-sm font-medium">
+                  {po.status === "PENDING_MANAGER_REVIEW" && (
+                    <div className="mb-2">
+                      <button onClick={() => router.push(`/orders/${po.id}`)} className="text-teal-700 hover:text-teal-900">ตรวจสอบก่อนส่งบริษัท</button>
+                    </div>
+                  )}
                   {(po.status === "PENDING_LAB_REVIEW" || po.status === "REVISION_REQUESTED") && (
                     <div className="mb-2 flex gap-2">
                       <button onClick={() => reviewOrder(po.id, "CONFIRMED")} className="text-green-700 hover:text-green-900">ยืนยัน</button>

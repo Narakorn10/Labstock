@@ -503,7 +503,7 @@ async function fetchSuggestionRows(
           ) AS no_eta_qty
         FROM purchase_order_items poi
         JOIN purchase_orders p ON p.id = poi.po_id
-        WHERE p.status IN ('SUBMITTED', 'ACKNOWLEDGED', 'REVISION_REQUESTED', 'CONFIRMED', 'PARTIALLY_SHIPPED', 'SHIPPED', 'PARTIALLY_RECEIVED')
+        WHERE p.status IN ('PENDING_MANAGER_REVIEW', 'SUBMITTED', 'ACKNOWLEDGED', 'REVISION_REQUESTED', 'CONFIRMED', 'PARTIALLY_SHIPPED', 'SHIPPED', 'PARTIALLY_RECEIVED')
           AND GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0) > 0
         GROUP BY poi.item_id
       )
@@ -562,7 +562,7 @@ async function fetchSuggestionRows(
           ) AS no_eta_qty
         FROM purchase_order_items poi
         JOIN purchase_orders p ON p.id = poi.po_id
-        WHERE p.status IN ('SUBMITTED', 'ACKNOWLEDGED', 'REVISION_REQUESTED', 'CONFIRMED', 'PARTIALLY_SHIPPED', 'SHIPPED', 'PARTIALLY_RECEIVED')
+        WHERE p.status IN ('PENDING_MANAGER_REVIEW', 'SUBMITTED', 'ACKNOWLEDGED', 'REVISION_REQUESTED', 'CONFIRMED', 'PARTIALLY_SHIPPED', 'SHIPPED', 'PARTIALLY_RECEIVED')
           AND GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0) > 0
         GROUP BY poi.item_id
       )
