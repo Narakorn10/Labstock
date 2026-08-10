@@ -302,13 +302,13 @@ describe("calculateSuggestion v5 policy and live-demand contract", () => {
   it("requests review when the absolute difference is two boxes even below twenty percent", () => {
     const result = calculateSuggestion(makeRow({
       approved_monthly_target_boxes: 30,
-      approved_order_qty_boxes: 20,
+      approved_order_qty_boxes: 12,
       inventory_lots: [],
     }), NOW);
     const v5 = fields(result);
-    expect(v5.dynamic_order_qty).toBe(22);
+    expect(v5.dynamic_order_qty).toBe(14);
     expect(v5.variance_abs_qty).toBe(2);
-    expect(v5.variance_percent).toBe(10);
+    expect(v5.variance_percent).toBeCloseTo(16.67, 2);
     expect(hasReason(result, /POLICY_DYNAMIC_VARIANCE|variance|ทบทวน/i)).toBe(true);
   });
 
@@ -319,7 +319,7 @@ describe("calculateSuggestion v5 policy and live-demand contract", () => {
       inventory_lots: [],
     }), NOW);
     const v5 = fields(result);
-    expect(v5.dynamic_order_qty).toBe(6);
+    expect(v5.dynamic_order_qty).toBe(4);
     expect(v5.variance_abs_qty).toBe(1);
     expect(v5.variance_percent).toBe(20);
     expect(hasReason(result, /POLICY_DYNAMIC_VARIANCE|variance|ทบทวน/i)).toBe(true);

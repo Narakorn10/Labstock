@@ -46,6 +46,7 @@ const result = await sql`
     SET approved_monthly_target_boxes = before_state.next_monthly,
       approved_order_qty_boxes = before_state.next_order,
       orders_per_month = before_state.next_frequency,
+      lead_time_days = 5,
       source_verification_status = 'VERIFIED',
       revision = p.revision + 1,
       reason = 'Synced from บริหารสั่งน้ำยา.xlsx / Reagent (3)', updated_at = NOW()
@@ -53,8 +54,8 @@ const result = await sql`
     CROSS JOIN guard
     WHERE p.item_id = before_state.item_id
       AND guard.matched_rows = guard.source_rows
-      AND (p.approved_monthly_target_boxes, p.approved_order_qty_boxes, p.orders_per_month, p.source_verification_status)
-        IS DISTINCT FROM (before_state.next_monthly, before_state.next_order, before_state.next_frequency, 'VERIFIED')
+      AND (p.approved_monthly_target_boxes, p.approved_order_qty_boxes, p.orders_per_month, p.lead_time_days, p.source_verification_status)
+        IS DISTINCT FROM (before_state.next_monthly, before_state.next_order, before_state.next_frequency, 5, 'VERIFIED')
     RETURNING p.item_id, p.revision, to_jsonb(before_state) AS before_state, to_jsonb(p) AS after_state
   ), history AS (
     INSERT INTO reagent_order_policy_history (item_id, revision, before_state, after_state, changed_by, reason)

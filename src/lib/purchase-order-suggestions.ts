@@ -115,11 +115,11 @@ type OnOrderLot = {
   etaDate: string | null;
 };
 
-const CALCULATION_VERSION = "reagent-order-suggestion-v5-15d-bangkok-fefo";
-const DEFAULT_LEAD_TIME_DAYS = 7;
+const CALCULATION_VERSION = "reagent-order-suggestion-v6-14d-cycle-5d-lead-fefo";
+const DEFAULT_LEAD_TIME_DAYS = 5;
 const DAYS_PER_MONTH = 30;
 const ORDERS_PER_MONTH = 2;
-const TARGET_ORDER_COVERAGE_DAYS = 15;
+const TARGET_ORDER_COVERAGE_DAYS = 14;
 const LIVE_USAGE_MIN_OBSERVATION_DAYS = 7;
 const BANGKOK_TIME_ZONE = "Asia/Bangkok";
 const DISPENSE_ACTION = "\u0e40\u0e1a\u0e34\u0e01\u0e44\u0e1b\u0e2b\u0e19\u0e49\u0e32\u0e07\u0e32\u0e19";
@@ -267,7 +267,9 @@ export function calculateSuggestion(row: SuggestionRow, now = new Date()): Purch
   const ordersPerMonth = toPositiveNumber(row.orders_per_month, ORDERS_PER_MONTH);
   const leadTimeDays = Math.max(0, Math.ceil(toNumber(row.lead_time_days, DEFAULT_LEAD_TIME_DAYS)));
   const reviewDays = TARGET_ORDER_COVERAGE_DAYS;
-  const horizonDays = leadTimeDays + reviewDays;
+  // Orders are placed every two weeks. Lead time is a delivery-risk check,
+  // not additional consumption coverage on top of the next ordering cycle.
+  const horizonDays = reviewDays;
   const testsPerBox = toNumber(row.tests_per_box);
   const avgPatientTests = Math.max(0, toNumber(row.avg_patient_tests_per_month));
   const iqcTests = Math.max(0, toNumber(row.iqc_tests_per_month));
@@ -327,7 +329,7 @@ export function calculateSuggestion(row: SuggestionRow, now = new Date()): Purch
     lot.expDate && lot.expDate >= startDateText && lot.expDate <= horizonEndDateText
   ));
   const nearestExpiryDate = sourceInventoryLots.find((lot) => lot.expDate && lot.expDate >= startDateText)?.expDate ?? null;
-  let inventoryLots = sourceInventoryLots;
+  let inventoryLots = sourceInventoryLots.map((lot) => ({ ...lot }));
   if (inventoryLots.length === 0 && rawCurrentQty > 0) {
     inventoryLots = [{ quantity: rawCurrentQty, expDate: null }];
   }
