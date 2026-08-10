@@ -16,6 +16,7 @@ interface PurchaseOrderItemDraft {
   override_reason?: string;
   confidence?: "high" | "low" | "none";
   review_reasons?: string[];
+  requires_review?: boolean;
 }
 
 interface PurchaseOrderSummary {
@@ -172,9 +173,8 @@ export default function PurchaseOrdersPage() {
       const res = await fetch(`/api/purchase-orders/suggest?vendor=${encodeURIComponent(vendor)}`, { headers: getAuthHeaders() });
       if (res.ok) {
         const data = (await res.json()) as SuggestedPurchaseOrderItem[];
-        const selectable = data.filter((item) => item.auto_selectable);
         const heldForReview = data.filter((item) => !item.auto_selectable);
-        const suggestedItems: PurchaseOrderItemDraft[] = selectable.map((item) => ({
+        const suggestedItems: PurchaseOrderItemDraft[] = data.map((item) => ({
           item_id: item.item_id,
           item_name: item.name,
           quantity: item.suggested_order_qty,
@@ -184,10 +184,11 @@ export default function PurchaseOrdersPage() {
           selected_basis: "POLICY",
           confidence: item.confidence,
           review_reasons: item.review_reasons,
+          requires_review: !item.auto_selectable,
         }));
         setItems(suggestedItems);
         setSuggestionNotice(heldForReview.length
-          ? `มี ${heldForReview.length} รายการที่ไม่เลือกอัตโนมัติ เพราะต้องตรวจ PO ค้าง/นโยบายก่อน: ${heldForReview.map((item) => item.name).join(", ")}`
+          ? `แสดงผลคำนวณแล้ว ${data.length} รายการ; มี ${heldForReview.length} รายการที่ต้องตรวจทานและระบุเหตุผลก่อนบันทึกใบสั่งซื้อ`
           : "");
       } else {
         const error = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -202,7 +203,7 @@ export default function PurchaseOrdersPage() {
   };
 
   const handleCreate = async () => {
-    const missingOverrideReason = items.find((item) => item.selected_basis === "MANUAL" && !item.override_reason?.trim());
+    const missingOverrideReason = items.find((item) => (item.selected_basis === "MANUAL" || item.requires_review) && !item.override_reason?.trim());
     if (missingOverrideReason) {
       alert(`กรุณาระบุเหตุผลที่แก้จำนวนของ ${missingOverrideReason.item_name || missingOverrideReason.item_id}`);
       return;
@@ -574,10 +575,10 @@ export default function PurchaseOrdersPage() {
                 <button onClick={() => removeItem(index)} className="text-red-500 hover:text-red-700 p-2">
                   ✕
                 </button>
-                {item.selected_basis === "MANUAL" && (
+                {(item.selected_basis === "MANUAL" || item.requires_review) && (
                   <input
                     aria-label={`เหตุผลที่แก้จำนวน ${item.item_name || index + 1}`}
-                    placeholder="เหตุผลที่แก้จำนวน*"
+                    placeholder={item.requires_review ? "เหตุผลการทบทวนรายการ*" : "เหตุผลที่แก้จำนวน*"}
                     value={item.override_reason ?? ""}
                     onChange={(event) => updateItem(index, "override_reason", event.target.value)}
                     className="w-48 rounded border border-amber-300 bg-amber-50 p-2 text-sm"
