@@ -17,6 +17,21 @@ interface PurchaseOrderItemDraft {
   confidence?: "high" | "low" | "none";
   review_reasons?: string[];
   requires_review?: boolean;
+  suggestion_context?: SuggestionContext;
+}
+
+interface SuggestionContext {
+  daily_demand_boxes: number;
+  demand_source: "actual_dispense_history" | "approved_policy" | "documented_withdrawal" | "policy_formula" | "weekly_target";
+  projected_balance_at_horizon: number;
+  safety_stock_boxes: number;
+  lead_time_days: number;
+  horizon_days: number;
+  expiry_assessment: {
+    expired_qty_excluded: number;
+    expiring_within_horizon_qty: number;
+    nearest_expiry_date: string | null;
+  };
 }
 
 interface PurchaseOrderSummary {
@@ -42,6 +57,27 @@ interface SuggestedPurchaseOrderItem {
   review_reasons: string[];
   auto_selectable: boolean;
   expedite_required: boolean;
+  projected_balance_at_horizon: number;
+  safety_stock_boxes: number;
+  lead_time_days: number;
+  horizon_days: number;
+  expiry_assessment: SuggestionContext["expiry_assessment"];
+  calculation_breakdown: {
+    demandSource: SuggestionContext["demand_source"];
+    dailyDemandBoxes: number;
+  };
+}
+
+const demandSourceLabels: Record<SuggestionContext["demand_source"], string> = {
+  actual_dispense_history: "ยอดเบิกจริง",
+  approved_policy: "แผนที่แล็บอนุมัติ",
+  documented_withdrawal: "ยอดเบิกที่บันทึกไว้",
+  policy_formula: "สูตรปริมาณตรวจและ IQC",
+  weekly_target: "เป้าหมายรายสัปดาห์",
+};
+
+function formatExpiryDate(value: string) {
+  return new Date(`${value}T00:00:00`).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
 }
 
 interface OrderFormOptions {
@@ -185,6 +221,15 @@ export default function PurchaseOrdersPage() {
           confidence: item.confidence,
           review_reasons: item.review_reasons,
           requires_review: !item.auto_selectable,
+          suggestion_context: {
+            daily_demand_boxes: item.calculation_breakdown.dailyDemandBoxes,
+            demand_source: item.calculation_breakdown.demandSource,
+            projected_balance_at_horizon: item.projected_balance_at_horizon,
+            safety_stock_boxes: item.safety_stock_boxes,
+            lead_time_days: item.lead_time_days,
+            horizon_days: item.horizon_days,
+            expiry_assessment: item.expiry_assessment,
+          },
         }));
         setItems(suggestedItems);
         setSuggestionNotice(heldForReview.length
@@ -554,6 +599,15 @@ export default function PurchaseOrdersPage() {
                         </button>
                       </div>
                       <p className="mt-2 text-slate-600">ความเชื่อมั่น: {item.confidence === "high" ? "สูง" : item.confidence === "low" ? "ต่ำ" : "ยังไม่มีข้อมูล"}</p>
+                      {item.suggestion_context && (
+                        <div className="mt-2 rounded-md border border-teal-200 bg-teal-50 p-2 text-teal-950">
+                          <p className="font-bold">เหตุผลที่ระบบแนะนำ</p>
+                          <p>มองล่วงหน้า {item.suggestion_context.horizon_days} วัน (รอของ {item.suggestion_context.lead_time_days} วัน) แล้วคาดว่าเหลือ {item.suggestion_context.projected_balance_at_horizon} {item.unit}; Safety stock {item.suggestion_context.safety_stock_boxes} {item.unit}</p>
+                          <p>ใช้อัตรา {item.suggestion_context.daily_demand_boxes} {item.unit}/วัน จาก{demandSourceLabels[item.suggestion_context.demand_source]}</p>
+                          {item.suggestion_context.expiry_assessment.expired_qty_excluded > 0 && <p className="mt-1 font-semibold text-amber-800">ไม่นับสต็อกหมดอายุแล้ว {item.suggestion_context.expiry_assessment.expired_qty_excluded} {item.unit}</p>}
+                          {item.suggestion_context.expiry_assessment.expiring_within_horizon_qty > 0 && <p className="mt-1 font-semibold text-amber-800">ประเมิน FEFO: มี {item.suggestion_context.expiry_assessment.expiring_within_horizon_qty} {item.unit} ที่หมดอายุภายในช่วงคำนวณ{item.suggestion_context.expiry_assessment.nearest_expiry_date ? ` (ใกล้สุด ${formatExpiryDate(item.suggestion_context.expiry_assessment.nearest_expiry_date)})` : ""}</p>}
+                        </div>
+                      )}
                       {!!item.review_reasons?.length && <p className="mt-1 font-semibold text-amber-800">ทบทวนจำนวน: {item.review_reasons.join(", ")}</p>}
                     </div>
                   )}

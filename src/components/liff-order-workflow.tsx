@@ -21,6 +21,16 @@ type CatalogItem = {
   review_reasons: string[];
   auto_selectable: boolean;
   expedite_required: boolean;
+  projected_balance_at_horizon: number;
+  safety_stock_boxes: number;
+  lead_time_days: number;
+  horizon_days: number;
+  expiry_assessment: {
+    expired_qty_excluded: number;
+    expiring_within_horizon_qty: number;
+    nearest_expiry_date: string | null;
+  };
+  calculation_breakdown: { demandSource: string; dailyDemandBoxes: number };
 };
 type DraftItem = {
   item_id: string;
@@ -35,6 +45,7 @@ type DraftItem = {
   override_reason?: string;
   confidence?: "high" | "low" | "none";
   review_reasons?: string[];
+  suggestion_context?: Pick<CatalogItem, "projected_balance_at_horizon" | "safety_stock_boxes" | "lead_time_days" | "horizon_days" | "expiry_assessment" | "calculation_breakdown">;
 };
 type PurchaseOrder = {
   id: number;
@@ -159,6 +170,14 @@ export default function LiffOrderWorkflow() {
           selected_basis: "POLICY",
           confidence: item.confidence,
           review_reasons: item.review_reasons,
+          suggestion_context: {
+            projected_balance_at_horizon: item.projected_balance_at_horizon,
+            safety_stock_boxes: item.safety_stock_boxes,
+            lead_time_days: item.lead_time_days,
+            horizon_days: item.horizon_days,
+            expiry_assessment: item.expiry_assessment,
+            calculation_breakdown: item.calculation_breakdown,
+          },
         })));
         if (heldForReview.length) setMessage(`พักไว้ให้ตรวจเอง ${heldForReview.length} รายการ: ${heldForReview.map((item) => item.name).join(", ")}`);
       }
@@ -185,6 +204,14 @@ export default function LiffOrderWorkflow() {
         selected_basis: item.auto_selectable && item.policy_order_qty > 0 ? "POLICY" : "MANUAL",
         confidence: item.confidence,
         review_reasons: item.review_reasons,
+        suggestion_context: {
+          projected_balance_at_horizon: item.projected_balance_at_horizon,
+          safety_stock_boxes: item.safety_stock_boxes,
+          lead_time_days: item.lead_time_days,
+          horizon_days: item.horizon_days,
+          expiry_assessment: item.expiry_assessment,
+          calculation_breakdown: item.calculation_breakdown,
+        },
       }];
     });
   };
@@ -351,6 +378,7 @@ export default function LiffOrderWorkflow() {
                           <span className="block text-[10px] text-slate-500">คำนวณสด</span><span className="font-black">{item.dynamic_order_qty}</span>
                         </button>
                         <p className="col-span-2 text-slate-500">ความเชื่อมั่น {item.confidence === "high" ? "สูง" : item.confidence === "low" ? "ต่ำ" : "ยังไม่มีข้อมูล"}</p>
+                        {item.suggestion_context && <p className="col-span-2 rounded-lg bg-teal-50 p-2 text-teal-950">ระบบมอง {item.suggestion_context.horizon_days} วัน (รอของ {item.suggestion_context.lead_time_days} วัน): คาดเหลือ {item.suggestion_context.projected_balance_at_horizon} {item.unit}, Safety stock {item.suggestion_context.safety_stock_boxes} {item.unit}; ใช้ {item.suggestion_context.calculation_breakdown.dailyDemandBoxes} {item.unit}/วัน{item.suggestion_context.expiry_assessment.expired_qty_excluded > 0 ? ` · ไม่นับหมดอายุแล้ว ${item.suggestion_context.expiry_assessment.expired_qty_excluded} ${item.unit}` : ""}{item.suggestion_context.expiry_assessment.expiring_within_horizon_qty > 0 ? ` · FEFO: ใกล้หมดอายุ ${item.suggestion_context.expiry_assessment.expiring_within_horizon_qty} ${item.unit}` : ""}</p>}
                         {!!item.review_reasons?.length && <p className="col-span-2 font-bold text-amber-700">ทบทวน: {item.review_reasons.join(", ")}</p>}
                       </div>
                     )}

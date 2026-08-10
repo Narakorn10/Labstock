@@ -13,6 +13,11 @@ type SuggestionV5 = {
   data_quality: unknown;
   review_reasons: unknown;
   auto_selectable: boolean;
+  expiry_assessment: {
+    expired_qty_excluded: number;
+    expiring_within_horizon_qty: number;
+    nearest_expiry_date: string | null;
+  };
 };
 
 function makeRow(overrides: Record<string, unknown> = {}) {
@@ -205,6 +210,11 @@ describe("calculateSuggestion v5 policy and live-demand contract", () => {
     expect(result.projected_balance_at_horizon).toBeGreaterThan(0);
     expect(result.projected_balance_at_horizon).toBeLessThan(10);
     expect(result.stockout_date).toBeNull();
+    expect(result.expiry_assessment).toEqual({
+      expired_qty_excluded: 100,
+      expiring_within_horizon_qty: 2,
+      nearest_expiry_date: "2026-08-11",
+    });
   });
 
   it("counts an on-order lot with ETA in the projection", () => {

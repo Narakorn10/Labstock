@@ -45,6 +45,11 @@ export type PurchaseOrderSuggestion = {
   horizon_days: number;
   expedite_required: boolean;
   stockout_date: string | null;
+  expiry_assessment: {
+    expired_qty_excluded: number;
+    expiring_within_horizon_qty: number;
+    nearest_expiry_date: string | null;
+  };
   calculation_version: string;
   warnings: string[];
   calculation_breakdown: {
@@ -315,7 +320,14 @@ export function calculateSuggestion(row: SuggestionRow, now = new Date()): Purch
   const committedNoEtaQty = Math.max(0, toNumber(row.committed_no_eta_qty));
   const calculationStart = startOfBangkokDate(now);
   const startDateText = dateOnly(calculationStart);
-  let inventoryLots = normalizeInventoryLots(row.inventory_lots);
+  const sourceInventoryLots = normalizeInventoryLots(row.inventory_lots);
+  const horizonEndDateText = dateOnly(addDays(calculationStart, horizonDays));
+  const expiredQtyExcluded = sumLots(sourceInventoryLots.filter((lot) => lot.expDate && lot.expDate < startDateText));
+  const expiringWithinHorizonLots = sourceInventoryLots.filter((lot) => (
+    lot.expDate && lot.expDate >= startDateText && lot.expDate <= horizonEndDateText
+  ));
+  const nearestExpiryDate = sourceInventoryLots.find((lot) => lot.expDate && lot.expDate >= startDateText)?.expDate ?? null;
+  let inventoryLots = sourceInventoryLots;
   if (inventoryLots.length === 0 && rawCurrentQty > 0) {
     inventoryLots = [{ quantity: rawCurrentQty, expDate: null }];
   }
@@ -426,6 +438,11 @@ export function calculateSuggestion(row: SuggestionRow, now = new Date()): Purch
     horizon_days: horizonDays,
     expedite_required: expediteRequired,
     stockout_date: stockoutDate,
+    expiry_assessment: {
+      expired_qty_excluded: roundToDecimals(expiredQtyExcluded),
+      expiring_within_horizon_qty: roundToDecimals(sumLots(expiringWithinHorizonLots)),
+      nearest_expiry_date: nearestExpiryDate,
+    },
     calculation_version: CALCULATION_VERSION,
     warnings: reviewReasons.map(warningForReviewReason),
     calculation_breakdown: {
