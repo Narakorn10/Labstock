@@ -5,6 +5,7 @@ import { getLowStockRows, searchStockRows, searchStockRowsByJob } from "@/lib/bo
 import { replyDispenseMenu, replyHelp, replyLowStock, replyOrderingMenu, replyPODetail, replyStockSummary, replyTrackingStatus } from "@/lib/line-bot";
 import { LowStockItem, PurchaseOrder, TrackingResult } from "@/lib/line-flex-templates";
 import { normalizeNotificationSettings, normalizePurchaseOrder, notifyUsers } from "@/lib/notifications";
+import { getLineLinkedUser } from "@/lib/line-liff-auth";
 
 const sql = neon(process.env.DATABASE_URL || "");
 const channelSecret = process.env.LINE_CHANNEL_SECRET;
@@ -300,6 +301,34 @@ export async function POST(req: Request) {
         if (!replyToken) return;
 
         const lineUserId = postbackEvent.source?.userId || null;
+        if (action === "acknowledge_po" && id) {
+          const linkedVendor = lineUserId ? await getLineLinkedUser(lineUserId) : null;
+          if (!linkedVendor || linkedVendor.role !== "Vendor" || !linkedVendor.vendor) {
+            await sendReply(replyToken, { type: "text", text: "บัญชี LINE นี้ยังไม่ได้ผูกกับบัญชี Vendor ที่ใช้งานอยู่ค่ะ" });
+            return;
+          }
+
+          const updated = await sql`
+            UPDATE purchase_orders
+            SET status = 'ACKNOWLEDGED',
+                acknowledged_at = NOW(),
+                acknowledged_by = ${linkedVendor.username},
+                vendor_response_due_at = NOW() + INTERVAL '5 days',
+                updated_at = NOW()
+            WHERE po_number = ${id}
+              AND vendor = ${linkedVendor.vendor}
+              AND status = 'SUBMITTED'
+            RETURNING id
+          `;
+          if (updated.length === 0) {
+            await sendReply(replyToken, { type: "text", text: `ไม่สามารถรับทราบ PO ${id} ได้: ใบสั่งซื้ออาจไม่ใช่ของ Vendor นี้ หรือถูกตอบกลับแล้ว` });
+            return;
+          }
+
+          await notifyLabOfPurchaseOrderStatus(id);
+          await sendReply(replyToken, { type: "text", text: `รับทราบ PO ${id} เรียบร้อยแล้ว ระบบได้แจ้ง Lab แล้วค่ะ` });
+          return;
+        }
         const linkedUserRows = lineUserId
           ? await sql`SELECT username, role FROM users WHERE line_user_id = ${lineUserId} LIMIT 1`
           : [];
