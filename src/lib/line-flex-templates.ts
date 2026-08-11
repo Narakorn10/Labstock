@@ -252,8 +252,18 @@ export function generatePONotificationTemplate(po: PurchaseOrder) {
             height: "sm",
             action: {
               type: "postback",
-              label: "รับทราบ PO",
-              data: `action=acknowledge_po&id=${po.po_number}`
+              label: "✅ ยืนยัน",
+              data: `action=confirm_vendor_po&id=${po.po_number}`
+            }
+          },
+          {
+            type: "button",
+            style: "secondary",
+            height: "sm",
+            action: {
+              type: "postback",
+              label: "❌ ปฏิเสธ",
+              data: `action=start_vendor_reject&id=${po.po_number}`
             }
           }
         ],

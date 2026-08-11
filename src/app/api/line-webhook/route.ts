@@ -169,6 +169,34 @@ export async function POST(req: Request) {
 
         if (!replyToken) return;
 
+        const vendorRejectMatch = text.match(/^ปฏิเสธ\s+(PO-[A-Z0-9-]+)\s*:\s*(.+)$/i);
+        if (vendorRejectMatch) {
+          const [, poNumber, reason] = vendorRejectMatch;
+          const linkedVendor = event.source?.userId ? await getLineLinkedUser(event.source.userId) : null;
+          if (!linkedVendor || linkedVendor.role !== "Vendor" || !linkedVendor.vendor) {
+            await sendReply(replyToken, { type: "text", text: "บัญชี LINE นี้ยังไม่ได้ผูกกับบัญชี Vendor ที่ใช้งานอยู่ค่ะ" });
+            return;
+          }
+
+          const updated = await sql`
+            UPDATE purchase_orders
+            SET status = 'REJECTED', vendor_note = ${reason.trim()}, updated_at = NOW()
+            WHERE po_number = ${poNumber}
+              AND vendor = ${linkedVendor.vendor}
+              AND proposal_origin = 'LAB'
+              AND status IN ('SUBMITTED', 'ACKNOWLEDGED')
+            RETURNING id
+          `;
+          if (!updated.length) {
+            await sendReply(replyToken, { type: "text", text: `ไม่สามารถปฏิเสธ PO ${poNumber} ได้: ใบสั่งซื้ออาจไม่ใช่ของ Vendor นี้ หรือถูกตอบกลับแล้ว` });
+            return;
+          }
+
+          await notifyLabOfPurchaseOrderStatus(poNumber);
+          await sendReply(replyToken, { type: "text", text: `ปฏิเสธ PO ${poNumber} เรียบร้อยแล้ว ระบบได้แจ้ง Lab พร้อมเหตุผลแล้วค่ะ` });
+          return;
+        }
+
         if (isDispenseMenuCommand(text)) {
           await replyDispenseMenu(replyToken);
           return;
@@ -301,9 +329,10 @@ export async function POST(req: Request) {
         if (!replyToken) return;
 
         const lineUserId = postbackEvent.source?.userId || null;
-        if (action === "acknowledge_po" && id) {
-          const linkedVendor = lineUserId ? await getLineLinkedUser(lineUserId) : null;
-          if (!linkedVendor || linkedVendor.role !== "Vendor" || !linkedVendor.vendor) {
+        const linkedLineUser = lineUserId ? await getLineLinkedUser(lineUserId) : null;
+        if ((action === "acknowledge_po" || action === "confirm_vendor_po" || action === "confirm_po") && id && linkedLineUser?.role === "Vendor") {
+          const linkedVendor = linkedLineUser;
+          if (!linkedVendor.vendor) {
             await sendReply(replyToken, { type: "text", text: "บัญชี LINE นี้ยังไม่ได้ผูกกับบัญชี Vendor ที่ใช้งานอยู่ค่ะ" });
             return;
           }
@@ -327,6 +356,14 @@ export async function POST(req: Request) {
 
           await notifyLabOfPurchaseOrderStatus(id);
           await sendReply(replyToken, { type: "text", text: `รับทราบ PO ${id} เรียบร้อยแล้ว ระบบได้แจ้ง Lab แล้วค่ะ` });
+          return;
+        }
+        if ((action === "start_vendor_reject" || action === "reject_po") && id && linkedLineUser?.role === "Vendor") {
+          if (!linkedLineUser.vendor) {
+            await sendReply(replyToken, { type: "text", text: "บัญชี LINE นี้ยังไม่ได้ผูกกับบัญชี Vendor ที่ใช้งานอยู่ค่ะ" });
+            return;
+          }
+          await sendReply(replyToken, { type: "text", text: `โปรดส่งเหตุผลการปฏิเสธในรูปแบบ: ปฏิเสธ ${id}: <เหตุผล>` });
           return;
         }
         const linkedUserRows = lineUserId
