@@ -16,11 +16,13 @@ export const purchaseOrderStatuses = [
 export type PurchaseOrderStatus = (typeof purchaseOrderStatuses)[number];
 export type PurchaseOrderOrigin = "LAB" | "VENDOR";
 export type PurchaseOrderAction =
+  | "UPDATE_UNACKNOWLEDGED_LAB_ORDER"
   | "APPROVE_MANAGER_REVIEW"
   | "REJECT_MANAGER_REVIEW"
   | "ACKNOWLEDGE"
   | "CONFIRM_AVAILABILITY"
   | "REQUEST_REVISION"
+  | "REJECT"
   | "APPROVE_REVISION"
   | "REJECT_REVISION";
 

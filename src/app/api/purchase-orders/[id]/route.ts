@@ -67,7 +67,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
     const { id } = await params;
     const body = await request.json();
-    const action = String(body.action ?? "");
+    let action = String(body.action ?? "");
     let status = String(body.status ?? "");
     const note = String(body.vendor_note ?? body.note ?? "").trim();
     const poData = await findPurchaseOrder(id);
@@ -80,6 +80,18 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
+    // Preserve the legacy web payload while keeping revision side effects tied to explicit actions.
+    if (!action && isLab && po.status === "REVISION_REQUESTED") {
+      action = status === "CONFIRMED"
+        ? "APPROVE_REVISION"
+        : status === "REJECTED"
+          ? "REJECT_REVISION"
+          : "";
+    }
+    if (!action && isVendor && status === "REJECTED") {
+      action = "REJECT";
+    }
+
     let recipientSettings;
     let notificationEvent: "PO_CREATED" | "PO_REVIEW_REQUIRED" | "PO_CONFIRMED" | "PO_STATUS_UPDATED";
     if (isVendor) {
@@ -87,12 +99,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       const canConfirmAvailability = po.proposal_origin === "LAB" && po.status === "ACKNOWLEDGED" && action === "CONFIRM_AVAILABILITY";
       const canReviseLabOrder = po.proposal_origin === "LAB" && (po.status === "SUBMITTED" || po.status === "ACKNOWLEDGED") &&
         action === "REQUEST_REVISION";
+      const canRejectLabOrder = po.proposal_origin === "LAB" && (po.status === "SUBMITTED" || po.status === "ACKNOWLEDGED") &&
+        action === "REJECT";
       if (canAcknowledge) status = "ACKNOWLEDGED";
       if (canConfirmAvailability) status = "CONFIRMED";
-      if (!canReviseLabOrder) {
-        if (!canAcknowledge && !canConfirmAvailability) {
-          return NextResponse.json({ error: "Vendor must acknowledge the order before confirming availability or requesting a revision" }, { status: 409 });
+      if (canReviseLabOrder) status = "REVISION_REQUESTED";
+      if (canRejectLabOrder) {
+        if (!note) {
+          return NextResponse.json({ error: "Please provide a reason when rejecting a purchase order" }, { status: 400 });
         }
+        status = "REJECTED";
+      }
+      if (!canAcknowledge && !canConfirmAvailability && !canReviseLabOrder && !canRejectLabOrder) {
+        return NextResponse.json({ error: "Vendor can only acknowledge, confirm availability, request a revision, or reject an eligible Lab purchase order" }, { status: 409 });
       }
 
       if (canReviseLabOrder) {
@@ -142,7 +161,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         `));
       }
 
-      await sql`
+      const updated = await sql`
         UPDATE purchase_orders
         SET status = ${status}, vendor_note = ${note || po.vendor_note},
             acknowledged_at = ${status === "ACKNOWLEDGED" ? new Date().toISOString() : po.acknowledged_at},
@@ -152,20 +171,83 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
             review_requested_at = ${status === "REVISION_REQUESTED" ? new Date().toISOString() : po.review_requested_at},
             confirmed_at = ${status === "CONFIRMED" ? new Date().toISOString() : po.confirmed_at},
             updated_at = NOW()
-        WHERE id = ${po.id}
+        WHERE id = ${po.id} AND status = ${po.status}
+        RETURNING *
       `;
+      if (!updated.length) {
+        return NextResponse.json({ error: "This order changed before the Vendor response completed" }, { status: 409 });
+      }
       recipientSettings = await getLabSettings();
       notificationEvent = status === "REVISION_REQUESTED"
         ? "PO_REVIEW_REQUIRED"
         : status === "ACKNOWLEDGED"
           ? "PO_STATUS_UPDATED"
-          : "PO_CONFIRMED";
+          : status === "CONFIRMED"
+            ? "PO_CONFIRMED"
+            : "PO_STATUS_UPDATED";
     } else {
+      const canUpdateUnacknowledgedLabOrder = po.proposal_origin === "LAB" &&
+        (po.status === "PENDING_MANAGER_REVIEW" || po.status === "SUBMITTED") &&
+        action === "UPDATE_UNACKNOWLEDGED_LAB_ORDER";
+      if (canUpdateUnacknowledgedLabOrder) {
+        const updatedItems = validatePurchaseOrderItems(body.items);
+        if (!updatedItems) {
+          return NextResponse.json({ error: "Updated purchase-order items are required" }, { status: 400 });
+        }
+
+        const currentItems = await sql`SELECT * FROM purchase_order_items WHERE po_id = ${po.id} ORDER BY id`;
+        if (currentItems.length !== updatedItems.length || updatedItems.some((item) => !currentItems.some((row) => row.item_id === item.item_id))) {
+          return NextResponse.json({ error: "Items cannot be added or removed after the purchase order is created" }, { status: 400 });
+        }
+        if (updatedItems.some((item) => {
+          const current = currentItems.find((row) => row.item_id === item.item_id);
+          return Number(current?.quantity) !== item.quantity && !item.override_reason?.trim();
+        })) {
+          return NextResponse.json({ error: "Please provide a reason for every manually changed quantity" }, { status: 400 });
+        }
+
+        const expectedDate = body.expected_date === undefined ? po.expected_date : (body.expected_date || null);
+        const itemJson = JSON.stringify(updatedItems);
+        const changedRows = await sql`
+          WITH input_rows AS (
+            SELECT * FROM jsonb_to_recordset(${itemJson}::jsonb) AS item(
+              item_id TEXT, item_name TEXT, quantity NUMERIC, unit TEXT,
+              selected_basis TEXT, override_reason TEXT
+            )
+          ), updated_order AS (
+            UPDATE purchase_orders
+            SET note = ${note || null}, expected_date = ${expectedDate}, updated_at = NOW()
+            WHERE id = ${po.id} AND status IN ('PENDING_MANAGER_REVIEW', 'SUBMITTED')
+            RETURNING id
+          ), updated_items AS (
+            UPDATE purchase_order_items poi
+            SET item_name = input.item_name,
+                quantity = input.quantity,
+                unit = input.unit,
+                selected_basis = CASE WHEN poi.quantity IS DISTINCT FROM input.quantity THEN 'MANUAL' ELSE poi.selected_basis END,
+                override_reason = CASE WHEN poi.quantity IS DISTINCT FROM input.quantity THEN input.override_reason ELSE poi.override_reason END
+            FROM input_rows input, updated_order
+            WHERE poi.po_id = updated_order.id AND poi.item_id = input.item_id
+            RETURNING poi.id
+          )
+          SELECT
+            (SELECT COUNT(*)::int FROM updated_order) AS updated_order_count,
+            (SELECT COUNT(*)::int FROM updated_items) AS updated_item_count
+        `;
+        if (Number(changedRows[0]?.updated_order_count) !== 1 || Number(changedRows[0]?.updated_item_count) !== updatedItems.length) {
+          return NextResponse.json({ error: "This order was acknowledged or changed before the update completed" }, { status: 409 });
+        }
+
+        recipientSettings = po.status === "SUBMITTED"
+          ? await getVendorSettings(String(po.vendor))
+          : await getLabSettings();
+        notificationEvent = po.status === "SUBMITTED" ? "PO_CREATED" : "PO_STATUS_UPDATED";
+      } else {
       const approvingManagerReview = po.proposal_origin === "LAB" && po.status === "PENDING_MANAGER_REVIEW" && action === "APPROVE_MANAGER_REVIEW";
       const rejectingManagerReview = po.proposal_origin === "LAB" && po.status === "PENDING_MANAGER_REVIEW" && action === "REJECT_MANAGER_REVIEW";
       if (approvingManagerReview || rejectingManagerReview) {
-        if (user.role !== "Manager") {
-          return NextResponse.json({ error: "Only a Manager can approve a purchase order before it is sent to the Vendor" }, { status: 403 });
+        if (!isLab) {
+          return NextResponse.json({ error: "Only an Admin or Manager can approve a purchase order before it is sent to the Vendor" }, { status: 403 });
         }
         if (rejectingManagerReview && !note) {
           return NextResponse.json({ error: "Please provide a reason when rejecting a purchase order" }, { status: 400 });
@@ -211,6 +293,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       }
       recipientSettings = await getVendorSettings(String(po.vendor));
       notificationEvent = status === "CONFIRMED" ? "PO_CONFIRMED" : "PO_STATUS_UPDATED";
+      }
       }
     }
 

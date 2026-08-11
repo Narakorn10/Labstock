@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/components/auth-provider";
 
 type PurchaseOrderStatus = "PENDING_MANAGER_REVIEW" | "PENDING_LAB_REVIEW" | "SUBMITTED" | "ACKNOWLEDGED" | "REVISION_REQUESTED" | "CONFIRMED" | "PARTIALLY_SHIPPED" | "SHIPPED" | "PARTIALLY_RECEIVED" | "RECEIVED" | "REJECTED";
 
@@ -41,6 +42,8 @@ interface PurchaseOrderSummary {
   status: PurchaseOrderStatus;
   proposal_origin?: "LAB" | "VENDOR";
   created_at: string;
+  expected_date?: string | null;
+  note?: string | null;
   items?: PurchaseOrderItemDraft[];
 }
 
@@ -111,8 +114,11 @@ const statusLabels: Record<PurchaseOrderStatus, string> = {
 
 export default function PurchaseOrdersPage() {
   const router = useRouter();
+  const { user } = useAuth();
+  const canManageLabOrders = user?.role === "Admin" || user?.role === "Manager";
   const [orders, setOrders] = useState<PurchaseOrderSummary[]>([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingOrder, setEditingOrder] = useState<PurchaseOrderSummary | null>(null);
   const [vendor, setVendor] = useState("");
   const [expectedDate, setExpectedDate] = useState("");
   const [note, setNote] = useState("");
@@ -248,7 +254,25 @@ export default function PurchaseOrdersPage() {
     }
   };
 
-  const handleCreate = async () => {
+  const resetOrderForm = () => {
+    setShowCreateModal(false);
+    setEditingOrder(null);
+    setVendor("");
+    setExpectedDate("");
+    setNote("");
+    setItems([]);
+  };
+
+  const openEditOrder = (order: PurchaseOrderSummary) => {
+    setEditingOrder(order);
+    setVendor(order.vendor);
+    setExpectedDate(order.expected_date ? String(order.expected_date).slice(0, 10) : "");
+    setNote(order.note ?? "");
+    setItems((order.items ?? []).map((item) => ({ ...item })));
+    setShowCreateModal(true);
+  };
+
+  const handleSave = async () => {
     const missingOverrideReason = items.find((item) => item.selected_basis === "MANUAL" && !item.override_reason?.trim());
     if (missingOverrideReason) {
       alert(`กรุณาระบุเหตุผลที่แก้จำนวนของ ${missingOverrideReason.item_name || missingOverrideReason.item_id}`);
@@ -256,10 +280,15 @@ export default function PurchaseOrdersPage() {
     }
     setLoading(true);
     try {
-      const res = await fetch("/api/purchase-orders", {
-        method: "POST",
+      const res = await fetch(editingOrder ? `/api/purchase-orders/${editingOrder.id}` : "/api/purchase-orders", {
+        method: editingOrder ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify({
+        body: JSON.stringify(editingOrder ? {
+          action: "UPDATE_UNACKNOWLEDGED_LAB_ORDER",
+          expected_date: expectedDate || null,
+          note,
+          items,
+        } : {
           vendor,
           expected_date: expectedDate,
           note,
@@ -268,19 +297,15 @@ export default function PurchaseOrdersPage() {
       });
 
       if (res.ok) {
-        setShowCreateModal(false);
-        setVendor("");
-        setExpectedDate("");
-        setNote("");
-        setItems([]);
+        resetOrderForm();
         await fetchOrders();
       } else {
         const data = await res.json().catch(() => null);
-        alert(data?.error ?? "ไม่สามารถสร้างใบสั่งน้ำยาได้");
+        alert(data?.error ?? (editingOrder ? "ไม่สามารถแก้ไขใบสั่งน้ำยาได้" : "ไม่สามารถสร้างใบสั่งน้ำยาได้"));
       }
     } catch (e) {
       console.error(e);
-      alert("เกิดข้อผิดพลาดขณะสร้างใบสั่งน้ำยา");
+      alert(editingOrder ? "เกิดข้อผิดพลาดขณะแก้ไขใบสั่งน้ำยา" : "เกิดข้อผิดพลาดขณะสร้างใบสั่งน้ำยา");
     } finally {
       setLoading(false);
     }
@@ -401,7 +426,10 @@ export default function PurchaseOrdersPage() {
             🚚 ติดตามพัสดุ
           </button>
           <button
-            onClick={() => setShowCreateModal(true)}
+            onClick={() => {
+              resetOrderForm();
+              setShowCreateModal(true);
+            }}
             className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"
           >
             + สร้างใบสั่งน้ำยา
@@ -448,12 +476,17 @@ export default function PurchaseOrdersPage() {
                 <td className="px-6 py-4 text-sm text-gray-500">{po.items?.length || 0} รายการ</td>
                 <td className="px-6 py-4 text-sm text-gray-500">{new Date(po.created_at).toLocaleDateString("th-TH")}</td>
                 <td className="px-6 py-4 text-sm font-medium">
-                  {po.status === "PENDING_MANAGER_REVIEW" && (
+                  {po.status === "PENDING_MANAGER_REVIEW" && canManageLabOrders && (
                     <div className="mb-2">
                       <button onClick={() => router.push(`/orders/${po.id}`)} className="text-teal-700 hover:text-teal-900">ตรวจสอบก่อนส่งบริษัท</button>
                     </div>
                   )}
-                  {(po.status === "PENDING_LAB_REVIEW" || po.status === "REVISION_REQUESTED") && (
+                  {canManageLabOrders && (po.status === "PENDING_MANAGER_REVIEW" || po.status === "SUBMITTED") && po.proposal_origin === "LAB" && (
+                    <div className="mb-2">
+                      <button onClick={() => openEditOrder(po)} className="text-amber-700 hover:text-amber-900">แก้ไขก่อนบริษัทรับทราบ</button>
+                    </div>
+                  )}
+                  {canManageLabOrders && (po.status === "PENDING_LAB_REVIEW" || po.status === "REVISION_REQUESTED") && (
                     <div className="mb-2 flex gap-2">
                       <button onClick={() => reviewOrder(po.id, "CONFIRMED")} className="text-green-700 hover:text-green-900">ยืนยัน</button>
                       <button onClick={() => reviewOrder(po.id, "REJECTED")} className="text-red-600 hover:text-red-800">ปฏิเสธ</button>
@@ -476,8 +509,8 @@ export default function PurchaseOrdersPage() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold">สร้างใบสั่งน้ำยา</h2>
-              <button onClick={() => setShowCreateModal(false)} className="text-gray-500 hover:text-gray-700">
+              <h2 className="text-xl font-bold">{editingOrder ? `แก้ไขใบสั่งน้ำยา ${editingOrder.po_number}` : "สร้างใบสั่งน้ำยา"}</h2>
+              <button onClick={resetOrderForm} className="text-gray-500 hover:text-gray-700">
                 ✕
               </button>
             </div>
@@ -490,7 +523,7 @@ export default function PurchaseOrdersPage() {
                   value={vendor}
                   onChange={(e) => changeVendor(e.target.value)}
                   className="w-full rounded border border-gray-300 bg-white p-2 focus:border-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-100"
-                  disabled={catalogLoading}
+                  disabled={catalogLoading || !!editingOrder}
                 >
                   <option value="">{catalogLoading ? "กำลังโหลดรายชื่อบริษัท..." : "เลือกบริษัท"}</option>
                   {vendors.map((company) => <option key={company} value={company}>{company}</option>)}
@@ -512,19 +545,23 @@ export default function PurchaseOrdersPage() {
             <div className="mb-4 flex justify-between items-center">
               <h3 className="font-bold">รายการน้ำยา</h3>
               <div className="flex gap-2">
-                <button
-                  onClick={loadSuggestions}
-                  disabled={suggestLoading}
-                  className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded text-sm hover:bg-yellow-200"
-                >
-                  {suggestLoading ? "กำลังประมวลผล..." : "แนะนำอัตโนมัติ (รอบ 15 วัน)"}
-                </button>
-                <button
-                  onClick={addItemRow}
-                  className="px-3 py-1 bg-gray-100 text-gray-800 rounded text-sm hover:bg-gray-200"
-                >
-                  + เพิ่มแถว
-                </button>
+                {!editingOrder && (
+                  <button
+                    onClick={loadSuggestions}
+                    disabled={suggestLoading}
+                    className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded text-sm hover:bg-yellow-200"
+                  >
+                    {suggestLoading ? "กำลังประมวลผล..." : "แนะนำอัตโนมัติ (รอบ 15 วัน)"}
+                  </button>
+                )}
+                {!editingOrder && (
+                  <button
+                    onClick={addItemRow}
+                    className="px-3 py-1 bg-gray-100 text-gray-800 rounded text-sm hover:bg-gray-200"
+                  >
+                    + เพิ่มแถว
+                  </button>
+                )}
               </div>
             </div>
 
@@ -632,9 +669,11 @@ export default function PurchaseOrdersPage() {
                   onChange={(e) => updateItem(index, "unit", e.target.value)}
                   className="border rounded p-2 w-24"
                 />
-                <button onClick={() => removeItem(index)} className="text-red-500 hover:text-red-700 p-2">
-                  ✕
-                </button>
+                {!editingOrder && (
+                  <button onClick={() => removeItem(index)} className="text-red-500 hover:text-red-700 p-2">
+                    ✕
+                  </button>
+                )}
                 {item.selected_basis === "MANUAL" && (
                   <input
                     aria-label={`เหตุผลที่แก้จำนวน ${item.item_name || index + 1}`}
@@ -667,17 +706,17 @@ export default function PurchaseOrdersPage() {
 
             <div className="flex justify-end gap-2 mt-6 border-t pt-4">
               <button
-                onClick={() => setShowCreateModal(false)}
+                onClick={resetOrderForm}
                 className="px-4 py-2 border rounded text-gray-600 hover:bg-gray-50"
               >
                 ยกเลิก
               </button>
               <button
-                onClick={handleCreate}
+                onClick={handleSave}
                 disabled={loading || items.length === 0 || !vendor || items.some((item) => !item.item_id)}
                 className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50"
               >
-                {loading ? "กำลังบันทึก..." : "บันทึกและส่งใบสั่งน้ำยาให้บริษัท"}
+                {loading ? "กำลังบันทึก..." : editingOrder ? "บันทึกการแก้ไข" : "บันทึกและส่งใบสั่งน้ำยาให้บริษัท"}
               </button>
             </div>
           </div>

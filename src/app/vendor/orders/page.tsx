@@ -150,6 +150,24 @@ export default function VendorOrdersPage() {
     await loadData();
   };
 
+  const rejectLabOrder = async (order: PurchaseOrder) => {
+    const reason = prompt("โปรดระบุเหตุผลที่ปฏิเสธใบสั่งน้ำยา");
+    if (!reason?.trim()) return;
+    if (!confirm("ยืนยันการปฏิเสธใบสั่งน้ำยานี้หรือไม่?")) return;
+
+    const response = await fetch(`/api/purchase-orders/${order.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+      body: JSON.stringify({ action: "REJECT", vendor_note: reason.trim() }),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => null);
+      alert(data?.error ?? "ปฏิเสธรายการไม่สำเร็จ");
+      return;
+    }
+    await loadData();
+  };
+
   if (!user || user.role !== "Vendor") return <div className="p-8 text-center">สิทธิ์การเข้าถึงเฉพาะ Vendor</div>;
 
   return (
@@ -179,7 +197,7 @@ export default function VendorOrdersPage() {
         {loading ? <p className="text-sm text-gray-500">กำลังโหลด...</p> : orders.map((order) => (
           <article key={order.id} className="rounded-xl border bg-white p-4">
             <div className="flex flex-col justify-between gap-3 sm:flex-row"><div><div className="flex items-center gap-2"><h3 className="font-semibold">{order.po_number}</h3><span className="rounded bg-gray-100 px-2 py-1 text-xs">{statusLabel[order.status] ?? order.status}</span></div><p className="mt-1 text-sm text-gray-500">{order.proposal_origin === "VENDOR" ? "Vendor เสนอรายการ" : "Lab สร้างใบสั่งน้ำยา"} · {order.items.length} รายการ</p>{order.vendor_note && <p className="mt-2 text-sm text-amber-700">หมายเหตุ: {order.vendor_note}</p>}</div>
-              {(order.status === "SUBMITTED" || order.status === "ACKNOWLEDGED") && order.proposal_origin === "LAB" && <div className="flex gap-2"><button onClick={() => confirmLabOrder(order)} className="rounded-lg bg-green-600 px-3 py-2 text-sm font-medium text-white">{order.status === "SUBMITTED" ? "รับทราบรายการ" : "ยืนยันจัดได้"}</button><button onClick={() => openRevision(order)} className="rounded-lg border border-amber-300 px-3 py-2 text-sm font-medium text-amber-700">แก้ไขแล้วส่ง Lab</button></div>}
+              {(order.status === "SUBMITTED" || order.status === "ACKNOWLEDGED") && order.proposal_origin === "LAB" && <div className="flex gap-2"><button onClick={() => confirmLabOrder(order)} className="rounded-lg bg-green-600 px-3 py-2 text-sm font-medium text-white">{order.status === "SUBMITTED" ? "รับทราบรายการ" : "ยืนยันจัดได้"}</button><button onClick={() => openRevision(order)} className="rounded-lg border border-amber-300 px-3 py-2 text-sm font-medium text-amber-700">แก้ไขแล้วส่ง Lab</button><button onClick={() => void rejectLabOrder(order)} className="rounded-lg border border-red-300 px-3 py-2 text-sm font-medium text-red-700">ปฏิเสธ</button></div>}
             </div>
           </article>
         ))}

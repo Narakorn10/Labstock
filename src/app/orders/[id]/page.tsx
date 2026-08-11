@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { useAuth } from "@/components/auth-provider";
 
 interface PurchaseOrderDetailItem {
   id: number;
@@ -62,6 +63,8 @@ const reviewReasonLabels: Record<string, string> = {
 export default function PODetailPage() {
   const params = useParams<{ id: string | string[] }>();
   const router = useRouter();
+  const { user } = useAuth();
+  const canManageLabOrders = user?.role === "Admin" || user?.role === "Manager";
   const id = useMemo(() => {
     const value = params.id;
     return Array.isArray(value) ? value[0] : value;
@@ -205,7 +208,7 @@ export default function PODetailPage() {
           </div>
         )}
 
-        {po.status === "PENDING_MANAGER_REVIEW" && (
+        {po.status === "PENDING_MANAGER_REVIEW" && canManageLabOrders && (
           <section className="mb-6 rounded-xl border border-teal-200 bg-teal-50 p-5">
             <h2 className="text-lg font-bold text-teal-950">ตรวจสอบก่อนส่งให้บริษัท</h2>
             <p className="mt-1 text-sm text-teal-900">ระบบจะส่ง PO ให้บริษัทหลังหัวหน้ายืนยันเท่านั้น กรุณาตรวจสอบปริมาณคงเหลือและเหตุผลของแต่ละรายการ</p>
@@ -248,7 +251,7 @@ export default function PODetailPage() {
           </tbody>
         </table>
 
-        {po.status === "PENDING_MANAGER_REVIEW" && (
+        {po.status === "PENDING_MANAGER_REVIEW" && canManageLabOrders && (
           <div className="border-t pt-5">
             <label className="block text-sm font-medium text-slate-700" htmlFor="manager-review-note">หมายเหตุหัวหน้า (ต้องระบุเมื่อไม่อนุมัติ)</label>
             <textarea id="manager-review-note" value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} className="mt-2 w-full rounded-lg border border-slate-300 p-3" rows={3} maxLength={500} />
