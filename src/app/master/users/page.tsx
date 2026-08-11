@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { apiClient, User as ApiUser } from '@/lib/api-client';
 import Modal from '@/components/modal';
+import { useAuth } from '@/components/auth-provider';
 import { 
   UserPlus, 
   User, 
@@ -15,6 +16,7 @@ import {
 } from 'lucide-react';
 
 export default function UsersPage() {
+  const { user, loading: authLoading } = useAuth();
   const [users, setUsers] = useState<ApiUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -44,6 +46,7 @@ export default function UsersPage() {
   }, []);
 
   useEffect(() => {
+    if (authLoading || !user || user.role !== 'Admin') return;
     let isMounted = true;
     const load = async () => {
       if (isMounted) {
@@ -52,7 +55,7 @@ export default function UsersPage() {
     };
     load();
     return () => { isMounted = false; };
-  }, [loadUsers]);
+  }, [authLoading, loadUsers, user]);
 
   const openAddModal = () => {
     setIsEdit(false);
@@ -106,6 +109,41 @@ export default function UsersPage() {
       setFeedback({ type: 'error', msg: 'ลบไม่สำเร็จ' });
     }
   };
+
+  const handleAccountStatus = async (user: ApiUser, accountStatus: 'active' | 'suspended') => {
+    const action = accountStatus === 'active' ? 'อนุมัติ' : 'ระงับ';
+    if (!confirm(`ยืนยันการ${action}บัญชี "${user.username}"?`)) return;
+
+    setSubmitting(true);
+    try {
+      await apiClient.updateUserAccountStatus(user.username, accountStatus);
+      setFeedback({ type: 'success', msg: `${action}บัญชี ${user.username} สำเร็จ` });
+      await loadUsers();
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { error?: string } } };
+      setFeedback({ type: 'error', msg: error.response?.data?.error || `ไม่สามารถ${action}บัญชีได้` });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (authLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-96 gap-4">
+        <Loader2 className="animate-spin text-blue-600" size={48} />
+      </div>
+    );
+  }
+
+  if (!user || user.role !== 'Admin') {
+    return (
+      <div className="max-w-xl mx-auto py-20 text-center">
+        <XCircle className="mx-auto mb-4 text-red-500" size={48} />
+        <h1 className="text-xl font-black text-gray-900">ไม่มีสิทธิ์จัดการผู้ใช้งาน</h1>
+        <p className="mt-2 text-sm text-gray-500">หน้านี้สำหรับผู้ดูแลระบบเท่านั้น</p>
+      </div>
+    );
+  }
 
   if (loading && users.length === 0) {
     return (
@@ -164,16 +202,69 @@ export default function UsersPage() {
                   <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${u.hasPin ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-gray-50 text-gray-500 border-gray-100'}`}>
                     {u.hasPin ? 'PIN Ready' : 'No PIN'}
                   </span>
+                  {u.accountStatus && (
+                    <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${
+                      u.accountStatus === 'active'
+                        ? 'bg-emerald-50 text-emerald-600 border-emerald-100'
+                        : u.accountStatus === 'pending'
+                          ? 'bg-amber-50 text-amber-700 border-amber-100'
+                          : 'bg-red-50 text-red-600 border-red-100'
+                    }`}>
+                      {u.accountStatus === 'active' ? 'ใช้งาน' : u.accountStatus === 'pending' ? 'รออนุมัติ' : 'ระงับ'}
+                    </span>
+                  )}
                   {u.vendor && (
                     <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-100">
                         {u.vendor}
                     </span>
                   )}
                 </div>
+                {u.email && <p className="mt-1 text-[10px] font-medium text-gray-400 truncate">{u.email}</p>}
+                {u.vendorRequest && <p className="mt-1 text-[10px] font-medium text-amber-600 truncate">ขอเพิ่มบริษัท: {u.vendorRequest}</p>}
               </div>
             </div>
             
             <div className="flex items-center gap-1">
+              {u.accountStatus === 'pending' && (
+                <>
+                  <button
+                    onClick={() => handleAccountStatus(u, 'active')}
+                    disabled={submitting}
+                    className="p-3 text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all active:scale-90 disabled:opacity-50"
+                    title="อนุมัติบัญชี"
+                  >
+                    <CheckCircle size={18} />
+                  </button>
+                  <button
+                    onClick={() => handleAccountStatus(u, 'suspended')}
+                    disabled={submitting}
+                    className="p-3 text-red-600 hover:bg-red-50 rounded-xl transition-all active:scale-90 disabled:opacity-50"
+                    title="ไม่อนุมัติบัญชี"
+                  >
+                    <XCircle size={18} />
+                  </button>
+                </>
+              )}
+              {u.accountStatus === 'active' && u.username !== 'admin' && (
+                <button
+                  onClick={() => handleAccountStatus(u, 'suspended')}
+                  disabled={submitting}
+                  className="p-3 text-amber-600 hover:bg-amber-50 rounded-xl transition-all active:scale-90 disabled:opacity-50"
+                  title="ระงับบัญชี"
+                >
+                  <XCircle size={18} />
+                </button>
+              )}
+              {u.accountStatus === 'suspended' && (
+                <button
+                  onClick={() => handleAccountStatus(u, 'active')}
+                  disabled={submitting}
+                  className="p-3 text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all active:scale-90 disabled:opacity-50"
+                  title="เปิดใช้งานบัญชีอีกครั้ง"
+                >
+                  <CheckCircle size={18} />
+                </button>
+              )}
               <button 
                 onClick={() => openEditModal(u)}
                 className="p-3 text-gray-300 hover:text-blue-500 hover:bg-blue-50 rounded-xl transition-all active:scale-90"

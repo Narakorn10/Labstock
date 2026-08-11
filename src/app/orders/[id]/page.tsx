@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth-provider";
+import { exportPurchaseOrderCsv, printPurchaseOrderPdf } from "@/lib/purchase-order-export";
 
 interface PurchaseOrderDetailItem {
   id: number;
@@ -198,6 +199,28 @@ export default function PODetailPage() {
             >
               {po.status}
             </span>
+            <div className="mt-3 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => exportPurchaseOrderCsv(po, { includeLabNote: true })}
+                className="rounded-lg border border-emerald-300 px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50"
+              >
+                ดาวน์โหลด Excel (CSV)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  try {
+                    printPurchaseOrderPdf(po, { includeLabNote: true });
+                  } catch (error) {
+                    alert(error instanceof Error ? error.message : "ไม่สามารถเปิดหน้าพิมพ์ได้");
+                  }
+                }}
+                className="rounded-lg border border-indigo-300 px-3 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50"
+              >
+                บันทึก PDF
+              </button>
+            </div>
           </div>
         </div>
 

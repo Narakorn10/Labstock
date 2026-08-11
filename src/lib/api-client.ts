@@ -130,6 +130,9 @@ export interface User {
   name: string;
   role: string;
   vendor?: string;
+  email?: string;
+  accountStatus?: 'active' | 'pending' | 'suspended';
+  vendorRequest?: string;
   password?: string;
   pin?: string;
   hasPin?: boolean;
@@ -298,6 +301,11 @@ export const apiClient = {
 
   updateUser: async (username: string, userData: Partial<User>) => {
     const res = await instance.put<ApiResponse>(`/api/users/${username}`, userData);
+    return res.data;
+  },
+
+  updateUserAccountStatus: async (username: string, accountStatus: 'active' | 'suspended') => {
+    const res = await instance.patch<ApiResponse>(`/api/users/${username}/account-status`, { accountStatus });
     return res.data;
   },
 

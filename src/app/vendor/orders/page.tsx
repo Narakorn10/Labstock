@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
+import { exportPurchaseOrderCsv, printPurchaseOrderPdf } from "@/lib/purchase-order-export";
 
 type OrderItem = { item_id: string; item_name: string; quantity: number; unit: string };
 type SuggestedItem = OrderItem & { current_qty: number; min_threshold: number; suggested_order_qty: number };
@@ -197,7 +198,17 @@ export default function VendorOrdersPage() {
         {loading ? <p className="text-sm text-gray-500">กำลังโหลด...</p> : orders.map((order) => (
           <article key={order.id} className="rounded-xl border bg-white p-4">
             <div className="flex flex-col justify-between gap-3 sm:flex-row"><div><div className="flex items-center gap-2"><h3 className="font-semibold">{order.po_number}</h3><span className="rounded bg-gray-100 px-2 py-1 text-xs">{statusLabel[order.status] ?? order.status}</span></div><p className="mt-1 text-sm text-gray-500">{order.proposal_origin === "VENDOR" ? "Vendor เสนอรายการ" : "Lab สร้างใบสั่งน้ำยา"} · {order.items.length} รายการ</p>{order.vendor_note && <p className="mt-2 text-sm text-amber-700">หมายเหตุ: {order.vendor_note}</p>}</div>
-              {(order.status === "SUBMITTED" || order.status === "ACKNOWLEDGED") && order.proposal_origin === "LAB" && <div className="flex gap-2"><button onClick={() => confirmLabOrder(order)} className="rounded-lg bg-green-600 px-3 py-2 text-sm font-medium text-white">{order.status === "SUBMITTED" ? "รับทราบรายการ" : "ยืนยันจัดได้"}</button><button onClick={() => openRevision(order)} className="rounded-lg border border-amber-300 px-3 py-2 text-sm font-medium text-amber-700">แก้ไขแล้วส่ง Lab</button><button onClick={() => void rejectLabOrder(order)} className="rounded-lg border border-red-300 px-3 py-2 text-sm font-medium text-red-700">ปฏิเสธ</button></div>}
+              <div className="flex flex-wrap gap-2">
+                <button onClick={() => exportPurchaseOrderCsv(order)} className="rounded-lg border border-emerald-300 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50">Excel (CSV)</button>
+                <button onClick={() => {
+                  try {
+                    printPurchaseOrderPdf(order);
+                  } catch (error) {
+                    alert(error instanceof Error ? error.message : "ไม่สามารถเปิดหน้าพิมพ์ได้");
+                  }
+                }} className="rounded-lg border border-indigo-300 px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-50">บันทึก PDF</button>
+                {(order.status === "SUBMITTED" || order.status === "ACKNOWLEDGED") && order.proposal_origin === "LAB" && <><button onClick={() => confirmLabOrder(order)} className="rounded-lg bg-green-600 px-3 py-2 text-sm font-medium text-white">{order.status === "SUBMITTED" ? "รับทราบรายการ" : "ยืนยันจัดได้"}</button><button onClick={() => openRevision(order)} className="rounded-lg border border-amber-300 px-3 py-2 text-sm font-medium text-amber-700">แก้ไขแล้วส่ง Lab</button><button onClick={() => void rejectLabOrder(order)} className="rounded-lg border border-red-300 px-3 py-2 text-sm font-medium text-red-700">ปฏิเสธ</button></>}
+              </div>
             </div>
           </article>
         ))}

@@ -2,14 +2,42 @@ import { NextResponse } from 'next/server';
 import sql from '@/lib/db';
 import { hasUserPinColumn, hashPassword, hashPin, isAdmin } from '@/lib/auth-utils';
 
+async function hasEmailRegistrationColumns() {
+  const columns = await sql`
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_name = 'users'
+      AND column_name IN ('email', 'account_status', 'vendor_request')
+  `;
+  const names = new Set(columns.map((column) => String(column.column_name)));
+  return ['email', 'account_status', 'vendor_request'].every((column) => names.has(column));
+}
+
 export async function GET(request: Request) {
   try {
     if (!await isAdmin(request)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const pinEnabled = await hasUserPinColumn();
-    const data = pinEnabled
+    const [pinEnabled, emailRegistrationEnabled] = await Promise.all([
+      hasUserPinColumn(),
+      hasEmailRegistrationColumns(),
+    ]);
+    const data = emailRegistrationEnabled && pinEnabled
+      ? await sql`
+          SELECT username, name, role, vendor, email, account_status as "accountStatus", vendor_request as "vendorRequest",
+                 (pin_hash IS NOT NULL AND pin_hash != '') as "hasPin"
+          FROM users
+          ORDER BY CASE account_status WHEN 'pending' THEN 0 WHEN 'suspended' THEN 1 ELSE 2 END, username ASC
+        `
+      : emailRegistrationEnabled
+        ? await sql`
+            SELECT username, name, role, vendor, email, account_status as "accountStatus", vendor_request as "vendorRequest",
+                   false as "hasPin"
+            FROM users
+            ORDER BY CASE account_status WHEN 'pending' THEN 0 WHEN 'suspended' THEN 1 ELSE 2 END, username ASC
+          `
+      : pinEnabled
       ? await sql`
           SELECT username, name, role, vendor, (pin_hash IS NOT NULL AND pin_hash != '') as "hasPin"
           FROM users
