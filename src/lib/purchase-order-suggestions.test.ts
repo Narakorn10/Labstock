@@ -230,6 +230,22 @@ describe("calculateSuggestion v5 policy and live-demand contract", () => {
     expect(result.stockout_date).toBeNull();
   });
 
+  it("does not treat an overdue unreceived PO as available stock", () => {
+    const result = calculateSuggestion(makeRow({
+      approved_monthly_target_boxes: 3,
+      approved_order_qty_boxes: 2,
+      inventory_lots: [],
+      on_order_lots: [{ quantity: 3, eta_date: "2026-08-09" }],
+    }), NOW);
+
+    expect(result.on_order_qty).toBe(3);
+    expect(result.overdue_on_order_qty).toBe(3);
+    expect(fields(result).dynamic_order_qty).toBeGreaterThan(0);
+    expect(result.suggested_order_qty).toBe(2);
+    expect(fields(result).auto_selectable).toBe(false);
+    expect(hasReason(result, /OVERDUE_OPEN_PURCHASE_ORDER|overdue|late/i)).toBe(true);
+  });
+
   it("flags an open purchase order without ETA for manual review and excludes it from auto-selection", () => {
     const result = calculateSuggestion(makeRow({
       approved_monthly_target_boxes: 3,

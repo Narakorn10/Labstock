@@ -28,6 +28,7 @@ interface SuggestionContext {
   safety_stock_boxes: number;
   lead_time_days: number;
   horizon_days: number;
+  overdue_on_order_qty: number;
   expiry_assessment: {
     expired_qty_excluded: number;
     expiring_within_horizon_qty: number;
@@ -64,6 +65,7 @@ interface SuggestedPurchaseOrderItem {
   safety_stock_boxes: number;
   lead_time_days: number;
   horizon_days: number;
+  overdue_on_order_qty: number;
   expiry_assessment: SuggestionContext["expiry_assessment"];
   calculation_breakdown: {
     demandSource: SuggestionContext["demand_source"];
@@ -235,6 +237,7 @@ export default function PurchaseOrdersPage() {
             safety_stock_boxes: item.safety_stock_boxes,
             lead_time_days: item.lead_time_days,
             horizon_days: item.horizon_days,
+            overdue_on_order_qty: item.overdue_on_order_qty,
             expiry_assessment: item.expiry_assessment,
           },
         }));

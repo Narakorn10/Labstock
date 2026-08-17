@@ -106,6 +106,7 @@ export interface UsageResponse {
 
 export interface BatchItem {
   inventoryId?: number;
+  loanId?: number;
   itemId: string;
   lotNo: string;
   qty: number;
@@ -234,6 +235,18 @@ export interface RolePermission {
   updated_at?: string;
 }
 
+export interface OutstandingLoan {
+  id: number;
+  direction: "BORROWED_IN" | "LENT_OUT";
+  partner_name: string;
+  item_id: string;
+  item_name: string;
+  lot_no: string;
+  exp_date: string | null;
+  remaining_qty: number;
+  loaned_at: string;
+}
+
 export const apiClient = {
   // Permissions
   getPermissions: async () => {
@@ -301,6 +314,20 @@ export const apiClient = {
 
   updateUser: async (username: string, userData: Partial<User>) => {
     const res = await instance.put<ApiResponse>(`/api/users/${username}`, userData);
+    return res.data;
+  },
+
+  getOutstandingLoans: async (direction: "BORROWED_IN" | "LENT_OUT") => {
+    const res = await instance.get<OutstandingLoan[]>(`/api/reagent-loans?direction=${direction}`);
+    return res.data;
+  },
+
+  recordLoanBatch: async (
+    operation: "BORROW_IN" | "LEND_OUT" | "RETURN_IN" | "RETURN_OUT",
+    partnerName: string,
+    batchItems: BatchItem[]
+  ) => {
+    const res = await instance.post<ApiResponse>("/api/reagent-loans", { operation, partnerName, batchItems });
     return res.data;
   },
 

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { apiClient, BarcodePattern, Reagent } from '@/lib/api-client';
 import { processAnyBarcode } from '@/lib/barcode-parser';
 import QRScanner from '@/components/qr-scanner';
+import OutstandingLoans, { OutstandingLoan } from '@/components/outstanding-loans';
 import { 
   ArrowDownToLine,
   ArrowUpFromLine, 
@@ -25,6 +26,7 @@ interface BorrowCartItem {
   qty: number;
   unit: string;
   maxQty?: number; // Used for RETURN_OUT
+  loanId?: number;
 }
 
 export default function BorrowPage() {
@@ -39,20 +41,42 @@ export default function BorrowPage() {
   const [cart, setCart] = useState<BorrowCartItem[]>([]);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error', msg: string } | null>(null);
   const [showResults, setShowResults] = useState(false);
+  const [outstandingLoans, setOutstandingLoans] = useState<OutstandingLoan[]>([]);
+  const [outstandingLoading, setOutstandingLoading] = useState(true);
 
   useEffect(() => {
     Promise.all([
       apiClient.getDashboard(),
-      apiClient.getBarcodePatterns()
-    ]).then(([reagentsData, patternsData]) => {
+      apiClient.getBarcodePatterns(),
+      apiClient.getOutstandingLoans('BORROWED_IN')
+    ]).then(([reagentsData, patternsData, loansData]) => {
       setReagents(reagentsData);
       setPatterns(patternsData);
+      setOutstandingLoans(loansData);
       setLoading(false);
+      setOutstandingLoading(false);
     }).catch(err => {
       console.error(err);
       setLoading(false);
+      setOutstandingLoading(false);
     });
   }, []);
+
+  const selectOutstandingLoan = (loan: OutstandingLoan) => {
+    setMode('RETURN_OUT');
+    setGlobalOrigin(loan.partner_name);
+    setCart([{
+      loanId: loan.id,
+      itemId: loan.item_id,
+      name: loan.item_name,
+      lotNo: loan.lot_no,
+      expDate: loan.exp_date?.slice(0, 10) || '',
+      qty: Number(loan.remaining_qty),
+      maxQty: Number(loan.remaining_qty),
+      unit: reagents.find((item) => item.itemId === loan.item_id)?.unit || 'unit'
+    }]);
+    setFeedback({ type: 'success', msg: `เลือกรายการค้างของ ${loan.partner_name} เพื่อส่งคืนแล้ว` });
+  };
 
   const addToCart = (match: Reagent, barcodeLot: string = '', barcodeExp: string = '') => {
     if (mode === 'RETURN_OUT') {
@@ -196,15 +220,16 @@ export default function BorrowPage() {
     try {
       if (mode === 'BORROW_IN') {
         const payload = validItems.map(i => ({ ...i, note: `ยืมมาจาก: ${globalOrigin}` }));
-        await apiClient.receiveBatch(payload);
+        await apiClient.recordLoanBatch(mode, globalOrigin, payload);
         setFeedback({ type: 'success', msg: 'บันทึกรายการยืมเข้าคลังสำเร็จ (สต๊อกเพิ่ม)' });
       } else {
         const payload = validItems.map(i => ({ ...i, note: `ส่งคืนให้: ${globalOrigin}` }));
-        await apiClient.dispenseBatch(payload);
+        await apiClient.recordLoanBatch(mode, globalOrigin, payload);
         setFeedback({ type: 'success', msg: 'บันทึกรายการส่งคืนสำเร็จ (ตัดสต๊อก)' });
       }
       setCart([]);
       setGlobalOrigin('');
+      setOutstandingLoans(await apiClient.getOutstandingLoans('BORROWED_IN'));
     } catch (err: unknown) {
       const error = err as { response?: { data?: { error?: string } }, message: string };
       setFeedback({ type: 'error', msg: 'เกิดข้อผิดพลาด: ' + (error.response?.data?.error || error.message) });
@@ -236,6 +261,10 @@ export default function BorrowPage() {
       </div>
 
       {/* Mode Toggle */}
+      <section className="space-y-3 rounded-3xl border border-blue-100 bg-blue-50/40 p-4">
+        <div><h2 className="font-black text-slate-900">รายการยืมเข้าที่ยังค้างส่งคืน</h2><p className="text-xs text-slate-600">เลือกหนึ่งรายการเพื่อบันทึกการส่งคืน</p></div>
+        <OutstandingLoans loans={outstandingLoans} loading={outstandingLoading} onSelect={selectOutstandingLoan} />
+      </section>
       <div className="bg-gray-100 p-1.5 rounded-2xl flex relative shadow-inner">
         <button 
           onClick={() => {

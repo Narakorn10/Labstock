@@ -33,6 +33,7 @@ export type PurchaseOrderSuggestion = {
   review_reasons: string[];
   auto_selectable: boolean;
   on_order_qty: number;
+  overdue_on_order_qty: number;
   committed_no_eta_qty: number;
   projected_balance_at_horizon: number;
   minimum_projected_balance: number;
@@ -252,6 +253,7 @@ function warningForReviewReason(reason: string) {
     INSUFFICIENT_DISPENSE_HISTORY: "Live dispensing history spans fewer than seven Bangkok calendar days, so policy demand was used for projection.",
     FUTURE_DISPENSE_LOGS_EXCLUDED: "Future-dated dispensing logs were excluded from the live-usage calculation.",
     OPEN_PURCHASE_ORDER_WITHOUT_ETA: "There are committed purchase orders without ETA, so they were not counted in projected arrivals.",
+    OVERDUE_OPEN_PURCHASE_ORDER: "There are purchase orders past their expected delivery date that have not been received, so they were excluded from projected arrivals and require review.",
     STOCKOUT_BEFORE_LEAD_TIME: "Projected stockout occurs before the lead time window; expedite purchasing or manual intervention is required.",
     POLICY_SOURCE_NEEDS_REVIEW: "This policy is marked NEEDS_REVIEW and requires an Admin check before auto-selection.",
     MISSING_APPROVED_CYCLE_QTY: "No lab-approved cycle quantity is recorded; select a basis manually before creating a PO.",
@@ -318,10 +320,18 @@ export function calculateSuggestion(row: SuggestionRow, now = new Date()): Purch
     value <= 0 ? 0 : roundUpToMultiple(Math.max(value, minOrderQtyBoxes), orderMultipleBoxes);
   const fallbackPolicyOrderQty = roundOrderQty(policyMonthlyTarget / ordersPerMonth);
   const policyOrderQty = hasApprovedOrderQty ? approvedOrderQty : fallbackPolicyOrderQty;
-  const onOrderLots = normalizeOnOrderLots(row.on_order_lots);
-  const committedNoEtaQty = Math.max(0, toNumber(row.committed_no_eta_qty));
   const calculationStart = startOfBangkokDate(now);
   const startDateText = dateOnly(calculationStart);
+  const allOnOrderLots = normalizeOnOrderLots(row.on_order_lots);
+  const overdueOnOrderQty = allOnOrderLots
+    .filter((lot) => lot.etaDate !== null && lot.etaDate < startDateText)
+    .reduce((sum, lot) => sum + lot.quantity, 0);
+  // A delivery already past its ETA is not available inventory. It remains
+  // visible for review, but only arrivals due today or later are projected.
+  const projectedOnOrderLots = allOnOrderLots
+    .filter((lot) => lot.etaDate !== null && lot.etaDate >= startDateText)
+    .map((lot) => ({ ...lot }));
+  const committedNoEtaQty = Math.max(0, toNumber(row.committed_no_eta_qty));
   const sourceInventoryLots = normalizeInventoryLots(row.inventory_lots);
   const horizonEndDateText = dateOnly(addDays(calculationStart, horizonDays));
   const expiredQtyExcluded = sumLots(sourceInventoryLots.filter((lot) => lot.expDate && lot.expDate < startDateText));
@@ -345,7 +355,7 @@ export function calculateSuggestion(row: SuggestionRow, now = new Date()): Purch
     const currentDate = addDays(calculationStart, day);
     const currentDateText = dateOnly(currentDate);
 
-    for (const arrival of onOrderLots) {
+    for (const arrival of projectedOnOrderLots) {
       if (arrival.etaDate && arrival.etaDate <= currentDateText) {
         inventoryLots.push({ quantity: arrival.quantity, expDate: null });
         arrival.etaDate = null;
@@ -390,6 +400,7 @@ export function calculateSuggestion(row: SuggestionRow, now = new Date()): Purch
   else if (!liveUsageEligible) reviewReasons.push("INSUFFICIENT_DISPENSE_HISTORY");
   if (futureDispenseLogCount > 0) reviewReasons.push("FUTURE_DISPENSE_LOGS_EXCLUDED");
   if (committedNoEtaQty > 0) reviewReasons.push("OPEN_PURCHASE_ORDER_WITHOUT_ETA");
+  if (overdueOnOrderQty > 0) reviewReasons.push("OVERDUE_OPEN_PURCHASE_ORDER");
   if (expediteRequired) reviewReasons.push("STOCKOUT_BEFORE_LEAD_TIME");
   if (verificationStatus === "NEEDS_REVIEW") reviewReasons.push("POLICY_SOURCE_NEEDS_REVIEW");
   if (!hasApprovedOrderQty) reviewReasons.push("MISSING_APPROVED_CYCLE_QTY");
@@ -397,6 +408,7 @@ export function calculateSuggestion(row: SuggestionRow, now = new Date()): Purch
 
   const autoSelectable =
     committedNoEtaQty <= 0 &&
+    overdueOnOrderQty <= 0 &&
     hasApprovedOrderQty &&
     policyOrderQty > 0 &&
     verificationStatus !== "NEEDS_REVIEW";
@@ -427,7 +439,8 @@ export function calculateSuggestion(row: SuggestionRow, now = new Date()): Purch
     },
     review_reasons: reviewReasons,
     auto_selectable: autoSelectable,
-    on_order_qty: onOrderLots.reduce((sum, lot) => sum + lot.quantity, 0),
+    on_order_qty: allOnOrderLots.reduce((sum, lot) => sum + lot.quantity, 0),
+    overdue_on_order_qty: roundToDecimals(overdueOnOrderQty),
     committed_no_eta_qty: committedNoEtaQty,
     projected_balance_at_horizon: roundToDecimals(projectedBalanceAtHorizon),
     minimum_projected_balance: roundToDecimals(minimumProjectedBalance),
