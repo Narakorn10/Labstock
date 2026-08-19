@@ -203,6 +203,72 @@ export interface Shipment {
   unit: string;
 }
 
+/** Runtime-only V2 pattern. Legacy clients can safely ignore this field. */
+export interface BarcodePatternV2Runtime {
+  id: number;
+  name: string;
+  mapping_mode: 'CAPTURED_IDENTIFIER' | 'FIXED_REAGENT';
+  fixed_item_id: string | null;
+  regex_pattern: string;
+  item_id_group: number | null;
+  lot_no_group: number | null;
+  exp_date_group: number | null;
+}
+
+export interface BarcodeRuntimeResponse {
+  patterns: BarcodePattern[];
+  v2Patterns: BarcodePatternV2Runtime[];
+  engineVersion: 1 | 2;
+  v2Available?: boolean;
+}
+
+export type BarcodePatternV2Status = 'DRAFT' | 'VERIFIED' | 'ACTIVE' | 'INACTIVE';
+
+export interface BarcodePatternV2Example {
+  raw_barcode: string;
+  expected_item_id?: string;
+  expected_lot?: string;
+  expected_exp_date?: string;
+}
+
+export interface BarcodePatternV2 {
+  id: number;
+  name: string;
+  status: BarcodePatternV2Status;
+  mapping_mode: 'CAPTURED_IDENTIFIER' | 'FIXED_REAGENT';
+  fixed_item_id: string | null;
+  regex_pattern: string;
+  item_id_group: number | null;
+  lot_no_group: number | null;
+  exp_date_group: number | null;
+  examples: BarcodePatternV2Example[];
+  verification: {
+    status: 'VERIFIED' | 'UNVERIFIED';
+    errors: string[];
+    warnings?: string[];
+    checked_at?: string;
+  };
+  created_by?: string;
+  updated_by?: string;
+  activated_by?: string | null;
+  deactivation_reason?: string | null;
+  created_at: string;
+  updated_at: string;
+  activated_at?: string | null;
+  deactivated_at?: string | null;
+}
+
+export interface BarcodePatternV2Payload {
+  name: string;
+  mapping_mode: 'CAPTURED_IDENTIFIER' | 'FIXED_REAGENT';
+  fixed_item_id?: string | null;
+  regex_pattern?: string;
+  item_id_group?: number | null;
+  lot_no_group?: number | null;
+  exp_date_group?: number | null;
+  examples: BarcodePatternV2Example[];
+}
+
 export interface PurchaseOrderSummary {
   id: number;
   po_number: string;
@@ -359,6 +425,38 @@ export const apiClient = {
   // Barcode Patterns
   getBarcodePatterns: async () => {
     const res = await instance.get<BarcodePattern[]>('/api/settings/barcodes');
+    return res.data;
+  },
+  getBarcodeRuntimePatterns: async () => {
+    const res = await instance.get<BarcodeRuntimeResponse>('/api/barcode-patterns/runtime');
+    return res.data;
+  },
+  getBarcodeV2Patterns: async () => {
+    const res = await instance.get<BarcodePatternV2[]>('/api/settings/barcode-v2');
+    return res.data;
+  },
+  createBarcodeV2Pattern: async (data: BarcodePatternV2Payload) => {
+    const res = await instance.post<ApiResponse<{ pattern: BarcodePatternV2 }>>('/api/settings/barcode-v2', data);
+    return res.data;
+  },
+  updateBarcodeV2Pattern: async (id: number, data: BarcodePatternV2Payload) => {
+    const res = await instance.patch<ApiResponse<{ pattern: BarcodePatternV2 }>>(`/api/settings/barcode-v2/${id}`, data);
+    return res.data;
+  },
+  validateBarcodeV2Pattern: async (data: BarcodePatternV2Payload) => {
+    const res = await instance.post<ApiResponse<{ verification: BarcodePatternV2['verification']; regex_pattern: string; item_id_group: number | null; lot_no_group: number | null; exp_date_group: number | null }>>('/api/settings/barcode-v2/validate', data);
+    return res.data;
+  },
+  activateBarcodeV2Pattern: async (id: number) => {
+    const res = await instance.post<ApiResponse<{ pattern: BarcodePatternV2 }>>(`/api/settings/barcode-v2/${id}/activate`);
+    return res.data;
+  },
+  deactivateBarcodeV2Pattern: async (id: number, reason: string) => {
+    const res = await instance.post<ApiResponse<{ pattern: BarcodePatternV2 }>>(`/api/settings/barcode-v2/${id}/deactivate`, { reason });
+    return res.data;
+  },
+  deleteBarcodeV2Pattern: async (id: number) => {
+    const res = await instance.delete<ApiResponse>(`/api/settings/barcode-v2/${id}`);
     return res.data;
   },
   createBarcodePattern: async (data: BarcodePatternCreatePayload) => {

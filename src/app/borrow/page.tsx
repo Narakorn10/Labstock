@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { apiClient, BarcodePattern, Reagent } from '@/lib/api-client';
-import { processAnyBarcode } from '@/lib/barcode-parser';
+import { findMatchingReagentWithV2, processAnyBarcode } from '@/lib/barcode-parser';
 import QRScanner from '@/components/qr-scanner';
 import OutstandingLoans, { OutstandingLoan } from '@/components/outstanding-loans';
 import { 
@@ -33,6 +33,7 @@ export default function BorrowPage() {
   const [mode, setMode] = useState<'BORROW_IN' | 'RETURN_OUT'>('BORROW_IN');
   const [reagents, setReagents] = useState<Reagent[]>([]);
   const [patterns, setPatterns] = useState<BarcodePattern[]>([]);
+  const [v2Patterns, setV2Patterns] = useState<import('@/lib/api-client').BarcodePatternV2Runtime[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [scanMode, setScanMode] = useState(false);
@@ -47,11 +48,12 @@ export default function BorrowPage() {
   useEffect(() => {
     Promise.all([
       apiClient.getDashboard(),
-      apiClient.getBarcodePatterns(),
+      apiClient.getBarcodeRuntimePatterns(),
       apiClient.getOutstandingLoans('BORROWED_IN')
-    ]).then(([reagentsData, patternsData, loansData]) => {
+    ]).then(([reagentsData, runtimeData, loansData]) => {
       setReagents(reagentsData);
-      setPatterns(patternsData);
+      setPatterns(runtimeData.patterns);
+      setV2Patterns(runtimeData.v2Patterns);
       setOutstandingLoans(loansData);
       setLoading(false);
       setOutstandingLoading(false);
@@ -138,22 +140,31 @@ export default function BorrowPage() {
   };
 
   const handleScan = (decodedText: string) => {
-    const data = processAnyBarcode(decodedText, patterns);
+    let data = processAnyBarcode(decodedText, patterns);
     if (!data) return;
 
     const cleanGtin = data.gtin.replace(/^0+/, '');
     const cleanRaw = data.rawString.replace(/^0+/, '');
 
-    const match = reagents.find(r => {
+    let match = reagents.find(r => {
       const dbBarcode = r.qrCode?.replace(/^0+/, '') || '';
       const dbItemId = r.itemId.replace(/^0+/, '');
 
       return (
-        dbItemId.toLowerCase() === cleanGtin.toLowerCase() || 
+        dbItemId.toLowerCase() === cleanGtin.toLowerCase() ||
         dbBarcode.toLowerCase() === cleanGtin.toLowerCase() ||
         dbItemId.toLowerCase() === cleanRaw.toLowerCase()
       );
     });
+
+    // Preserve the legacy direct match above; V2 is only a fallback.
+    if (!match && v2Patterns.length > 0) {
+      const v2Result = findMatchingReagentWithV2(decodedText, [], v2Patterns, reagents, true);
+      if (v2Result.match && v2Result.data) {
+        match = v2Result.match;
+        data = v2Result.data;
+      }
+    }
 
     if (match) {
       const parsedLot = data.lot === 'NEED_MANUAL_INPUT' ? '' : data.lot;

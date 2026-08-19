@@ -17,8 +17,8 @@ import {
   X,
   XCircle,
 } from "lucide-react";
-import { BarcodePattern, Lot, Reagent } from "@/lib/api-client";
-import { findMatchingReagent } from "@/lib/barcode-parser";
+import { BarcodePattern, BarcodePatternV2Runtime, Lot, Reagent } from "@/lib/api-client";
+import { findMatchingReagentWithV2 } from "@/lib/barcode-parser";
 import QRScanner from "@/components/qr-scanner";
 
 type LinkedUser = { username: string; name: string; role: string };
@@ -40,6 +40,7 @@ type MobileCartItem = {
 type MobileLookupResponse = {
   reagents: Reagent[];
   patterns: BarcodePattern[];
+  v2Patterns: BarcodePatternV2Runtime[];
 };
 
 const createCartId = (itemId: string) => `${itemId}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -68,6 +69,7 @@ export default function LiffDispenseWorkflow() {
 
   const [reagents, setReagents] = useState<Reagent[]>([]);
   const [patterns, setPatterns] = useState<BarcodePattern[]>([]);
+  const [v2Patterns, setV2Patterns] = useState<BarcodePatternV2Runtime[]>([]);
   const [lookupLoading, setLookupLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -153,6 +155,7 @@ export default function LiffDispenseWorkflow() {
 
       setReagents(data.reagents);
       setPatterns(data.patterns);
+      setV2Patterns(data.v2Patterns || []);
     } catch (err: unknown) {
       console.error(err);
       const lookupError = err as { message?: string };
@@ -232,7 +235,7 @@ export default function LiffDispenseWorkflow() {
   };
 
   const handleScan = (decodedText: string) => {
-    const { data, match, lookupValues } = findMatchingReagent(decodedText, patterns, reagents);
+    const { data, match, lookupValues } = findMatchingReagentWithV2(decodedText, patterns, v2Patterns, reagents, v2Patterns.length > 0);
     if (!data) {
       setFeedback({ type: "error", msg: "ไม่สามารถอ่านบาร์โค้ดนี้ได้" });
       setScanMode(false);

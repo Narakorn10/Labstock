@@ -157,3 +157,28 @@ export async function isAdmin(request: Request) {
   const user = await getAuthenticatedUser(request);
   return user?.role === 'Admin';
 }
+
+/** Returns true when the authenticated user may manage a menu-scoped feature. */
+export async function hasMenuPermission(request: Request, menuId: string) {
+  const user = await getAuthenticatedUser(request);
+  if (!user) return { user: null, allowed: false };
+  if (user.role === 'Admin') return { user, allowed: true };
+
+  try {
+    const rows = await sql`
+      SELECT allowed_menus
+      FROM role_permissions
+      WHERE role = ${user.role}
+      LIMIT 1
+    `;
+    const allowedMenus = Array.isArray(rows[0]?.allowed_menus) ? rows[0].allowed_menus as string[] : [];
+    return { user, allowed: allowedMenus.includes(menuId) };
+  } catch (error) {
+    console.error('RBAC permission check failed:', error);
+    return { user, allowed: false };
+  }
+}
+
+export async function canManageBarcodeLearningV2(request: Request) {
+  return hasMenuPermission(request, 'barcodes');
+}

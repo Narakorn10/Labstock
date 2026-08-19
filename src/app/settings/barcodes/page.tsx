@@ -1,10 +1,348 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { apiClient, BarcodePattern } from '@/lib/api-client';
+import { apiClient, BarcodePattern, BarcodePatternV2, BarcodePatternV2Example, Reagent } from '@/lib/api-client';
 import { processAnyBarcode } from '@/lib/barcode-parser';
-import { Trash2, Plus, Loader2, CheckCircle, Save, Camera, AlertCircle } from 'lucide-react';
+import { Trash2, Plus, Loader2, CheckCircle, Save, Camera, AlertCircle, ArrowRight, ArrowLeft, Power, PowerOff, ClipboardCheck } from 'lucide-react';
 import QRScanner from '@/components/qr-scanner';
+
+function V2StatusLabel({ status }: { status: BarcodePatternV2['status'] }) {
+  const labels: Record<BarcodePatternV2['status'], string> = {
+    DRAFT: 'ฉบับร่าง',
+    VERIFIED: 'พร้อมเปิดใช้',
+    ACTIVE: 'เปิดใช้งาน',
+    INACTIVE: 'ปิดใช้งาน',
+  };
+  const colors: Record<BarcodePatternV2['status'], string> = {
+    DRAFT: 'bg-slate-100 text-slate-700',
+    VERIFIED: 'bg-amber-50 text-amber-800',
+    ACTIVE: 'bg-emerald-50 text-emerald-800',
+    INACTIVE: 'bg-rose-50 text-rose-800',
+  };
+  return <span className={`rounded-full px-3 py-1 text-xs font-bold ${colors[status]}`}>{labels[status]}</span>;
+}
+
+const createEmptyV2Examples = (): BarcodePatternV2Example[] => [
+  { raw_barcode: '', expected_item_id: '', expected_lot: '', expected_exp_date: '' },
+  { raw_barcode: '', expected_item_id: '', expected_lot: '', expected_exp_date: '' },
+];
+
+const ensureTwoV2Examples = (source: BarcodePatternV2Example[]) => {
+  const examples = source.slice(0, 2);
+  while (examples.length < 2) {
+    examples.push({ raw_barcode: '', expected_item_id: '', expected_lot: '', expected_exp_date: '' });
+  }
+  return examples;
+};
+
+function getApiErrorMessage(error: unknown, fallback: string) {
+  const apiError = error as {
+    response?: { data?: { error?: unknown; message?: unknown } };
+    message?: unknown;
+  };
+  const responseError = apiError.response?.data?.error ?? apiError.response?.data?.message;
+  if (typeof responseError === 'string' && responseError.trim()) return responseError;
+  if (typeof apiError.message === 'string' && apiError.message.trim()) return apiError.message;
+  return fallback;
+}
+
+function BarcodeLearningV2Panel() {
+  const [patterns, setPatterns] = useState<BarcodePatternV2[]>([]);
+  const [reagents, setReagents] = useState<Reagent[]>([]);
+  const [step, setStep] = useState(1);
+  const [name, setName] = useState('');
+  const [mappingMode, setMappingMode] = useState<'CAPTURED_IDENTIFIER' | 'FIXED_REAGENT'>('CAPTURED_IDENTIFIER');
+  const [fixedItemId, setFixedItemId] = useState('');
+  const [examples, setExamples] = useState<BarcodePatternV2Example[]>(createEmptyV2Examples);
+  const [regexPattern, setRegexPattern] = useState('');
+  const [itemIdGroup, setItemIdGroup] = useState<number | null>(null);
+  const [lotNoGroup, setLotNoGroup] = useState<number | null>(null);
+  const [expDateGroup, setExpDateGroup] = useState<number | null>(null);
+  const [advancedRegexEnabled, setAdvancedRegexEnabled] = useState(false);
+  const [verification, setVerification] = useState<BarcodePatternV2['verification'] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [scannerIndex, setScannerIndex] = useState<number | null>(null);
+  const [error, setError] = useState('');
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [editingPatternId, setEditingPatternId] = useState<number | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [loadedPatterns, loadedReagents] = await Promise.all([
+        apiClient.getBarcodeV2Patterns(),
+        apiClient.getDashboard(),
+      ]);
+      setPatterns(loadedPatterns);
+      setReagents(loadedReagents);
+      setError('');
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, 'ยังโหลดรูปแบบ V2 ไม่ได้ กรุณาตรวจสิทธิ์หรือเปิด Management flag'));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load();
+    try {
+      const user = JSON.parse(localStorage.getItem('labstock_user') || '{}') as { role?: string };
+      setIsAdmin(user.role === 'Admin');
+    } catch {
+      setIsAdmin(false);
+    }
+  }, [load]);
+
+  const updateExample = (index: number, field: keyof BarcodePatternV2Example, value: string) => {
+    setExamples((current) => current.map((example, exampleIndex) => exampleIndex === index ? { ...example, [field]: value } : example));
+    setVerification(null);
+  };
+
+  const locate = (raw: string, expected?: string) => {
+    if (!raw || !expected) return -1;
+    return raw.indexOf(expected);
+  };
+
+  const parseCaptureGroup = (value: string) => {
+    const parsed = Number(value);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  };
+
+  const updateAdvancedRegex = (value: string) => {
+    setRegexPattern(value);
+    setAdvancedRegexEnabled(Boolean(value.trim()));
+    setVerification(null);
+  };
+
+  const updateCaptureGroup = (setter: (value: number | null) => void, value: string) => {
+    setter(parseCaptureGroup(value));
+    setAdvancedRegexEnabled(true);
+    setVerification(null);
+  };
+
+  const validate = async () => {
+    setSaving(true);
+    setError('');
+    try {
+      const result = await apiClient.validateBarcodeV2Pattern({
+        name,
+        mapping_mode: mappingMode,
+        fixed_item_id: mappingMode === 'FIXED_REAGENT' ? fixedItemId : null,
+        // Only an Admin-authored Regex is sent as an advanced mapping. An
+        // auto-derived Regex is displayed locally, but the server derives it
+        // again from the examples so non-Admin users never submit capture
+        // groups as an advanced override.
+        regex_pattern: isAdmin && advancedRegexEnabled ? regexPattern : '',
+        item_id_group: isAdmin && advancedRegexEnabled ? itemIdGroup : null,
+        lot_no_group: isAdmin && advancedRegexEnabled ? lotNoGroup : null,
+        exp_date_group: isAdmin && advancedRegexEnabled ? expDateGroup : null,
+        examples,
+      });
+      const resultData = result.data;
+      const nextVerification = resultData?.verification || null;
+      setVerification(nextVerification);
+      // Keep the server's complete mapping. In particular, a generated Regex
+      // is only useful when its capture-group indexes travel with it.
+      if (typeof resultData?.regex_pattern === 'string') setRegexPattern(resultData.regex_pattern);
+      setItemIdGroup(resultData?.item_id_group ?? null);
+      setLotNoGroup(resultData?.lot_no_group ?? null);
+      setExpDateGroup(resultData?.exp_date_group ?? null);
+      if (nextVerification?.status === 'VERIFIED') setStep(4);
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, 'ตรวจสอบรูปแบบไม่สำเร็จ กรุณาตรวจตัวอย่างและลองใหม่'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveDraft = async () => {
+    setSaving(true);
+    setError('');
+    try {
+      const payload = {
+        name,
+        mapping_mode: mappingMode,
+        fixed_item_id: mappingMode === 'FIXED_REAGENT' ? fixedItemId : null,
+        regex_pattern: isAdmin && advancedRegexEnabled ? regexPattern : '',
+        item_id_group: isAdmin && advancedRegexEnabled ? itemIdGroup : null,
+        lot_no_group: isAdmin && advancedRegexEnabled ? lotNoGroup : null,
+        exp_date_group: isAdmin && advancedRegexEnabled ? expDateGroup : null,
+        examples,
+      };
+      if (editingPatternId !== null) {
+        await apiClient.updateBarcodeV2Pattern(editingPatternId, payload);
+      } else {
+        await apiClient.createBarcodeV2Pattern(payload);
+      }
+      setName('');
+      setFixedItemId('');
+      setRegexPattern('');
+      setItemIdGroup(null);
+      setLotNoGroup(null);
+      setExpDateGroup(null);
+      setAdvancedRegexEnabled(false);
+      setVerification(null);
+      setExamples(createEmptyV2Examples());
+      setEditingPatternId(null);
+      setStep(1);
+      await load();
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, editingPatternId !== null ? 'อัปเดตฉบับร่างไม่สำเร็จ กรุณาตรวจข้อมูลแล้วลองใหม่' : 'บันทึกฉบับร่างไม่สำเร็จ กรุณาตรวจข้อมูลแล้วลองใหม่'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const activate = async (id: number) => {
+    if (!confirm('เปิดใช้รูปแบบนี้หรือไม่? ระบบเดิมจะถูกอ่านก่อนเสมอ')) return;
+    try {
+      await apiClient.activateBarcodeV2Pattern(id);
+      await load();
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, 'เปิดใช้ไม่สำเร็จ กรุณาตรวจรูปแบบและสิทธิ์อีกครั้ง'));
+    }
+  };
+
+  const deactivate = async (id: number) => {
+    const reason = prompt('ระบุเหตุผลที่ปิดใช้รูปแบบนี้');
+    if (!reason?.trim()) return;
+    try {
+      await apiClient.deactivateBarcodeV2Pattern(id, reason.trim());
+      await load();
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, 'ปิดใช้ไม่สำเร็จ กรุณาลองใหม่'));
+    }
+  };
+
+  const startEditingDraft = (pattern: BarcodePatternV2) => {
+    setEditingPatternId(pattern.id);
+    setName(pattern.name);
+    setMappingMode(pattern.mapping_mode);
+    setFixedItemId(pattern.fixed_item_id || '');
+    setRegexPattern(pattern.regex_pattern || '');
+    setItemIdGroup(pattern.item_id_group ?? null);
+    setLotNoGroup(pattern.lot_no_group ?? null);
+    setExpDateGroup(pattern.exp_date_group ?? null);
+    // A stored Regex is an explicit mapping when continuing a draft. Keep its
+    // capture indexes together with it until the next validation.
+    setAdvancedRegexEnabled(Boolean(pattern.regex_pattern));
+    setExamples(ensureTwoV2Examples(pattern.examples));
+    setVerification(pattern.verification || null);
+    setError('');
+    setStep(1);
+  };
+
+  const resetWizard = () => {
+    setEditingPatternId(null);
+    setStep(1);
+    setName('');
+    setMappingMode('CAPTURED_IDENTIFIER');
+    setFixedItemId('');
+    setRegexPattern('');
+    setItemIdGroup(null);
+    setLotNoGroup(null);
+    setExpDateGroup(null);
+    setAdvancedRegexEnabled(false);
+    setExamples(createEmptyV2Examples());
+    setVerification(null);
+    setError('');
+  };
+
+  return (
+    <div className="mx-auto max-w-6xl space-y-6 pb-12">
+      <div className="rounded-3xl bg-[#0b2b26] p-6 text-white shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.22em] text-emerald-200">Barcode Learning V2</p>
+            <h1 className="mt-2 text-2xl font-black">สอนระบบอ่าน QR/Barcode รูปแบบใหม่</h1>
+            <p className="mt-2 max-w-3xl text-sm text-emerald-50/85">รูปแบบเดิมจะถูกตรวจและใช้งานก่อนเสมอ หาก V1 อ่านได้แล้ว V2 จะไม่มีสิทธิ์เปลี่ยนผลลัพธ์</p>
+          </div>
+          <button type="button" onClick={resetWizard} className="min-h-11 rounded-xl bg-white/10 px-4 text-sm font-bold text-white hover:bg-white/20">เริ่มรูปแบบใหม่</button>
+        </div>
+      </div>
+
+      {error && <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-800">{error}</div>}
+
+      <section className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="mb-6 flex items-center justify-between gap-2 overflow-x-auto" aria-label="ขั้นตอนการสอน">
+            {[['1', 'ข้อมูลรูปแบบ'], ['2', 'ตัวอย่างที่ 1'], ['3', 'ตัวอย่างที่ 2'], ['4', 'ตรวจสอบ']].map(([number, label]) => (
+              <div key={number} className={`flex min-w-max items-center gap-2 text-sm ${Number(number) === step ? 'font-black text-[#087f70]' : 'font-semibold text-slate-400'}`}>
+                <span className={`flex h-9 w-9 items-center justify-center rounded-full border-2 ${Number(number) <= step ? 'border-[#087f70] bg-[#e6f5f1] text-[#087f70]' : 'border-slate-200'}`}>{number}</span>
+                <span>{label}</span>
+              </div>
+            ))}
+          </div>
+
+          {step === 1 && (
+            <div className="space-y-5">
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-700" htmlFor="v2-name">ชื่อรูปแบบ</label>
+                <input id="v2-name" value={name} onChange={(event) => setName(event.target.value)} className="min-h-12 w-full rounded-xl border border-slate-300 px-4" placeholder="เช่น Abbott Architect QR" />
+              </div>
+              <fieldset>
+                <legend className="mb-2 text-sm font-bold text-slate-700">รูปแบบการผูกน้ำยา</legend>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <button type="button" onClick={() => setMappingMode('CAPTURED_IDENTIFIER')} className={`min-h-20 rounded-2xl border-2 p-4 text-left ${mappingMode === 'CAPTURED_IDENTIFIER' ? 'border-[#087f70] bg-[#e6f5f1]' : 'border-slate-200'}`}>
+                    <span className="block font-black">มีรหัสสินค้าใน QR</span><span className="mt-1 block text-xs text-slate-500">ดึง Item ID จากตำแหน่งใน QR</span>
+                  </button>
+                  <button type="button" onClick={() => setMappingMode('FIXED_REAGENT')} className={`min-h-20 rounded-2xl border-2 p-4 text-left ${mappingMode === 'FIXED_REAGENT' ? 'border-[#087f70] bg-[#e6f5f1]' : 'border-slate-200'}`}>
+                    <span className="block font-black">ผูกกับน้ำยารายการเดียว</span><span className="mt-1 block text-xs text-slate-500">QR นี้ไม่มี Item ID ให้เลือกจาก Master</span>
+                  </button>
+                </div>
+              </fieldset>
+              {mappingMode === 'FIXED_REAGENT' && (
+                <div>
+                  <label className="mb-2 block text-sm font-bold text-slate-700" htmlFor="v2-fixed">น้ำยาใน Master Data</label>
+                  <select id="v2-fixed" value={fixedItemId} onChange={(event) => setFixedItemId(event.target.value)} className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-4">
+                    <option value="">เลือกน้ำยา</option>
+                    {reagents.map((reagent) => <option key={reagent.itemId} value={reagent.itemId}>{reagent.itemId} — {reagent.name}</option>)}
+                  </select>
+                </div>
+              )}
+              <div className="flex justify-end"><button type="button" onClick={() => setStep(2)} disabled={!name.trim() || (mappingMode === 'FIXED_REAGENT' && !fixedItemId)} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#087f70] px-5 text-sm font-bold text-white disabled:opacity-40">ถัดไป <ArrowRight size={18} /></button></div>
+            </div>
+          )}
+
+          {(step === 2 || step === 3) && (() => {
+            const index = step - 2;
+            const example = examples[index];
+            return (
+              <div className="space-y-5">
+                <div className="flex items-center justify-between"><div><h2 className="text-xl font-black">ตัวอย่างที่ {index + 1}</h2><p className="mt-1 text-sm text-slate-500">ใช้ QR คนละ Lot/Expiry เพื่อยืนยันว่าตำแหน่งอ่านได้จริง</p></div><button type="button" onClick={() => setScannerIndex(index)} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 px-4 text-sm font-bold"><Camera size={18} /> สแกน</button></div>
+                <div><label className="mb-2 block text-sm font-bold text-slate-700">Raw Barcode</label><textarea value={example.raw_barcode} onChange={(event) => updateExample(index, 'raw_barcode', event.target.value)} className="min-h-28 w-full rounded-xl border border-slate-300 p-3 font-mono text-sm" placeholder="สแกนหรือวางข้อความ QR ตรงนี้" /></div>
+                <div className="grid gap-4 sm:grid-cols-3">
+                  {mappingMode === 'CAPTURED_IDENTIFIER' && <div><label className="mb-2 block text-sm font-bold text-slate-700">ค่าที่คาดหวัง: Item ID</label><input value={example.expected_item_id || ''} onChange={(event) => updateExample(index, 'expected_item_id', event.target.value)} className="min-h-11 w-full rounded-xl border border-slate-300 px-3" placeholder="เช่น GLU-001" /><p className={`mt-1 text-xs ${locate(example.raw_barcode, example.expected_item_id) >= 0 ? 'text-emerald-700' : 'text-slate-400'}`}>{locate(example.raw_barcode, example.expected_item_id) >= 0 ? 'พบใน QR แล้ว ระบบจะหาตำแหน่งให้อัตโนมัติ' : 'กรอกค่าที่พิมพ์อยู่บนฉลาก'}</p></div>}
+                  <div><label className="mb-2 block text-sm font-bold text-slate-700">ค่าที่คาดหวัง: Lot</label><input value={example.expected_lot || ''} onChange={(event) => updateExample(index, 'expected_lot', event.target.value)} className="min-h-11 w-full rounded-xl border border-slate-300 px-3" placeholder="เช่น LOT24001" /><p className="mt-1 text-xs text-slate-400">ระบบจะเก็บตำแหน่ง Lot จากตัวอย่าง</p></div>
+                  <div><label className="mb-2 block text-sm font-bold text-slate-700">ค่าที่คาดหวัง: Expiry</label><input value={example.expected_exp_date || ''} onChange={(event) => updateExample(index, 'expected_exp_date', event.target.value)} className="min-h-11 w-full rounded-xl border border-slate-300 px-3" placeholder="YYYY-MM-DD หรือค่าบนฉลาก" /><p className="mt-1 text-xs text-slate-400">ระบบจะจัดรูปแบบวันที่ให้อัตโนมัติ</p></div>
+                </div>
+                {index === 1 && <div className="rounded-2xl bg-[#f6faf9] p-4 text-sm text-slate-700"><p className="font-bold">ก่อนตรวจสอบ</p><ul className="mt-2 list-disc space-y-1 pl-5"><li>ตัวอย่างทั้งสองต้องไม่ใช่ QR ที่ V1 อ่านได้อยู่แล้ว</li><li>Item/Lot/Expiry ที่คาดหวังต้องตรงกับค่าที่เห็นจริง</li><li>หากตรวจสอบไม่ครบ ระบบจะบันทึกได้เฉพาะฉบับร่าง</li></ul></div>}
+                <div className="flex justify-between"><button type="button" onClick={() => setStep(index === 0 ? 1 : 2)} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 px-4 text-sm font-bold"><ArrowLeft size={18} /> ย้อนกลับ</button><button type="button" onClick={() => index === 0 ? setStep(3) : validate()} disabled={!example.raw_barcode.trim()} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#087f70] px-5 text-sm font-bold text-white disabled:opacity-40">{index === 0 ? <>ถัดไป <ArrowRight size={18} /></> : <><ClipboardCheck size={18} /> ตรวจสอบตัวอย่าง</>}</button></div>
+              </div>
+            );
+          })()}
+
+          {step === 4 && (
+            <div className="space-y-5">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><h2 className="text-xl font-black">ตรวจสอบและบันทึก</h2><div className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><div><span className="text-slate-500">ชื่อรูปแบบ</span><p className="font-bold">{name}</p></div><div><span className="text-slate-500">การผูก</span><p className="font-bold">{mappingMode === 'FIXED_REAGENT' ? `น้ำยา ${fixedItemId}` : 'รหัสสินค้าใน QR'}</p></div><div><span className="text-slate-500">ตัวอย่าง</span><p className="font-bold">{examples.filter((example) => example.raw_barcode).length}/2 รายการ</p></div><div><span className="text-slate-500">สถานะตรวจสอบ</span><p className={`font-bold ${verification?.status === 'VERIFIED' ? 'text-emerald-700' : 'text-amber-700'}`}>{verification?.status === 'VERIFIED' ? 'ผ่านการตรวจสอบ' : 'ยังไม่ผ่าน — จะเก็บเป็นฉบับร่าง'}</p></div></div><div className="mt-4 rounded-xl border border-slate-200 bg-white p-3"><p className="text-xs font-bold text-slate-500">ตำแหน่ง Capture Group จากการตรวจสอบล่าสุด</p><div className="mt-2 grid grid-cols-3 gap-2 text-xs"><span>Item: <strong>{itemIdGroup ?? '-'}</strong></span><span>Lot: <strong>{lotNoGroup ?? '-'}</strong></span><span>Expiry: <strong>{expDateGroup ?? '-'}</strong></span></div></div></div>
+              {verification?.errors?.length ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800"><p className="font-bold">รายการที่ต้องแก้</p><ul className="mt-2 list-disc space-y-1 pl-5">{verification.errors.map((item) => <li key={item}>{item}</li>)}</ul></div> : verification?.status === 'VERIFIED' ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800"><p className="font-bold">ผ่าน checklist</p><p className="mt-1">V1 ไม่ชนตัวอย่าง, V2 อ่านค่าตรงกัน และพร้อมให้ Admin ตรวจเปิดใช้</p></div> : <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><p className="font-bold">ยังไม่ได้ตรวจสอบรอบล่าสุด</p><p className="mt-1">กด “ตรวจสอบตัวอย่าง” หลังแก้ข้อมูลหรือ Regex เพื่อบันทึกผลการตรวจสอบใหม่</p></div>}
+              {isAdmin && <details className="rounded-2xl border border-slate-200 p-4" open={advancedRegexEnabled}><summary className="cursor-pointer text-sm font-bold">ตัวเลือกขั้นสูงสำหรับ Admin: Regex และตำแหน่ง Capture Group</summary><p className="mt-2 text-xs text-slate-500">ปล่อย Regex ว่างเพื่อให้ระบบสร้างรูปแบบจากตัวอย่างอัตโนมัติ หากแก้ Regex เอง ต้องระบุหมายเลขกลุ่มให้ตรงกับวงเล็บจับค่า</p><textarea value={regexPattern} onChange={(event) => updateAdvancedRegex(event.target.value)} className="mt-3 min-h-24 w-full rounded-xl border border-slate-300 p-3 font-mono text-xs" placeholder="เว้นว่างเพื่อให้ระบบสร้าง Regex portable ให้อัตโนมัติ" /><div className="mt-3 grid gap-3 sm:grid-cols-3"><label className="text-xs font-bold text-slate-700">Item ID group<input type="number" min="1" value={itemIdGroup ?? ''} onChange={(event) => updateCaptureGroup(setItemIdGroup, event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-3 font-normal" placeholder="เช่น 1" /></label><label className="text-xs font-bold text-slate-700">Lot group<input type="number" min="1" value={lotNoGroup ?? ''} onChange={(event) => updateCaptureGroup(setLotNoGroup, event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-3 font-normal" placeholder="เช่น 2" /></label><label className="text-xs font-bold text-slate-700">Expiry group<input type="number" min="1" value={expDateGroup ?? ''} onChange={(event) => updateCaptureGroup(setExpDateGroup, event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-3 font-normal" placeholder="เช่น 3" /></label></div></details>}
+              <div className="flex justify-between"><button type="button" onClick={() => setStep(3)} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 px-4 text-sm font-bold"><ArrowLeft size={18} /> แก้ไขตัวอย่าง</button><button type="button" onClick={saveDraft} disabled={saving} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#087f70] px-5 text-sm font-bold text-white disabled:opacity-40">{saving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />} {editingPatternId !== null ? 'อัปเดตฉบับร่าง' : 'บันทึกเป็นฉบับร่าง'}</button></div>
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-4">
+          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="text-lg font-black">รูปแบบ V2 ที่สอนแล้ว</h2><p className="mt-1 text-sm text-slate-500">การเปิดใช้และปิดใช้จะถูกบันทึก Audit ทุกครั้ง</p>{loading ? <div className="flex items-center gap-2 py-8 text-sm text-slate-500"><Loader2 className="animate-spin" size={18} /> กำลังโหลด</div> : <div className="mt-4 space-y-3">{patterns.map((pattern) => <article key={pattern.id} className="rounded-2xl border border-slate-200 p-4"><div className="flex items-start justify-between gap-3"><div><h3 className="font-black">{pattern.name}</h3><p className="mt-1 text-xs text-slate-500">{pattern.mapping_mode === 'FIXED_REAGENT' ? `ผูกกับ ${pattern.fixed_item_id}` : 'ดึงรหัสจาก QR'} · {pattern.examples.length}/2 ตัวอย่าง</p></div><V2StatusLabel status={pattern.status} /></div>{pattern.verification?.errors?.length ? <p className="mt-3 text-xs text-rose-700">ยังไม่ผ่าน: {pattern.verification.errors[0]}</p> : <p className="mt-3 text-xs text-emerald-700">ตรวจสอบล่าสุดผ่าน</p>}<div className="mt-3 flex flex-wrap gap-2">{pattern.status === 'VERIFIED' && <button type="button" onClick={() => activate(pattern.id)} className="inline-flex min-h-10 items-center gap-1 rounded-lg bg-emerald-700 px-3 text-xs font-bold text-white"><Power size={14} /> เปิดใช้</button>}{pattern.status === 'ACTIVE' && <button type="button" onClick={() => deactivate(pattern.id)} className="inline-flex min-h-10 items-center gap-1 rounded-lg border border-rose-200 px-3 text-xs font-bold text-rose-700"><PowerOff size={14} /> ปิดใช้</button>}{pattern.status === 'DRAFT' && <button type="button" onClick={() => startEditingDraft(pattern)} className="min-h-10 rounded-lg border border-slate-300 px-3 text-xs font-bold">ทำต่อ</button>}</div></article>)}{patterns.length === 0 && <p className="py-8 text-center text-sm text-slate-400">ยังไม่มีรูปแบบ V2</p>}</div>}</div>
+          <div className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900"><p className="font-black">หลักประกันความปลอดภัย</p><p className="mt-2">V2 จะทำงานเฉพาะ QR ที่ V1 หา Master ไม่พบเท่านั้น หาก validator, cache หรือ runtime มีปัญหา ระบบกลับไปใช้ manual/V1 เดิมโดยอัตโนมัติ</p></div>
+        </div>
+      </section>
+      {scannerIndex !== null && <QRScanner onScan={(value) => { updateExample(scannerIndex, 'raw_barcode', value); setScannerIndex(null); }} onClose={() => setScannerIndex(null)} />}
+    </div>
+  );
+}
 
 export default function BarcodeSettingsPage() {
   const [patterns, setPatterns] = useState<BarcodePattern[]>([]);
@@ -22,6 +360,7 @@ export default function BarcodeSettingsPage() {
   const [isGS1Warning, setIsGS1Warning] = useState(false);
   
   const [saving, setSaving] = useState(false);
+  const [activeTab, setActiveTab] = useState<'v2' | 'legacy'>('v2');
   
   // Assistant Mode States
   const [assistantMode, setAssistantMode] = useState(false);
@@ -207,10 +546,26 @@ export default function BarcodeSettingsPage() {
     }
   };
 
+  if (activeTab === 'v2') {
+    return (
+      <div className="space-y-4">
+        <div className="mx-auto flex max-w-6xl gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
+          <button type="button" onClick={() => setActiveTab('v2')} className="min-h-11 flex-1 rounded-xl bg-[#e6f5f1] px-4 text-sm font-black text-[#087f70]">รูปแบบใหม่ V2</button>
+          <button type="button" onClick={() => setActiveTab('legacy')} className="min-h-11 flex-1 rounded-xl px-4 text-sm font-bold text-slate-500 hover:bg-slate-50">รูปแบบเดิม</button>
+        </div>
+        <BarcodeLearningV2Panel />
+      </div>
+    );
+  }
+
   if (loading) return <div className="p-8 text-center">Loading...</div>;
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in pb-12">
+    <div className="mx-auto max-w-4xl space-y-8 animate-in fade-in pb-12">
+      <div className="flex gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
+        <button type="button" onClick={() => setActiveTab('v2')} className="min-h-11 flex-1 rounded-xl px-4 text-sm font-bold text-slate-500 hover:bg-slate-50">รูปแบบใหม่ V2</button>
+        <button type="button" onClick={() => setActiveTab('legacy')} className="min-h-11 flex-1 rounded-xl bg-slate-100 px-4 text-sm font-black text-slate-700">รูปแบบเดิม (Admin)</button>
+      </div>
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold text-gray-900">ตั้งค่า Barcode/QR Code (Smart Parser)</h1>
       </div>
