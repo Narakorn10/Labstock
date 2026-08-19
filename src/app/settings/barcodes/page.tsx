@@ -345,6 +345,7 @@ function BarcodeLearningV2Panel() {
 }
 
 export default function BarcodeSettingsPage() {
+  const legacyPatternsReadOnly = true;
   const [patterns, setPatterns] = useState<BarcodePattern[]>([]);
   const [loading, setLoading] = useState(true);
   const [showScanner, setShowScanner] = useState(false);
@@ -559,6 +560,35 @@ export default function BarcodeSettingsPage() {
   }
 
   if (loading) return <div className="p-8 text-center">Loading...</div>;
+
+  if (legacyPatternsReadOnly) {
+    return (
+      <div className="mx-auto max-w-4xl space-y-8 animate-in fade-in pb-12">
+        <div className="flex gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
+          <button type="button" onClick={() => setActiveTab('v2')} className="min-h-11 flex-1 rounded-xl px-4 text-sm font-bold text-slate-500 hover:bg-slate-50">รูปแบบใหม่ V2</button>
+          <button type="button" onClick={() => setActiveTab('legacy')} className="min-h-11 flex-1 rounded-xl bg-slate-100 px-4 text-sm font-black text-slate-700">รูปแบบเดิม (อ่านอย่างเดียว)</button>
+        </div>
+        <section className="rounded-3xl border border-amber-200 bg-amber-50 p-6 text-amber-950 shadow-sm">
+          <h1 className="text-2xl font-black">รูปแบบเดิม V1: อ่านอย่างเดียว</h1>
+          <p className="mt-2 text-sm leading-6">ระบบยังใช้รูปแบบเดิมเพื่อให้ QR/Barcode และ hardcode ที่ใช้งานอยู่ทำงานต่อเนื่อง แต่ปิดการเพิ่มและลบ V1 แล้ว เพราะ Regex ใหม่อาจเปลี่ยนผลการอ่านของ flow เดิมได้</p>
+          <p className="mt-3 text-sm font-bold">หากต้องเพิ่ม QR ใหม่ ให้ใช้ “รูปแบบใหม่ V2” เท่านั้น</p>
+        </section>
+        <section className="space-y-4">
+          <h2 className="text-xl font-bold">รูปแบบ V1 ที่ใช้งานอยู่ ({patterns.length})</h2>
+          <div className="grid gap-4">
+            {patterns.map((pattern) => (
+              <article key={pattern.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <h3 className="font-bold text-slate-900">{pattern.name}</h3>
+                <code className="mt-2 block break-all rounded bg-pink-50 px-2 py-1 text-sm text-pink-700">{pattern.regex_pattern}</code>
+                <div className="mt-2 flex gap-4 text-xs text-slate-500"><span>Item Group: {pattern.item_id_group || '-'}</span><span>Lot Group: {pattern.lot_no_group || '-'}</span><span>Exp Group: {pattern.exp_date_group || '-'}</span></div>
+              </article>
+            ))}
+            {patterns.length === 0 && <div className="rounded-2xl bg-slate-50 p-8 text-center text-slate-400">ยังไม่มีรูปแบบ V1</div>}
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-4xl space-y-8 animate-in fade-in pb-12">
