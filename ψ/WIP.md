@@ -1,24 +1,55 @@
-# WIP — 2026-08-19 22:45
+# WIP — 2026-09-07 19:11
 
 ## Git Status
 
 ```text
- M ψ/WIP.md
+ M package-lock.json
+ M package.json
+ M src/app/count/page.tsx
+ M src/app/layout.tsx
+ M src/app/login/page.tsx
+ M src/app/orders/page.tsx
+ M src/app/page.tsx
+ M src/auth.ts
+ M src/components/app-shell.tsx
+ M src/components/auth-provider.tsx
+ M src/components/inventory-overview.tsx
+ M src/lib/api-client.ts
+ M src/lib/auth-utils.ts
+ M src/lib/notifications.ts
+ M "ψ/WIP.md"
+?? public/images/
 ?? scripts/apply-v16-email-auth-registration.mjs
-?? ψ/memory/retrospectives/2026-08/10/19.21_labstock-v5-commit-preview-deploy.md
-?? ψ/memory/retrospectives/2026-08/11/
-?? ψ/memory/retrospectives/2026-08/17/
-?? ψ/memory/retrospectives/2026-08/19/22.45_qr-barcode-v2-v1-lock.md
+?? src/app/api/auth/password-reset/
+?? src/app/api/count-work-orders/
+?? src/app/api/purchase-orders/ai-review/
+?? src/app/count/work-orders/
+?? src/app/dashboard/
+?? src/app/reset-password/
+?? src/lib/auth-service.ts
+?? src/lib/count-work-orders.test.ts
+?? src/lib/count-work-orders.ts
+?? src/lib/purchase-order-ai-review.test.ts
+?? src/lib/purchase-order-ai-review.ts
+?? upgrade_v20_password_reset.sql
+?? upgrade_v21_purchase_order_ai_reviewer.sql
+?? upgrade_v22_count_work_orders.sql
+?? vitest.config.ts
+?? "ψ/memory/retrospectives/2026-08/10/19.21_labstock-v5-commit-preview-deploy.md"
+?? "ψ/memory/retrospectives/2026-08/11/"
+?? "ψ/memory/retrospectives/2026-08/17/"
+?? "ψ/memory/retrospectives/2026-08/23/"
+?? "ψ/memory/retrospectives/2026-09/"
 ```
 
 ## งานค้าง
 
-- [ ] รัน `upgrade_v19_barcode_learning_v2.sql` ใน Neon Preview แล้วเปิด `BARCODE_LEARNING_V2_MANAGEMENT_ENABLED=true`
-- [ ] ทำ authenticated regression ของ QR hardcode และ V1 จริงใน Receive, Dispense, Borrow, Lend, Mobile, LIFF และ Scanner Agent ก่อนเปิด V2 Runtime
-- [ ] รัน authenticated smoke tests ของ Email Auth/PO export และ apply V17 ใน Neon staging ตาม WIP เดิม
+- [ ] เพิ่ม UI เปลี่ยน/แบ่ง Lot สำหรับใบงานนับสต็อกทั้งมือถือและเดสก์ท็อป พร้อมทดสอบกรณี Lot ไม่พอ
+- [ ] แก้หรือประสาน TypeScript error เดิมใน `src/auth.ts`; จากนั้นรัน type-check/build และ authenticated role smoke tests
+- [ ] ขออนุมัติก่อน apply `upgrade_v22_count_work_orders.sql`; ห้าม deploy หรือหักสต็อกจริงก่อนผ่าน release gate
 
 ## Context
 
-- Commit `63f7213` เพิ่ม Barcode Learning V2 และ `6e587a2` ล็อก V1 write path; ทั้งคู่ push แล้ว และ Vercel Production `dpl_HuHr8tqvWfjZJc9C3MKhzdpPzPXS` Ready ที่ https://labstock-two.vercel.app
-- Production V1 แสดง 13 patterns แบบ read-only; V2 management/runtime ยังปิด จึงยังเพิ่ม QR ใหม่ไม่ได้โดยตั้งใจ
-- Preserve `scripts/apply-v16-email-auth-registration.mjs` และ retrospective เก่าที่ untracked; ห้าม stage โดยไม่มีคำสั่งผู้ใช้
+- Local `/count` และ `/api/auth/session` ตอบ HTTP 200 เมื่อรัน dev process ด้วย secret ชั่วคราวใน process เท่านั้น; `.env.local` ยังต้องตั้งค่า Auth secret สำหรับการ restart ปกติ
+- Work-order API/transaction และ migration ถูกสร้างแล้ว แต่ migration ยังไม่ถูก apply; ผู้ใช้ไม่อนุมัติ commit/deploy
+- Preserve unrelated dirty work; stage เฉพาะ paths ที่ผู้ใช้อนุมัติ
