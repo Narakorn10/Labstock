@@ -36,7 +36,7 @@ export const NAVIGATION_GROUPS: NavigationGroup[] = [
   {
     title: "Overview",
     items: [
-      { id: "dashboard", name: "Inventory Overview", label: "Inventory Overview", href: "/", icon: LayoutDashboard },
+      { id: "dashboard", name: "Inventory Overview", label: "Inventory Overview", href: "/dashboard", icon: LayoutDashboard },
       { id: "analysis", name: "Analysis (วิเคราะห์)", label: "Analysis", href: "/analysis", icon: BarChart3 },
       { id: "logs", name: "Logs (ประวัติ)", label: "History Logs", href: "/logs", icon: History },
     ],

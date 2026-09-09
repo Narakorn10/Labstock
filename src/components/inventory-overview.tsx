@@ -80,12 +80,7 @@ export default function InventoryOverview() {
   }, [user]);
 
   useEffect(() => {
-    if (authLoading || !user || typeof window === "undefined") {
-      return;
-    }
-
-    const token = window.localStorage.getItem("labstock_token");
-    if (!token) {
+    if (authLoading || !user) {
       return;
     }
 
