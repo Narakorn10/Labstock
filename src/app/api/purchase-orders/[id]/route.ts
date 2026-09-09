@@ -41,18 +41,63 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     if (user.role === "Vendor" && (po.vendor !== user.vendor || po.status === "PENDING_MANAGER_REVIEW")) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
-    const items = await sql`
-      SELECT poi.*, COALESCE(inventory.current_qty, 0) AS current_stock_qty
-      FROM purchase_order_items poi
-      LEFT JOIN (
-        SELECT item_id, SUM(quantity) AS current_qty
-        FROM inventory
-        WHERE quantity > 0
-        GROUP BY item_id
-      ) inventory ON inventory.item_id = poi.item_id
-      WHERE poi.po_id = ${po.id}
-      ORDER BY poi.id
-    `;
+    const items = user.role === "Vendor"
+      ? await sql`
+          SELECT
+            poi.id,
+            poi.item_id,
+            poi.item_name,
+            poi.quantity,
+            poi.unit,
+            poi.received_qty,
+            COALESCE(poi.reagent_type, md.reagent_type) AS reagent_type,
+            COALESCE(poi.job_type, md.job_type) AS job_type,
+            COALESCE(poi.machine_type, md.machine_type) AS machine_type
+          FROM purchase_order_items poi
+          LEFT JOIN master_data md ON md.item_id = poi.item_id
+          WHERE poi.po_id = ${po.id}
+          ORDER BY poi.id
+        `
+      : await sql`
+          SELECT
+            poi.*,
+            COALESCE(inventory.current_qty, 0) AS current_stock_qty,
+            COALESCE(poi.reagent_type, md.reagent_type) AS reagent_type,
+            COALESCE(poi.job_type, md.job_type) AS job_type,
+            COALESCE(poi.machine_type, md.machine_type) AS machine_type
+          FROM purchase_order_items poi
+          LEFT JOIN master_data md ON md.item_id = poi.item_id
+          LEFT JOIN (
+            SELECT item_id, SUM(quantity) AS current_qty
+            FROM inventory
+            WHERE quantity > 0
+            GROUP BY item_id
+          ) inventory ON inventory.item_id = poi.item_id
+          WHERE poi.po_id = ${po.id}
+          ORDER BY poi.id
+        `;
+
+    if (user.role === "Vendor") {
+      return NextResponse.json({
+        id: po.id,
+        po_number: po.po_number,
+        vendor: po.vendor,
+        status: po.status,
+        proposal_origin: po.proposal_origin,
+        vendor_note: po.vendor_note,
+        expected_date: po.expected_date,
+        created_by: po.created_by,
+        created_at: po.created_at,
+        issuer_name: po.issuer_name,
+        issuer_department: po.issuer_department,
+        issuer_address: po.issuer_address,
+        issuer_phone: po.issuer_phone,
+        issuer_email: po.issuer_email,
+        issuer_logo_url: po.issuer_logo_url,
+        items,
+      });
+    }
+
     return NextResponse.json({ ...po, items });
   } catch (error: unknown) {
     console.error("Error fetching purchase order:", error);

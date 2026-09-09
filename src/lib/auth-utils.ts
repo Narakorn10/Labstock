@@ -59,12 +59,36 @@ export async function hasUserAccountStatusColumn() {
 }
 
 export async function getAuthenticatedUser(request: Request) {
+  // Auth.js sessions are the primary web authentication path. Bearer tokens
+  // remain below only so existing mobile/LIFF clients are not logged out during
+  // the staged migration.
+  try {
+    const { auth } = await import('@/auth');
+    const session = await auth();
+    const sessionUser = session?.user as (AuthenticatedUser & { username?: string; sessionVersion?: number }) | undefined;
+    if (sessionUser?.username && sessionUser.role) {
+      const { isCurrentAuthSession } = await import('@/lib/auth-service');
+      if (!await isCurrentAuthSession(sessionUser.username, sessionUser.sessionVersion)) {
+        return null;
+      }
+      return {
+        username: sessionUser.username,
+        name: sessionUser.name || sessionUser.username,
+        role: sessionUser.role,
+        vendor: sessionUser.vendor,
+      };
+    }
+  } catch (error) {
+    console.error('Auth.js session check error:', error);
+  }
+
   const authHeader = request.headers.get('Authorization');
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  const bearerMatch = authHeader?.match(/^Bearer[ \t]+([^ \t\r\n]+)$/i);
+  if (!bearerMatch || bearerMatch[1].length > 1024) {
     return null;
   }
 
-  const token = authHeader.split(' ')[1];
+  const token = bearerMatch[1];
   
   try {
     // Hash the token from request to compare with hashed token in DB

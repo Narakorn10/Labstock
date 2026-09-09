@@ -36,17 +36,78 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Vendor profile is not configured" }, { status: 403 });
     }
 
-    const orders = vendor
-      ? user.role === "Vendor"
-        ? await sql`SELECT * FROM purchase_orders WHERE vendor = ${vendor} AND status <> 'PENDING_MANAGER_REVIEW' ORDER BY created_at DESC`
-        : await sql`SELECT * FROM purchase_orders WHERE vendor = ${vendor} ORDER BY created_at DESC`
-      : await sql`SELECT * FROM purchase_orders ORDER BY created_at DESC`;
-    const ordersWithItems = await Promise.all(orders.map(async (po) => ({
-      ...po,
-      items: await sql`SELECT * FROM purchase_order_items WHERE po_id = ${po.id} ORDER BY id`,
-    })));
+    const orders = user.role === "Vendor"
+      ? await sql`
+          SELECT
+            po.id,
+            po.po_number,
+            po.vendor,
+            po.status,
+            po.proposal_origin,
+            po.vendor_note,
+            po.expected_date,
+            po.created_at,
+            COALESCE((
+              SELECT jsonb_agg(
+                jsonb_build_object(
+                  'id', poi.id,
+                  'item_id', poi.item_id,
+                  'item_name', poi.item_name,
+                  'quantity', poi.quantity,
+                  'unit', poi.unit,
+                  'received_qty', poi.received_qty,
+                  'reagent_type', COALESCE(poi.reagent_type, md.reagent_type),
+                  'job_type', COALESCE(poi.job_type, md.job_type),
+                  'machine_type', COALESCE(poi.machine_type, md.machine_type)
+                ) ORDER BY poi.id
+              )
+              FROM purchase_order_items poi
+              LEFT JOIN master_data md ON md.item_id = poi.item_id
+              WHERE poi.po_id = po.id
+            ), '[]'::jsonb) AS items
+          FROM purchase_orders po
+          WHERE po.vendor = ${vendor}
+            AND po.status <> 'PENDING_MANAGER_REVIEW'
+          ORDER BY po.created_at DESC
+        `
+      : vendor
+        ? await sql`
+            SELECT po.*,
+              COALESCE((
+                SELECT jsonb_agg(
+                  to_jsonb(poi) || jsonb_build_object(
+                    'reagent_type', COALESCE(poi.reagent_type, md.reagent_type),
+                    'job_type', COALESCE(poi.job_type, md.job_type),
+                    'machine_type', COALESCE(poi.machine_type, md.machine_type)
+                  ) ORDER BY poi.id
+                )
+                FROM purchase_order_items poi
+                LEFT JOIN master_data md ON md.item_id = poi.item_id
+                WHERE poi.po_id = po.id
+              ), '[]'::jsonb) AS items
+            FROM purchase_orders po
+            WHERE po.vendor = ${vendor}
+            ORDER BY po.created_at DESC
+          `
+        : await sql`
+            SELECT po.*,
+              COALESCE((
+                SELECT jsonb_agg(
+                  to_jsonb(poi) || jsonb_build_object(
+                    'reagent_type', COALESCE(poi.reagent_type, md.reagent_type),
+                    'job_type', COALESCE(poi.job_type, md.job_type),
+                    'machine_type', COALESCE(poi.machine_type, md.machine_type)
+                  ) ORDER BY poi.id
+                )
+                FROM purchase_order_items poi
+                LEFT JOIN master_data md ON md.item_id = poi.item_id
+                WHERE poi.po_id = po.id
+              ), '[]'::jsonb) AS items
+            FROM purchase_orders po
+            ORDER BY po.created_at DESC
+          `;
 
-    return NextResponse.json(ordersWithItems);
+    return NextResponse.json(orders);
   } catch (error: unknown) {
     console.error("Error fetching purchase orders:", error);
     return NextResponse.json({ error: "Failed to fetch purchase orders" }, { status: 500 });

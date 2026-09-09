@@ -110,6 +110,7 @@ export default function CountPage() {
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; msg: string } | null>(null);
   const [preview, setPreview] = useState<RefillPreview | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [savingWorkOrder, setSavingWorkOrder] = useState(false);
 
   const mergeDashboardState = useCallback((dashboard: Reagent[], previous: CountItem[], clearIds: string[] = [], refilledIds: string[] = []) => {
     const previousMap = new Map(previous.map((item) => [item.itemId, item]));
@@ -195,7 +196,16 @@ export default function CountPage() {
     if (!preview?.batchItems.length) return;
     setSubmitting(true);
     try {
-      await apiClient.dispenseBatch(preview.batchItems);
+      if (preview.totalShortage > 0) throw new Error("ต้องจัดสรร Lot ให้ครบตามยอดที่ต้องเบิกก่อนยืนยัน");
+      const byJob = new Map<string, RefillPreviewItem[]>();
+      preview.items.forEach((entry) => {
+        const job = entry.item.jobType || "";
+        byJob.set(job, [...(byJob.get(job) || []), entry]);
+      });
+      for (const [jobType, entries] of byJob) {
+        const workOrder = await apiClient.saveCountWorkOrder(jobType, entries.map((entry) => ({ itemId: entry.item.itemId, countedQty: entry.actual })));
+        await apiClient.confirmCountWorkOrder(workOrder.id, entries.flatMap((entry) => entry.lots.map((lot) => ({ itemId: entry.item.itemId, inventoryId: Number(lot.inventoryId), qty: Number(lot.qty) }))));
+      }
       const ids = preview.items.map((item) => item.item.itemId);
       await refreshFromServer(ids, ids);
       setPreview(null);
@@ -213,6 +223,24 @@ export default function CountPage() {
     }
   };
 
+  const handleSaveForLater = async () => {
+    const counted = reagents.filter((item) => item.actual !== "");
+    if (!counted.length) return setFeedback({ type: "error", msg: "กรุณากรอกยอดนับอย่างน้อยหนึ่งรายการก่อนบันทึกใบงาน" });
+    setSavingWorkOrder(true);
+    try {
+      const byJob = new Map<string, CountItem[]>();
+      counted.forEach((item) => {
+        const job = item.jobType || "";
+        byJob.set(job, [...(byJob.get(job) || []), item]);
+      });
+      await Promise.all([...byJob.entries()].map(([jobType, items]) => apiClient.saveCountWorkOrder(jobType, items.map((item) => ({ itemId: item.itemId, countedQty: Number(item.actual) })) )));
+      setFeedback({ type: "success", msg: "บันทึกใบงานแล้ว สามารถกลับมาเลือก Lot และยืนยันเบิกภายหลังได้" });
+    } catch (error: unknown) {
+      const response = error as { response?: { data?: { error?: string } }; message?: string };
+      setFeedback({ type: "error", msg: `บันทึกใบงานไม่สำเร็จ: ${response.response?.data?.error || response.message || "ไม่ทราบสาเหตุ"}` });
+    } finally { setSavingWorkOrder(false); }
+  };
+
   if (authLoading || (user && loading)) {
     return <div className="flex h-96 flex-col items-center justify-center gap-4"><Loader2 className="animate-spin text-blue-600" size={48} /><p className="text-xs font-bold uppercase tracking-widest text-gray-500">กำลังโหลดรายการน้ำยา...</p></div>;
   }
@@ -224,7 +252,7 @@ export default function CountPage() {
         <div className="relative z-10">
           <div className="mb-2 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3"><div className="rounded-xl bg-white/20 p-2"><ClipboardList size={24} /></div><h1 className="text-2xl font-black">นับสต็อกหน้างาน</h1></div>
-            {countedCount > 0 && <button onClick={handleClearAll} className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/10 px-4 py-2 text-[10px] font-black uppercase tracking-widest hover:bg-white/20"><Trash2 size={14} />ล้างยอดนับค้าง</button>}
+            {countedCount > 0 && <div className="flex gap-2"><button onClick={handleSaveForLater} disabled={savingWorkOrder} className="rounded-xl border border-white/20 bg-white/15 px-4 py-2 text-[10px] font-black uppercase tracking-widest hover:bg-white/25 disabled:opacity-50">{savingWorkOrder ? "กำลังบันทึก..." : "บันทึกใบงานไว้ก่อน"}</button><button onClick={handleClearAll} className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/10 px-4 py-2 text-[10px] font-black uppercase tracking-widest hover:bg-white/20"><Trash2 size={14} />ล้างยอดนับค้าง</button></div>}
           </div>
           <p className="text-sm font-bold text-blue-100">นับยอดจริง แล้วคำนวณการเบิกเติมจากเป้าหมายรายสัปดาห์</p>
           <div className="mt-6"><div className="mb-2 flex justify-between text-[10px] font-black uppercase tracking-widest text-blue-100"><span>ความคืบหน้าการนับรวม</span><span>{countedCount} / {reagents.length} รายการ</span></div><div className="h-2.5 overflow-hidden rounded-full bg-blue-900/30"><div className="h-full rounded-full bg-white transition-all" style={{ width: `${progress}%` }} /></div></div>

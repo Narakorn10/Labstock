@@ -203,6 +203,16 @@ export interface Shipment {
   unit: string;
 }
 
+export interface CountWorkOrderSummary {
+  id: number;
+  ownerUsername: string;
+  jobType: string;
+  status: 'OPEN' | 'CONFIRMED' | 'CANCELLED';
+  itemCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 /** Runtime-only V2 pattern. Legacy clients can safely ignore this field. */
 export interface BarcodePatternV2Runtime {
   id: number;
@@ -344,6 +354,16 @@ export const apiClient = {
     const res = await instance.post<ApiResponse>('/api/dispense', { batchItems });
     return res.data;
   },
+
+  listCountWorkOrders: async () => (await instance.get<CountWorkOrderSummary[]>('/api/count-work-orders')).data,
+  saveCountWorkOrder: async (jobType: string, items: Array<{ itemId: string; countedQty: number }>) =>
+    (await instance.post<{ id: number; savedCount: number }>('/api/count-work-orders', { jobType, items })).data,
+  confirmCountWorkOrder: async (id: number, allocations: Array<{ itemId: string; inventoryId: number; qty: number }>) =>
+    (await instance.post<ApiResponse>(`/api/count-work-orders/${id}/confirm`, { allocations })).data,
+  getCountWorkOrder: async (id: number) => (await instance.get(`/api/count-work-orders/${id}`)).data,
+  updateCountWorkOrder: async (id: number, items: Array<{ itemId: string; countedQty: number }>) => (await instance.patch(`/api/count-work-orders/${id}`, { items })).data,
+  getCountWorkOrderLots: async (id: number) => (await instance.get<Lot[]>(`/api/count-work-orders/${id}/lots`)).data,
+  cancelCountWorkOrder: async (id: number) => (await instance.delete(`/api/count-work-orders/${id}`)).data,
 
   getLogs: async (limit: number = 100, filters?: { search?: string, action?: string, startDate?: string, endDate?: string }) => {
     let url = `/api/logs?limit=${limit}`;

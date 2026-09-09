@@ -140,24 +140,36 @@ export async function createPurchaseOrderWithAudit(input: CreatePurchaseOrderInp
         LEFT JOIN current_open current ON current.item_id = input.item_id
         WHERE COALESCE(current.on_order_qty, 0) IS DISTINCT FROM input.snapshot_on_order_qty
            OR COALESCE(current.no_eta_qty, 0) IS DISTINCT FROM input.snapshot_no_eta_qty
+      ), issuer AS (
+        SELECT organization_name, department_name, address, phone, email, logo_url
+        FROM lab_profile
+        WHERE id = 1
       ), new_po AS (
         INSERT INTO purchase_orders (
           po_number, vendor, note, expected_date, created_by, status, proposal_origin,
-          review_requested_at, liff_request_id
+          review_requested_at, liff_request_id, issuer_name, issuer_department,
+          issuer_address, issuer_phone, issuer_email, issuer_logo_url
         ) SELECT
           ${poNumber}, ${input.vendor}, ${input.note}, ${input.expectedDate}, ${input.user.username},
-          ${status}, ${input.origin}, ${reviewRequestedAt}, ${input.liffRequestId || null}
+          ${status}, ${input.origin}, ${reviewRequestedAt}, ${input.liffRequestId || null},
+          issuer.organization_name, issuer.department_name, issuer.address,
+          issuer.phone, issuer.email, issuer.logo_url
+        FROM issuer
         WHERE NOT EXISTS (SELECT 1 FROM stale_items)
         RETURNING *
       ), new_items AS (
         INSERT INTO purchase_order_items (
           po_id, item_id, item_name, quantity, unit, system_suggested_qty,
-          override_reason, calculation_version, calculation_snapshot, selected_basis
+          override_reason, calculation_version, calculation_snapshot, selected_basis,
+          reagent_type, job_type, machine_type
         )
         SELECT new_po.id, item.item_id, item.item_name, item.quantity, item.unit,
           item.system_suggested_qty, item.override_reason, item.calculation_version,
-          item.calculation_snapshot, item.selected_basis
-        FROM new_po CROSS JOIN input_rows item
+          item.calculation_snapshot, item.selected_basis,
+          master.reagent_type, master.job_type, master.machine_type
+        FROM new_po
+        CROSS JOIN input_rows item
+        JOIN master_data master ON master.item_id = item.item_id
         RETURNING *
       )
       SELECT
@@ -187,23 +199,35 @@ export async function createPurchaseOrderWithAudit(input: CreatePurchaseOrderInp
         LEFT JOIN current_open current ON current.item_id = input.item_id
         WHERE COALESCE(current.on_order_qty, 0) IS DISTINCT FROM input.snapshot_on_order_qty
            OR COALESCE(current.no_eta_qty, 0) IS DISTINCT FROM input.snapshot_no_eta_qty
+      ), issuer AS (
+        SELECT organization_name, department_name, address, phone, email, logo_url
+        FROM lab_profile
+        WHERE id = 1
       ), new_po AS (
         INSERT INTO purchase_orders (
-          po_number, vendor, note, expected_date, created_by, status, proposal_origin, review_requested_at
+          po_number, vendor, note, expected_date, created_by, status, proposal_origin,
+          review_requested_at, issuer_name, issuer_department, issuer_address,
+          issuer_phone, issuer_email, issuer_logo_url
         ) SELECT
           ${poNumber}, ${input.vendor}, ${input.note}, ${input.expectedDate}, ${input.user.username},
-          ${status}, ${input.origin}, ${reviewRequestedAt}
+          ${status}, ${input.origin}, ${reviewRequestedAt}, issuer.organization_name,
+          issuer.department_name, issuer.address, issuer.phone, issuer.email, issuer.logo_url
+        FROM issuer
         WHERE NOT EXISTS (SELECT 1 FROM stale_items)
         RETURNING *
       ), new_items AS (
         INSERT INTO purchase_order_items (
           po_id, item_id, item_name, quantity, unit, system_suggested_qty,
-          override_reason, calculation_version, calculation_snapshot, selected_basis
+          override_reason, calculation_version, calculation_snapshot, selected_basis,
+          reagent_type, job_type, machine_type
         )
         SELECT new_po.id, item.item_id, item.item_name, item.quantity, item.unit,
           item.system_suggested_qty, item.override_reason, item.calculation_version,
-          item.calculation_snapshot, item.selected_basis
-        FROM new_po CROSS JOIN input_rows item
+          item.calculation_snapshot, item.selected_basis,
+          master.reagent_type, master.job_type, master.machine_type
+        FROM new_po
+        CROSS JOIN input_rows item
+        JOIN master_data master ON master.item_id = item.item_id
         RETURNING *
       )
       SELECT

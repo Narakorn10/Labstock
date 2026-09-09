@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { apiClient, BarcodePattern, BarcodePatternV2, BarcodePatternV2Example, Reagent } from '@/lib/api-client';
 import { processAnyBarcode } from '@/lib/barcode-parser';
 import { Trash2, Plus, Loader2, CheckCircle, Save, Camera, AlertCircle, ArrowRight, ArrowLeft, Power, PowerOff, ClipboardCheck } from 'lucide-react';
-import QRScanner from '@/components/qr-scanner';
+import QRScanner from '@/components/lazy-qr-scanner';
 
 function V2StatusLabel({ status }: { status: BarcodePatternV2['status'] }) {
   const labels: Record<BarcodePatternV2['status'], string> = {

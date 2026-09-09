@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { apiClient, BarcodePattern, Reagent } from '@/lib/api-client';
 import { findMatchingReagentWithV2, processAnyBarcode } from '@/lib/barcode-parser';
-import QRScanner from '@/components/qr-scanner';
+import QRScanner from '@/components/lazy-qr-scanner';
 import OutstandingLoans, { OutstandingLoan } from '@/components/outstanding-loans';
 import { 
   ArrowDownToLine,

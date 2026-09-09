@@ -33,4 +33,27 @@ describe("buildPurchaseOrderCsv", () => {
     expect(csv).toContain("'=unsafe");
     expect(csv).toContain("'+R-2");
   });
+
+  it("groups exported items by reagent category and includes workflow columns", () => {
+    const csv = buildPurchaseOrderCsv({
+      po_number: "PO-2026-003",
+      status: "SUBMITTED",
+      items: [
+        {
+          item_id: "R-3",
+          item_name: "Reagent C",
+          reagent_type: "เคมีคลินิก",
+          job_type: "Glucose",
+          machine_type: "Analyzer A",
+          quantity: 2,
+          unit: "กล่อง",
+        },
+      ],
+    });
+
+    expect(csv).toContain('"หมวดหมู่"');
+    expect(csv).toContain('"เคมีคลินิก"');
+    expect(csv).toContain('"Glucose"');
+    expect(csv).toContain('"Analyzer A"');
+  });
 });

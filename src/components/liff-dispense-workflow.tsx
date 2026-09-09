@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { BarcodePattern, BarcodePatternV2Runtime, Lot, Reagent } from "@/lib/api-client";
 import { findMatchingReagentWithV2 } from "@/lib/barcode-parser";
-import QRScanner from "@/components/qr-scanner";
+import QRScanner from "@/components/lazy-qr-scanner";
 
 type LinkedUser = { username: string; name: string; role: string };
 

@@ -12,6 +12,7 @@ interface AppShellProps {
 export default function AppShell({ children }: AppShellProps) {
   const pathname = usePathname();
   const isMobileSurface = pathname.startsWith('/mobile');
+  const isPublicSurface = pathname === '/' || pathname === '/login';
   const [sidebarHidden, setSidebarHidden] = useState(false);
 
   useEffect(() => {
@@ -51,6 +52,10 @@ export default function AppShell({ children }: AppShellProps) {
         <main id="app-main" tabIndex={-1} className="min-h-screen">{children}</main>
       </div>
     );
+  }
+
+  if (isPublicSurface) {
+    return <div className="min-h-screen">{children}</div>;
   }
 
   return (

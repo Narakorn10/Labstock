@@ -32,7 +32,7 @@ function getPreferredCamera(cameras: CameraDevice[]) {
 
 function getScannerConfig() {
   return {
-    fps: 30,
+    fps: 15,
     qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
       const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
       const boxSize = Math.floor(minEdge * 0.8);

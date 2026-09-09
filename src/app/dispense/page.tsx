@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/components/auth-provider';
 import { apiClient, BarcodePattern, Lot, Reagent } from '@/lib/api-client';
 import { findMatchingReagentWithV2 } from '@/lib/barcode-parser';
-import QRScanner from '@/components/qr-scanner';
+import QRScanner from '@/components/lazy-qr-scanner';
 import { 
   HandHelping, 
   Camera, 

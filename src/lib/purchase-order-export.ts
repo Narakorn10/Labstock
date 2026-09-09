@@ -3,6 +3,9 @@ export type PurchaseOrderExportItem = {
   item_name?: string | null;
   quantity: number;
   unit?: string | null;
+  reagent_type?: string | null;
+  job_type?: string | null;
+  machine_type?: string | null;
 };
 
 export type PurchaseOrderForExport = {
@@ -64,6 +67,20 @@ function safeFileName(value: string) {
   return value.replace(/[^a-zA-Z0-9._-]/g, "_") || "purchase-order";
 }
 
+function groupItems(items: PurchaseOrderExportItem[] = []) {
+  const groups = new Map<string, PurchaseOrderExportItem[]>();
+  for (const item of items) {
+    const category = item.reagent_type?.trim() || "ไม่ระบุหมวดหมู่";
+    groups.set(category, [...(groups.get(category) ?? []), item]);
+  }
+
+  return [...groups.entries()].sort(([left], [right]) => {
+    if (left === "ไม่ระบุหมวดหมู่") return 1;
+    if (right === "ไม่ระบุหมวดหมู่") return -1;
+    return left.localeCompare(right, "th");
+  });
+}
+
 function download(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -77,6 +94,17 @@ function download(blob: Blob, filename: string) {
 
 function exportRows(po: PurchaseOrderForExport, options: PurchaseOrderExportOptions) {
   const isInternalDraft = po.status === "PENDING_MANAGER_REVIEW";
+  const itemRows = groupItems(po.items).flatMap(([category, items]) => items.map((item, index) => [
+    category,
+    index + 1,
+    item.item_id ?? "-",
+    item.item_name ?? "-",
+    item.job_type ?? "-",
+    item.machine_type ?? "-",
+    Number(item.quantity),
+    item.unit ?? "-",
+  ]));
+
   return [
     [isInternalDraft ? "ใบสั่งซื้อน้ำยา (ฉบับร่าง - รอตรวจสอบภายใน)" : "ใบสั่งซื้อน้ำยา", po.po_number],
     ["บริษัท", po.vendor ?? "-"],
@@ -86,14 +114,8 @@ function exportRows(po: PurchaseOrderForExport, options: PurchaseOrderExportOpti
     ...(options.includeLabNote ? [["หมายเหตุ Lab", po.note ?? "-"]] : []),
     ["หมายเหตุ Vendor", po.vendor_note ?? "-"],
     [],
-    ["ลำดับ", "รหัสน้ำยา", "รายการน้ำยา", "จำนวน", "หน่วย"],
-    ...(po.items ?? []).map((item, index) => [
-      index + 1,
-      item.item_id ?? "-",
-      item.item_name ?? "-",
-      Number(item.quantity),
-      item.unit ?? "-",
-    ]),
+    ["หมวดหมู่", "ลำดับ", "รหัสน้ำยา", "รายการน้ำยา", "งานตรวจ", "เครื่องตรวจ", "จำนวน", "หน่วย"],
+    ...itemRows,
   ];
 }
 
@@ -112,14 +134,22 @@ export function printPurchaseOrderPdf(po: PurchaseOrderForExport, options: Purch
     throw new Error("เบราว์เซอร์บล็อกหน้าต่างพิมพ์ กรุณาอนุญาต popup แล้วลองใหม่");
   }
 
-  const rows = (po.items ?? []).map((item, index) => `
-    <tr>
-      <td>${index + 1}</td>
-      <td>${escapeHtml(item.item_id ?? "-")}</td>
-      <td>${escapeHtml(item.item_name ?? "-")}</td>
-      <td class="number">${escapeHtml(item.quantity)}</td>
-      <td>${escapeHtml(item.unit ?? "-")}</td>
-    </tr>`).join("");
+  const categorySections = groupItems(po.items).map(([category, items]) => `
+    <section class="category">
+      <h2>${escapeHtml(category)} <span>${items.length} รายการ</span></h2>
+      <table>
+        <thead><tr><th>ลำดับ</th><th>รหัส / รายการน้ำยา</th><th>งานตรวจ</th><th>เครื่องตรวจ</th><th>จำนวน</th><th>หน่วย</th></tr></thead>
+        <tbody>${items.map((item, index) => `
+          <tr>
+            <td>${index + 1}</td>
+            <td><strong>${escapeHtml(item.item_name ?? "-")}</strong><br /><small>${escapeHtml(item.item_id ?? "-")}</small></td>
+            <td>${escapeHtml(item.job_type ?? "-")}</td>
+            <td>${escapeHtml(item.machine_type ?? "-")}</td>
+            <td class="number">${escapeHtml(item.quantity)}</td>
+            <td>${escapeHtml(item.unit ?? "-")}</td>
+          </tr>`).join("")}</tbody>
+      </table>
+    </section>`).join("");
   const isInternalDraft = po.status === "PENDING_MANAGER_REVIEW";
 
   printWindow.document.write(`<!doctype html>
@@ -139,6 +169,10 @@ export function printPurchaseOrderPdf(po: PurchaseOrderForExport, options: Purch
       table { border-collapse: collapse; width: 100%; margin-top: 18px; }
       th, td { border: 1px solid #cbd5e1; padding: 8px; text-align: left; vertical-align: top; }
       th { background: #eef2ff; color: #312e81; font-size: 11px; }
+      h2 { margin: 18px 0 0; padding-bottom: 6px; border-bottom: 2px solid #172033; font-size: 14px; }
+      h2 span { color: #64748b; font-size: 10px; font-weight: 400; }
+      small { color: #64748b; }
+      .category { break-inside: avoid; }
       .number { text-align: right; }
       footer { margin-top: 28px; color: #64748b; font-size: 10px; }
     </style>
@@ -155,10 +189,7 @@ export function printPurchaseOrderPdf(po: PurchaseOrderForExport, options: Purch
     </section>
     ${options.includeLabNote && po.note ? `<section class="note"><strong>หมายเหตุ Lab</strong><br />${escapeHtml(po.note)}</section>` : ""}
     ${po.vendor_note ? `<section class="note"><strong>หมายเหตุ Vendor</strong><br />${escapeHtml(po.vendor_note)}</section>` : ""}
-    <table>
-      <thead><tr><th>ลำดับ</th><th>รหัสน้ำยา</th><th>รายการน้ำยา</th><th>จำนวน</th><th>หน่วย</th></tr></thead>
-      <tbody>${rows || '<tr><td colspan="5">ไม่มีรายการ</td></tr>'}</tbody>
-    </table>
+    ${categorySections || '<p>ไม่มีรายการน้ำยา</p>'}
     <footer>สร้างเอกสารเมื่อ ${escapeHtml(new Date().toLocaleString("th-TH"))}</footer>
     <script>window.onload = () => { window.focus(); window.print(); };</script>
   </body>

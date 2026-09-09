@@ -1,8 +1,8 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useEffect, useMemo } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { apiClient } from '@/lib/api-client';
+import { SessionProvider, signIn, signOut, useSession } from 'next-auth/react';
 
 interface User {
   username: string;
@@ -22,70 +22,33 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-function readStoredUser() {
-  const raw = localStorage.getItem('labstock_user');
-  if (!raw) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(raw) as User;
-  } catch {
-    localStorage.removeItem('labstock_user');
-    return null;
-  }
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  return <SessionProvider><AuthStateProvider>{children}</AuthStateProvider></SessionProvider>;
 }
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+function AuthStateProvider({ children }: { children: React.ReactNode }) {
+  const { data: session, status } = useSession();
   const router = useRouter();
   const pathname = usePathname();
-  const isPublicPath = pathname === '/login' || pathname === '/register' || pathname.startsWith('/mobile') || pathname.startsWith('/liff');
+  const isPublicPath = pathname === '/' || pathname === '/login' || pathname === '/register' || pathname.startsWith('/mobile') || pathname.startsWith('/liff');
+  const user = useMemo(() => {
+    const sessionUser = session?.user as (User & { username?: string; role?: string; vendor?: string }) | undefined;
+    return sessionUser?.username && sessionUser.role
+      ? { username: sessionUser.username, name: sessionUser.name || sessionUser.username, role: sessionUser.role, vendor: sessionUser.vendor }
+      : null;
+  }, [session?.user]);
+  const loading = status === 'loading';
 
   const clearStoredAuth = React.useCallback(() => {
     localStorage.removeItem('labstock_user');
     localStorage.removeItem('labstock_token');
   }, []);
 
-  const logout = React.useCallback(() => {
-    setUser(null);
+  const logout = React.useCallback(async () => {
     clearStoredAuth();
+    await signOut({ redirect: false });
     router.push('/login');
   }, [clearStoredAuth, router]);
-
-  useEffect(() => {
-    const checkAuth = async () => {
-      const savedUser = readStoredUser();
-      const token = localStorage.getItem('labstock_token');
-      
-      if (savedUser && token) {
-        try {
-          const res = await fetch('/api/auth/me', {
-            headers: { 'Authorization': `Bearer ${token}` }
-          });
-          
-          if (res.ok) {
-            const data = await res.json();
-            setUser(data.user);
-            localStorage.setItem('labstock_user', JSON.stringify(data.user));
-          } else {
-            clearStoredAuth();
-            setUser(null);
-            if (!isPublicPath) {
-              router.push('/login');
-            }
-          }
-        } catch (error) {
-          console.error('Auth verification failed:', error);
-          setUser(savedUser);
-        }
-      }
-      setLoading(false);
-    };
-
-    checkAuth();
-  }, [clearStoredAuth, isPublicPath, router]);
 
   useEffect(() => {
     if (!loading && !user && !isPublicPath) {
@@ -93,14 +56,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [user, loading, isPublicPath, router]);
 
+  useEffect(() => {
+    if (loading || !user) return;
+    let cancelled = false;
+
+    const verifyCurrentSession = async () => {
+      try {
+        const response = await fetch('/api/auth/me');
+        if (!response.ok && !cancelled) {
+          clearStoredAuth();
+          await signOut({ redirect: false });
+          router.replace('/login');
+        }
+      } catch {
+        // Keep an already-established session during a transient network failure.
+      }
+    };
+
+    void verifyCurrentSession();
+    return () => { cancelled = true; };
+  }, [clearStoredAuth, loading, router, user]);
+
   const login = async (credentials: Partial<User>) => {
-    const res = await apiClient.login(credentials);
-    if (res.success && res.user && res.token) {
-      setUser(res.user);
-      localStorage.setItem('labstock_user', JSON.stringify(res.user));
-      localStorage.setItem('labstock_token', res.token);
-      router.push('/');
+    const result = await signIn('credentials', {
+      redirect: false,
+      username: credentials.username,
+      password: credentials.password,
+    });
+    if (!result || result.error) {
+      throw new Error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง หรือบัญชียังไม่ได้รับอนุมัติ');
     }
+    clearStoredAuth();
+    router.push('/dashboard');
   };
 
   const isAuthorized = (allowedRoles: string[]) => {

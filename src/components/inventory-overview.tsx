@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
+import dynamic from 'next/dynamic';
 import {
   AlertTriangle,
   ArrowRight,
@@ -19,9 +21,10 @@ import {
   XCircle,
 } from 'lucide-react';
 import { apiClient, PurchaseOrderSummary, Reagent, Shipment } from '@/lib/api-client';
-import ReportModal from '@/components/report-modal';
-import ReagentDetailModal from '@/components/reagent-detail-modal';
 import { useAuth } from '@/components/auth-provider';
+
+const ReportModal = dynamic(() => import('@/components/report-modal'), { ssr: false });
+const ReagentDetailModal = dynamic(() => import('@/components/reagent-detail-modal'), { ssr: false });
 
 type InventoryFilter = 'all' | 'low' | 'nearExpiry' | 'expired';
 
@@ -366,35 +369,42 @@ export default function InventoryOverview() {
 
   return (
     <div className="space-y-6 pb-20 animate-in fade-in slide-in-from-bottom-3 duration-500 lg:space-y-7">
-      <div className="flex flex-col justify-between gap-6 md:flex-row md:items-center">
-        <div className="max-w-2xl">
-          <p className="mb-2 text-xs font-semibold tracking-[0.12em] text-clinical-700">OPERATIONS CONSOLE</p>
-          <h1 className="text-3xl font-semibold tracking-tight text-clinical-900">
-            คลังน้ำยา
-          </h1>
-          <p className="mt-2 text-sm leading-6 text-[var(--clinical-muted)]">
-            ติดตามปริมาณคงเหลือ รายการที่ต้องสั่งซื้อ และอายุของ lot เพื่อเตรียมงานได้ทันเวลา
-          </p>
+      <section aria-labelledby="inventory-dashboard-title" className="dashboard-hero overflow-hidden rounded-[1.75rem] border border-[#d8e8e9] bg-[#0f2f3a] text-white shadow-[0_24px_60px_-38px_rgba(10,47,58,0.85)]">
+        <div className="relative grid min-h-[280px] items-stretch lg:grid-cols-[1.05fr_0.95fr]">
+          <div className="relative z-10 flex flex-col justify-between p-6 sm:p-8 lg:p-10">
+            <div>
+              <div className="mb-5 flex items-center gap-3 text-[11px] font-semibold tracking-[0.16em] text-[#9ed8d4]">
+                <span className="size-2 rounded-full bg-[#5eead4] shadow-[0_0_0_5px_rgba(94,234,212,0.12)]" aria-hidden="true" />
+                LIVE LAB OPERATIONS
+              </div>
+              <h1 id="inventory-dashboard-title" className="max-w-xl text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">
+                คลังน้ำยา ที่พร้อมให้ทีมแล็บตัดสินใจได้ทันเวลา
+              </h1>
+              <p className="mt-4 max-w-lg text-sm leading-6 text-[#c4d8dc] sm:text-base">
+                สรุปสัญญาณสำคัญของปริมาณคงเหลือ การสั่งซื้อ และอายุ lot ในมุมมองเดียว เพื่อช่วยจัดลำดับงานอย่างมั่นใจ
+              </p>
+            </div>
+            <div className="mt-7 flex flex-wrap gap-3" role="group" aria-label="การดำเนินการภาพรวมคลัง">
+              <button type="button" onClick={fetchData} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 text-sm font-semibold text-white backdrop-blur-sm transition hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
+                <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+                อัปเดตข้อมูล
+              </button>
+              <button type="button" onClick={() => setReportModalOpen(true)} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#e8c77b] px-4 text-sm font-semibold text-[#183841] transition hover:bg-[#f6db9a] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
+                <FileText size={16} />
+                รายงานประจำวัน
+              </button>
+            </div>
+          </div>
+          <div className="relative min-h-[220px] overflow-hidden lg:min-h-full">
+            <Image src="/images/labstock-clinical-inventory-hero.png" alt="พื้นที่จัดเก็บน้ำยาและอุปกรณ์ห้องปฏิบัติการที่เป็นระเบียบ" fill priority sizes="(max-width: 1024px) 100vw, 48vw" className="object-cover object-right" />
+            <div className="absolute inset-0 bg-gradient-to-t from-[#0f2f3a] via-[#0f2f3a]/15 to-transparent lg:bg-gradient-to-r lg:from-[#0f2f3a] lg:via-transparent lg:to-transparent" />
+            <div className="absolute bottom-5 right-5 rounded-2xl border border-white/20 bg-[#163d46]/85 px-4 py-3 text-right shadow-lg backdrop-blur-md">
+              <p className="text-[10px] font-semibold tracking-[0.12em] text-[#b5d9d8]">TODAY&apos;S FOCUS</p>
+              <p className="mt-1 text-sm font-semibold text-white">ตรวจสต็อกก่อนเริ่มงาน</p>
+            </div>
+          </div>
         </div>
-        <div className="flex flex-wrap gap-3" role="group" aria-label="การดำเนินการภาพรวมคลัง">
-          <button
-            type="button"
-            onClick={fetchData}
-            className="flex items-center gap-2 rounded-lg border border-clinical-border bg-white px-4 py-2.5 text-sm font-semibold text-[#425451] transition-all hover:bg-[#f2f7f5] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-clinical-700"
-          >
-            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-            รีเฟรช
-          </button>
-          <button
-            type="button"
-            onClick={() => setReportModalOpen(true)}
-            className="flex items-center gap-2 rounded-lg bg-clinical-900 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-[#123b3a]/15 transition-all hover:bg-[#0d302f] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-clinical-700"
-          >
-            <FileText size={16} />
-            รายงานประจำวัน
-          </button>
-        </div>
-      </div>
+      </section>
 
       {error && (
         <div role="alert" className="flex items-center gap-3 rounded-lg border border-[#f3c6c2] bg-[#fff1f0] p-4 text-[var(--clinical-critical)]">
@@ -891,24 +901,28 @@ export default function InventoryOverview() {
         </div>
       </div>
 
-      <ReportModal
-        isOpen={reportModalOpen}
-        onClose={() => setReportModalOpen(false)}
-        data={reagents}
-        jobTypes={jobTypes.filter((type) => type !== 'ทั้งหมด')}
-      />
+      {reportModalOpen && (
+        <ReportModal
+          isOpen={reportModalOpen}
+          onClose={() => setReportModalOpen(false)}
+          data={reagents}
+          jobTypes={jobTypes.filter((type) => type !== 'ทั้งหมด')}
+        />
+      )}
 
-      <ReagentDetailModal
-        key={selectedReagent?.itemId ?? 'empty'}
-        isOpen={!!selectedReagent}
-        onClose={() => setSelectedReagent(null)}
-        reagent={selectedReagent}
-        canReconcile={isPowerUser}
-        onInventoryUpdated={async () => {
-          setSelectedReagent(null);
-          await fetchData();
-        }}
-      />
+      {selectedReagent && (
+        <ReagentDetailModal
+          key={selectedReagent.itemId}
+          isOpen
+          onClose={() => setSelectedReagent(null)}
+          reagent={selectedReagent}
+          canReconcile={isPowerUser}
+          onInventoryUpdated={async () => {
+            setSelectedReagent(null);
+            await fetchData();
+          }}
+        />
+      )}
     </div>
   );
 }

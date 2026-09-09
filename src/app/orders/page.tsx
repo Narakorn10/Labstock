@@ -73,6 +73,21 @@ interface SuggestedPurchaseOrderItem {
   };
 }
 
+interface AiReviewerResult {
+  item_id: string;
+  priority: "CRITICAL" | "HIGH" | "NORMAL" | "LOW";
+  explanation_th: string;
+  evidence: string[];
+  review_questions: string[];
+}
+
+const aiPriorityLabels: Record<AiReviewerResult["priority"], string> = {
+  CRITICAL: "เร่งด่วนมาก",
+  HIGH: "เร่งด่วน",
+  NORMAL: "ติดตามตามปกติ",
+  LOW: "ความเสี่ยงต่ำ",
+};
+
 const demandSourceLabels: Record<SuggestionContext["demand_source"], string> = {
   actual_dispense_history: "ยอดเบิกจริง",
   approved_policy: "แผนที่แล็บอนุมัติ",
@@ -132,6 +147,9 @@ export default function PurchaseOrdersPage() {
   const [loading, setLoading] = useState(false);
   const [suggestLoading, setSuggestLoading] = useState(false);
   const [suggestionNotice, setSuggestionNotice] = useState("");
+  const [aiReviewLoading, setAiReviewLoading] = useState(false);
+  const [aiReviews, setAiReviews] = useState<AiReviewerResult[]>([]);
+  const [aiReviewNotice, setAiReviewNotice] = useState("");
 
   const getAuthHeaders = (): Record<string, string> => {
     const token = localStorage.getItem("labstock_token");
@@ -242,6 +260,8 @@ export default function PurchaseOrdersPage() {
           },
         }));
         setItems(suggestedItems);
+        setAiReviews([]);
+        setAiReviewNotice("");
         setSuggestionNotice(heldForReview.length
           ? `แสดงผลคำนวณแล้ว ${data.length} รายการ; มี ${heldForReview.length} รายการที่ควรตรวจทานก่อนบันทึกใบสั่งซื้อ`
           : "");
@@ -257,6 +277,32 @@ export default function PurchaseOrdersPage() {
     }
   };
 
+  const reviewSuggestionsWithAi = async () => {
+    if (!vendor.trim() || items.length === 0) return;
+    setAiReviewLoading(true);
+    setAiReviewNotice("");
+    try {
+      const res = await fetch("/api/purchase-orders/ai-review", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ vendor }),
+      });
+      const data = await res.json().catch(() => null) as { reviews?: AiReviewerResult[]; error?: string } | null;
+      if (!res.ok || !data?.reviews) {
+        setAiReviews([]);
+        setAiReviewNotice(data?.error ?? "AI ใช้ไม่ได้ชั่วคราว คำแนะนำตามสูตรเดิมยังใช้งานได้");
+        return;
+      }
+      setAiReviews(data.reviews);
+    } catch (error) {
+      console.error(error);
+      setAiReviews([]);
+      setAiReviewNotice("AI ใช้ไม่ได้ชั่วคราว คำแนะนำตามสูตรเดิมยังใช้งานได้");
+    } finally {
+      setAiReviewLoading(false);
+    }
+  };
+
   const resetOrderForm = () => {
     setShowCreateModal(false);
     setEditingOrder(null);
@@ -264,6 +310,8 @@ export default function PurchaseOrdersPage() {
     setExpectedDate("");
     setNote("");
     setItems([]);
+    setAiReviews([]);
+    setAiReviewNotice("");
   };
 
   const openEditOrder = (order: PurchaseOrderSummary) => {
@@ -322,6 +370,8 @@ export default function PurchaseOrdersPage() {
     setVendor(nextVendor);
     setItems([]);
     setSuggestionNotice("");
+    setAiReviews([]);
+    setAiReviewNotice("");
   };
 
   const updateItemName = (index: number, itemName: string) => {
@@ -557,6 +607,16 @@ export default function PurchaseOrdersPage() {
                     {suggestLoading ? "กำลังประมวลผล..." : "แนะนำอัตโนมัติ (รอบ 15 วัน)"}
                   </button>
                 )}
+                {!editingOrder && items.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={reviewSuggestionsWithAi}
+                    disabled={aiReviewLoading}
+                    className="px-3 py-1 rounded text-sm bg-indigo-100 text-indigo-800 hover:bg-indigo-200 disabled:opacity-50"
+                  >
+                    {aiReviewLoading ? "กำลังวิเคราะห์ด้วย AI..." : "วิเคราะห์ด้วย AI"}
+                  </button>
+                )}
                 {!editingOrder && (
                   <button
                     onClick={addItemRow}
@@ -572,6 +632,29 @@ export default function PurchaseOrdersPage() {
               <div role="status" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                 {suggestionNotice}
               </div>
+            )}
+
+            {aiReviewNotice && (
+              <div role="status" className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                {aiReviewNotice}
+              </div>
+            )}
+
+            {aiReviews.length > 0 && (
+              <section aria-label="ผลการตรวจทานด้วย AI" className="mb-4 rounded-lg border border-indigo-200 bg-indigo-50 p-4">
+                <p className="text-sm font-bold text-indigo-950">ผลการตรวจทานด้วย AI (ใช้ประกอบการตัดสินใจเท่านั้น ไม่เปลี่ยนจำนวนสั่งหรือสร้าง PO)</p>
+                <div className="mt-3 space-y-3">
+                  {aiReviews.map((review) => {
+                    const item = items.find((candidate) => candidate.item_id === review.item_id);
+                    return <article key={review.item_id} className="rounded-md border border-indigo-100 bg-white p-3 text-sm text-slate-800">
+                      <div className="flex flex-wrap items-center gap-2"><strong>{item?.item_name ?? review.item_id}</strong><span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-semibold text-indigo-800">{aiPriorityLabels[review.priority]}</span></div>
+                      <p className="mt-2">{review.explanation_th}</p>
+                      {review.evidence.length > 0 && <p className="mt-2 text-xs"><strong>หลักฐาน:</strong> {review.evidence.join(" · ")}</p>}
+                      {review.review_questions.length > 0 && <p className="mt-1 text-xs"><strong>ควรทบทวน:</strong> {review.review_questions.join(" · ")}</p>}
+                    </article>;
+                  })}
+                </div>
+              </section>
             )}
 
             {items.map((item, index) => (
