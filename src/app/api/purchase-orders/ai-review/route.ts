@@ -13,7 +13,7 @@ import {
 
 export const runtime = "nodejs";
 const RATE_LIMIT_MS = 5 * 60 * 1000;
-const TIMEOUT_MS = 20_000;
+const TIMEOUT_MS = 60_000;
 
 function vendorFingerprint(vendor: string) {
   return fingerprintAiReviewerPayload([{ item_id: vendor, item_name: "", current_stock: 0, unit: "", daily_demand: 0, policy_order_qty: 0, dynamic_order_qty: 0, projected_balance_at_horizon: 0, safety_stock: 0, lead_time_days: 0, horizon_days: 0, overdue_on_order_qty: 0, review_reasons: [], expedite_required: false, expiry: { expired_qty_excluded: 0, expiring_within_horizon_qty: 0, nearest_expiry_date: null } }]);
@@ -81,10 +81,13 @@ export async function POST(request: Request) {
     await sql`UPDATE purchase_order_ai_review_audit SET status = 'COMPLETED', result_json = ${JSON.stringify({ reviews: parsed })}::jsonb, completed_at = NOW() WHERE id = ${auditId}`;
     return NextResponse.json({ reviewer: "Gemini", model, reviews: parsed });
   } catch (error: unknown) {
-    console.error("Purchase order AI review unavailable", error instanceof Error ? error.message : "unknown error");
+    const errorMessage = error instanceof Error ? error.message : "unknown error";
+    console.error("Purchase order AI review unavailable", errorMessage);
     if (typeof auditId === "number") {
       try { await sql`UPDATE purchase_order_ai_review_audit SET status = 'FAILED', completed_at = NOW() WHERE id = ${auditId}`; } catch { /* audit table may be unavailable */ }
     }
-    return aiUnavailable();
+    return errorMessage === "AI_REVIEW_TIMEOUT"
+      ? aiUnavailable("AI ใช้เวลาวิเคราะห์นานเกิน 60 วินาที กรุณาลองใหม่อีกครั้ง")
+      : aiUnavailable();
   }
 }
