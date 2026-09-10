@@ -31,6 +31,17 @@ function eventVisibility(actorRole?: string, recipientRole?: string) {
   return "BOTH";
 }
 
+function shouldNotifyRecipient(event: PurchaseOrderCommunicationEvent, actorRole: string | undefined, recipientRole: string) {
+  const labRecipient = recipientRole === "Admin" || recipientRole === "Manager";
+  const vendorRecipient = recipientRole === "Vendor";
+  if (event === "PO_REVIEW_REQUIRED" || event === "SHIPMENT_REPLACEMENT_REQUIRED") return labRecipient || (event === "SHIPMENT_REPLACEMENT_REQUIRED" && vendorRecipient);
+  if (event === "PO_CREATED") return vendorRecipient;
+  if (event === "PO_SHIPPED") return labRecipient;
+  if (event === "PO_RECEIVED" || event === "PO_CANCELLED") return vendorRecipient;
+  if (event === "PO_CONFIRMED" || event === "PO_STATUS_UPDATED") return actorRole === "Vendor" ? labRecipient : vendorRecipient;
+  return labRecipient || vendorRecipient;
+}
+
 export async function recordPurchaseOrderCommunication(input: {
   poId: number;
   eventType: PurchaseOrderCommunicationEvent;
@@ -85,6 +96,7 @@ export async function recordPurchaseOrderCommunication(input: {
   let queued = 0;
   for (const recipient of recipients as Row[]) {
     const role = asString(recipient.role);
+    if (!shouldNotifyRecipient(input.eventType, input.actor?.role, role)) continue;
     if (!notificationEnabled(input.eventType, recipient)) continue;
     const payload = JSON.stringify({
       po: {
