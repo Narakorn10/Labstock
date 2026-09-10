@@ -1,44 +1,16 @@
 import { NextResponse } from "next/server";
 import sql from "@/lib/db";
 import { getAuthenticatedUser } from "@/lib/auth-utils";
-import { normalizeNotificationSettings, normalizePurchaseOrder, notifyUsers } from "@/lib/notifications";
+import { normalizePurchaseOrder } from "@/lib/notifications";
+import { recordPurchaseOrderCommunication } from "@/lib/po-communication";
 import { isLabPurchasingRole, validatePurchaseOrderItems } from "@/lib/purchase-order-workflow";
-
-async function generatePONumber() {
-  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  const result = await sql`
-    SELECT COUNT(*) as count
-    FROM purchase_orders
-    WHERE po_number LIKE ${`PO-${dateStr}-%`}
-  `;
-  const count = Number(result[0]?.count ?? 0) + 1;
-  return `PO-${dateStr}-${count.toString().padStart(3, "0")}`;
-}
-
-async function getVendorSettings(vendor: string) {
-  const rows = await sql`
-    SELECT n.*
-    FROM notification_settings n
-    JOIN users u ON u.username = n.username
-    WHERE u.role = 'Vendor' AND u.vendor = ${vendor}
-  `;
-  return normalizeNotificationSettings(rows);
-}
-
-async function getLabSettings() {
-  const rows = await sql`
-    SELECT n.*
-    FROM notification_settings n
-    JOIN users u ON u.username = n.username
-    WHERE u.role IN ('Admin', 'Manager')
-  `;
-  return normalizeNotificationSettings(rows);
-}
+import { createPurchaseOrderWithAudit, PurchaseOrderCreationError } from "@/lib/purchase-order-creation";
 
 export async function GET(request: Request) {
   try {
     const user = await getAuthenticatedUser(request);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (user.role !== "Vendor" && !isLabPurchasingRole(user.role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const requestedVendor = new URL(request.url).searchParams.get("vendor");
     const vendor = user.role === "Vendor" ? user.vendor : requestedVendor;
@@ -46,15 +18,78 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Vendor profile is not configured" }, { status: 403 });
     }
 
-    const orders = vendor
-      ? await sql`SELECT * FROM purchase_orders WHERE vendor = ${vendor} ORDER BY created_at DESC`
-      : await sql`SELECT * FROM purchase_orders ORDER BY created_at DESC`;
-    const ordersWithItems = await Promise.all(orders.map(async (po) => ({
-      ...po,
-      items: await sql`SELECT * FROM purchase_order_items WHERE po_id = ${po.id} ORDER BY id`,
-    })));
+    const orders = user.role === "Vendor"
+      ? await sql`
+          SELECT
+            po.id,
+            po.po_number,
+            po.vendor,
+            po.status,
+            po.proposal_origin,
+            po.vendor_note,
+            po.expected_date,
+            po.created_at,
+            COALESCE((
+              SELECT jsonb_agg(
+                jsonb_build_object(
+                  'id', poi.id,
+                  'item_id', poi.item_id,
+                  'item_name', poi.item_name,
+                  'quantity', poi.quantity,
+                  'unit', poi.unit,
+                  'received_qty', poi.received_qty,
+                  'reagent_type', COALESCE(poi.reagent_type, md.reagent_type),
+                  'job_type', COALESCE(poi.job_type, md.job_type),
+                  'machine_type', COALESCE(poi.machine_type, md.machine_type)
+                ) ORDER BY poi.id
+              )
+              FROM purchase_order_items poi
+              LEFT JOIN master_data md ON md.item_id = poi.item_id
+              WHERE poi.po_id = po.id
+            ), '[]'::jsonb) AS items
+          FROM purchase_orders po
+          WHERE po.vendor = ${vendor}
+            AND po.status <> 'PENDING_MANAGER_REVIEW'
+          ORDER BY po.created_at DESC
+        `
+      : vendor
+        ? await sql`
+            SELECT po.*,
+              COALESCE((
+                SELECT jsonb_agg(
+                  to_jsonb(poi) || jsonb_build_object(
+                    'reagent_type', COALESCE(poi.reagent_type, md.reagent_type),
+                    'job_type', COALESCE(poi.job_type, md.job_type),
+                    'machine_type', COALESCE(poi.machine_type, md.machine_type)
+                  ) ORDER BY poi.id
+                )
+                FROM purchase_order_items poi
+                LEFT JOIN master_data md ON md.item_id = poi.item_id
+                WHERE poi.po_id = po.id
+              ), '[]'::jsonb) AS items
+            FROM purchase_orders po
+            WHERE po.vendor = ${vendor}
+            ORDER BY po.created_at DESC
+          `
+        : await sql`
+            SELECT po.*,
+              COALESCE((
+                SELECT jsonb_agg(
+                  to_jsonb(poi) || jsonb_build_object(
+                    'reagent_type', COALESCE(poi.reagent_type, md.reagent_type),
+                    'job_type', COALESCE(poi.job_type, md.job_type),
+                    'machine_type', COALESCE(poi.machine_type, md.machine_type)
+                  ) ORDER BY poi.id
+                )
+                FROM purchase_order_items poi
+                LEFT JOIN master_data md ON md.item_id = poi.item_id
+                WHERE poi.po_id = po.id
+              ), '[]'::jsonb) AS items
+            FROM purchase_orders po
+            ORDER BY po.created_at DESC
+          `;
 
-    return NextResponse.json(ordersWithItems);
+    return NextResponse.json(orders);
   } catch (error: unknown) {
     console.error("Error fetching purchase orders:", error);
     return NextResponse.json({ error: "Failed to fetch purchase orders" }, { status: 500 });
@@ -83,50 +118,35 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Only Admin, Manager, or the assigned Vendor can create an order" }, { status: 403 });
     }
 
-    const catalogRows = await Promise.all(items.map((item) => sql`
-      SELECT item_id, name, unit
-      FROM master_data
-      WHERE item_id = ${item.item_id} AND vendor = ${vendor}
-      LIMIT 1
-    `));
-    if (catalogRows.some((rows) => rows.length === 0)) {
-      return NextResponse.json({ error: "Every item must belong to the selected Vendor" }, { status: 400 });
-    }
-
-    const storedItems = items.map((item, index) => ({
-      ...item,
-      item_name: String(catalogRows[index][0].name),
-      unit: String(catalogRows[index][0].unit),
-    }));
     const origin = user.role === "Vendor" ? "VENDOR" : "LAB";
-    const status = origin === "VENDOR" ? "PENDING_LAB_REVIEW" : "SUBMITTED";
-    const poNumber = await generatePONumber();
-    const poResult = await sql`
-      INSERT INTO purchase_orders (
-        po_number, vendor, note, expected_date, created_by, status, proposal_origin, review_requested_at
-      )
-      VALUES (
-        ${poNumber}, ${vendor}, ${note}, ${expectedDate}, ${user.username}, ${status}, ${origin},
-        ${origin === "VENDOR" ? new Date().toISOString() : null}
-      )
-      RETURNING *
-    `;
-    const po = poResult[0];
-    const itemsData = await Promise.all(storedItems.map((item) => sql`
-      INSERT INTO purchase_order_items (po_id, item_id, item_name, quantity, unit)
-      VALUES (${po.id}, ${item.item_id}, ${item.item_name}, ${item.quantity}, ${item.unit})
-      RETURNING *
-    `));
-    const fullPO = normalizePurchaseOrder(po, itemsData.map((rows) => ({
-      item_name: String(rows[0].item_name),
-      quantity: Number(rows[0].quantity),
-      unit: String(rows[0].unit),
+    const created = await createPurchaseOrderWithAudit({
+      user,
+      vendor,
+      items,
+      note,
+      expectedDate,
+      origin,
+    });
+    const fullPO = normalizePurchaseOrder(created.purchaseOrder, created.items.map((item) => ({
+      item_name: String(item.item_name),
+      quantity: Number(item.quantity),
+      unit: String(item.unit),
     })));
 
-    await notifyUsers(origin === "VENDOR" ? "PO_REVIEW_REQUIRED" : "PO_CREATED", fullPO, origin === "VENDOR" ? await getLabSettings() : await getVendorSettings(vendor));
+    await recordPurchaseOrderCommunication({
+      poId: Number(created.purchaseOrder.id),
+      eventType: "PO_REVIEW_REQUIRED",
+      actor: user,
+      source: "WEB",
+      metadata: { origin },
+      note,
+    });
     return NextResponse.json(fullPO, { status: 201 });
   } catch (error: unknown) {
     console.error("Error creating purchase order:", error);
+    if (error instanceof PurchaseOrderCreationError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     return NextResponse.json({ error: "Failed to create purchase order" }, { status: 500 });
   }
 }

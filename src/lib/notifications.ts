@@ -14,10 +14,10 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-export async function sendEmail(to: string, subject: string, html: string) {
+export async function sendEmail(to: string, subject: string, html: string): Promise<boolean> {
   if (!process.env.SMTP_USER) {
     console.warn('SMTP_USER not set, skipping email to', to);
-    return;
+    return false;
   }
   try {
     await transporter.sendMail({
@@ -26,9 +26,22 @@ export async function sendEmail(to: string, subject: string, html: string) {
       subject,
       html,
     });
+    return true;
   } catch (error) {
     console.error('Error sending email:', error);
+    return false;
   }
+}
+
+/** Durable-outbox adapter: provider failures escape so retry state is persisted. */
+export async function sendEmailStrict(to: string, subject: string, html: string): Promise<void> {
+  if (!process.env.SMTP_USER) throw new Error("SMTP_USER is not configured");
+  await transporter.sendMail({
+    from: `"Lab Stock System" <${process.env.SMTP_USER}>`,
+    to,
+    subject,
+    html,
+  });
 }
 
 export type NotifyEvent =

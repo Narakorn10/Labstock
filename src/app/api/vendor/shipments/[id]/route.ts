@@ -1,116 +1,121 @@
-import { NextResponse } from 'next/server';
-import sql from '@/lib/db';
-import { getAuthenticatedUser } from '@/lib/auth-utils';
-import { normalizeNotificationSettings, normalizePurchaseOrder } from '@/lib/notifications';
+import { NextResponse } from "next/server";
+import sql from "@/lib/db";
+import { getAuthenticatedUser } from "@/lib/auth-utils";
+import { recordPurchaseOrderCommunication } from "@/lib/po-communication";
 
-export async function PATCH(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+function quantitiesMatch(total: number, accepted: number, rejected: number) {
+  return Math.abs(accepted + rejected - total) < 0.000001;
+}
+
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await getAuthenticatedUser(request);
-    if (!user || (user.role !== 'Admin' && user.role !== 'Manager' && user.role !== 'User' && user.role !== 'Operator')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!user || (user.role !== "Admin" && user.role !== "Manager")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-
     const { id } = await params;
-    const { action } = await request.json(); // 'receive' or 'cancel'
-
-    // 1. Get shipment details
+    const body = await request.json() as { action?: string; accepted_qty?: number; rejected_qty?: number; rejection_reason?: string };
+    const action = body.action;
     const shipmentRows = await sql`
-      SELECT s.*, m.name as reagent_name 
-      FROM shipments s
-      JOIN master_data m ON s.item_id = m.item_id
-      WHERE s.id = ${id}
-      LIMIT 1
+      SELECT s.*, m.name AS reagent_name
+      FROM shipments s JOIN master_data m ON s.item_id = m.item_id
+      WHERE s.id = ${id} LIMIT 1
     `;
-
-    if (shipmentRows.length === 0) {
-      return NextResponse.json({ error: 'Shipment not found' }, { status: 404 });
-    }
-
+    if (!shipmentRows.length) return NextResponse.json({ error: "Shipment not found" }, { status: 404 });
     const shipment = shipmentRows[0];
+    if (shipment.status !== "In Transit") return NextResponse.json({ error: "Shipment is already processed" }, { status: 400 });
 
-    if (shipment.status !== 'In Transit') {
-      return NextResponse.json({ error: 'Shipment is already processed' }, { status: 400 });
-    }
-
-    if (action === 'cancel') {
-      const cancelResult = await sql`
-        UPDATE shipments 
-        SET status = 'Cancelled' 
-        WHERE id = ${id} AND status = 'In Transit'
-        RETURNING id
+    if (action === "cancel") {
+      // Cancellation and PO recomputation are gated by the same row lock.
+      const cancelled = await sql`
+        WITH claimed AS (
+          UPDATE shipments SET status = 'Cancelled'
+          WHERE id = ${id} AND status = 'In Transit'
+          RETURNING id, po_number
+        ), recomputed AS (
+          UPDATE purchase_orders p SET status = CASE
+            WHEN NOT EXISTS (SELECT 1 FROM purchase_order_items poi WHERE poi.po_id = p.id AND COALESCE(poi.accepted_qty, 0) < poi.quantity) THEN 'RECEIVED'
+            WHEN EXISTS (SELECT 1 FROM purchase_order_items poi WHERE poi.po_id = p.id AND COALESCE(poi.accepted_qty, 0) > 0) THEN 'PARTIALLY_RECEIVED'
+            WHEN NOT EXISTS (SELECT 1 FROM purchase_order_items poi LEFT JOIN shipments s ON s.po_number = p.po_number AND s.item_id = poi.item_id AND s.status = 'In Transit' WHERE poi.po_id = p.id GROUP BY poi.id, poi.quantity HAVING COALESCE(SUM(s.quantity), 0) < poi.quantity) THEN 'SHIPPED'
+            WHEN EXISTS (SELECT 1 FROM shipments s WHERE s.po_number = p.po_number AND s.status = 'In Transit') THEN 'PARTIALLY_SHIPPED'
+            ELSE 'CONFIRMED' END,
+            updated_at = NOW()
+          FROM claimed c WHERE p.po_number = c.po_number
+          RETURNING p.id, p.status
+        )
+        SELECT (SELECT id FROM claimed) AS shipment_id, (SELECT id FROM recomputed) AS po_id
       `;
-      if (cancelResult.length === 0) {
-        return NextResponse.json({ error: 'รายการนี้ถูกดำเนินการไปก่อนหน้าแล้ว' }, { status: 400 });
-      }
-      return NextResponse.json({ success: true, message: 'ยกเลิกรายการสำเร็จ' });
+      if (!cancelled[0]?.shipment_id) return NextResponse.json({ error: "รายการนี้ถูกดำเนินการไปก่อนหน้าแล้ว" }, { status: 400 });
+      if (cancelled[0]?.po_id) await recordPurchaseOrderCommunication({ poId: Number(cancelled[0].po_id), eventType: "PO_CANCELLED", actor: user, source: "WEB", shipmentId: Number(id), metadata: { reason: "Lab cancelled in-transit shipment" } });
+      return NextResponse.json({ success: true, message: "ยกเลิกรายการสำเร็จ" });
     }
 
-    // 2. ALL-IN-ONE ATOMIC OPERATION (CTE)
-    // This handles: Status Update + Inventory Upsert + Log Entry
-    // If any part fails, nothing is committed.
-    const result = await sql`
+    const acceptedQty = body.accepted_qty === undefined ? Number(shipment.quantity) : Number(body.accepted_qty);
+    const rejectedQty = body.rejected_qty === undefined ? 0 : Number(body.rejected_qty);
+    const rejectionReason = String(body.rejection_reason ?? "").trim();
+    if (!Number.isFinite(acceptedQty) || !Number.isFinite(rejectedQty) || acceptedQty < 0 || rejectedQty < 0 || !quantitiesMatch(Number(shipment.quantity), acceptedQty, rejectedQty)) {
+      return NextResponse.json({ error: "จำนวนรับผ่าน/เสียไม่ถูกต้องหรือเกินจำนวนที่จัดส่ง" }, { status: 400 });
+    }
+    if (rejectedQty > 0 && !rejectionReason) return NextResponse.json({ error: "กรุณาระบุเหตุผลเมื่อมีของเสียหรือไม่ผ่าน" }, { status: 400 });
+
+    const received = await sql`
       WITH claimed AS (
-        UPDATE shipments 
-        SET 
-          status = 'Received', 
-          received_at = CURRENT_TIMESTAMP, 
-          received_by = ${user.name}
+        UPDATE shipments
+        SET status = 'Received', received_at = CURRENT_TIMESTAMP, received_by = ${user.name},
+            accepted_qty = ${acceptedQty}, rejected_qty = ${rejectedQty}, rejection_reason = ${rejectionReason || null}
         WHERE id = ${id} AND status = 'In Transit'
         RETURNING *
-      ),
-      inv_update AS (
+      ), inv_update AS (
         INSERT INTO inventory (item_id, lot_no, exp_date, quantity, received_on)
-        SELECT item_id, lot_no, exp_date, quantity, CURRENT_DATE FROM claimed
-        ON CONFLICT (item_id, lot_no, received_on) 
-        DO UPDATE SET 
-          quantity = inventory.quantity + EXCLUDED.quantity,
-          exp_date = EXCLUDED.exp_date
+        SELECT item_id, lot_no, exp_date, ${acceptedQty}, CURRENT_DATE FROM claimed WHERE ${acceptedQty} > 0
+        ON CONFLICT (item_id, lot_no, received_on)
+        DO UPDATE SET quantity = inventory.quantity + EXCLUDED.quantity, exp_date = EXCLUDED.exp_date
         RETURNING item_id, lot_no, quantity
+      ), log_insert AS (
+        INSERT INTO logs (item_id, name, lot_no, action, quantity, username)
+        SELECT item_id, ${shipment.reagent_name}, lot_no, 'รับเข้าจากบริษัท (Handshake)', ${acceptedQty}, ${user.name + " (" + user.role + ")"}
+        FROM inv_update
+        RETURNING id
+      ), po_item_update AS (
+        UPDATE purchase_order_items poi
+        SET received_qty = COALESCE(poi.received_qty, 0) + ${acceptedQty},
+            accepted_qty = COALESCE(poi.accepted_qty, 0) + ${acceptedQty},
+            rejected_qty = COALESCE(poi.rejected_qty, 0) + ${rejectedQty}
+        FROM claimed c
+        WHERE c.po_number IS NOT NULL AND poi.po_id = (SELECT p.id FROM purchase_orders p WHERE p.po_number = c.po_number)
+          AND poi.item_id = c.item_id
+        RETURNING poi.po_id
+      ), po_update AS (
+        UPDATE purchase_orders p SET status = CASE
+          WHEN NOT EXISTS (SELECT 1 FROM purchase_order_items poi WHERE poi.po_id = p.id AND COALESCE(poi.accepted_qty, 0) < poi.quantity) THEN 'RECEIVED'
+          WHEN EXISTS (SELECT 1 FROM purchase_order_items poi WHERE poi.po_id = p.id AND COALESCE(poi.accepted_qty, 0) > 0) THEN 'PARTIALLY_RECEIVED'
+          WHEN EXISTS (SELECT 1 FROM shipments s WHERE s.po_number = p.po_number AND s.status = 'In Transit') THEN 'PARTIALLY_SHIPPED'
+          ELSE 'CONFIRMED' END,
+          received_at = CASE WHEN NOT EXISTS (SELECT 1 FROM purchase_order_items poi WHERE poi.po_id = p.id AND COALESCE(poi.accepted_qty, 0) < poi.quantity) THEN NOW() ELSE p.received_at END,
+          updated_at = NOW()
+        WHERE p.id IN (SELECT po_id FROM po_item_update)
+        RETURNING p.id, p.status
       )
-      INSERT INTO logs (item_id, name, lot_no, action, quantity, username)
-      SELECT item_id, ${shipment.reagent_name}, lot_no, 'รับเข้าจากบริษัท (Handshake)', quantity, ${user.name + ' (' + user.role + ')'}
-      FROM inv_update
-      RETURNING id
+      SELECT c.id AS shipment_id, c.po_number, c.rejected_qty, (SELECT id FROM po_update) AS po_id
+      FROM claimed c
     `;
-
-    if (result.length === 0) {
-      return NextResponse.json({ error: 'รายการนี้ถูกรับเข้าหรือยกเลิกไปก่อนหน้าแล้ว' }, { status: 400 });
+    if (!received.length) return NextResponse.json({ error: "รายการนี้ถูกรับเข้าหรือยกเลิกไปก่อนหน้าแล้ว" }, { status: 400 });
+    const row = received[0];
+    const poId = row.po_id ? Number(row.po_id) : null;
+    if (poId) {
+      await recordPurchaseOrderCommunication({
+        poId,
+        eventType: Number(row.rejected_qty) > 0 ? "SHIPMENT_REPLACEMENT_REQUIRED" : "PO_RECEIVED",
+        actor: user,
+        source: "WEB",
+        shipmentId: Number(row.shipment_id),
+        note: rejectionReason || null,
+        metadata: { acceptedQty, rejectedQty, replacementRequired: rejectedQty > 0 },
+      });
     }
-
-    if (shipment.po_number) {
-        const poData = await sql`SELECT id FROM purchase_orders WHERE po_number = ${shipment.po_number}`;
-        if (poData.length > 0) {
-            await sql`
-              UPDATE purchase_order_items
-              SET received_qty = received_qty + ${shipment.quantity}
-              WHERE po_id = ${poData[0].id} AND item_id = ${shipment.item_id}
-            `;
-            await sql`
-              UPDATE purchase_orders p
-              SET status = CASE WHEN NOT EXISTS (
-                SELECT 1 FROM purchase_order_items poi
-                WHERE poi.po_id = p.id AND COALESCE(poi.received_qty, 0) < poi.quantity
-              ) THEN 'RECEIVED' ELSE 'PARTIALLY_RECEIVED' END,
-              received_at = NOW(), updated_at = NOW()
-              WHERE id = ${poData[0].id}
-            `;
-
-            const { notifyUsers } = await import('@/lib/notifications');
-            const settingsRows = await sql`SELECT * FROM notification_settings WHERE username = ${shipment.vendor}`;
-            const fullPoData = await sql`SELECT * FROM purchase_orders WHERE id = ${poData[0].id}`;
-            const settings = normalizeNotificationSettings(settingsRows);
-            await notifyUsers('PO_RECEIVED', normalizePurchaseOrder(fullPoData[0]), settings);
-        }
-    }
-
-    return NextResponse.json({ success: true, message: 'รับเข้าสต๊อกสำเร็จ' });
-
+    return NextResponse.json({ success: true, replacementRequired: rejectedQty > 0, message: rejectedQty > 0 ? "รับรายการแล้วและแจ้งให้ Vendor จัดส่งทดแทน" : "รับเข้าสต๊อกสำเร็จ" });
   } catch (error: unknown) {
-    console.error('Shipment error:', error);
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: errorMessage }, { status: 500 });
+    console.error("Shipment error:", error);
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to process shipment" }, { status: 500 });
   }
 }

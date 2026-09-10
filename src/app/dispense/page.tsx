@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/components/auth-provider';
 import { apiClient, BarcodePattern, Lot, Reagent } from '@/lib/api-client';
-import { findMatchingReagent } from '@/lib/barcode-parser';
-import QRScanner from '@/components/qr-scanner';
+import { findMatchingReagentWithV2 } from '@/lib/barcode-parser';
+import QRScanner from '@/components/lazy-qr-scanner';
 import { 
   HandHelping, 
   Camera, 
@@ -35,6 +35,7 @@ export default function DispensePage() {
   const { user, loading: authLoading } = useAuth();
   const [reagents, setReagents] = useState<Reagent[]>([]);
   const [patterns, setPatterns] = useState<BarcodePattern[]>([]);
+  const [v2Patterns, setV2Patterns] = useState<import('@/lib/api-client').BarcodePatternV2Runtime[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -69,12 +70,13 @@ export default function DispensePage() {
     setLoading(true);
     setLoadError('');
     try {
-      const [reagentsData, patternsData] = await Promise.all([
+      const [reagentsData, runtimeData] = await Promise.all([
         apiClient.getDashboard(),
-        apiClient.getBarcodePatterns()
+        apiClient.getBarcodeRuntimePatterns()
       ]);
       setReagents(reagentsData);
-      setPatterns(patternsData);
+      setPatterns(runtimeData.patterns);
+      setV2Patterns(runtimeData.v2Patterns);
     } catch (err: unknown) {
       console.error(err);
       const error = err as { response?: { data?: { error?: string } }, message?: string };
@@ -98,9 +100,9 @@ export default function DispensePage() {
       }
 
       try {
-        const [reagentsData, patternsData] = await Promise.all([
+        const [reagentsData, runtimeData] = await Promise.all([
           apiClient.getDashboard(),
-          apiClient.getBarcodePatterns()
+          apiClient.getBarcodeRuntimePatterns()
         ]);
 
         if (!active) {
@@ -108,7 +110,8 @@ export default function DispensePage() {
         }
 
         setReagents(reagentsData);
-        setPatterns(patternsData);
+        setPatterns(runtimeData.patterns);
+        setV2Patterns(runtimeData.v2Patterns);
       } catch (err: unknown) {
         if (!active) {
           return;
@@ -174,7 +177,7 @@ export default function DispensePage() {
   };
 
   const handleScan = (decodedText: string) => {
-    const { data, match, lookupValues } = findMatchingReagent(decodedText, patterns, reagents);
+    const { data, match, lookupValues } = findMatchingReagentWithV2(decodedText, patterns, v2Patterns, reagents, v2Patterns.length > 0);
     if (!data) {
       setFeedback({ type: 'error', msg: 'ไม่สามารถอ่าน QR/Barcode นี้ได้ กรุณาลองใหม่' });
       setScanMode(false);

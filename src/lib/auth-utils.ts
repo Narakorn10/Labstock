@@ -46,28 +46,78 @@ export async function hasUserPinColumn() {
   return Boolean(result[0]?.exists);
 }
 
+export async function hasUserAccountStatusColumn() {
+  const result = await sql`
+    SELECT EXISTS (
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_name = 'users' AND column_name = 'account_status'
+    ) as exists
+  `;
+
+  return Boolean(result[0]?.exists);
+}
+
 export async function getAuthenticatedUser(request: Request) {
+  // Auth.js sessions are the primary web authentication path. Bearer tokens
+  // remain below only so existing mobile/LIFF clients are not logged out during
+  // the staged migration.
+  try {
+    const { auth } = await import('@/auth');
+    const session = await auth();
+    const sessionUser = session?.user as (AuthenticatedUser & { username?: string; sessionVersion?: number }) | undefined;
+    if (sessionUser?.username && sessionUser.role) {
+      const { isCurrentAuthSession } = await import('@/lib/auth-service');
+      if (!await isCurrentAuthSession(sessionUser.username, sessionUser.sessionVersion)) {
+        return null;
+      }
+      return {
+        username: sessionUser.username,
+        name: sessionUser.name || sessionUser.username,
+        role: sessionUser.role,
+        vendor: sessionUser.vendor,
+      };
+    }
+  } catch (error) {
+    console.error('Auth.js session check error:', error);
+  }
+
   const authHeader = request.headers.get('Authorization');
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  const bearerMatch = authHeader?.match(/^Bearer[ \t]+([^ \t\r\n]+)$/i);
+  if (!bearerMatch || bearerMatch[1].length > 1024) {
     return null;
   }
 
-  const token = authHeader.split(' ')[1];
+  const token = bearerMatch[1];
   
   try {
     // Hash the token from request to compare with hashed token in DB
     const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+    const hasAccountStatus = await hasUserAccountStatusColumn();
 
-    const users = await sql`
-      SELECT username, name, role, vendor, token_expiry 
-      FROM users 
-      WHERE (token = ${token} OR token = ${hashedToken})
-      LIMIT 1
-    `;
+    const users = hasAccountStatus
+      ? await sql`
+          SELECT username, name, role, vendor, token_expiry, account_status
+          FROM users
+          WHERE (token = ${token} OR token = ${hashedToken})
+          LIMIT 1
+        `
+      : await sql`
+          SELECT username, name, role, vendor, token_expiry
+          FROM users
+          WHERE (token = ${token} OR token = ${hashedToken})
+          LIMIT 1
+        `;
 
     if (users.length === 0) return null;
 
     const user = users[0];
+
+    // Before the migration the column is absent and legacy tokens remain valid.
+    // Once it exists, only explicitly active accounts can use a bearer token.
+    if (hasAccountStatus && user.account_status !== 'active') {
+      return null;
+    }
 
     // Check expiry
     if (user.token_expiry && new Date(user.token_expiry) < new Date()) {
@@ -90,17 +140,26 @@ export async function verifyUserPin(username: string, pin: string): Promise<Auth
   try {
     const pinEnabled = await hasUserPinColumn();
     if (!pinEnabled) return null;
+    const hasAccountStatus = await hasUserAccountStatusColumn();
 
-    const users = await sql`
-      SELECT username, name, role, vendor, pin_hash
-      FROM users
-      WHERE LOWER(username) = LOWER(${username.trim()})
-      LIMIT 1
-    `;
+    const users = hasAccountStatus
+      ? await sql`
+          SELECT username, name, role, vendor, pin_hash, account_status
+          FROM users
+          WHERE LOWER(username) = LOWER(${username.trim()})
+          LIMIT 1
+        `
+      : await sql`
+          SELECT username, name, role, vendor, pin_hash
+          FROM users
+          WHERE LOWER(username) = LOWER(${username.trim()})
+          LIMIT 1
+        `;
 
     if (users.length === 0) return null;
 
     const user = users[0];
+    if (hasAccountStatus && user.account_status !== 'active') return null;
     if (!user.pin_hash) return null;
 
     const isMatch = await comparePassword(pin, user.pin_hash);
@@ -121,4 +180,29 @@ export async function verifyUserPin(username: string, pin: string): Promise<Auth
 export async function isAdmin(request: Request) {
   const user = await getAuthenticatedUser(request);
   return user?.role === 'Admin';
+}
+
+/** Returns true when the authenticated user may manage a menu-scoped feature. */
+export async function hasMenuPermission(request: Request, menuId: string) {
+  const user = await getAuthenticatedUser(request);
+  if (!user) return { user: null, allowed: false };
+  if (user.role === 'Admin') return { user, allowed: true };
+
+  try {
+    const rows = await sql`
+      SELECT allowed_menus
+      FROM role_permissions
+      WHERE role = ${user.role}
+      LIMIT 1
+    `;
+    const allowedMenus = Array.isArray(rows[0]?.allowed_menus) ? rows[0].allowed_menus as string[] : [];
+    return { user, allowed: allowedMenus.includes(menuId) };
+  } catch (error) {
+    console.error('RBAC permission check failed:', error);
+    return { user, allowed: false };
+  }
+}
+
+export async function canManageBarcodeLearningV2(request: Request) {
+  return hasMenuPermission(request, 'barcodes');
 }

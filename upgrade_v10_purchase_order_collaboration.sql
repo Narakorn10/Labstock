@@ -10,4 +10,4 @@ SET proposal_origin = 'LAB'
 WHERE proposal_origin IS NULL OR proposal_origin = '';
 
 CREATE INDEX IF NOT EXISTS idx_purchase_orders_vendor_status
-  ON purchase_orders (vendฟor, status, created_at DESC);
+  ON purchase_orders (vendor, status, created_at DESC);

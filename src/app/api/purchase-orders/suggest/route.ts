@@ -2,12 +2,16 @@ import { NextResponse } from 'next/server';
 import sql from '@/lib/db';
 import { getAuthenticatedUser } from '@/lib/auth-utils';
 import { getPurchaseOrderSuggestions } from '@/lib/purchase-order-suggestions';
+import { isLabPurchasingRole } from '@/lib/purchase-order-workflow';
 
 export async function GET(request: Request) {
   try {
     const user = await getAuthenticatedUser(request);
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    if (user.role !== 'Vendor' && !isLabPurchasingRole(user.role)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     const { searchParams } = new URL(request.url);

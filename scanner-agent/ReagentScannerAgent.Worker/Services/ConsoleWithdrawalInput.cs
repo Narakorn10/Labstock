@@ -120,7 +120,39 @@ public sealed class ConsoleWithdrawalInput
             Console.WriteLine($"ไม่พบ GTIN {gs1.Gtin} ใน master data cache; กรุณากรอกข้อมูลเอง");
         }
 
+        // V2 is deliberately limited to the old manual-input gap. It never
+        // runs for GS1 payloads and never changes the legacy GS1/manual path.
+        if (gs1 is null)
+        {
+            var v2 = await _catalogStore.FindByV2Async(barcode, cancellationToken);
+            if (v2 is not null)
+            {
+                return ReadV2Item(barcode, v2, cancellationToken);
+            }
+        }
+
         return ReadItem(barcode, cancellationToken);
+    }
+
+    private static WithdrawalItem? ReadV2Item(string barcode, V2BarcodeMatch match, CancellationToken cancellationToken)
+    {
+        Console.WriteLine($"QR V2: {match.Reagent.Name} ({match.Reagent.ItemId}), lot {match.LotNo ?? "-"}, expiry {match.ExpiryDate ?? "-"}");
+        var quantityText = ReadRequired("จำนวน: ", cancellationToken);
+        if (quantityText is null || !TryParseQuantity(quantityText, out var quantity))
+        {
+            Console.WriteLine("จำนวนต้องมากกว่า 0");
+            return null;
+        }
+
+        return new WithdrawalItem
+        {
+            LocalEventId = Guid.NewGuid().ToString("N"),
+            ItemId = match.Reagent.ItemId,
+            LotNo = match.LotNo ?? ReadRequired("Lot: ", cancellationToken) ?? "",
+            Quantity = quantity,
+            ExpiryDate = match.ExpiryDate,
+            RawBarcode = barcode
+        };
     }
 
     private static WithdrawalItem? ReadGs1Item(string barcode, CatalogReagent reagent, Gs1UdiData gs1, CancellationToken cancellationToken)

@@ -38,6 +38,7 @@ const ALL_MENUS = [
   { id: 'settings', label: 'System Settings', icon: Settings },
   { id: 'notifications', label: 'Notifications', icon: Settings },
   { id: 'barcodes', label: 'Barcode Learning', icon: Settings },
+  { id: 'reagent_order_policies', label: 'ตั้งค่านโยบายสั่งซื้อน้ำยา', icon: Settings },
   { id: 'rbac', label: 'Permissions Management', icon: ShieldCheck }
 ];
 

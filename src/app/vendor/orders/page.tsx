@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
+import { exportPurchaseOrderCsv, printPurchaseOrderPdf } from "@/lib/purchase-order-export";
 
 type OrderItem = { item_id: string; item_name: string; quantity: number; unit: string };
 type SuggestedItem = OrderItem & { current_qty: number; min_threshold: number; suggested_order_qty: number };
@@ -20,9 +21,12 @@ type PurchaseOrder = {
 const statusLabel: Record<string, string> = {
   PENDING_LAB_REVIEW: "รอ Lab ตรวจสอบ",
   SUBMITTED: "Lab ส่งรายการแล้ว",
+  ACKNOWLEDGED: "Vendor รับทราบแล้ว",
   REVISION_REQUESTED: "Vendor แก้ไข รอ Lab ยืนยัน",
   CONFIRMED: "ยืนยันแล้ว",
+  PARTIALLY_SHIPPED: "จัดส่งบางส่วน",
   SHIPPED: "จัดส่งแล้ว",
+  PARTIALLY_RECEIVED: "รับเข้าแล้วบางส่วน",
   RECEIVED: "Lab รับเข้าแล้ว",
   REJECTED: "ปฏิเสธ",
 };
@@ -65,6 +69,9 @@ export default function VendorOrdersPage() {
           min_threshold: Number(item.min_threshold),
           suggested_order_qty: Number(item.suggested_order_qty),
         })));
+      } else {
+        const error = (await suggestionsResponse.json().catch(() => null)) as { error?: string } | null;
+        alert(error?.error ?? "ไม่สามารถคำนวณรายการแนะนำได้ กรุณาลองใหม่อีกครั้ง");
       }
     } finally {
       setLoading(false);
@@ -109,7 +116,7 @@ export default function VendorOrdersPage() {
         method: editingOrder ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify(editingOrder
-          ? { status: "REVISION_REQUESTED", vendor_note: draftNote, items: draftItems }
+          ? { action: "REQUEST_REVISION", vendor_note: draftNote, items: draftItems }
           : { vendor: user.vendor, note: draftNote, items: draftItems }),
       });
       if (!response.ok) {
@@ -127,14 +134,36 @@ export default function VendorOrdersPage() {
   };
 
   const confirmLabOrder = async (order: PurchaseOrder) => {
-    if (!confirm("ยืนยันว่า Vendor สามารถจัดรายการนี้ได้ตามเดิมหรือไม่?")) return;
+    const action = order.status === "SUBMITTED" ? "ACKNOWLEDGE" : "CONFIRM_AVAILABILITY";
+    const prompt = action === "ACKNOWLEDGE"
+      ? "รับทราบใบสั่งซื้อและเริ่มตรวจสอบการจัดหาใช่หรือไม่?"
+      : "ยืนยันว่า Vendor สามารถจัดรายการนี้ได้ตามเดิมหรือไม่?";
+    if (!confirm(prompt)) return;
     const response = await fetch(`/api/purchase-orders/${order.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-      body: JSON.stringify({ status: "CONFIRMED" }),
+      body: JSON.stringify({ action }),
     });
     if (!response.ok) {
       alert("ยืนยันรายการไม่สำเร็จ");
+      return;
+    }
+    await loadData();
+  };
+
+  const rejectLabOrder = async (order: PurchaseOrder) => {
+    const reason = prompt("โปรดระบุเหตุผลที่ปฏิเสธใบสั่งน้ำยา");
+    if (!reason?.trim()) return;
+    if (!confirm("ยืนยันการปฏิเสธใบสั่งน้ำยานี้หรือไม่?")) return;
+
+    const response = await fetch(`/api/purchase-orders/${order.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+      body: JSON.stringify({ action: "REJECT", vendor_note: reason.trim() }),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => null);
+      alert(data?.error ?? "ปฏิเสธรายการไม่สำเร็จ");
       return;
     }
     await loadData();
@@ -169,7 +198,17 @@ export default function VendorOrdersPage() {
         {loading ? <p className="text-sm text-gray-500">กำลังโหลด...</p> : orders.map((order) => (
           <article key={order.id} className="rounded-xl border bg-white p-4">
             <div className="flex flex-col justify-between gap-3 sm:flex-row"><div><div className="flex items-center gap-2"><h3 className="font-semibold">{order.po_number}</h3><span className="rounded bg-gray-100 px-2 py-1 text-xs">{statusLabel[order.status] ?? order.status}</span></div><p className="mt-1 text-sm text-gray-500">{order.proposal_origin === "VENDOR" ? "Vendor เสนอรายการ" : "Lab สร้างใบสั่งน้ำยา"} · {order.items.length} รายการ</p>{order.vendor_note && <p className="mt-2 text-sm text-amber-700">หมายเหตุ: {order.vendor_note}</p>}</div>
-              {order.status === "SUBMITTED" && order.proposal_origin === "LAB" && <div className="flex gap-2"><button onClick={() => confirmLabOrder(order)} className="rounded-lg bg-green-600 px-3 py-2 text-sm font-medium text-white">ยืนยันจัดได้</button><button onClick={() => openRevision(order)} className="rounded-lg border border-amber-300 px-3 py-2 text-sm font-medium text-amber-700">แก้ไขแล้วส่ง Lab</button></div>}
+              <div className="flex flex-wrap gap-2">
+                <button onClick={() => exportPurchaseOrderCsv(order)} className="rounded-lg border border-emerald-300 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50">Excel (CSV)</button>
+                <button onClick={() => {
+                  try {
+                    printPurchaseOrderPdf(order);
+                  } catch (error) {
+                    alert(error instanceof Error ? error.message : "ไม่สามารถเปิดหน้าพิมพ์ได้");
+                  }
+                }} className="rounded-lg border border-indigo-300 px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-50">บันทึก PDF</button>
+                {(order.status === "SUBMITTED" || order.status === "ACKNOWLEDGED") && order.proposal_origin === "LAB" && <><button onClick={() => confirmLabOrder(order)} className="rounded-lg bg-green-600 px-3 py-2 text-sm font-medium text-white">{order.status === "SUBMITTED" ? "รับทราบรายการ" : "ยืนยันจัดได้"}</button><button onClick={() => openRevision(order)} className="rounded-lg border border-amber-300 px-3 py-2 text-sm font-medium text-amber-700">แก้ไขแล้วส่ง Lab</button><button onClick={() => void rejectLabOrder(order)} className="rounded-lg border border-red-300 px-3 py-2 text-sm font-medium text-red-700">ปฏิเสธ</button></>}
+              </div>
             </div>
           </article>
         ))}

@@ -26,12 +26,16 @@ export default function TrackingBoardPage() {
   const router = useRouter();
   const [shipments, setShipments] = useState<ShipmentBoardItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const getAuthHeaders = (): Record<string, string> => {
+    const token = localStorage.getItem("labstock_token");
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
 
   const fetchShipments = useCallback(async () => {
     try {
       // Note: Admin/Manager view fetches all, we should use a specific tracking endpoint
       // but for simplicity we reuse the vendor shipments endpoint which returns all for admins.
-      const res = await fetch("/api/vendor/shipments");
+      const res = await fetch("/api/vendor/shipments", { headers: getAuthHeaders() });
       if (res.ok) {
         const data = (await res.json()) as ShipmentBoardItem[];
         setShipments(Array.isArray(data) ? data : []);
@@ -48,7 +52,7 @@ export default function TrackingBoardPage() {
 
     const loadShipments = async () => {
       try {
-        const res = await fetch("/api/vendor/shipments");
+        const res = await fetch("/api/vendor/shipments", { headers: getAuthHeaders() });
         if (res.ok) {
           const data = (await res.json()) as ShipmentBoardItem[];
           if (active) {

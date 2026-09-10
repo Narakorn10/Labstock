@@ -4,6 +4,7 @@ import {
   ArrowUpFromLine,
   BarChart3,
   BellRing,
+  ClipboardList,
   CheckCircle2,
   Database,
   HandHelping,
@@ -35,7 +36,7 @@ export const NAVIGATION_GROUPS: NavigationGroup[] = [
   {
     title: "Overview",
     items: [
-      { id: "dashboard", name: "Inventory Overview", label: "Inventory Overview", href: "/", icon: LayoutDashboard },
+      { id: "dashboard", name: "Inventory Overview", label: "Inventory Overview", href: "/dashboard", icon: LayoutDashboard },
       { id: "analysis", name: "Analysis (วิเคราะห์)", label: "Analysis", href: "/analysis", icon: BarChart3 },
       { id: "logs", name: "Logs (ประวัติ)", label: "History Logs", href: "/logs", icon: History },
     ],
@@ -78,6 +79,7 @@ export const NAVIGATION_GROUPS: NavigationGroup[] = [
       { id: "settings", name: "Settings (ตั้งค่า)", label: "System Settings", href: "/settings", icon: Settings },
       { id: "notifications", name: "Notifications", label: "Notifications", href: "/settings/notifications", icon: BellRing },
       { id: "barcodes", name: "สอนอ่านบาร์โค้ด", label: "Barcode Learning", href: "/settings/barcodes", icon: ScanLine },
+      { id: "reagent_order_policies", name: "ตั้งค่านโยบายสั่งซื้อน้ำยา", label: "Reagent Order Policies", href: "/settings/reagent-orders", icon: ClipboardList },
     ],
   },
 ];
@@ -87,7 +89,7 @@ export const ALL_MENUS = NAVIGATION_GROUPS.flatMap((group) => group.items);
 export const ROLES = ["Admin", "Manager", "Operator", "User", "Vendor"] as const;
 
 const ROLE_FALLBACK_MENUS: Record<string, string[]> = {
-  Admin: ["dashboard", "master_data", "user_management", "rbac"],
+  Admin: ["dashboard", "master_data", "user_management", "rbac", "reagent_order_policies"],
   Manager: ["dashboard", "master_data"],
 };
 

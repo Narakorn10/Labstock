@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { validateSignature, webhook } from "@line/bot-sdk";
 import { neon } from "@neondatabase/serverless";
 import { getLowStockRows, searchStockRows, searchStockRowsByJob } from "@/lib/bot-stock-queries";
-import { replyDispenseMenu, replyHelp, replyLowStock, replyOrderingMenu, replyPODetail, replyStockSummary, replyTrackingStatus } from "@/lib/line-bot";
+import { getLineOrderUrl, replyDispenseMenu, replyHelp, replyLowStock, replyOrderingMenu, replyPODetail, replyStockSummary, replyTrackingStatus } from "@/lib/line-bot";
 import { LowStockItem, PurchaseOrder, TrackingResult } from "@/lib/line-flex-templates";
-import { normalizeNotificationSettings, normalizePurchaseOrder, notifyUsers } from "@/lib/notifications";
+import { getLineLinkedUser } from "@/lib/line-liff-auth";
 
 const sql = neon(process.env.DATABASE_URL || "");
 const channelSecret = process.env.LINE_CHANNEL_SECRET;
@@ -111,30 +111,6 @@ async function sendReply(replyToken: string, message: ReplyTextMessage) {
   await lineClient.replyMessage({ replyToken, messages: [message] });
 }
 
-async function notifyLabOfPurchaseOrderStatus(poNumber: string) {
-  const poRows = await sql`SELECT * FROM purchase_orders WHERE po_number = ${poNumber}`;
-  if (poRows.length === 0) return;
-
-  const itemRows = await sql`
-    SELECT item_name, quantity, unit
-    FROM purchase_order_items
-    WHERE po_id = ${poRows[0].id}
-    ORDER BY id
-  `;
-  const settingsRows = await sql`
-    SELECT n.* FROM notification_settings n
-    JOIN users u ON u.username = n.username
-    WHERE u.role IN ('Admin', 'Manager')
-  `;
-  const po = normalizePurchaseOrder(poRows[0], itemRows.map((item) => ({
-    item_name: String(item.item_name ?? ""),
-    quantity: Number(item.quantity ?? 0),
-    unit: String(item.unit ?? ""),
-  })));
-
-  await notifyUsers("PO_STATUS_UPDATED", po, normalizeNotificationSettings(settingsRows));
-}
-
 export async function POST(req: Request) {
   try {
     const bodyText = await req.text();
@@ -167,6 +143,19 @@ export async function POST(req: Request) {
         console.log(`[LINE Webhook] Text received: "${text}"`);
 
         if (!replyToken) return;
+
+        const vendorRejectMatch = text.match(/^ปฏิเสธ\s+(PO-[A-Z0-9-]+)\s*:\s*(.+)$/i);
+        if (vendorRejectMatch) {
+          const [, poNumber, reason] = vendorRejectMatch;
+          const linkedVendor = event.source?.userId ? await getLineLinkedUser(event.source.userId) : null;
+          if (!linkedVendor || linkedVendor.role !== "Vendor" || !linkedVendor.vendor) {
+            await sendReply(replyToken, { type: "text", text: "บัญชี LINE นี้ยังไม่ได้ผูกกับบัญชี Vendor ที่ใช้งานอยู่ค่ะ" });
+            return;
+          }
+
+          await sendReply(replyToken, { type: "text", text: `รับเหตุผลการปฏิเสธของ PO ${poNumber} แล้ว (${reason.trim().slice(0, 120)}) กรุณาเปิดเว็บเพื่อส่งเหตุผลอย่างเป็นทางการ: ${getLineOrderUrl()}` });
+          return;
+        }
 
         if (isDispenseMenuCommand(text)) {
           await replyDispenseMenu(replyToken);
@@ -299,23 +288,30 @@ export async function POST(req: Request) {
 
         if (!replyToken) return;
 
-        if (action === "confirm_po" && id) {
-          await sql`UPDATE purchase_orders SET status = 'CONFIRMED', confirmed_at = NOW() WHERE po_number = ${id}`;
-          await notifyLabOfPurchaseOrderStatus(id);
-          await sendReply(replyToken, {
-            type: "text",
-            text: `ยืนยันใบสั่งซื้อ ${id} เรียบร้อยแล้ว ระบบได้แจ้งเตือนให้ Lab ทราบแล้วค่ะ`,
-          });
+        const lineUserId = postbackEvent.source?.userId || null;
+        const linkedLineUser = lineUserId ? await getLineLinkedUser(lineUserId) : null;
+        if ((action === "acknowledge_po" || action === "confirm_vendor_po" || action === "confirm_po") && id && linkedLineUser?.role === "Vendor") {
+          await sendReply(replyToken, { type: "text", text: `กรุณาเปิดเว็บเพื่อยืนยัน PO ${id} (การกดปุ่มใน LINE จะไม่เปลี่ยนสถานะโดยตรง): ${getLineOrderUrl()}` });
           return;
         }
-
-        if (action === "reject_po" && id) {
-          await sql`UPDATE purchase_orders SET status = 'REJECTED' WHERE po_number = ${id}`;
-          await notifyLabOfPurchaseOrderStatus(id);
-          await sendReply(replyToken, {
-            type: "text",
-            text: `ปฏิเสธใบสั่งซื้อ ${id} เรียบร้อยแล้วค่ะ`,
-          });
+        if ((action === "start_vendor_reject" || action === "reject_po") && id && linkedLineUser?.role === "Vendor") {
+          if (!linkedLineUser.vendor) {
+            await sendReply(replyToken, { type: "text", text: "บัญชี LINE นี้ยังไม่ได้ผูกกับบัญชี Vendor ที่ใช้งานอยู่ค่ะ" });
+            return;
+          }
+          await sendReply(replyToken, { type: "text", text: `โปรดส่งเหตุผลการปฏิเสธในรูปแบบ: ปฏิเสธ ${id}: <เหตุผล>` });
+          return;
+        }
+        const linkedUserRows = lineUserId
+          ? await sql`SELECT username, role FROM users WHERE line_user_id = ${lineUserId} LIMIT 1`
+          : [];
+        const linkedUser = linkedUserRows[0];
+        if (action === "confirm_po" || action === "reject_po") {
+          await sendReply(replyToken, { type: "text", text: `กรุณาเปิดเว็บเพื่อดำเนินการกับ PO ${id ?? "นี้"}: ${getLineOrderUrl()}` });
+          return;
+        }
+        if ((action === "confirm_po" || action === "reject_po") && (!linkedUser || (linkedUser.role !== "Admin" && linkedUser.role !== "Manager"))) {
+          await sendReply(replyToken, { type: "text", text: "ไม่พบสิทธิ์ Admin/Manager สำหรับการอนุมัติใบสั่งซื้อนี้ค่ะ" });
           return;
         }
 

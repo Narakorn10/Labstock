@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import sql from "@/lib/db";
+import { loadRuntimeBarcodePatterns } from "@/lib/barcode-runtime";
 
 export async function GET() {
   try {
@@ -23,7 +24,7 @@ export async function GET() {
       return parsed.toISOString().slice(0, 10);
     };
 
-    const [masterData, inventoryData, patterns] = await Promise.all([
+    const [masterData, inventoryData, runtimePatterns] = await Promise.all([
       sql`
         SELECT
           item_id as "itemId",
@@ -35,8 +36,10 @@ export async function GET() {
           unit,
           min_threshold as "minThreshold",
           weekly_target as "weeklyTarget",
-          vendor
+          vendor,
+          is_active as "isActive"
         FROM master_data
+        WHERE is_active = TRUE
         ORDER BY item_id ASC
       `,
       sql`
@@ -51,11 +54,7 @@ export async function GET() {
         WHERE quantity > 0
         ORDER BY exp_date ASC NULLS LAST, received_on ASC, id ASC
       `,
-      sql`
-        SELECT id, name, regex_pattern, item_id_group, lot_no_group, exp_date_group
-        FROM barcode_patterns
-        ORDER BY created_at DESC
-      `,
+      loadRuntimeBarcodePatterns(),
     ]);
 
     interface LookupLot {
@@ -106,7 +105,12 @@ export async function GET() {
       };
     });
 
-    return NextResponse.json({ reagents, patterns });
+    return NextResponse.json({
+      reagents,
+      patterns: runtimePatterns.patterns,
+      v2Patterns: runtimePatterns.v2Patterns,
+      engineVersion: runtimePatterns.engineVersion,
+    });
   } catch (error: unknown) {
     console.error("Mobile lookup error:", error);
     const errorMessage = error instanceof Error ? error.message : String(error);

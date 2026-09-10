@@ -55,12 +55,22 @@ export default function LabVendorReceiptPage() {
     return () => { isMounted = false; };
   }, [fetchShipments]);
 
-  const handleAction = async (id: number, action: 'receive' | 'cancel') => {
+  const handleAction = async (shipment: Shipment, action: 'receive' | 'cancel') => {
     if (!confirm(`ยืนยันการ${action === 'receive' ? 'รับเข้าสต๊อก' : 'ยกเลิกรายการ'} ใช่หรือไม่?`)) return;
 
-    setProcessingId(id);
+    let quantities: { accepted_qty: number; rejected_qty: number; rejection_reason?: string } | undefined;
+    if (action === 'receive') {
+      const accepted = Number(window.prompt(`จำนวนที่รับผ่าน (เต็มจำนวน ${shipment.quantity})`, String(shipment.quantity)));
+      const rejected = Number(window.prompt('จำนวนที่เสีย/ไม่ผ่าน', '0'));
+      if (!Number.isFinite(accepted) || !Number.isFinite(rejected)) return;
+      const reason = rejected > 0 ? window.prompt('เหตุผลของของเสีย/ไม่ผ่าน')?.trim() : undefined;
+      if (rejected > 0 && !reason) return;
+      quantities = { accepted_qty: accepted, rejected_qty: rejected, rejection_reason: reason };
+    }
+
+    setProcessingId(shipment.id);
     try {
-      const result = await apiClient.updateShipment(id, action);
+      const result = await apiClient.updateShipment(shipment.id, action, quantities);
       
       if (result.success) {
         alert(result.message);
@@ -137,7 +147,7 @@ export default function LabVendorReceiptPage() {
 
               <div className="flex items-center gap-3 w-full md:w-auto shrink-0 border-t md:border-t-0 pt-4 md:pt-0">
                 <button
-                  onClick={() => handleAction(ship.id, 'cancel')}
+                  onClick={() => handleAction(ship, 'cancel')}
                   disabled={processingId === ship.id}
                   className="flex-1 md:flex-none p-4 text-red-400 hover:bg-red-50 rounded-2xl transition-colors"
                   title="ยกเลิกรายการ"
@@ -145,7 +155,7 @@ export default function LabVendorReceiptPage() {
                   <XCircle size={24} />
                 </button>
                 <button
-                  onClick={() => handleAction(ship.id, 'receive')}
+                  onClick={() => handleAction(ship, 'receive')}
                   disabled={processingId === ship.id}
                   className="flex-1 md:flex-none flex items-center justify-center gap-2 px-8 py-4 bg-green-600 text-white rounded-2xl shadow-lg shadow-green-100 hover:bg-green-700 transition-all font-black text-sm uppercase tracking-widest"
                 >

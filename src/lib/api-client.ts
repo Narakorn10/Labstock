@@ -40,6 +40,9 @@ export interface Reagent {
   minThreshold: number;
   weeklyTarget: number;
   vendor?: string;
+  isActive?: boolean;
+  statusReason?: string | null;
+  statusChangedAt?: string | null;
   quantity: number;
   lots: Lot[];
   [key: string]: unknown;
@@ -106,6 +109,7 @@ export interface UsageResponse {
 
 export interface BatchItem {
   inventoryId?: number;
+  loanId?: number;
   itemId: string;
   lotNo: string;
   qty: number;
@@ -130,6 +134,9 @@ export interface User {
   name: string;
   role: string;
   vendor?: string;
+  email?: string;
+  accountStatus?: 'active' | 'pending' | 'suspended';
+  vendorRequest?: string;
   password?: string;
   pin?: string;
   hasPin?: boolean;
@@ -199,6 +206,92 @@ export interface Shipment {
   unit: string;
 }
 
+export interface CountWorkOrderSummary {
+  id: number;
+  ownerUsername: string;
+  jobType: string;
+  status: 'OPEN' | 'CONFIRMED' | 'CANCELLED';
+  itemCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Runtime-only V2 pattern. Legacy clients can safely ignore this field. */
+export interface BarcodePatternV2Runtime {
+  id: number;
+  name: string;
+  mapping_mode: 'CAPTURED_IDENTIFIER' | 'FIXED_REAGENT';
+  fixed_item_id: string | null;
+  regex_pattern: string;
+  item_id_group: number | null;
+  lot_no_group: number | null;
+  exp_date_group: number | null;
+}
+
+export interface BarcodeRuntimeResponse {
+  patterns: BarcodePattern[];
+  v2Patterns: BarcodePatternV2Runtime[];
+  engineVersion: 1 | 2;
+  v2Available?: boolean;
+}
+
+export type BarcodePatternV2Status = 'DRAFT' | 'VERIFIED' | 'ACTIVE' | 'INACTIVE';
+
+export interface BarcodePatternV2Example {
+  raw_barcode: string;
+  expected_item_id?: string;
+  expected_lot?: string;
+  expected_exp_date?: string;
+}
+
+export interface BarcodePatternV2 {
+  id: number;
+  name: string;
+  status: BarcodePatternV2Status;
+  mapping_mode: 'CAPTURED_IDENTIFIER' | 'FIXED_REAGENT';
+  fixed_item_id: string | null;
+  regex_pattern: string;
+  item_id_group: number | null;
+  lot_no_group: number | null;
+  exp_date_group: number | null;
+  examples: BarcodePatternV2Example[];
+  verification: {
+    status: 'VERIFIED' | 'UNVERIFIED';
+    errors: string[];
+    warnings?: string[];
+    checked_at?: string;
+  };
+  created_by?: string;
+  updated_by?: string;
+  activated_by?: string | null;
+  deactivation_reason?: string | null;
+  created_at: string;
+  updated_at: string;
+  activated_at?: string | null;
+  deactivated_at?: string | null;
+}
+
+export interface BarcodePatternV2Payload {
+  name: string;
+  mapping_mode: 'CAPTURED_IDENTIFIER' | 'FIXED_REAGENT';
+  fixed_item_id?: string | null;
+  regex_pattern?: string;
+  item_id_group?: number | null;
+  lot_no_group?: number | null;
+  exp_date_group?: number | null;
+  examples: BarcodePatternV2Example[];
+}
+
+export interface PurchaseOrderSummary {
+  id: number;
+  po_number: string;
+  vendor: string;
+  status: string;
+  expected_date?: string | null;
+  created_at: string;
+  items?: Array<{ item_id: string; item_name?: string; quantity: number; unit?: string }>;
+}
+
 export interface MasterReagentData {
   itemId?: string;
   qrCode?: string;
@@ -221,6 +314,18 @@ export interface RolePermission {
   updated_at?: string;
 }
 
+export interface OutstandingLoan {
+  id: number;
+  direction: "BORROWED_IN" | "LENT_OUT";
+  partner_name: string;
+  item_id: string;
+  item_name: string;
+  lot_no: string;
+  exp_date: string | null;
+  remaining_qty: number;
+  loaned_at: string;
+}
+
 export const apiClient = {
   // Permissions
   getPermissions: async () => {
@@ -238,6 +343,11 @@ export const apiClient = {
     return res.data;
   },
 
+  getPurchaseOrders: async () => {
+    const res = await instance.get<PurchaseOrderSummary[]>('/api/purchase-orders');
+    return res.data;
+  },
+
   receiveBatch: async (batchItems: BatchItem[]) => {
     const res = await instance.post<ApiResponse>('/api/receive', { batchItems });
     return res.data;
@@ -247,6 +357,16 @@ export const apiClient = {
     const res = await instance.post<ApiResponse>('/api/dispense', { batchItems });
     return res.data;
   },
+
+  listCountWorkOrders: async () => (await instance.get<CountWorkOrderSummary[]>('/api/count-work-orders')).data,
+  saveCountWorkOrder: async (jobType: string, items: Array<{ itemId: string; countedQty: number }>) =>
+    (await instance.post<{ id: number; savedCount: number }>('/api/count-work-orders', { jobType, items })).data,
+  confirmCountWorkOrder: async (id: number, allocations: Array<{ itemId: string; inventoryId: number; qty: number }>) =>
+    (await instance.post<ApiResponse>(`/api/count-work-orders/${id}/confirm`, { allocations })).data,
+  getCountWorkOrder: async (id: number) => (await instance.get(`/api/count-work-orders/${id}`)).data,
+  updateCountWorkOrder: async (id: number, items: Array<{ itemId: string; countedQty: number }>) => (await instance.patch(`/api/count-work-orders/${id}`, { items })).data,
+  getCountWorkOrderLots: async (id: number) => (await instance.get<Lot[]>(`/api/count-work-orders/${id}/lots`)).data,
+  cancelCountWorkOrder: async (id: number) => (await instance.delete(`/api/count-work-orders/${id}`)).data,
 
   getLogs: async (limit: number = 100, filters?: { search?: string, action?: string, startDate?: string, endDate?: string }) => {
     let url = `/api/logs?limit=${limit}`;
@@ -286,6 +406,25 @@ export const apiClient = {
     return res.data;
   },
 
+  getOutstandingLoans: async (direction: "BORROWED_IN" | "LENT_OUT") => {
+    const res = await instance.get<OutstandingLoan[]>(`/api/reagent-loans?direction=${direction}`);
+    return res.data;
+  },
+
+  recordLoanBatch: async (
+    operation: "BORROW_IN" | "LEND_OUT" | "RETURN_IN" | "RETURN_OUT",
+    partnerName: string,
+    batchItems: BatchItem[]
+  ) => {
+    const res = await instance.post<ApiResponse>("/api/reagent-loans", { operation, partnerName, batchItems });
+    return res.data;
+  },
+
+  updateUserAccountStatus: async (username: string, accountStatus: 'active' | 'suspended') => {
+    const res = await instance.patch<ApiResponse>(`/api/users/${username}/account-status`, { accountStatus });
+    return res.data;
+  },
+
   deleteUser: async (username: string) => {
     const res = await instance.delete<ApiResponse>(`/api/users/${username}`);
     return res.data;
@@ -309,6 +448,43 @@ export const apiClient = {
   // Barcode Patterns
   getBarcodePatterns: async () => {
     const res = await instance.get<BarcodePattern[]>('/api/settings/barcodes');
+    return res.data;
+  },
+
+  updateReagentStatus: async (itemId: string, isActive: boolean, reason: string) => {
+    const res = await instance.patch<ApiResponse>(`/api/master/${encodeURIComponent(itemId)}/status`, { isActive, reason });
+    return res.data;
+  },
+  getBarcodeRuntimePatterns: async () => {
+    const res = await instance.get<BarcodeRuntimeResponse>('/api/barcode-patterns/runtime');
+    return res.data;
+  },
+  getBarcodeV2Patterns: async () => {
+    const res = await instance.get<BarcodePatternV2[]>('/api/settings/barcode-v2');
+    return res.data;
+  },
+  createBarcodeV2Pattern: async (data: BarcodePatternV2Payload) => {
+    const res = await instance.post<ApiResponse<{ pattern: BarcodePatternV2 }>>('/api/settings/barcode-v2', data);
+    return res.data;
+  },
+  updateBarcodeV2Pattern: async (id: number, data: BarcodePatternV2Payload) => {
+    const res = await instance.patch<ApiResponse<{ pattern: BarcodePatternV2 }>>(`/api/settings/barcode-v2/${id}`, data);
+    return res.data;
+  },
+  validateBarcodeV2Pattern: async (data: BarcodePatternV2Payload) => {
+    const res = await instance.post<ApiResponse<{ verification: BarcodePatternV2['verification']; regex_pattern: string; item_id_group: number | null; lot_no_group: number | null; exp_date_group: number | null }>>('/api/settings/barcode-v2/validate', data);
+    return res.data;
+  },
+  activateBarcodeV2Pattern: async (id: number) => {
+    const res = await instance.post<ApiResponse<{ pattern: BarcodePatternV2 }>>(`/api/settings/barcode-v2/${id}/activate`);
+    return res.data;
+  },
+  deactivateBarcodeV2Pattern: async (id: number, reason: string) => {
+    const res = await instance.post<ApiResponse<{ pattern: BarcodePatternV2 }>>(`/api/settings/barcode-v2/${id}/deactivate`, { reason });
+    return res.data;
+  },
+  deleteBarcodeV2Pattern: async (id: number) => {
+    const res = await instance.delete<ApiResponse>(`/api/settings/barcode-v2/${id}`);
     return res.data;
   },
   createBarcodePattern: async (data: BarcodePatternCreatePayload) => {
@@ -337,8 +513,8 @@ export const apiClient = {
     return res.data;
   },
 
-  updateShipment: async (id: number, action: 'receive' | 'cancel') => {
-    const res = await instance.patch<ApiResponse>(`/api/vendor/shipments/${id}`, { action });
+  updateShipment: async (id: number, action: 'receive' | 'cancel', quantities?: { accepted_qty: number; rejected_qty: number; rejection_reason?: string }) => {
+    const res = await instance.patch<ApiResponse>(`/api/vendor/shipments/${id}`, { action, ...quantities });
     return res.data;
   },
 

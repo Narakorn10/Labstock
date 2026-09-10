@@ -6,11 +6,13 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "test": "vitest run",
     "line:generate-rich-menu": "powershell -ExecutionPolicy Bypass -File scripts/generate-line-rich-menu-assets.ps1",
     "line:setup-rich-menu": "node scripts/setup-line-rich-menu.mjs",
     "lint": "eslint"
   },
   "dependencies": {
+    "@google/genai": "^2.21.0",
     "@line/bot-sdk": "^11.0.1",
     "@line/liff": "^2.29.1",
     "@neondatabase/serverless": "^1.1.0",
@@ -41,6 +43,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.10"
   }
 }

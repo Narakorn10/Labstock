@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { apiClient, BarcodePattern, Reagent } from '@/lib/api-client';
-import { processAnyBarcode } from '@/lib/barcode-parser';
-import QRScanner from '@/components/qr-scanner';
+import { findMatchingReagentWithV2, processAnyBarcode } from '@/lib/barcode-parser';
+import QRScanner from '@/components/lazy-qr-scanner';
+import OutstandingLoans, { OutstandingLoan } from '@/components/outstanding-loans';
 import { 
   ArrowDownToLine,
   ArrowUpFromLine, 
@@ -25,12 +26,14 @@ interface LendCartItem {
   qty: number;
   unit: string;
   maxQty?: number; // Used for LEND_OUT
+  loanId?: number;
 }
 
 export default function LendPage() {
   const [mode, setMode] = useState<'LEND_OUT' | 'RETURN_IN'>('LEND_OUT');
   const [reagents, setReagents] = useState<Reagent[]>([]);
   const [patterns, setPatterns] = useState<BarcodePattern[]>([]);
+  const [v2Patterns, setV2Patterns] = useState<import('@/lib/api-client').BarcodePatternV2Runtime[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [scanMode, setScanMode] = useState(false);
@@ -39,20 +42,42 @@ export default function LendPage() {
   const [cart, setCart] = useState<LendCartItem[]>([]);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error', msg: string } | null>(null);
   const [showResults, setShowResults] = useState(false);
+  const [outstandingLoans, setOutstandingLoans] = useState<OutstandingLoan[]>([]);
+  const [outstandingLoading, setOutstandingLoading] = useState(true);
 
   useEffect(() => {
     Promise.all([
       apiClient.getDashboard(),
-      apiClient.getBarcodePatterns()
-    ]).then(([reagentsData, patternsData]) => {
+      apiClient.getBarcodeRuntimePatterns(),
+      apiClient.getOutstandingLoans('LENT_OUT')
+    ]).then(([reagentsData, runtimeData, loansData]) => {
       setReagents(reagentsData);
-      setPatterns(patternsData);
+      setPatterns(runtimeData.patterns);
+      setV2Patterns(runtimeData.v2Patterns);
+      setOutstandingLoans(loansData);
       setLoading(false);
+      setOutstandingLoading(false);
     }).catch(err => {
       console.error(err);
       setLoading(false);
+      setOutstandingLoading(false);
     });
   }, []);
+
+  const selectOutstandingLoan = (loan: OutstandingLoan) => {
+    setMode('RETURN_IN');
+    setGlobalDestination(loan.partner_name);
+    setCart([{
+      loanId: loan.id,
+      itemId: loan.item_id,
+      name: loan.item_name,
+      lotNo: loan.lot_no,
+      expDate: loan.exp_date?.slice(0, 10) || '',
+      qty: Number(loan.remaining_qty),
+      unit: reagents.find((item) => item.itemId === loan.item_id)?.unit || 'unit'
+    }]);
+    setFeedback({ type: 'success', msg: `เลือกรายการค้างของ ${loan.partner_name} เพื่อรับคืนแล้ว` });
+  };
 
   const addToCart = (match: Reagent, barcodeLot: string = '', barcodeExp: string = '') => {
     if (mode === 'LEND_OUT') {
@@ -112,22 +137,31 @@ export default function LendPage() {
   };
 
   const handleScan = (decodedText: string) => {
-    const data = processAnyBarcode(decodedText, patterns);
+    let data = processAnyBarcode(decodedText, patterns);
     if (!data) return;
 
     const cleanGtin = data.gtin.replace(/^0+/, '');
     const cleanRaw = data.rawString.replace(/^0+/, '');
 
-    const match = reagents.find(r => {
+    let match = reagents.find(r => {
       const dbBarcode = r.qrCode?.replace(/^0+/, '') || '';
       const dbItemId = r.itemId.replace(/^0+/, '');
 
       return (
-        dbItemId.toLowerCase() === cleanGtin.toLowerCase() || 
+        dbItemId.toLowerCase() === cleanGtin.toLowerCase() ||
         dbBarcode.toLowerCase() === cleanGtin.toLowerCase() ||
         dbItemId.toLowerCase() === cleanRaw.toLowerCase()
       );
     });
+
+    // Preserve the legacy direct match above; V2 is only a fallback.
+    if (!match && v2Patterns.length > 0) {
+      const v2Result = findMatchingReagentWithV2(decodedText, [], v2Patterns, reagents, true);
+      if (v2Result.match && v2Result.data) {
+        match = v2Result.match;
+        data = v2Result.data;
+      }
+    }
 
     if (match) {
       const parsedLot = data.lot === 'NEED_MANUAL_INPUT' ? '' : data.lot;
@@ -194,15 +228,16 @@ export default function LendPage() {
     try {
       if (mode === 'LEND_OUT') {
         const payload = validItems.map(i => ({ ...i, note: `ให้ยืมไปที่: ${globalDestination}` }));
-        await apiClient.dispenseBatch(payload);
+        await apiClient.recordLoanBatch(mode, globalDestination, payload);
         setFeedback({ type: 'success', msg: 'บันทึกรายการให้ยืมสำเร็จ (ตัดสต๊อก)' });
       } else {
         const payload = validItems.map(i => ({ ...i, note: `รับคืนจาก: ${globalDestination}` }));
-        await apiClient.receiveBatch(payload);
+        await apiClient.recordLoanBatch(mode, globalDestination, payload);
         setFeedback({ type: 'success', msg: 'บันทึกรายการรับคืนเข้าคลังสำเร็จ (สต๊อกเพิ่ม)' });
       }
       setCart([]);
       setGlobalDestination('');
+      setOutstandingLoans(await apiClient.getOutstandingLoans('LENT_OUT'));
     } catch (err: unknown) {
       const error = err as { response?: { data?: { error?: string } }, message: string };
       setFeedback({ type: 'error', msg: 'เกิดข้อผิดพลาด: ' + (error.response?.data?.error || error.message) });
@@ -231,6 +266,11 @@ export default function LendPage() {
         </div>
         <p className="text-gray-500 text-sm font-bold">จัดการน้ำยาที่เราให้หน่วยงานอื่นยืมไป</p>
       </div>
+
+      <section className="space-y-3 rounded-3xl border border-violet-100 bg-violet-50/40 p-4">
+        <div><h2 className="font-black text-slate-900">รายการให้ยืมที่ยังค้างรับคืน</h2><p className="text-xs text-slate-600">เลือกหนึ่งรายการเพื่อบันทึกรับคืน</p></div>
+        <OutstandingLoans loans={outstandingLoans} loading={outstandingLoading} onSelect={selectOutstandingLoan} />
+      </section>
 
       <div className="bg-gray-100 p-1.5 rounded-2xl flex relative shadow-inner">
         <button 

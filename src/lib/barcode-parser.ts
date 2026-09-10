@@ -5,7 +5,7 @@
  * Migrated from LabReagentControl (React) to LabStock (Next.js)
  */
 
-import type { BarcodePattern } from '@/lib/api-client';
+import type { BarcodePattern, BarcodePatternV2Runtime } from '@/lib/api-client';
 
 export interface BarcodeData {
     barcodeType: "GS1_COMPLIANT" | "STANDARD_1D" | "CUSTOM_PATTERN";
@@ -23,6 +23,11 @@ export interface BarcodeData {
 interface ReagentLookupItem {
     itemId: string;
     qrCode?: string;
+}
+
+export interface BarcodePatternV2Match {
+    patternId: number;
+    name: string;
 }
 
 /**
@@ -289,6 +294,92 @@ export const findMatchingReagent = <T extends ReagentLookupItem>(
         match: looseMatch,
         lookupValues
     };
+};
+
+/** Parse one already-active V2 pattern. It is intentionally separate from V1. */
+export const parseBarcodePatternV2 = (
+    rawBarcode: string,
+    pattern: BarcodePatternV2Runtime
+): BarcodeData | null => {
+    if (!rawBarcode || !pattern.regex_pattern) return null;
+
+    try {
+        const match = rawBarcode.match(new RegExp(pattern.regex_pattern));
+        if (!match) return null;
+
+        const itemId = pattern.mapping_mode === 'FIXED_REAGENT'
+            ? (pattern.fixed_item_id || '')
+            : (pattern.item_id_group ? String(match[pattern.item_id_group] || '') : '');
+
+        if (!itemId.trim()) return null;
+
+        return {
+            barcodeType: 'CUSTOM_PATTERN',
+            gtin: itemId,
+            udi: rawBarcode,
+            ref: 'NEED_MANUAL_INPUT',
+            lot: pattern.lot_no_group ? (match[pattern.lot_no_group] || 'NEED_MANUAL_INPUT') : 'NEED_MANUAL_INPUT',
+            expDate: pattern.exp_date_group ? standardizeDate(match[pattern.exp_date_group] || '') : 'NEED_MANUAL_INPUT',
+            mfgDate: 'NEED_MANUAL_INPUT',
+            serial: 'NEED_MANUAL_INPUT',
+            rawString: rawBarcode,
+        };
+    } catch (error) {
+        // A malformed/unsupported V2 regex must never affect V1 or become a match.
+        console.error('Invalid V2 regex pattern:', pattern.id, error);
+        return null;
+    }
+};
+
+/**
+ * V2 is a fallback only. V1 (including GS1 and loose custom matches) is fully
+ * resolved first and can never be replaced by a V2 exact match.
+ */
+export const findMatchingReagentWithV2 = <T extends ReagentLookupItem>(
+    rawBarcode: string,
+    patterns: BarcodePattern[] = [],
+    v2Patterns: BarcodePatternV2Runtime[] = [],
+    reagents: T[] = [],
+    runtimeEnabled = false
+): { data: BarcodeData | null; match: T | undefined; lookupValues: string[]; v2Match?: BarcodePatternV2Match } => {
+    const legacyResult = findMatchingReagent(rawBarcode, patterns, reagents);
+    if (legacyResult.match || !runtimeEnabled || v2Patterns.length === 0) {
+        return legacyResult;
+    }
+
+    // Unknown GS1 remains the old manual-input path. V2 is only for the
+    // non-GS1/non-master-data area explicitly reserved by the rollout plan.
+    if (legacyResult.data?.barcodeType === 'GS1_COMPLIANT') {
+        return legacyResult;
+    }
+
+    for (const pattern of v2Patterns) {
+        const data = parseBarcodePatternV2(rawBarcode, pattern);
+        if (!data) continue;
+
+        const key = normalizeLookupValue(data.gtin);
+        const exact = reagents.find((reagent) => {
+            const itemId = normalizeLookupValue(reagent.itemId);
+            const qrCode = normalizeLookupValue(reagent.qrCode);
+            return Boolean(key) && (itemId === key || qrCode === key);
+        });
+        const loose = exact || reagents.find((reagent) => getReagentCodeMatchScore(key, reagent) > 0);
+        if (loose) {
+            const lookupValues = Array.from(new Set([
+                ...legacyResult.lookupValues,
+                normalizeLookupValue(data.gtin),
+                normalizeLookupValue(data.rawString),
+            ].filter(Boolean)));
+            return {
+                data,
+                match: loose,
+                lookupValues,
+                v2Match: { patternId: pattern.id, name: pattern.name },
+            };
+        }
+    }
+
+    return legacyResult;
 };
 
 const formatGS1Date = (yymmdd: string): string => {

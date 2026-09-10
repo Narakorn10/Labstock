@@ -2,14 +2,38 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/components/auth-provider";
 
-type PurchaseOrderStatus = "PENDING_LAB_REVIEW" | "SUBMITTED" | "REVISION_REQUESTED" | "CONFIRMED" | "SHIPPED" | "RECEIVED" | "REJECTED";
+type PurchaseOrderStatus = "PENDING_MANAGER_REVIEW" | "PENDING_LAB_REVIEW" | "SUBMITTED" | "ACKNOWLEDGED" | "REVISION_REQUESTED" | "CONFIRMED" | "PARTIALLY_SHIPPED" | "SHIPPED" | "PARTIALLY_RECEIVED" | "RECEIVED" | "REJECTED";
 
 interface PurchaseOrderItemDraft {
   item_id: string;
   item_name: string;
   quantity: number;
   unit: string;
+  policy_order_qty?: number;
+  dynamic_order_qty?: number;
+  selected_basis?: "POLICY" | "DYNAMIC" | "MANUAL";
+  override_reason?: string;
+  confidence?: "high" | "low" | "none";
+  review_reasons?: string[];
+  requires_review?: boolean;
+  suggestion_context?: SuggestionContext;
+}
+
+interface SuggestionContext {
+  daily_demand_boxes: number;
+  demand_source: "actual_dispense_history" | "approved_policy" | "documented_withdrawal" | "policy_formula" | "weekly_target";
+  projected_balance_at_horizon: number;
+  safety_stock_boxes: number;
+  lead_time_days: number;
+  horizon_days: number;
+  overdue_on_order_qty: number;
+  expiry_assessment: {
+    expired_qty_excluded: number;
+    expiring_within_horizon_qty: number;
+    nearest_expiry_date: string | null;
+  };
 }
 
 interface PurchaseOrderSummary {
@@ -19,6 +43,8 @@ interface PurchaseOrderSummary {
   status: PurchaseOrderStatus;
   proposal_origin?: "LAB" | "VENDOR";
   created_at: string;
+  expected_date?: string | null;
+  note?: string | null;
   items?: PurchaseOrderItemDraft[];
 }
 
@@ -28,6 +54,50 @@ interface SuggestedPurchaseOrderItem {
   suggested_order_qty: number;
   unit: string;
   vendor?: string;
+  policy_order_qty: number;
+  dynamic_order_qty: number;
+  variance_percent: number | null;
+  confidence: "high" | "low" | "none";
+  review_reasons: string[];
+  auto_selectable: boolean;
+  expedite_required: boolean;
+  projected_balance_at_horizon: number;
+  safety_stock_boxes: number;
+  lead_time_days: number;
+  horizon_days: number;
+  overdue_on_order_qty: number;
+  expiry_assessment: SuggestionContext["expiry_assessment"];
+  calculation_breakdown: {
+    demandSource: SuggestionContext["demand_source"];
+    dailyDemandBoxes: number;
+  };
+}
+
+interface AiReviewerResult {
+  item_id: string;
+  priority: "CRITICAL" | "HIGH" | "NORMAL" | "LOW";
+  explanation_th: string;
+  evidence: string[];
+  review_questions: string[];
+}
+
+const aiPriorityLabels: Record<AiReviewerResult["priority"], string> = {
+  CRITICAL: "เร่งด่วนมาก",
+  HIGH: "เร่งด่วน",
+  NORMAL: "ติดตามตามปกติ",
+  LOW: "ความเสี่ยงต่ำ",
+};
+
+const demandSourceLabels: Record<SuggestionContext["demand_source"], string> = {
+  actual_dispense_history: "ยอดเบิกจริง",
+  approved_policy: "แผนที่แล็บอนุมัติ",
+  documented_withdrawal: "ยอดเบิกที่บันทึกไว้",
+  policy_formula: "สูตรปริมาณตรวจและ IQC",
+  weekly_target: "เป้าหมายรายสัปดาห์",
+};
+
+function formatExpiryDate(value: string) {
+  return new Date(`${value}T00:00:00`).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
 }
 
 interface OrderFormOptions {
@@ -38,25 +108,34 @@ interface CatalogReagent {
   itemId: string;
   name: string;
   unit: string;
+  quantity: number;
+  minThreshold: number;
   vendor?: string;
   reagentType?: string;
   jobType?: string;
 }
 
 const statusLabels: Record<PurchaseOrderStatus, string> = {
+  PENDING_MANAGER_REVIEW: "รอหัวหน้าตรวจสอบก่อนส่งบริษัท",
   PENDING_LAB_REVIEW: "รอแล็บตรวจสอบ",
   SUBMITTED: "ส่งให้บริษัทแล้ว",
+  ACKNOWLEDGED: "บริษัทรับทราบแล้ว",
   REVISION_REQUESTED: "บริษัทแก้ไข รอแล็บยืนยัน",
   CONFIRMED: "ยืนยันแล้ว",
+  PARTIALLY_SHIPPED: "จัดส่งบางส่วน",
   SHIPPED: "จัดส่งแล้ว",
+  PARTIALLY_RECEIVED: "รับเข้าแล้วบางส่วน",
   RECEIVED: "รับเข้าคลังแล้ว",
   REJECTED: "ปฏิเสธ",
 };
 
 export default function PurchaseOrdersPage() {
   const router = useRouter();
+  const { user } = useAuth();
+  const canManageLabOrders = user?.role === "Admin" || user?.role === "Manager";
   const [orders, setOrders] = useState<PurchaseOrderSummary[]>([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingOrder, setEditingOrder] = useState<PurchaseOrderSummary | null>(null);
   const [vendor, setVendor] = useState("");
   const [expectedDate, setExpectedDate] = useState("");
   const [note, setNote] = useState("");
@@ -67,6 +146,10 @@ export default function PurchaseOrdersPage() {
   const [activeReagentPicker, setActiveReagentPicker] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [suggestLoading, setSuggestLoading] = useState(false);
+  const [suggestionNotice, setSuggestionNotice] = useState("");
+  const [aiReviewLoading, setAiReviewLoading] = useState(false);
+  const [aiReviews, setAiReviews] = useState<AiReviewerResult[]>([]);
+  const [aiReviewNotice, setAiReviewNotice] = useState("");
 
   const getAuthHeaders = (): Record<string, string> => {
     const token = localStorage.getItem("labstock_token");
@@ -153,28 +236,110 @@ export default function PurchaseOrdersPage() {
       const res = await fetch(`/api/purchase-orders/suggest?vendor=${encodeURIComponent(vendor)}`, { headers: getAuthHeaders() });
       if (res.ok) {
         const data = (await res.json()) as SuggestedPurchaseOrderItem[];
+        const heldForReview = data.filter((item) => !item.auto_selectable);
         const suggestedItems: PurchaseOrderItemDraft[] = data.map((item) => ({
           item_id: item.item_id,
           item_name: item.name,
           quantity: item.suggested_order_qty,
           unit: item.unit,
+          policy_order_qty: item.policy_order_qty,
+          dynamic_order_qty: item.dynamic_order_qty,
+          selected_basis: "POLICY",
+          confidence: item.confidence,
+          review_reasons: item.review_reasons,
+          requires_review: !item.auto_selectable,
+          suggestion_context: {
+            daily_demand_boxes: item.calculation_breakdown.dailyDemandBoxes,
+            demand_source: item.calculation_breakdown.demandSource,
+            projected_balance_at_horizon: item.projected_balance_at_horizon,
+            safety_stock_boxes: item.safety_stock_boxes,
+            lead_time_days: item.lead_time_days,
+            horizon_days: item.horizon_days,
+            overdue_on_order_qty: item.overdue_on_order_qty,
+            expiry_assessment: item.expiry_assessment,
+          },
         }));
         setItems(suggestedItems);
+        setAiReviews([]);
+        setAiReviewNotice("");
+        setSuggestionNotice(heldForReview.length
+          ? `แสดงผลคำนวณแล้ว ${data.length} รายการ; มี ${heldForReview.length} รายการที่ควรตรวจทานก่อนบันทึกใบสั่งซื้อ`
+          : "");
+      } else {
+        const error = (await res.json().catch(() => null)) as { error?: string } | null;
+        setSuggestionNotice(error?.error ?? "ไม่สามารถคำนวณรายการแนะนำได้ กรุณาลองใหม่อีกครั้ง");
       }
-    } catch (e) {
-      console.error(e);
+    } catch (error) {
+      console.error(error);
+      setSuggestionNotice("ไม่สามารถเชื่อมต่อระบบคำนวณรายการแนะนำได้");
     } finally {
       setSuggestLoading(false);
     }
   };
 
-  const handleCreate = async () => {
-    setLoading(true);
+  const reviewSuggestionsWithAi = async () => {
+    if (!vendor.trim() || items.length === 0) return;
+    setAiReviewLoading(true);
+    setAiReviewNotice("");
     try {
-      const res = await fetch("/api/purchase-orders", {
+      const res = await fetch("/api/purchase-orders/ai-review", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify({
+        body: JSON.stringify({ vendor }),
+      });
+      const data = await res.json().catch(() => null) as { reviews?: AiReviewerResult[]; error?: string } | null;
+      if (!res.ok || !data?.reviews) {
+        setAiReviews([]);
+        setAiReviewNotice(data?.error ?? "AI ใช้ไม่ได้ชั่วคราว คำแนะนำตามสูตรเดิมยังใช้งานได้");
+        return;
+      }
+      setAiReviews(data.reviews);
+    } catch (error) {
+      console.error(error);
+      setAiReviews([]);
+      setAiReviewNotice("AI ใช้ไม่ได้ชั่วคราว คำแนะนำตามสูตรเดิมยังใช้งานได้");
+    } finally {
+      setAiReviewLoading(false);
+    }
+  };
+
+  const resetOrderForm = () => {
+    setShowCreateModal(false);
+    setEditingOrder(null);
+    setVendor("");
+    setExpectedDate("");
+    setNote("");
+    setItems([]);
+    setAiReviews([]);
+    setAiReviewNotice("");
+  };
+
+  const openEditOrder = (order: PurchaseOrderSummary) => {
+    setEditingOrder(order);
+    setVendor(order.vendor);
+    setExpectedDate(order.expected_date ? String(order.expected_date).slice(0, 10) : "");
+    setNote(order.note ?? "");
+    setItems((order.items ?? []).map((item) => ({ ...item })));
+    setShowCreateModal(true);
+  };
+
+  const handleSave = async () => {
+    const missingOverrideReason = items.find((item) => item.selected_basis === "MANUAL" && !item.override_reason?.trim());
+    if (missingOverrideReason) {
+      alert(`กรุณาระบุเหตุผลที่แก้จำนวนของ ${missingOverrideReason.item_name || missingOverrideReason.item_id}`);
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch(editingOrder ? `/api/purchase-orders/${editingOrder.id}` : "/api/purchase-orders", {
+        method: editingOrder ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify(editingOrder ? {
+          action: "UPDATE_UNACKNOWLEDGED_LAB_ORDER",
+          expected_date: expectedDate || null,
+          note,
+          items,
+        } : {
           vendor,
           expected_date: expectedDate,
           note,
@@ -183,31 +348,30 @@ export default function PurchaseOrdersPage() {
       });
 
       if (res.ok) {
-        setShowCreateModal(false);
-        setVendor("");
-        setExpectedDate("");
-        setNote("");
-        setItems([]);
+        resetOrderForm();
         await fetchOrders();
       } else {
         const data = await res.json().catch(() => null);
-        alert(data?.error ?? "ไม่สามารถสร้างใบสั่งน้ำยาได้");
+        alert(data?.error ?? (editingOrder ? "ไม่สามารถแก้ไขใบสั่งน้ำยาได้" : "ไม่สามารถสร้างใบสั่งน้ำยาได้"));
       }
     } catch (e) {
       console.error(e);
-      alert("เกิดข้อผิดพลาดขณะสร้างใบสั่งน้ำยา");
+      alert(editingOrder ? "เกิดข้อผิดพลาดขณะแก้ไขใบสั่งน้ำยา" : "เกิดข้อผิดพลาดขณะสร้างใบสั่งน้ำยา");
     } finally {
       setLoading(false);
     }
   };
 
   const addItemRow = () => {
-    setItems((current) => [...current, { item_id: "", item_name: "", quantity: 1, unit: "box" }]);
+    setItems((current) => [...current, { item_id: "", item_name: "", quantity: 1, unit: "box", selected_basis: "MANUAL" }]);
   };
 
   const changeVendor = (nextVendor: string) => {
     setVendor(nextVendor);
     setItems([]);
+    setSuggestionNotice("");
+    setAiReviews([]);
+    setAiReviewNotice("");
   };
 
   const updateItemName = (index: number, itemName: string) => {
@@ -226,6 +390,7 @@ export default function PurchaseOrdersPage() {
         item_id: reagent.itemId,
         item_name: reagent.name,
         unit: reagent.unit,
+        selected_basis: "MANUAL",
       };
       return next;
     });
@@ -250,6 +415,11 @@ export default function PurchaseOrdersPage() {
     }, {})).sort(([left], [right]) => left.localeCompare(right, "th"));
   }), [catalog, items, vendor]);
 
+  const catalogByItemId = useMemo(
+    () => new Map(catalog.map((reagent) => [reagent.itemId, reagent])),
+    [catalog]
+  );
+
   const updateItem = (
     index: number,
     field: keyof PurchaseOrderItemDraft,
@@ -260,6 +430,20 @@ export default function PurchaseOrdersPage() {
       next[index] = { ...next[index], [field]: value };
       return next;
     });
+  };
+
+  const updateQuantity = (index: number, quantity: number) => {
+    setItems((current) => current.map((item, itemIndex) => itemIndex === index
+      ? { ...item, quantity, selected_basis: "MANUAL" }
+      : item));
+  };
+
+  const chooseQuantityBasis = (index: number, basis: "POLICY" | "DYNAMIC") => {
+    setItems((current) => current.map((item, itemIndex) => {
+      if (itemIndex !== index) return item;
+      const quantity = basis === "POLICY" ? item.policy_order_qty : item.dynamic_order_qty;
+      return { ...item, quantity: Number(quantity ?? item.quantity), selected_basis: basis, override_reason: "" };
+    }));
   };
 
   const removeItem = (index: number) => {
@@ -295,7 +479,10 @@ export default function PurchaseOrdersPage() {
             🚚 ติดตามพัสดุ
           </button>
           <button
-            onClick={() => setShowCreateModal(true)}
+            onClick={() => {
+              resetOrderForm();
+              setShowCreateModal(true);
+            }}
             className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"
           >
             + สร้างใบสั่งน้ำยา
@@ -323,7 +510,7 @@ export default function PurchaseOrdersPage() {
                 <td className="px-6 py-4">
                   <span
                     className={`px-2 py-1 rounded text-xs font-bold ${
-                      po.status === "PENDING_LAB_REVIEW" || po.status === "REVISION_REQUESTED"
+                      po.status === "PENDING_MANAGER_REVIEW" || po.status === "PENDING_LAB_REVIEW" || po.status === "REVISION_REQUESTED"
                         ? "bg-orange-100 text-orange-800"
                         : po.status === "SUBMITTED"
                         ? "bg-yellow-100 text-yellow-800"
@@ -342,7 +529,17 @@ export default function PurchaseOrdersPage() {
                 <td className="px-6 py-4 text-sm text-gray-500">{po.items?.length || 0} รายการ</td>
                 <td className="px-6 py-4 text-sm text-gray-500">{new Date(po.created_at).toLocaleDateString("th-TH")}</td>
                 <td className="px-6 py-4 text-sm font-medium">
-                  {(po.status === "PENDING_LAB_REVIEW" || po.status === "REVISION_REQUESTED") && (
+                  {po.status === "PENDING_MANAGER_REVIEW" && canManageLabOrders && (
+                    <div className="mb-2">
+                      <button onClick={() => router.push(`/orders/${po.id}`)} className="text-teal-700 hover:text-teal-900">ตรวจสอบก่อนส่งบริษัท</button>
+                    </div>
+                  )}
+                  {canManageLabOrders && (po.status === "PENDING_MANAGER_REVIEW" || po.status === "SUBMITTED") && po.proposal_origin === "LAB" && (
+                    <div className="mb-2">
+                      <button onClick={() => openEditOrder(po)} className="text-amber-700 hover:text-amber-900">แก้ไขก่อนบริษัทรับทราบ</button>
+                    </div>
+                  )}
+                  {canManageLabOrders && (po.status === "PENDING_LAB_REVIEW" || po.status === "REVISION_REQUESTED") && (
                     <div className="mb-2 flex gap-2">
                       <button onClick={() => reviewOrder(po.id, "CONFIRMED")} className="text-green-700 hover:text-green-900">ยืนยัน</button>
                       <button onClick={() => reviewOrder(po.id, "REJECTED")} className="text-red-600 hover:text-red-800">ปฏิเสธ</button>
@@ -365,8 +562,8 @@ export default function PurchaseOrdersPage() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold">สร้างใบสั่งน้ำยา</h2>
-              <button onClick={() => setShowCreateModal(false)} className="text-gray-500 hover:text-gray-700">
+              <h2 className="text-xl font-bold">{editingOrder ? `แก้ไขใบสั่งน้ำยา ${editingOrder.po_number}` : "สร้างใบสั่งน้ำยา"}</h2>
+              <button onClick={resetOrderForm} className="text-gray-500 hover:text-gray-700">
                 ✕
               </button>
             </div>
@@ -379,7 +576,7 @@ export default function PurchaseOrdersPage() {
                   value={vendor}
                   onChange={(e) => changeVendor(e.target.value)}
                   className="w-full rounded border border-gray-300 bg-white p-2 focus:border-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-100"
-                  disabled={catalogLoading}
+                  disabled={catalogLoading || !!editingOrder}
                 >
                   <option value="">{catalogLoading ? "กำลังโหลดรายชื่อบริษัท..." : "เลือกบริษัท"}</option>
                   {vendors.map((company) => <option key={company} value={company}>{company}</option>)}
@@ -401,24 +598,67 @@ export default function PurchaseOrdersPage() {
             <div className="mb-4 flex justify-between items-center">
               <h3 className="font-bold">รายการน้ำยา</h3>
               <div className="flex gap-2">
-                <button
-                  onClick={loadSuggestions}
-                  disabled={suggestLoading}
-                  className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded text-sm hover:bg-yellow-200"
-                >
-                  {suggestLoading ? "กำลังประมวลผล..." : "🤖 แนะนำอัตโนมัติ (จากจุดสั่งซื้อ)"}
-                </button>
-                <button
-                  onClick={addItemRow}
-                  className="px-3 py-1 bg-gray-100 text-gray-800 rounded text-sm hover:bg-gray-200"
-                >
-                  + เพิ่มแถว
-                </button>
+                {!editingOrder && (
+                  <button
+                    onClick={loadSuggestions}
+                    disabled={suggestLoading}
+                    className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded text-sm hover:bg-yellow-200"
+                  >
+                    {suggestLoading ? "กำลังประมวลผล..." : "แนะนำอัตโนมัติ (รอบ 15 วัน)"}
+                  </button>
+                )}
+                {!editingOrder && items.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={reviewSuggestionsWithAi}
+                    disabled={aiReviewLoading}
+                    className="px-3 py-1 rounded text-sm bg-indigo-100 text-indigo-800 hover:bg-indigo-200 disabled:opacity-50"
+                  >
+                    {aiReviewLoading ? "กำลังวิเคราะห์ด้วย AI..." : "วิเคราะห์ด้วย AI"}
+                  </button>
+                )}
+                {!editingOrder && (
+                  <button
+                    onClick={addItemRow}
+                    className="px-3 py-1 bg-gray-100 text-gray-800 rounded text-sm hover:bg-gray-200"
+                  >
+                    + เพิ่มแถว
+                  </button>
+                )}
               </div>
             </div>
 
+            {suggestionNotice && (
+              <div role="status" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                {suggestionNotice}
+              </div>
+            )}
+
+            {aiReviewNotice && (
+              <div role="status" className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                {aiReviewNotice}
+              </div>
+            )}
+
+            {aiReviews.length > 0 && (
+              <section aria-label="ผลการตรวจทานด้วย AI" className="mb-4 rounded-lg border border-indigo-200 bg-indigo-50 p-4">
+                <p className="text-sm font-bold text-indigo-950">ผลการตรวจทานด้วย AI (ใช้ประกอบการตัดสินใจเท่านั้น ไม่เปลี่ยนจำนวนสั่งหรือสร้าง PO)</p>
+                <div className="mt-3 space-y-3">
+                  {aiReviews.map((review) => {
+                    const item = items.find((candidate) => candidate.item_id === review.item_id);
+                    return <article key={review.item_id} className="rounded-md border border-indigo-100 bg-white p-3 text-sm text-slate-800">
+                      <div className="flex flex-wrap items-center gap-2"><strong>{item?.item_name ?? review.item_id}</strong><span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-semibold text-indigo-800">{aiPriorityLabels[review.priority]}</span></div>
+                      <p className="mt-2">{review.explanation_th}</p>
+                      {review.evidence.length > 0 && <p className="mt-2 text-xs"><strong>หลักฐาน:</strong> {review.evidence.join(" · ")}</p>}
+                      {review.review_questions.length > 0 && <p className="mt-1 text-xs"><strong>ควรทบทวน:</strong> {review.review_questions.join(" · ")}</p>}
+                    </article>;
+                  })}
+                </div>
+              </section>
+            )}
+
             {items.map((item, index) => (
-              <div key={index} className="flex gap-2 mb-2 items-center">
+              <div key={index} className="flex gap-2 mb-2 items-start">
                 <div className="relative flex-1">
                   <input
                     role="combobox"
@@ -456,6 +696,9 @@ export default function PurchaseOrdersPage() {
                             >
                               <span className="block text-sm font-medium text-gray-900">{reagent.name}</span>
                               <span className="block text-xs text-gray-500">{reagent.jobType || "ไม่ระบุงาน"} · {reagent.itemId} · {reagent.unit}</span>
+                              <span className={`mt-1 block text-xs font-semibold ${reagent.quantity <= reagent.minThreshold ? "text-amber-700" : "text-teal-700"}`}>
+                                คงเหลือ {reagent.quantity} {reagent.unit} · ขั้นต่ำ {reagent.minThreshold}
+                              </span>
                             </button>
                           ))}
                         </div>
@@ -464,12 +707,45 @@ export default function PurchaseOrdersPage() {
                       )}
                     </div>
                   )}
+                  {catalogByItemId.get(item.item_id) && (
+                    <p className={`mt-1 text-xs font-semibold ${catalogByItemId.get(item.item_id)!.quantity <= catalogByItemId.get(item.item_id)!.minThreshold ? "text-amber-700" : "text-teal-700"}`}>
+                      คงเหลือ {catalogByItemId.get(item.item_id)!.quantity} {catalogByItemId.get(item.item_id)!.unit}
+                      {catalogByItemId.get(item.item_id)!.quantity <= catalogByItemId.get(item.item_id)!.minThreshold
+                        ? ` · ต่ำกว่าหรือเท่ากับขั้นต่ำ ${catalogByItemId.get(item.item_id)!.minThreshold}`
+                        : ` · ขั้นต่ำ ${catalogByItemId.get(item.item_id)!.minThreshold}`}
+                    </p>
+                  )}
+                  {item.policy_order_qty !== undefined && (
+                    <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs">
+                      <div className="grid grid-cols-2 gap-2">
+                        <button type="button" onClick={() => chooseQuantityBasis(index, "POLICY")} className={`rounded-md border px-2 py-2 text-left ${item.selected_basis === "POLICY" ? "border-teal-600 bg-teal-50 text-teal-900" : "border-slate-200 bg-white"}`}>
+                          <span className="block text-[10px] font-semibold text-slate-500">ค่าที่แล็บอนุมัติ</span>
+                          <span className="font-bold">{item.policy_order_qty} {item.unit}</span>
+                        </button>
+                        <button type="button" onClick={() => chooseQuantityBasis(index, "DYNAMIC")} disabled={!item.dynamic_order_qty} className={`rounded-md border px-2 py-2 text-left disabled:cursor-not-allowed disabled:opacity-50 ${item.selected_basis === "DYNAMIC" ? "border-blue-600 bg-blue-50 text-blue-900" : "border-slate-200 bg-white"}`}>
+                          <span className="block text-[10px] font-semibold text-slate-500">ค่าคำนวณสด</span>
+                          <span className="font-bold">{item.dynamic_order_qty} {item.unit}</span>
+                        </button>
+                      </div>
+                      <p className="mt-2 text-slate-600">ความเชื่อมั่น: {item.confidence === "high" ? "สูง" : item.confidence === "low" ? "ต่ำ" : "ยังไม่มีข้อมูล"}</p>
+                      {item.suggestion_context && (
+                        <div className="mt-2 rounded-md border border-teal-200 bg-teal-50 p-2 text-teal-950">
+                          <p className="font-bold">เหตุผลที่ระบบแนะนำ</p>
+                          <p>คำนวณตามรอบสั่ง {item.suggestion_context.horizon_days} วัน; ระยะรอของ {item.suggestion_context.lead_time_days} วัน แล้วคาดว่าเหลือ {item.suggestion_context.projected_balance_at_horizon} {item.unit}; Safety stock {item.suggestion_context.safety_stock_boxes} {item.unit}</p>
+                          <p>ใช้อัตรา {item.suggestion_context.daily_demand_boxes} {item.unit}/วัน จาก{demandSourceLabels[item.suggestion_context.demand_source]}</p>
+                          {item.suggestion_context.expiry_assessment.expired_qty_excluded > 0 && <p className="mt-1 font-semibold text-amber-800">ไม่นับสต็อกหมดอายุแล้ว {item.suggestion_context.expiry_assessment.expired_qty_excluded} {item.unit}</p>}
+                          {item.suggestion_context.expiry_assessment.expiring_within_horizon_qty > 0 && <p className="mt-1 font-semibold text-amber-800">ประเมิน FEFO: มี {item.suggestion_context.expiry_assessment.expiring_within_horizon_qty} {item.unit} ที่หมดอายุภายในช่วงคำนวณ{item.suggestion_context.expiry_assessment.nearest_expiry_date ? ` (ใกล้สุด ${formatExpiryDate(item.suggestion_context.expiry_assessment.nearest_expiry_date)})` : ""}</p>}
+                        </div>
+                      )}
+                      {!!item.review_reasons?.length && <p className="mt-1 font-semibold text-amber-800">ทบทวนจำนวน: {item.review_reasons.join(", ")}</p>}
+                    </div>
+                  )}
                 </div>
                 <input
                   type="number"
                   placeholder="จำนวน"
                   value={item.quantity}
-                  onChange={(e) => updateItem(index, "quantity", Number.parseInt(e.target.value, 10) || 0)}
+                  onChange={(e) => updateQuantity(index, Number.parseInt(e.target.value, 10) || 0)}
                   className="border rounded p-2 w-24"
                 />
                 <input
@@ -479,9 +755,21 @@ export default function PurchaseOrdersPage() {
                   onChange={(e) => updateItem(index, "unit", e.target.value)}
                   className="border rounded p-2 w-24"
                 />
-                <button onClick={() => removeItem(index)} className="text-red-500 hover:text-red-700 p-2">
-                  ✕
-                </button>
+                {!editingOrder && (
+                  <button onClick={() => removeItem(index)} className="text-red-500 hover:text-red-700 p-2">
+                    ✕
+                  </button>
+                )}
+                {item.selected_basis === "MANUAL" && (
+                  <input
+                    aria-label={`เหตุผลที่แก้จำนวน ${item.item_name || index + 1}`}
+                    placeholder="เหตุผลที่แก้จำนวน*"
+                    value={item.override_reason ?? ""}
+                    onChange={(event) => updateItem(index, "override_reason", event.target.value)}
+                    className="w-48 rounded border border-amber-300 bg-amber-50 p-2 text-sm"
+                    required
+                  />
+                )}
               </div>
             ))}
 
@@ -504,17 +792,17 @@ export default function PurchaseOrdersPage() {
 
             <div className="flex justify-end gap-2 mt-6 border-t pt-4">
               <button
-                onClick={() => setShowCreateModal(false)}
+                onClick={resetOrderForm}
                 className="px-4 py-2 border rounded text-gray-600 hover:bg-gray-50"
               >
                 ยกเลิก
               </button>
               <button
-                onClick={handleCreate}
+                onClick={handleSave}
                 disabled={loading || items.length === 0 || !vendor || items.some((item) => !item.item_id)}
                 className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50"
               >
-                {loading ? "กำลังบันทึก..." : "บันทึกและส่งใบสั่งน้ำยาให้บริษัท"}
+                {loading ? "กำลังบันทึก..." : editingOrder ? "บันทึกการแก้ไข" : "บันทึกและส่งใบสั่งน้ำยาให้บริษัท"}
               </button>
             </div>
           </div>

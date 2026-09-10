@@ -14,8 +14,39 @@ type CatalogItem = {
   min_threshold: number;
   weekly_target: number;
   suggested_order_qty: number;
+  policy_order_qty: number;
+  dynamic_order_qty: number;
+  variance_percent: number | null;
+  confidence: "high" | "low" | "none";
+  review_reasons: string[];
+  auto_selectable: boolean;
+  expedite_required: boolean;
+  projected_balance_at_horizon: number;
+  safety_stock_boxes: number;
+  lead_time_days: number;
+  horizon_days: number;
+  expiry_assessment: {
+    expired_qty_excluded: number;
+    expiring_within_horizon_qty: number;
+    nearest_expiry_date: string | null;
+  };
+  calculation_breakdown: { demandSource: string; dailyDemandBoxes: number };
 };
-type DraftItem = { item_id: string; item_name: string; unit: string; quantity: number; current_qty?: number; min_threshold?: number };
+type DraftItem = {
+  item_id: string;
+  item_name: string;
+  unit: string;
+  quantity: number;
+  current_qty?: number;
+  min_threshold?: number;
+  policy_order_qty?: number;
+  dynamic_order_qty?: number;
+  selected_basis?: "POLICY" | "DYNAMIC" | "MANUAL";
+  override_reason?: string;
+  confidence?: "high" | "low" | "none";
+  review_reasons?: string[];
+  suggestion_context?: Pick<CatalogItem, "projected_balance_at_horizon" | "safety_stock_boxes" | "lead_time_days" | "horizon_days" | "expiry_assessment" | "calculation_breakdown">;
+};
 type PurchaseOrder = {
   id: number;
   po_number: string;
@@ -125,14 +156,30 @@ export default function LiffOrderWorkflow() {
       const rows = await callApi<CatalogItem[]>("/api/liff/orders/catalog/search", { vendor, keyword, suggestOnly });
       setCatalog(rows);
       if (suggestOnly && rows.length) {
-        setDraftItems(rows.map((item) => ({
+        const selectable = rows.filter((item) => item.auto_selectable);
+        const heldForReview = rows.filter((item) => !item.auto_selectable);
+        setDraftItems(selectable.map((item) => ({
           item_id: item.item_id,
           item_name: item.name,
           unit: item.unit,
           quantity: Number(item.suggested_order_qty || 1),
           current_qty: Number(item.quantity),
           min_threshold: Number(item.min_threshold),
+          policy_order_qty: Number(item.policy_order_qty),
+          dynamic_order_qty: Number(item.dynamic_order_qty),
+          selected_basis: "POLICY",
+          confidence: item.confidence,
+          review_reasons: item.review_reasons,
+          suggestion_context: {
+            projected_balance_at_horizon: item.projected_balance_at_horizon,
+            safety_stock_boxes: item.safety_stock_boxes,
+            lead_time_days: item.lead_time_days,
+            horizon_days: item.horizon_days,
+            expiry_assessment: item.expiry_assessment,
+            calculation_breakdown: item.calculation_breakdown,
+          },
         })));
+        if (heldForReview.length) setMessage(`พักไว้ให้ตรวจเอง ${heldForReview.length} รายการ: ${heldForReview.map((item) => item.name).join(", ")}`);
       }
       if (!rows.length) setMessage("ไม่มีรายการที่เข้าเงื่อนไข");
     } catch (err) {
@@ -152,14 +199,38 @@ export default function LiffOrderWorkflow() {
         quantity: Number(item.suggested_order_qty || 1),
         current_qty: Number(item.quantity),
         min_threshold: Number(item.min_threshold),
+        policy_order_qty: Number(item.policy_order_qty),
+        dynamic_order_qty: Number(item.dynamic_order_qty),
+        selected_basis: item.auto_selectable && item.policy_order_qty > 0 ? "POLICY" : "MANUAL",
+        confidence: item.confidence,
+        review_reasons: item.review_reasons,
+        suggestion_context: {
+          projected_balance_at_horizon: item.projected_balance_at_horizon,
+          safety_stock_boxes: item.safety_stock_boxes,
+          lead_time_days: item.lead_time_days,
+          horizon_days: item.horizon_days,
+          expiry_assessment: item.expiry_assessment,
+          calculation_breakdown: item.calculation_breakdown,
+        },
       }];
     });
   };
 
   const changeQty = (itemId: string, delta: number) => {
     setDraftItems((current) => current.map((item) => (
-      item.item_id === itemId ? { ...item, quantity: Math.max(1, item.quantity + delta) } : item
+      item.item_id === itemId ? { ...item, quantity: Math.max(1, item.quantity + delta), selected_basis: "MANUAL" } : item
     )));
+  };
+
+  const chooseQuantityBasis = (itemId: string, basis: "POLICY" | "DYNAMIC") => {
+    setDraftItems((current) => current.map((item) => item.item_id === itemId
+      ? {
+        ...item,
+        quantity: Number(basis === "POLICY" ? item.policy_order_qty : item.dynamic_order_qty),
+        selected_basis: basis,
+        override_reason: "",
+      }
+      : item));
   };
 
   const removeItem = (itemId: string) => {
@@ -169,6 +240,11 @@ export default function LiffOrderWorkflow() {
   const submitOrder = async () => {
     if (!vendor || !draftItems.length) {
       setError("เลือก Vendor และรายการก่อนส่งใบสั่งซื้อ");
+      return;
+    }
+    const missingReason = draftItems.find((item) => item.selected_basis === "MANUAL" && !item.override_reason?.trim());
+    if (missingReason) {
+      setError(`กรุณาระบุเหตุผลที่แก้จำนวนของ ${missingReason.item_name}`);
       return;
     }
     setBusy(true);
@@ -268,7 +344,8 @@ export default function LiffOrderWorkflow() {
               {catalog.length > 0 && <div className="space-y-2">
                 {catalog.map((item) => <button type="button" key={item.item_id} onClick={() => addItem(item)} className="w-full rounded-2xl border border-slate-200 bg-white p-3 text-left">
                   <div className="flex justify-between gap-3"><span className="text-sm font-black">{item.name}</span><span className="text-xs font-bold text-red-600">{item.quantity} {item.unit}</span></div>
-                  <p className="mt-1 text-xs text-slate-500">{item.item_id} · แนะนำ {item.suggested_order_qty} {item.unit}</p>
+                  <p className="mt-1 text-xs text-slate-500">{item.item_id} · แล็บอนุมัติ {item.policy_order_qty} · คำนวณสด {item.dynamic_order_qty} {item.unit}</p>
+                  {!item.auto_selectable && <p className="mt-1 text-xs font-black text-amber-700">ตรวจสอบเองก่อนเลือก: {item.review_reasons.join(", ")}</p>}
                 </button>)}
               </div>}
 
@@ -292,6 +369,22 @@ export default function LiffOrderWorkflow() {
                       </div>
                       <span className="text-xs font-bold text-slate-500">{item.unit}</span>
                     </div>
+                    {item.policy_order_qty !== undefined && (
+                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                        <button type="button" onClick={() => chooseQuantityBasis(item.item_id, "POLICY")} className={`rounded-xl border p-2 text-left ${item.selected_basis === "POLICY" ? "border-emerald-500 bg-emerald-50" : "border-slate-200"}`}>
+                          <span className="block text-[10px] text-slate-500">แล็บอนุมัติ</span><span className="font-black">{item.policy_order_qty}</span>
+                        </button>
+                        <button type="button" onClick={() => chooseQuantityBasis(item.item_id, "DYNAMIC")} disabled={!item.dynamic_order_qty} className={`rounded-xl border p-2 text-left disabled:cursor-not-allowed disabled:opacity-50 ${item.selected_basis === "DYNAMIC" ? "border-blue-500 bg-blue-50" : "border-slate-200"}`}>
+                          <span className="block text-[10px] text-slate-500">คำนวณสด</span><span className="font-black">{item.dynamic_order_qty}</span>
+                        </button>
+                        <p className="col-span-2 text-slate-500">ความเชื่อมั่น {item.confidence === "high" ? "สูง" : item.confidence === "low" ? "ต่ำ" : "ยังไม่มีข้อมูล"}</p>
+                        {item.suggestion_context && <p className="col-span-2 rounded-lg bg-teal-50 p-2 text-teal-950">รอบสั่ง {item.suggestion_context.horizon_days} วัน; ระยะรอของ {item.suggestion_context.lead_time_days} วัน: คาดเหลือ {item.suggestion_context.projected_balance_at_horizon} {item.unit}, Safety stock {item.suggestion_context.safety_stock_boxes} {item.unit}; ใช้ {item.suggestion_context.calculation_breakdown.dailyDemandBoxes} {item.unit}/วัน{item.suggestion_context.expiry_assessment.expired_qty_excluded > 0 ? ` · ไม่นับหมดอายุแล้ว ${item.suggestion_context.expiry_assessment.expired_qty_excluded} ${item.unit}` : ""}{item.suggestion_context.expiry_assessment.expiring_within_horizon_qty > 0 ? ` · FEFO: ใกล้หมดอายุ ${item.suggestion_context.expiry_assessment.expiring_within_horizon_qty} ${item.unit}` : ""}</p>}
+                        {!!item.review_reasons?.length && <p className="col-span-2 font-bold text-amber-700">ทบทวน: {item.review_reasons.join(", ")}</p>}
+                      </div>
+                    )}
+                    {item.selected_basis === "MANUAL" && (
+                      <input value={item.override_reason ?? ""} onChange={(event) => setDraftItems((current) => current.map((row) => row.item_id === item.item_id ? { ...row, override_reason: event.target.value } : row))} placeholder="เหตุผลที่แก้จำนวน*" className="mt-3 w-full rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs font-bold" />
+                    )}
                   </div>)}
                 </div>
               </div>
