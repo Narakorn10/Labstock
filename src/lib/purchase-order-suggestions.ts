@@ -88,6 +88,7 @@ export type SuggestionRow = {
   safety_stock_boxes?: unknown;
   min_order_qty_boxes?: unknown;
   order_multiple_boxes?: unknown;
+  review_days?: unknown;
   source_verification_status?: unknown;
   revision?: unknown;
   inventory_lots?: unknown;
@@ -116,11 +117,11 @@ type OnOrderLot = {
   etaDate: string | null;
 };
 
-const CALCULATION_VERSION = "reagent-order-suggestion-v6-14d-cycle-5d-lead-fefo";
+const CALCULATION_VERSION = "reagent-order-suggestion-v7-15d-cycle-5d-lead-fefo";
 const DEFAULT_LEAD_TIME_DAYS = 5;
 const DAYS_PER_MONTH = 30;
 const ORDERS_PER_MONTH = 2;
-const TARGET_ORDER_COVERAGE_DAYS = 14;
+const TARGET_ORDER_COVERAGE_DAYS = 15;
 const LIVE_USAGE_MIN_OBSERVATION_DAYS = 7;
 const BANGKOK_TIME_ZONE = "Asia/Bangkok";
 const DISPENSE_ACTION = "\u0e40\u0e1a\u0e34\u0e01\u0e44\u0e1b\u0e2b\u0e19\u0e49\u0e32\u0e07\u0e32\u0e19";
@@ -249,7 +250,7 @@ function normalizeVerificationStatus(value: unknown) {
 
 function warningForReviewReason(reason: string) {
   const messages: Record<string, string> = {
-    NO_DISPENSE_HISTORY: "No positive exact front-line dispensing history was found in the last 14 Bangkok calendar dates.",
+    NO_DISPENSE_HISTORY: "No positive exact front-line dispensing history was found in the last 15 Bangkok calendar dates.",
     INSUFFICIENT_DISPENSE_HISTORY: "Live dispensing history spans fewer than seven Bangkok calendar days, so policy demand was used for projection.",
     FUTURE_DISPENSE_LOGS_EXCLUDED: "Future-dated dispensing logs were excluded from the live-usage calculation.",
     OPEN_PURCHASE_ORDER_WITHOUT_ETA: "There are committed purchase orders without ETA, so they were not counted in projected arrivals.",
@@ -268,9 +269,9 @@ export function calculateSuggestion(row: SuggestionRow, now = new Date()): Purch
   const rawCurrentQty = Math.max(0, toNumber(row.quantity));
   const ordersPerMonth = toPositiveNumber(row.orders_per_month, ORDERS_PER_MONTH);
   const leadTimeDays = Math.max(0, Math.ceil(toNumber(row.lead_time_days, DEFAULT_LEAD_TIME_DAYS)));
-  const reviewDays = TARGET_ORDER_COVERAGE_DAYS;
-  // Orders are placed every two weeks. Lead time is a delivery-risk check,
-  // not additional consumption coverage on top of the next ordering cycle.
+  const reviewDays = Math.max(1, Math.min(365, Math.floor(toNumber(row.review_days, TARGET_ORDER_COVERAGE_DAYS))));
+  // The horizon is an item-level forecast window. Lead time is a delivery-risk
+  // check, not additional consumption coverage on top of the next cycle.
   const horizonDays = reviewDays;
   const testsPerBox = toNumber(row.tests_per_box);
   const avgPatientTests = Math.max(0, toNumber(row.avg_patient_tests_per_month));
@@ -285,7 +286,7 @@ export function calculateSuggestion(row: SuggestionRow, now = new Date()): Purch
   const hasApprovedOrderQty = hasValue(row.approved_order_qty_boxes);
   const approvedOrderQty = Math.max(0, toNumber(row.approved_order_qty_boxes));
   const dispensedFourteenDays = Math.max(0, toNumber(row.dispensed_14d));
-  const observationSpanDays = Math.max(0, Math.min(14, Math.floor(toNumber(row.dispense_observation_days))));
+  const observationSpanDays = Math.max(0, Math.min(15, Math.floor(toNumber(row.dispense_observation_days))));
   const observedCalendarDays = Math.max(
     0,
     Math.min(observationSpanDays, Math.floor(toNumber(row.dispense_observed_calendar_days)))
@@ -526,7 +527,8 @@ async function fetchSuggestionRows(
         p.tests_per_box, p.avg_patient_tests_per_month, p.iqc_tests_per_month,
         p.documented_actual_withdrawal_boxes,
         p.approved_monthly_target_boxes, p.approved_order_qty_boxes, p.orders_per_month,
-        p.lead_time_days, p.safety_stock_boxes, p.min_order_qty_boxes, p.order_multiple_boxes,
+        p.lead_time_days, p.safety_stock_boxes, p.min_order_qty_boxes, p.order_multiple_boxes, p.review_days,
+        p.enabled,
         p.source_verification_status, p.revision,
         COALESCE(i.lots, '[]'::jsonb) AS inventory_lots,
         COALESCE(o.lots, '[]'::jsonb) AS on_order_lots,
@@ -535,7 +537,9 @@ async function fetchSuggestionRows(
       LEFT JOIN reagent_order_policy p ON p.item_id = m.item_id AND p.enabled = true
       LEFT JOIN inventory_lots i ON i.item_id = m.item_id
       LEFT JOIN on_order o ON o.item_id = m.item_id
-      WHERE (${vendor}::text IS NULL OR m.vendor = ${vendor}::text)
+      WHERE m.is_active = TRUE
+        AND p.item_id IS NOT NULL
+        AND (${vendor}::text IS NULL OR m.vendor = ${vendor}::text)
         AND (
           ${keyword} = ''
           OR m.item_id ILIKE ${searchTerm}
@@ -588,7 +592,8 @@ async function fetchSuggestionRows(
       FROM master_data m
       LEFT JOIN inventory_lots i ON i.item_id = m.item_id
       LEFT JOIN on_order o ON o.item_id = m.item_id
-      WHERE (${vendor}::text IS NULL OR m.vendor = ${vendor}::text)
+      WHERE m.is_active = TRUE
+        AND (${vendor}::text IS NULL OR m.vendor = ${vendor}::text)
         AND (
           ${keyword} = ''
           OR m.item_id ILIKE ${searchTerm}
@@ -624,24 +629,24 @@ async function fetchDispenseUsage(sql: SqlClient) {
       item_id,
       COALESCE(
         SUM(quantity) FILTER (
-          WHERE dispense_date BETWEEN today_bangkok - 13 AND today_bangkok
+          WHERE dispense_date BETWEEN today_bangkok - 14 AND today_bangkok
         ),
         0
       ) AS dispensed_14d,
       COALESCE(
         MAX(dispense_date) FILTER (
-          WHERE dispense_date BETWEEN today_bangkok - 13 AND today_bangkok
+          WHERE dispense_date BETWEEN today_bangkok - 14 AND today_bangkok
         ) - MIN(dispense_date) FILTER (
-          WHERE dispense_date BETWEEN today_bangkok - 13 AND today_bangkok
+          WHERE dispense_date BETWEEN today_bangkok - 14 AND today_bangkok
         ) + 1,
         0
       ) AS dispense_observation_days,
       COUNT(DISTINCT dispense_date) FILTER (
-        WHERE dispense_date BETWEEN today_bangkok - 13 AND today_bangkok
+        WHERE dispense_date BETWEEN today_bangkok - 14 AND today_bangkok
       ) AS dispense_observed_calendar_days,
       COUNT(*) FILTER (WHERE dispense_date > today_bangkok) AS future_dispense_log_count
     FROM eligible_logs
-    WHERE dispense_date >= today_bangkok - 13 OR dispense_date > today_bangkok
+    WHERE dispense_date >= today_bangkok - 14 OR dispense_date > today_bangkok
     GROUP BY item_id
   `;
 }

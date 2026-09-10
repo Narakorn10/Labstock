@@ -12,6 +12,7 @@ export async function GET(request: Request) {
       sql`
         SELECT item_id as "itemId", barcode as "qrCode", name, unit
         FROM master_data
+        WHERE is_active = TRUE
         ORDER BY item_id ASC
       `,
       loadRuntimeBarcodePatterns(),

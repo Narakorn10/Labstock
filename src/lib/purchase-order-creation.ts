@@ -125,6 +125,11 @@ export async function createPurchaseOrderWithAudit(input: CreatePurchaseOrderInp
           calculation_snapshot JSONB, selected_basis TEXT,
           snapshot_on_order_qty NUMERIC, snapshot_no_eta_qty NUMERIC
         )
+      ), inactive_items AS (
+        SELECT input.item_id
+        FROM input_rows input
+        LEFT JOIN master_data master ON master.item_id = input.item_id
+        WHERE master.item_id IS NULL OR master.is_active = FALSE
       ), current_open AS (
         SELECT poi.item_id,
           COALESCE(SUM(GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0)) FILTER (WHERE p.expected_date IS NOT NULL), 0) AS on_order_qty,
@@ -156,6 +161,7 @@ export async function createPurchaseOrderWithAudit(input: CreatePurchaseOrderInp
           issuer.phone, issuer.email, issuer.logo_url
         FROM issuer
         WHERE NOT EXISTS (SELECT 1 FROM stale_items)
+          AND NOT EXISTS (SELECT 1 FROM inactive_items)
         RETURNING *
       ), new_items AS (
         INSERT INTO purchase_order_items (
@@ -184,6 +190,11 @@ export async function createPurchaseOrderWithAudit(input: CreatePurchaseOrderInp
           calculation_snapshot JSONB, selected_basis TEXT,
           snapshot_on_order_qty NUMERIC, snapshot_no_eta_qty NUMERIC
         )
+      ), inactive_items AS (
+        SELECT input.item_id
+        FROM input_rows input
+        LEFT JOIN master_data master ON master.item_id = input.item_id
+        WHERE master.item_id IS NULL OR master.is_active = FALSE
       ), current_open AS (
         SELECT poi.item_id,
           COALESCE(SUM(GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0)) FILTER (WHERE p.expected_date IS NOT NULL), 0) AS on_order_qty,
@@ -214,6 +225,7 @@ export async function createPurchaseOrderWithAudit(input: CreatePurchaseOrderInp
           issuer.department_name, issuer.address, issuer.phone, issuer.email, issuer.logo_url
         FROM issuer
         WHERE NOT EXISTS (SELECT 1 FROM stale_items)
+          AND NOT EXISTS (SELECT 1 FROM inactive_items)
         RETURNING *
       ), new_items AS (
         INSERT INTO purchase_order_items (

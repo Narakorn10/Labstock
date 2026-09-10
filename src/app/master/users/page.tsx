@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { apiClient, User as ApiUser } from '@/lib/api-client';
 import Modal from '@/components/modal';
 import { useAuth } from '@/components/auth-provider';
@@ -12,7 +12,9 @@ import {
   CheckCircle, 
   XCircle,
   ChevronDown,
-  Pencil
+  Pencil,
+  Search,
+  RefreshCw,
 } from 'lucide-react';
 
 export default function UsersPage() {
@@ -23,6 +25,9 @@ export default function UsersPage() {
   const [isEdit, setIsEdit] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error', msg: string } | null>(null);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'pending' | 'suspended'>('all');
+  const [roleFilter, setRoleFilter] = useState('all');
   
   const [form, setForm] = useState<ApiUser>({ 
     username: '', 
@@ -40,6 +45,8 @@ export default function UsersPage() {
       setUsers(data);
     } catch (e) {
       console.error(e);
+      const error = e as { response?: { data?: { error?: string } } };
+      setFeedback({ type: 'error', msg: error.response?.data?.error || 'โหลดรายชื่อผู้ใช้ไม่สำเร็จ' });
     } finally {
       setLoading(false);
     }
@@ -56,6 +63,27 @@ export default function UsersPage() {
     load();
     return () => { isMounted = false; };
   }, [authLoading, loadUsers, user]);
+
+  const visibleUsers = useMemo(() => {
+    const keyword = search.trim().toLowerCase();
+    return users.filter((candidate) => {
+      const matchesSearch = !keyword
+        || candidate.username.toLowerCase().includes(keyword)
+        || candidate.name.toLowerCase().includes(keyword)
+        || String(candidate.email || '').toLowerCase().includes(keyword)
+        || String(candidate.vendor || '').toLowerCase().includes(keyword);
+      const matchesStatus = statusFilter === 'all' || (candidate.accountStatus || 'active') === statusFilter;
+      const matchesRole = roleFilter === 'all' || candidate.role === roleFilter;
+      return matchesSearch && matchesStatus && matchesRole;
+    });
+  }, [roleFilter, search, statusFilter, users]);
+
+  const userSummary = useMemo(() => ({
+    total: users.length,
+    active: users.filter((candidate) => (candidate.accountStatus || 'active') === 'active').length,
+    pending: users.filter((candidate) => candidate.accountStatus === 'pending').length,
+    suspended: users.filter((candidate) => candidate.accountStatus === 'suspended').length,
+  }), [users]);
 
   const openAddModal = () => {
     setIsEdit(false);
@@ -171,6 +199,44 @@ export default function UsersPage() {
         </button>
       </div>
 
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {[
+          ['ทั้งหมด', userSummary.total, 'bg-slate-50 text-slate-700'],
+          ['ใช้งาน', userSummary.active, 'bg-emerald-50 text-emerald-700'],
+          ['รออนุมัติ', userSummary.pending, 'bg-amber-50 text-amber-700'],
+          ['ระงับ', userSummary.suspended, 'bg-rose-50 text-rose-700'],
+        ].map(([label, value, color]) => (
+          <div key={String(label)} className={`rounded-2xl border border-gray-100 p-4 shadow-sm ${color}`}>
+            <p className="text-[10px] font-black uppercase tracking-widest opacity-70">{label}</p>
+            <p className="mt-1 text-2xl font-black">{value}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm lg:flex-row lg:items-center">
+        <label className="relative flex-1">
+          <Search size={17} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหาชื่อ, username, อีเมล หรือบริษัท" className="w-full rounded-xl border border-gray-200 py-2.5 pl-10 pr-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10" />
+        </label>
+        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)} className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-bold outline-none focus:border-blue-500">
+          <option value="all">ทุกสถานะ</option>
+          <option value="active">ใช้งาน</option>
+          <option value="pending">รออนุมัติ</option>
+          <option value="suspended">ระงับ</option>
+        </select>
+        <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-bold outline-none focus:border-blue-500">
+          <option value="all">ทุก Role</option>
+          <option value="Admin">Admin</option>
+          <option value="Manager">Manager</option>
+          <option value="Operator">Operator</option>
+          <option value="User">User</option>
+          <option value="Vendor">Vendor</option>
+        </select>
+        <button type="button" onClick={() => void loadUsers()} disabled={loading} className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+          <RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> รีเฟรช
+        </button>
+      </div>
+
       {feedback && (
         <div className={`p-4 rounded-2xl flex items-center gap-3 animate-in slide-in-from-top-4 duration-300 ${
           feedback.type === 'success' ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-700 border border-red-100'
@@ -183,7 +249,7 @@ export default function UsersPage() {
 
       {/* Users Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {users.map(u => (
+        {visibleUsers.map(u => (
           <div key={u.username} className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm flex items-center justify-between hover:shadow-md transition-shadow group">
             <div className="flex items-center gap-4 min-w-0">
               <div className="w-14 h-14 bg-gray-50 text-gray-400 rounded-2xl flex items-center justify-center group-hover:bg-blue-50 group-hover:text-blue-500 transition-colors shrink-0">
@@ -285,10 +351,10 @@ export default function UsersPage() {
           </div>
         ))}
 
-        {users.length === 0 && !loading && (
+        {visibleUsers.length === 0 && !loading && (
           <div className="col-span-full py-20 text-center text-gray-300">
             <User size={64} className="mx-auto mb-4 opacity-20" />
-            <p className="font-bold uppercase tracking-widest">ไม่พบข้อมูลผู้ใช้งาน</p>
+            <p className="font-bold uppercase tracking-widest">{users.length === 0 ? 'ไม่พบข้อมูลผู้ใช้งาน' : 'ไม่พบผู้ใช้ตามตัวกรอง'}</p>
           </div>
         )}
       </div>

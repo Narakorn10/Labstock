@@ -62,6 +62,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Loan operation, unit, and at least one item are required" }, { status: 400 });
     }
 
+    const requestedItemIds = Array.from(new Set(items.map((item) => text(item.itemId)).filter(Boolean)));
+    const masterRows = await sql`
+      SELECT item_id, is_active
+      FROM master_data
+      WHERE item_id = ANY(${requestedItemIds})
+    `;
+    const masterById = new Map(masterRows.map((row) => [String(row.item_id), row]));
+    const blockedItem = requestedItemIds.find((itemId) => !masterById.has(itemId) || masterById.get(itemId)?.is_active === false);
+    if (blockedItem) {
+      return NextResponse.json({ error: `REAGENT_INACTIVE: ${blockedItem}` }, { status: 409 });
+    }
+
     const actor = user.name ? `${user.name} (${user.role})` : user.username;
     for (const item of items) {
       const itemId = text(item.itemId);

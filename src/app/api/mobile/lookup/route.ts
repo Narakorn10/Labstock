@@ -36,8 +36,10 @@ export async function GET() {
           unit,
           min_threshold as "minThreshold",
           weekly_target as "weeklyTarget",
-          vendor
+          vendor,
+          is_active as "isActive"
         FROM master_data
+        WHERE is_active = TRUE
         ORDER BY item_id ASC
       `,
       sql`

@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import sql from '@/lib/db';
-import { hasUserPinColumn, hashPassword, hashPin, isAdmin } from '@/lib/auth-utils';
+import { getAuthenticatedUser, hasUserAccountStatusColumn, hasUserPinColumn, hashPassword, hashPin, isAdmin } from '@/lib/auth-utils';
+
+const ALLOWED_ROLES = new Set(['User', 'Operator', 'Manager', 'Admin', 'Vendor']);
 
 function normalizeOptionalText(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
@@ -20,10 +22,22 @@ export async function PUT(
     }
 
     const { username } = await params;
-    const updateData = await request.json();
+    const updateData = await request.json() as Record<string, unknown>;
     const pinEnabled = await hasUserPinColumn();
     const password = normalizeOptionalText(updateData.password);
     const pin = normalizeOptionalText(updateData.pin);
+    const name = normalizeOptionalText(updateData.name);
+    const role = normalizeOptionalText(updateData.role);
+
+    if (!name || name.length > 160) {
+      return NextResponse.json({ error: 'กรุณาระบุชื่อผู้ใช้ให้ถูกต้อง' }, { status: 400 });
+    }
+    if (!ALLOWED_ROLES.has(role)) {
+      return NextResponse.json({ error: 'Role ไม่ถูกต้อง' }, { status: 400 });
+    }
+    if (password && password.length < 8) {
+      return NextResponse.json({ error: 'Password ต้องมีอย่างน้อย 8 ตัวอักษร' }, { status: 400 });
+    }
 
     if (pin && !pinEnabled) {
       return NextResponse.json({ error: 'PIN support is not enabled yet. Run upgrade_v5_user_pin.sql first.' }, { status: 400 });
@@ -36,8 +50,13 @@ export async function PUT(
     const newPasswordHash = password ? await hashPassword(password) : null;
     const newPinHash = pin ? await hashPin(pin) : null;
 
-    const users = await sql`
-      SELECT username FROM users 
+    const accountStatusEnabled = await hasUserAccountStatusColumn();
+    const users = accountStatusEnabled ? await sql`
+      SELECT username, role, account_status FROM users
+      WHERE LOWER(username) = LOWER(${username.trim()})
+      LIMIT 1
+    ` : await sql`
+      SELECT username, role, NULL::text AS account_status FROM users
       WHERE LOWER(username) = LOWER(${username.trim()})
       LIMIT 1
     `;
@@ -46,13 +65,29 @@ export async function PUT(
       return NextResponse.json({ error: 'ไม่พบผู้ใช้ที่ต้องการแก้ไข' }, { status: 404 });
     }
 
+    const currentUser = await getAuthenticatedUser(request);
+    if (currentUser?.username.toLowerCase() === username.trim().toLowerCase() && currentUser.role === 'Admin' && role !== 'Admin') {
+      return NextResponse.json({ error: 'ไม่สามารถลดสิทธิ์ Admin ของบัญชีที่กำลังใช้งานอยู่ได้' }, { status: 400 });
+    }
+    if (users[0].username.toLowerCase() === 'admin' && role !== 'Admin') {
+      return NextResponse.json({ error: 'ไม่สามารถลดสิทธิ์ Admin หลักได้' }, { status: 400 });
+    }
+    if (users[0].role === 'Admin' && role !== 'Admin') {
+      const activeAdmins = accountStatusEnabled
+        ? await sql`SELECT username FROM users WHERE role = 'Admin' AND account_status = 'active'`
+        : await sql`SELECT username FROM users WHERE role = 'Admin'`;
+      if (activeAdmins.length <= 1) {
+        return NextResponse.json({ error: 'ไม่สามารถลดสิทธิ์ Admin คนสุดท้ายได้' }, { status: 400 });
+      }
+    }
+
     if (newPasswordHash) {
       await sql`
         UPDATE users 
         SET 
-          name = ${updateData.name}, 
-          role = ${updateData.role}, 
-          vendor = ${updateData.vendor || ''},
+          name = ${name}, 
+          role = ${role}, 
+          vendor = ${normalizeOptionalText(updateData.vendor)},
           password_hash = ${newPasswordHash},
           pin_hash = COALESCE(${newPinHash}, pin_hash)
         WHERE LOWER(username) = LOWER(${username.trim()})
@@ -61,9 +96,9 @@ export async function PUT(
       await sql`
         UPDATE users 
         SET 
-          name = ${updateData.name}, 
-          role = ${updateData.role}, 
-          vendor = ${updateData.vendor || ''},
+          name = ${name}, 
+          role = ${role}, 
+          vendor = ${normalizeOptionalText(updateData.vendor)},
           pin_hash = COALESCE(${newPinHash}, pin_hash)
         WHERE LOWER(username) = LOWER(${username.trim()})
       `;

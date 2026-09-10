@@ -25,19 +25,20 @@ type PolicyPayload = {
   safety_stock_boxes: number | null;
   min_order_qty_boxes: number;
   order_multiple_boxes: number;
+  review_days: number;
   enabled: boolean;
   reason: string | null;
   change_reason: string;
 };
 
-async function requireAdmin(request: Request) {
+async function requirePolicyManager(request: Request) {
   const user = await getAuthenticatedUser(request);
   if (!user) {
     return { response: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
   }
 
-  if (user.role !== 'Admin') {
-    return { response: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) };
+  if (user.role !== 'Admin' && user.role !== 'Manager') {
+    return { response: NextResponse.json({ error: 'เฉพาะ Admin หรือ Manager เท่านั้น' }, { status: 403 }) };
   }
 
   return { user };
@@ -71,7 +72,7 @@ function text(value: unknown, field: string, options: { required?: boolean; maxL
 function numberValue(
   value: unknown,
   field: string,
-  options: { nullable?: boolean; minimum?: number; integer?: boolean } = {},
+  options: { nullable?: boolean; minimum?: number; maximum?: number; integer?: boolean } = {},
 ) {
   if (value === null) {
     return options.nullable ? { value: null } : { error: `${field} is required.` };
@@ -87,6 +88,10 @@ function numberValue(
 
   if (options.minimum !== undefined && value < options.minimum) {
     return { error: `${field} must be at least ${options.minimum}.` };
+  }
+
+  if (options.maximum !== undefined && value > options.maximum) {
+    return { error: `${field} must be at most ${options.maximum}.` };
   }
 
   return { value };
@@ -133,10 +138,11 @@ function validatePayload(body: unknown): { payload?: PolicyPayload; error?: stri
   const safetyStock = numberValue(input.safety_stock_boxes, 'safety_stock_boxes', { nullable: true, minimum: 0 });
   const minOrderQty = numberValue(input.min_order_qty_boxes, 'min_order_qty_boxes', { minimum: 1, integer: true });
   const orderMultiple = numberValue(input.order_multiple_boxes, 'order_multiple_boxes', { minimum: 1, integer: true });
+  const reviewDays = numberValue(input.review_days, 'review_days', { minimum: 1, maximum: 365, integer: true });
   const reason = text(input.reason, 'reason', { maxLength: 2_000 });
   const changeReason = text(input.change_reason, 'change_reason', { required: true, maxLength: 2_000 });
 
-  const validationError = [itemId, expectedRevision, testsPerBox, averageTests, iqcTests, actualDocumentQty, approvedMonthly, approvedCycle, ordersPerMonth, leadTime, safetyStock, minOrderQty, orderMultiple, reason, changeReason]
+  const validationError = [itemId, expectedRevision, testsPerBox, averageTests, iqcTests, actualDocumentQty, approvedMonthly, approvedCycle, ordersPerMonth, leadTime, safetyStock, minOrderQty, orderMultiple, reviewDays, reason, changeReason]
     .find((result) => 'error' in result);
   if (validationError && 'error' in validationError) return { error: validationError.error };
 
@@ -163,6 +169,7 @@ function validatePayload(body: unknown): { payload?: PolicyPayload; error?: stri
       safety_stock_boxes: safetyStock.value as number | null,
       min_order_qty_boxes: minOrderQty.value as number,
       order_multiple_boxes: orderMultiple.value as number,
+      review_days: reviewDays.value as number,
       enabled: input.enabled,
       reason: reason.value as string | null,
       change_reason: changeReason.value as string,
@@ -172,7 +179,7 @@ function validatePayload(body: unknown): { payload?: PolicyPayload; error?: stri
 
 export async function GET(request: Request) {
   try {
-    const auth = await requireAdmin(request);
+    const auth = await requirePolicyManager(request);
     if ('response' in auth) return auth.response;
 
     const url = new URL(request.url);
@@ -182,22 +189,28 @@ export async function GET(request: Request) {
     const searchTerm = `%${keyword}%`;
     const policies = await sql`
       SELECT
-        p.item_id, m.name, m.barcode, m.unit, m.vendor, m.reagent_type, m.machine_type,
-        p.tests_per_box, p.avg_patient_tests_per_month, p.iqc_tests_per_month,
-        p.documented_actual_withdrawal_boxes, p.source_verification_status,
-        p.approved_monthly_target_boxes, p.approved_order_qty_boxes, p.orders_per_month,
-        p.lead_time_days, p.safety_stock_boxes, p.min_order_qty_boxes, p.order_multiple_boxes,
-        p.enabled, p.reason, p.revision, p.created_at, p.created_by, p.updated_at, p.updated_by,
+        m.item_id, m.name, m.barcode, m.unit, m.vendor, m.reagent_type, m.machine_type,
+        p.tests_per_box, COALESCE(p.avg_patient_tests_per_month, 0) AS avg_patient_tests_per_month,
+        COALESCE(p.iqc_tests_per_month, 0) AS iqc_tests_per_month,
+        p.documented_actual_withdrawal_boxes, COALESCE(p.source_verification_status, 'NOT_AVAILABLE') AS source_verification_status,
+        p.approved_monthly_target_boxes, p.approved_order_qty_boxes, COALESCE(p.orders_per_month, 2) AS orders_per_month,
+        COALESCE(p.lead_time_days, 7) AS lead_time_days, p.safety_stock_boxes,
+        COALESCE(p.min_order_qty_boxes, 1) AS min_order_qty_boxes,
+        COALESCE(p.order_multiple_boxes, 1) AS order_multiple_boxes,
+        COALESCE(p.review_days, 15) AS review_days,
+        COALESCE(p.enabled, false) AS enabled, p.reason, COALESCE(p.revision, 0) AS revision,
+        (p.item_id IS NOT NULL) AS policy_configured,
+        p.created_at, p.created_by, p.updated_at, p.updated_by,
         CASE WHEN p.tests_per_box IS NULL OR p.tests_per_box <= 0 THEN NULL
           ELSE ROUND((p.avg_patient_tests_per_month + p.iqc_tests_per_month) / p.tests_per_box)
         END AS theoretical_monthly_boxes,
         CASE WHEN p.approved_order_qty_boxes IS NULL THEN NULL
           ELSE p.approved_order_qty_boxes * p.orders_per_month
         END AS approved_monthly_from_cycle_boxes
-      FROM reagent_order_policy p
-      INNER JOIN master_data m ON m.item_id = p.item_id
+      FROM master_data m
+      LEFT JOIN reagent_order_policy p ON m.item_id = p.item_id
       WHERE (${keyword} = ''
-        OR p.item_id ILIKE ${searchTerm}
+        OR m.item_id ILIKE ${searchTerm}
         OR m.name ILIKE ${searchTerm}
         OR COALESCE(m.barcode, '') ILIKE ${searchTerm}
         OR COALESCE(m.vendor, '') ILIKE ${searchTerm})
@@ -211,9 +224,73 @@ export async function GET(request: Request) {
   }
 }
 
+export async function POST(request: Request) {
+  try {
+    const auth = await requirePolicyManager(request);
+    if ('response' in auth) return auth.response;
+
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: 'Request body must be valid JSON.' }, { status: 400 });
+    }
+    const validation = validatePayload(body);
+    if (!validation.payload) return NextResponse.json({ error: validation.error }, { status: 400 });
+    const policy = validation.payload;
+    if (policy.expected_revision !== 0) {
+      return NextResponse.json({ error: 'การสร้างนโยบายใหม่ต้องใช้ expected_revision เป็น 0' }, { status: 400 });
+    }
+
+    const [createdRows] = await sql.transaction([sql`
+      WITH master AS (
+        SELECT item_id
+        FROM master_data
+        WHERE item_id = ${policy.item_id}
+        FOR SHARE
+      ),
+      created AS (
+        INSERT INTO reagent_order_policy (
+          item_id, tests_per_box, avg_patient_tests_per_month, iqc_tests_per_month,
+          documented_actual_withdrawal_boxes, source_verification_status,
+          approved_monthly_target_boxes, approved_order_qty_boxes, orders_per_month,
+          lead_time_days, safety_stock_boxes, min_order_qty_boxes, order_multiple_boxes,
+          review_days, enabled, reason, revision, created_by, updated_by
+        )
+        SELECT
+          master.item_id, ${policy.tests_per_box}, ${policy.avg_patient_tests_per_month}, ${policy.iqc_tests_per_month},
+          ${policy.documented_actual_withdrawal_boxes}, ${policy.source_verification_status},
+          ${policy.approved_monthly_target_boxes}, ${policy.approved_order_qty_boxes}, ${policy.orders_per_month},
+          ${policy.lead_time_days}, ${policy.safety_stock_boxes}, ${policy.min_order_qty_boxes}, ${policy.order_multiple_boxes},
+          ${policy.review_days}, ${policy.enabled}, ${policy.reason}, 1, ${auth.user.username}, ${auth.user.username}
+        FROM master
+        ON CONFLICT (item_id) DO NOTHING
+        RETURNING *
+      ),
+      audit AS (
+        INSERT INTO reagent_order_policy_history (
+          item_id, revision, before_state, after_state, changed_by, changed_at, reason
+        )
+        SELECT created.item_id, created.revision, '{}'::jsonb, to_jsonb(created), ${auth.user.username}, NOW(), ${policy.change_reason}
+        FROM created
+        RETURNING item_id
+      )
+      SELECT * FROM created
+    `]);
+
+    if (createdRows.length === 0) {
+      return NextResponse.json({ error: 'รายการนี้มีนโยบายอยู่แล้ว หรือไม่พบรหัสน้ำยา กรุณารีเฟรชข้อมูล' }, { status: 409 });
+    }
+    return NextResponse.json({ success: true, data: createdRows[0] }, { status: 201 });
+  } catch (error: unknown) {
+    console.error('Reagent order policy POST error:', error);
+    return NextResponse.json({ error: 'Unable to create reagent order policy.' }, { status: 500 });
+  }
+}
+
 export async function PATCH(request: Request) {
   try {
-    const auth = await requireAdmin(request);
+    const auth = await requirePolicyManager(request);
     if ('response' in auth) return auth.response;
 
     let body: unknown;
@@ -247,6 +324,7 @@ export async function PATCH(request: Request) {
             safety_stock_boxes = ${policy.safety_stock_boxes},
             min_order_qty_boxes = ${policy.min_order_qty_boxes},
             order_multiple_boxes = ${policy.order_multiple_boxes},
+            review_days = ${policy.review_days},
             enabled = ${policy.enabled},
             reason = ${policy.reason},
             revision = p.revision + 1,

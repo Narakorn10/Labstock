@@ -18,6 +18,7 @@ export async function POST(request: Request) {
   } catch (error: unknown) {
     console.error("Dispense API Error:", error);
     const errorMessage = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: errorMessage }, { status: 400 });
+    const status = errorMessage.startsWith('REAGENT_INACTIVE') ? 409 : 400;
+    return NextResponse.json({ error: errorMessage }, { status });
   }
 }

@@ -40,6 +40,9 @@ export interface Reagent {
   minThreshold: number;
   weeklyTarget: number;
   vendor?: string;
+  isActive?: boolean;
+  statusReason?: string | null;
+  statusChangedAt?: string | null;
   quantity: number;
   lots: Lot[];
   [key: string]: unknown;
@@ -445,6 +448,11 @@ export const apiClient = {
   // Barcode Patterns
   getBarcodePatterns: async () => {
     const res = await instance.get<BarcodePattern[]>('/api/settings/barcodes');
+    return res.data;
+  },
+
+  updateReagentStatus: async (itemId: string, isActive: boolean, reason: string) => {
+    const res = await instance.patch<ApiResponse>(`/api/master/${encodeURIComponent(itemId)}/status`, { isActive, reason });
     return res.data;
   },
   getBarcodeRuntimePatterns: async () => {

@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { apiClient, Reagent, SettingsResponse } from '@/lib/api-client';
 import Modal from '@/components/modal';
-import { Plus, Edit2, Search, Package, AlertTriangle, Cpu, FileUp, X } from 'lucide-react';
+import { Plus, Edit2, Search, Package, AlertTriangle, Cpu, FileUp, X, Power, PowerOff } from 'lucide-react';
 import { useAuth } from '@/components/auth-provider';
 
 interface MasterDataImportItem {
@@ -96,7 +96,7 @@ export default function MasterDataPage() {
             vendor: values[9] || (user?.role === 'Vendor' ? user.vendor : '')
           };
           return item;
-        }).filter(item => item.itemId);
+        }).filter(item => item.itemId || item.name);
 
         if (items.length === 0) throw new Error('ไม่พบข้อมูลที่ถูกต้องในไฟล์');
 
@@ -117,7 +117,7 @@ export default function MasterDataPage() {
     
     // Sanitize Item ID: Trim and Uppercase
     const rawItemId = String(formData.get('itemId') || '').trim().toUpperCase();
-    if (!rawItemId) return alert("กรุณาระบุ Item ID");
+    if (editingReagent?.itemId && !rawItemId) return alert("กรุณาระบุ Item ID");
 
     const reagentTypeCustom = String(formData.get('reagentTypeCustom') || '').trim();
     const jobTypeCustom = String(formData.get('jobTypeCustom') || '').trim();
@@ -125,7 +125,7 @@ export default function MasterDataPage() {
 
     const data = {
       action: (editingReagent?.itemId ? 'update' : 'add') as 'update' | 'add',
-      itemId: rawItemId,
+      itemId: rawItemId || undefined,
       qrCode: String(formData.get('qrCode') || '').trim(),
       name: String(formData.get('name') || '').trim(),
       reagentType: reagentTypeCustom || String(formData.get('reagentType') || '').trim(),
@@ -165,6 +165,36 @@ export default function MasterDataPage() {
     }
   };
 
+  const handleStatusToggle = async (reagent: Reagent) => {
+    const nextIsActive = reagent.isActive === false;
+    const reason = window.prompt(
+      nextIsActive
+        ? `เหตุผลที่เปิดใช้งาน ${reagent.itemId} (ไม่บังคับ)`
+        : `เหตุผลที่ปิดใช้งาน ${reagent.itemId} (จำเป็น)`,
+      '',
+    );
+    if (reason === null) return;
+    if (!nextIsActive && !reason.trim()) {
+      alert('กรุณาระบุเหตุผลก่อนปิดใช้งานน้ำยา');
+      return;
+    }
+
+    try {
+      const response = await apiClient.updateReagentStatus(reagent.itemId, nextIsActive, reason.trim());
+      if (!response.success) throw new Error(response.error || 'เปลี่ยนสถานะไม่สำเร็จ');
+      setReagents((current) => current.map((item) => item.itemId === reagent.itemId
+        ? { ...item, isActive: nextIsActive, statusReason: reason.trim() || null }
+        : item));
+      const impact = response.data as { impact?: { stockQuantity?: number; openLoanCount?: number; openOrderItemCount?: number } } | undefined;
+      const impactNote = !nextIsActive && impact?.impact
+        ? `\nคงเหลือ ${impact.impact.stockQuantity ?? 0} หน่วย, ยืมค้าง ${impact.impact.openLoanCount ?? 0} รายการ, PO ค้าง ${impact.impact.openOrderItemCount ?? 0} รายการ`
+        : '';
+      alert(nextIsActive ? 'เปิดใช้งานน้ำยาแล้ว' : `ปิดใช้งานน้ำยาแล้ว รายการเดิมยังดูประวัติได้${impactNote}`);
+    } catch (error: unknown) {
+      alert(getApiErrorMessage(error, 'เปลี่ยนสถานะน้ำยาไม่สำเร็จ'));
+    }
+  };
+
   const filteredReagents = reagents.filter(r => 
     r.name.toLowerCase().includes(search.toLowerCase()) ||
     r.itemId.toLowerCase().includes(search.toLowerCase()) ||
@@ -173,7 +203,7 @@ export default function MasterDataPage() {
 
   const stats = {
     total: reagents.length,
-    lowStock: reagents.filter(r => r.quantity <= r.minThreshold).length,
+    lowStock: reagents.filter(r => r.isActive !== false && r.quantity <= r.minThreshold).length,
     machines: new Set(reagents.map(r => r.machineType)).size
   };
   const reagentTypeDefaults = getCategoryDefaults(editingReagent?.reagentType, settings?.reagentTypes ?? []);
@@ -273,16 +303,17 @@ export default function MasterDataPage() {
                 <th className="px-6 py-4">Vendor</th>
                 <th className="px-6 py-4 text-center">Min Stock</th>
                 <th className="px-6 py-4 text-center">Weekly Target</th>
+                <th className="px-6 py-4 text-center">สถานะ</th>
                 <th className="px-6 py-4 text-center">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {loading ? (
-                <tr><td colSpan={6} className="px-6 py-10 text-center text-gray-400">กำลังโหลดข้อมูล...</td></tr>
+                <tr><td colSpan={7} className="px-6 py-10 text-center text-gray-400">กำลังโหลดข้อมูล...</td></tr>
               ) : filteredReagents.length === 0 ? (
-                <tr><td colSpan={6} className="px-6 py-10 text-center text-gray-400">ไม่พบข้อมูล</td></tr>
+                <tr><td colSpan={7} className="px-6 py-10 text-center text-gray-400">ไม่พบข้อมูล</td></tr>
               ) : filteredReagents.map((reagent) => (
-                <tr key={reagent.itemId} className="hover:bg-gray-50/50 transition-colors group">
+                <tr key={reagent.itemId} className={`hover:bg-gray-50/50 transition-colors group ${reagent.isActive === false ? 'bg-slate-50 opacity-75' : ''}`}>
                   <td className="px-6 py-4">
                     <div className="font-bold text-gray-900">{reagent.itemId}</div>
                     <div className="text-xs text-gray-500">{reagent.name}</div>
@@ -301,6 +332,23 @@ export default function MasterDataPage() {
                   </td>
                   <td className="px-6 py-4 text-center font-medium text-gray-700">
                     {reagent.weeklyTarget} {reagent.unit}
+                  </td>
+                  <td className="px-6 py-4 text-center">
+                    {user?.role === 'Admin' || user?.role === 'Manager' ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleStatusToggle(reagent)}
+                        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold transition ${reagent.isActive === false ? 'bg-slate-200 text-slate-700 hover:bg-emerald-100 hover:text-emerald-700' : 'bg-emerald-50 text-emerald-700 hover:bg-amber-100 hover:text-amber-700'}`}
+                        title={reagent.isActive === false ? 'เปิดใช้งานน้ำยา' : 'ปิดใช้งานน้ำยา'}
+                      >
+                        {reagent.isActive === false ? <Power size={13} /> : <PowerOff size={13} />}
+                        {reagent.isActive === false ? 'Inactive' : 'Active'}
+                      </button>
+                    ) : (
+                      <span className={`text-xs font-bold ${reagent.isActive === false ? 'text-slate-500' : 'text-emerald-700'}`}>
+                        {reagent.isActive === false ? 'Inactive' : 'Active'}
+                      </span>
+                    )}
                   </td>
                   <td className="px-6 py-4 text-center">
                     <button 
@@ -330,9 +378,9 @@ export default function MasterDataPage() {
               <input 
                 name="itemId" 
                 defaultValue={editingReagent?.itemId} 
-                required 
+                required={!!editingReagent?.itemId}
                 readOnly={!!editingReagent?.itemId}
-                placeholder="เช่น UR-MPUC-123"
+                placeholder="เว้นว่างเพื่อสร้าง LAB-000001 อัตโนมัติ"
                 className={`w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all uppercase ${editingReagent?.itemId ? 'bg-gray-50' : 'bg-white font-bold text-blue-600'}`}
               />
             </div>

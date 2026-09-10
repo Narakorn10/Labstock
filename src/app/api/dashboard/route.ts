@@ -55,6 +55,9 @@ export async function GET(request: Request) {
             m.min_threshold AS "minThreshold",
             m.weekly_target AS "weeklyTarget",
             m.vendor,
+            m.is_active AS "isActive",
+            m.status_reason AS "statusReason",
+            m.status_changed_at AS "statusChangedAt",
             COALESCE(SUM(i.quantity), 0) AS quantity,
             COALESCE(
               json_agg(
@@ -87,6 +90,9 @@ export async function GET(request: Request) {
             m.min_threshold AS "minThreshold",
             m.weekly_target AS "weeklyTarget",
             m.vendor,
+            m.is_active AS "isActive",
+            m.status_reason AS "statusReason",
+            m.status_changed_at AS "statusChangedAt",
             COALESCE(SUM(i.quantity), 0) AS quantity,
             COALESCE(
               json_agg(

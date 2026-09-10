@@ -43,7 +43,8 @@ async function notifyLowStockForAffectedItems(itemIds: string[]) {
         COALESCE(i.current_qty, 0) as quantity
       FROM master_data m
       LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)
-      WHERE COALESCE(i.current_qty, 0) <= m.min_threshold
+      WHERE m.is_active = TRUE
+        AND COALESCE(i.current_qty, 0) <= m.min_threshold
       ORDER BY COALESCE(i.current_qty, 0) ASC, m.item_id ASC
     `;
 
@@ -74,41 +75,56 @@ export async function runReceiveBatch(
   user: AuthenticatedUser,
   audit: AuditContext
 ) {
-  const masterData = await sql`SELECT item_id, name FROM master_data`;
+  const masterData = await sql`SELECT item_id, name, is_active FROM master_data`;
   const itemNameMap: Record<string, string> = {};
+  const activeMap: Record<string, boolean> = {};
   const affectedItemIds: string[] = [];
   masterData.forEach((row) => {
     itemNameMap[row.item_id.toLowerCase()] = row.name;
+    activeMap[row.item_id.toLowerCase()] = row.is_active !== false;
   });
 
-  for (const item of batchItems) {
-    const targetItemId = item.itemId.toString();
-    const targetLotNo = item.lotNo.toString();
-    const qty = parseFloat(String(item.qty));
-    const expDate = item.expDate ? item.expDate : null;
+  const validItems = batchItems
+    .map((item) => ({
+      ...item,
+      itemId: item.itemId.toString(),
+      lotNo: item.lotNo.toString(),
+      qty: parseFloat(String(item.qty)),
+      expDate: item.expDate ? item.expDate : null,
+    }))
+    .filter((item) => !Number.isNaN(item.qty) && item.qty > 0);
 
-    if (isNaN(qty) || qty <= 0) continue;
+  const inactive = validItems.find((item) => activeMap[item.itemId.toLowerCase()] === false);
+  if (inactive) throw new Error(`REAGENT_INACTIVE: ${inactive.itemId}`);
+  if (validItems.length === 0) {
+    return { success: true, message: 'ไม่มีรายการที่ต้องรับเข้า' };
+  }
 
-    const itemName = itemNameMap[targetItemId.toLowerCase()] || "Unknown";
-    const actor = getActorName(user);
-
-    await sql`
+  const actor = getActorName(user);
+  await sql.transaction((transaction) => validItems.flatMap((item) => [
+    transaction`
+      SELECT labstock_assert(EXISTS (
+        SELECT 1 FROM master_data
+        WHERE LOWER(item_id) = LOWER(${item.itemId}) AND is_active = TRUE
+        FOR UPDATE
+      ), 'REAGENT_INACTIVE: ' || ${item.itemId}) AS ok
+    `,
+    transaction`
       WITH upserted AS (
         INSERT INTO inventory (item_id, lot_no, exp_date, quantity, received_on)
-        VALUES (${targetItemId}, ${targetLotNo}, ${expDate}, ${qty}, CURRENT_DATE)
+        VALUES (${item.itemId}, ${item.lotNo}, ${item.expDate}, ${item.qty}, CURRENT_DATE)
         ON CONFLICT (item_id, lot_no, received_on)
         DO UPDATE SET
-          quantity = inventory.quantity + ${qty},
+          quantity = inventory.quantity + ${item.qty},
           exp_date = COALESCE(EXCLUDED.exp_date, inventory.exp_date)
         RETURNING id, item_id, lot_no, received_on
       )
       INSERT INTO logs (item_id, name, lot_no, action, quantity, username, user_agent, ip_address)
-      SELECT item_id, ${itemName}, lot_no, 'รับเข้าสต๊อกหลัก', ${qty}, ${actor}, ${audit.userAgent}, ${audit.ipAddress}
+      SELECT item_id, ${itemNameMap[item.itemId.toLowerCase()] || 'Unknown'}, lot_no, 'รับเข้าสต๊อกหลัก', ${item.qty}, ${actor}, ${audit.userAgent}, ${audit.ipAddress}
       FROM upserted
-    `;
-
-    affectedItemIds.push(targetItemId);
-  }
+    `,
+  ]));
+  validItems.forEach((item) => affectedItemIds.push(item.itemId));
 
   const completedItems = batchItems
     .map((item) => ({
@@ -124,7 +140,7 @@ export async function runReceiveBatch(
       "STOCK_RECEIVED",
       {
         actor: getActorName(user),
-        items: completedItems,
+      items: completedItems,
       },
       []
     );
@@ -134,7 +150,7 @@ export async function runReceiveBatch(
 
   return {
     success: true,
-    message: `รับเข้าสำเร็จ ${batchItems.length} รายการ`,
+    message: `รับเข้าสำเร็จ ${validItems.length} รายการ`,
   };
 }
 
@@ -143,23 +159,26 @@ export async function runDispenseBatch(
   user: AuthenticatedUser,
   audit: AuditContext
 ) {
-  const masterData = await sql`SELECT item_id, name FROM master_data`;
+  const masterData = await sql`SELECT item_id, name, is_active FROM master_data`;
   const masterMap: Record<string, string> = {};
+  const activeMap: Record<string, boolean> = {};
   const affectedItemIds: string[] = [];
   masterData.forEach((row) => {
     masterMap[row.item_id.toLowerCase()] = row.name;
+    activeMap[row.item_id.toLowerCase()] = row.is_active !== false;
   });
 
+  const preparedItems: Array<StockBatchItem & { targetItemId: string; targetLotNo: string; qtyToSubtract: number; inventoryId: number }> = [];
   for (const item of batchItems) {
     let inventoryId = Number(item.inventoryId);
     const targetItemId = item.itemId.toString();
     const targetLotNo = item.lotNo.toString();
     const qtyToSubtract = parseFloat(String(item.qty));
 
-    if (isNaN(qtyToSubtract) || qtyToSubtract <= 0) continue;
-
-    const itemName = masterMap[targetItemId.toLowerCase()] || "Unknown";
-    const actor = getActorName(user);
+    if (Number.isNaN(qtyToSubtract) || qtyToSubtract <= 0) continue;
+    if (activeMap[targetItemId.toLowerCase()] === false) {
+      throw new Error(`REAGENT_INACTIVE: ${targetItemId}`);
+    }
 
     if (!Number.isInteger(inventoryId) || inventoryId <= 0) {
       const candidateRows = await sql`
@@ -178,30 +197,48 @@ export async function runDispenseBatch(
 
       inventoryId = Number(candidateRows[0].id);
     }
+    preparedItems.push({ ...item, targetItemId, targetLotNo, qtyToSubtract, inventoryId });
+  }
 
-    const result = await sql`
+  if (preparedItems.length === 0) {
+    return { success: true, message: 'ไม่มีรายการที่ต้องเบิกจ่าย' };
+  }
+
+  const actor = getActorName(user);
+  await sql.transaction((transaction) => preparedItems.flatMap((item) => [
+    transaction`
+      SELECT labstock_assert(EXISTS (
+        SELECT 1 FROM master_data
+        WHERE LOWER(item_id) = LOWER(${item.targetItemId}) AND is_active = TRUE
+        FOR UPDATE
+      ), 'REAGENT_INACTIVE: ' || ${item.targetItemId}) AS ok
+    `,
+    transaction`
+      SELECT labstock_assert(EXISTS (
+        SELECT 1 FROM inventory
+        WHERE id = ${item.inventoryId}
+          AND LOWER(item_id) = LOWER(${item.targetItemId})
+          AND quantity >= ${item.qtyToSubtract}
+        FOR UPDATE
+      ), 'REAGENT_STOCK_INSUFFICIENT: ' || ${item.targetItemId}) AS ok
+    `,
+    transaction`
       WITH updated AS (
         UPDATE inventory
-        SET quantity = quantity - ${qtyToSubtract}
-        WHERE id = ${inventoryId}
-          AND LOWER(item_id) = LOWER(${targetItemId})
-          AND quantity >= ${qtyToSubtract}
+        SET quantity = quantity - ${item.qtyToSubtract}
+        WHERE id = ${item.inventoryId}
+          AND LOWER(item_id) = LOWER(${item.targetItemId})
+          AND quantity >= ${item.qtyToSubtract}
         RETURNING item_id, lot_no
       )
       INSERT INTO logs (item_id, name, lot_no, action, quantity, username, user_agent, ip_address)
-      SELECT item_id, ${itemName}, lot_no, 'เบิกไปหน้างาน', ${qtyToSubtract}, ${actor}, ${audit.userAgent}, ${audit.ipAddress}
+      SELECT item_id, ${masterMap[item.targetItemId.toLowerCase()] || 'Unknown'}, lot_no, 'เบิกไปหน้างาน', ${item.qtyToSubtract}, ${actor}, ${audit.userAgent}, ${audit.ipAddress}
       FROM updated
-      RETURNING id
-    `;
+    `,
+  ]));
+  preparedItems.forEach((item) => affectedItemIds.push(item.targetItemId));
 
-    if (result.length === 0) {
-      throw new Error(`เบิกไม่สำเร็จ: ${item.name || targetItemId} (Lot: ${item.lotNo}) มียอดไม่พอหรือถูกเบิกไปก่อนหน้าแล้ว`);
-    }
-
-    affectedItemIds.push(targetItemId);
-  }
-
-  const completedItems = batchItems
+  const completedItems = preparedItems
     .map((item) => ({
       itemId: item.itemId.toString(),
       lotNo: item.lotNo.toString(),

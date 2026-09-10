@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => {
 vi.mock("@/lib/db", () => ({ default: mocks.sql }));
 vi.mock("@/lib/auth-utils", () => ({ getAuthenticatedUser: mocks.getAuthenticatedUser }));
 
-import { GET, PATCH } from "./route";
+import { GET, PATCH, POST } from "./route";
 
 const validPayload = {
   item_id: "CHEM-R-001",
@@ -31,6 +31,7 @@ const validPayload = {
   safety_stock_boxes: 2,
   min_order_qty_boxes: 1,
   order_multiple_boxes: 1,
+  review_days: 15,
   enabled: true,
   reason: "manual plan",
   change_reason: "reviewed source document",
@@ -54,9 +55,15 @@ describe("Admin reagent-order policy API", () => {
     expect((await GET(new Request("http://localhost/api/settings/reagent-orders")))!.status).toBe(401);
   });
 
-  it("returns 403 for an authenticated non-Admin", async () => {
-    mocks.getAuthenticatedUser.mockResolvedValue({ username: "manager", role: "Manager" });
+  it("returns 403 for an authenticated non-manager", async () => {
+    mocks.getAuthenticatedUser.mockResolvedValue({ username: "staff", role: "User" });
     expect((await PATCH(patchRequest(validPayload)))!.status).toBe(403);
+  });
+
+  it("allows a Manager to update a policy", async () => {
+    mocks.getAuthenticatedUser.mockResolvedValue({ username: "manager", role: "Manager" });
+    mocks.sql.transaction.mockResolvedValue([[{ item_id: "CHEM-R-001", revision: 2 }]]);
+    expect((await PATCH(patchRequest(validPayload)))!.status).toBe(200);
   });
 
   it("rejects invalid policy values before starting a transaction", async () => {
@@ -94,5 +101,18 @@ describe("Admin reagent-order policy API", () => {
     expect(statement).toContain("INSERT INTO reagent_order_policy_history");
     expect(statement).toContain("to_jsonb(current)");
     expect(statement).toContain("to_jsonb(updated)");
+  });
+
+  it("creates an unconfigured policy with revision one and an audit record", async () => {
+    mocks.getAuthenticatedUser.mockResolvedValue({ username: "admin", role: "Admin" });
+    mocks.sql.transaction.mockResolvedValue([[{ item_id: "LAB-000001", revision: 1 }]]);
+    const response = await POST(patchRequest({ ...validPayload, expected_revision: 0 }));
+
+    expect(response!.status).toBe(201);
+    const queries = mocks.sql.transaction.mock.calls[0][0] as Array<{ strings: TemplateStringsArray }>;
+    const statement = Array.from(queries[0].strings).join(" ");
+    expect(statement).toContain("INSERT INTO reagent_order_policy");
+    expect(statement).toContain("ON CONFLICT (item_id) DO NOTHING");
+    expect(statement).toContain("INSERT INTO reagent_order_policy_history");
   });
 });

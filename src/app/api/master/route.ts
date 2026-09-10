@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import type { NeonQueryFunctionInTransaction, NeonQueryPromise } from '@neondatabase/serverless';
 import sql from '@/lib/db';
 import { getAuthenticatedUser } from '@/lib/auth-utils';
 
@@ -55,9 +56,9 @@ function normalizeMasterItem(payload: MasterPayload): MasterItem {
   };
 }
 
-function validateMasterItem(item: MasterItem) {
+function validateMasterItem(item: MasterItem, requireItemId = false) {
   const missingFields = [
-    !item.itemId && 'Item ID',
+    requireItemId && !item.itemId && 'Item ID',
     !item.name && 'Name',
     !item.reagentType && 'Reagent Type',
     !item.jobType && 'Job Type',
@@ -70,6 +71,35 @@ function validateMasterItem(item: MasterItem) {
   }
 
   return null;
+}
+
+function masterInsertQuery(
+  transaction: NeonQueryFunctionInTransaction<false, false>,
+  item: MasterItem,
+): NeonQueryPromise<false, false> {
+  if (item.itemId) {
+    return transaction`
+      INSERT INTO master_data (item_id, barcode, name, reagent_type, job_type, machine_type, unit, min_threshold, weekly_target, vendor)
+      VALUES (${item.itemId}, ${item.qrCode}, ${item.name}, ${item.reagentType}, ${item.jobType}, ${item.machineType}, ${item.unit}, ${item.minThreshold}, ${item.weeklyTarget}, ${item.vendor})
+      ON CONFLICT (item_id) DO UPDATE SET
+        barcode = EXCLUDED.barcode,
+        name = EXCLUDED.name,
+        reagent_type = EXCLUDED.reagent_type,
+        job_type = EXCLUDED.job_type,
+        machine_type = EXCLUDED.machine_type,
+        unit = EXCLUDED.unit,
+        min_threshold = EXCLUDED.min_threshold,
+        weekly_target = EXCLUDED.weekly_target,
+        vendor = EXCLUDED.vendor
+      RETURNING item_id
+    `;
+  }
+
+  return transaction`
+    INSERT INTO master_data (barcode, name, reagent_type, job_type, machine_type, unit, min_threshold, weekly_target, vendor)
+    VALUES (${item.qrCode}, ${item.name}, ${item.reagentType}, ${item.jobType}, ${item.machineType}, ${item.unit}, ${item.minThreshold}, ${item.weeklyTarget}, ${item.vendor})
+    RETURNING item_id
+  `;
 }
 
 async function ensureCategories(item: Pick<MasterItem, 'reagentType' | 'jobType' | 'machineType'>) {
@@ -108,7 +138,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: false, message: 'Invalid import data' }, { status: 400 });
       }
 
-      let added = 0;
+      const parsedItems: MasterItem[] = [];
       for (const [index, rawItem] of data.items.entries()) {
         const item = normalizeMasterItem(rawItem as MasterPayload);
         const validationError = validateMasterItem(item);
@@ -119,31 +149,31 @@ export async function POST(request: Request) {
           );
         }
 
-        if (isVendor && item.vendor !== user.vendor) continue;
-
-        await ensureCategories(item);
-        await sql`
-          INSERT INTO master_data (item_id, barcode, name, reagent_type, job_type, machine_type, unit, min_threshold, weekly_target, vendor)
-          VALUES (${item.itemId}, ${item.qrCode}, ${item.name}, ${item.reagentType}, ${item.jobType}, ${item.machineType}, ${item.unit}, ${item.minThreshold}, ${item.weeklyTarget}, ${item.vendor})
-          ON CONFLICT (item_id) DO UPDATE SET
-            barcode = EXCLUDED.barcode,
-            name = EXCLUDED.name,
-            reagent_type = EXCLUDED.reagent_type,
-            job_type = EXCLUDED.job_type,
-            machine_type = EXCLUDED.machine_type,
-            unit = EXCLUDED.unit,
-            min_threshold = EXCLUDED.min_threshold,
-            weekly_target = EXCLUDED.weekly_target,
-            vendor = EXCLUDED.vendor
-        `;
-        added++;
+        if (isVendor && item.vendor && item.vendor !== user.vendor) continue;
+        parsedItems.push(isVendor ? { ...item, vendor: user.vendor || item.vendor } : item);
       }
 
-      return NextResponse.json({ success: true, message: `นำเข้าข้อมูลสำเร็จ ${added} รายการ` });
+      const transactionResults = await sql.transaction((transaction) => parsedItems.flatMap((item) => [
+        transaction`INSERT INTO reagent_types (name) VALUES (${item.reagentType}) ON CONFLICT (name) DO NOTHING`,
+        transaction`INSERT INTO job_types (name) VALUES (${item.jobType}) ON CONFLICT (name) DO NOTHING`,
+        transaction`INSERT INTO machine_types (name) VALUES (${item.machineType}) ON CONFLICT (name) DO NOTHING`,
+        masterInsertQuery(transaction, item),
+      ]));
+      const generatedItemIds = transactionResults
+        .filter((_, index) => (index + 1) % 4 === 0)
+        .flatMap((rows, index) => parsedItems[index]?.itemId
+          ? []
+          : (rows as Array<{ item_id?: unknown }>).map((row) => String(row.item_id || '')).filter(Boolean));
+
+      return NextResponse.json({
+        success: true,
+        message: `นำเข้าข้อมูลสำเร็จ ${parsedItems.length} รายการ`,
+        generatedItemIds,
+      });
     }
 
     const item = normalizeMasterItem(data);
-    const validationError = validateMasterItem(item);
+    const validationError = validateMasterItem(item, data.action === 'update');
     if (validationError) {
       return NextResponse.json({ success: false, message: validationError }, { status: 400 });
     }
@@ -187,18 +217,13 @@ export async function POST(request: Request) {
     }
 
     await ensureCategories(item);
-    await sql`
-      INSERT INTO master_data (
-        item_id, barcode, name, reagent_type, job_type, machine_type,
-        unit, min_threshold, weekly_target, vendor
-      ) VALUES (
-        ${item.itemId}, ${item.qrCode}, ${item.name}, ${item.reagentType},
-        ${item.jobType}, ${item.machineType}, ${item.unit},
-        ${item.minThreshold}, ${item.weeklyTarget}, ${item.vendor}
-      )
-    `;
+    const [created] = await sql.transaction([masterInsertQuery(sql as unknown as NeonQueryFunctionInTransaction<false, false>, item)]);
 
-    return NextResponse.json({ success: true, message: 'ขึ้นทะเบียนรายการใหม่สำเร็จ' });
+    return NextResponse.json({
+      success: true,
+      message: 'ขึ้นทะเบียนรายการใหม่สำเร็จ',
+      itemId: (created as Array<{ item_id: string }>)[0]?.item_id || item.itemId,
+    });
   } catch (error: unknown) {
     console.error('Master API Error:', error);
     const message = getDatabaseErrorMessage(error);

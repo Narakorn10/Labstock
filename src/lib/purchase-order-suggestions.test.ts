@@ -319,6 +319,7 @@ describe("calculateSuggestion v5 policy and live-demand contract", () => {
     const result = calculateSuggestion(makeRow({
       approved_monthly_target_boxes: 30,
       approved_order_qty_boxes: 12,
+      review_days: 14,
       inventory_lots: [],
     }), NOW);
     const v5 = fields(result);

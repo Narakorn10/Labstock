@@ -33,7 +33,9 @@ type ReagentOrderPolicy = {
   safety_stock_boxes: NumericValue;
   min_order_qty_boxes: NumericValue;
   order_multiple_boxes: NumericValue;
+  review_days: NumericValue;
   enabled: boolean;
+  policy_configured?: boolean;
   reason: string | null;
   revision: NumericValue;
   theoretical_monthly_boxes?: NumericValue;
@@ -57,6 +59,7 @@ type PolicyForm = {
   safety_stock_boxes: string;
   min_order_qty_boxes: string;
   order_multiple_boxes: string;
+  review_days: string;
   enabled: boolean;
   reason: string;
   change_reason: string;
@@ -87,7 +90,8 @@ function makeForm(policy: ReagentOrderPolicy): PolicyForm {
     safety_stock_boxes: inputValue(policy.safety_stock_boxes),
     min_order_qty_boxes: inputValue(policy.min_order_qty_boxes),
     order_multiple_boxes: inputValue(policy.order_multiple_boxes),
-    enabled: Boolean(policy.enabled),
+    review_days: inputValue(policy.review_days || 15),
+    enabled: policy.policy_configured ? Boolean(policy.enabled) : false,
     reason: policy.reason || '',
     change_reason: '',
   };
@@ -180,7 +184,7 @@ export default function ReagentOrderPoliciesPage() {
   };
 
   useEffect(() => {
-    if (!authLoading && user?.role === 'Admin') {
+    if (!authLoading && (user?.role === 'Admin' || user?.role === 'Manager')) {
       // The auth provider is the external system being synchronized here.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       void loadPolicies('');
@@ -224,7 +228,7 @@ export default function ReagentOrderPoliciesPage() {
     try {
       const token = localStorage.getItem('labstock_token');
       const response = await fetch('/api/settings/reagent-orders', {
-        method: 'PATCH',
+        method: selected?.policy_configured ? 'PATCH' : 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -242,6 +246,7 @@ export default function ReagentOrderPoliciesPage() {
           safety_stock_boxes: toPayloadNumber(form.safety_stock_boxes, true),
           min_order_qty_boxes: toPayloadNumber(form.min_order_qty_boxes),
           order_multiple_boxes: toPayloadNumber(form.order_multiple_boxes),
+          review_days: toPayloadNumber(form.review_days),
         }),
       });
       const payload = await response.json() as { data?: ReagentOrderPolicy; error?: string };
@@ -261,7 +266,7 @@ export default function ReagentOrderPoliciesPage() {
     }
   };
 
-  if (authLoading || (user?.role === 'Admin' && loading && policies.length === 0)) {
+  if (authLoading || ((user?.role === 'Admin' || user?.role === 'Manager') && loading && policies.length === 0)) {
     return (
       <div className="flex h-96 flex-col items-center justify-center gap-3 text-slate-600">
         <RefreshCw className="animate-spin text-[#2f6f67]" size={34} />
@@ -272,12 +277,12 @@ export default function ReagentOrderPoliciesPage() {
 
   if (!user) return null;
 
-  if (user.role !== 'Admin') {
+  if (user.role !== 'Admin' && user.role !== 'Manager') {
     return (
       <div className="flex h-96 flex-col items-center justify-center gap-3 text-center">
         <Lock className="text-rose-600" size={44} />
         <h1 className="text-xl font-bold text-slate-900">ไม่มีสิทธิ์เข้าถึง</h1>
-        <p className="max-w-md text-sm text-slate-600">เฉพาะผู้ดูแลระบบ (Admin) เท่านั้นที่แก้ไขนโยบายการสั่งซื้อน้ำยาได้</p>
+        <p className="max-w-md text-sm text-slate-600">เฉพาะ Admin หรือ Manager เท่านั้นที่แก้ไขนโยบายการสั่งซื้อน้ำยาได้</p>
       </div>
     );
   }
@@ -359,8 +364,8 @@ export default function ReagentOrderPoliciesPage() {
                       </td>
                       <td className="px-3 py-3 text-right font-semibold text-slate-700">{policy.approved_order_qty_boxes ?? '—'}</td>
                       <td className="px-4 py-3 text-right">
-                        <span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-bold ${policy.enabled ? 'bg-[#dcf1eb] text-[#155f56]' : 'bg-slate-200 text-slate-600'}`}>
-                          {policy.enabled ? 'เปิด' : 'ปิด'}
+                        <span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-bold ${policy.policy_configured && policy.enabled ? 'bg-[#dcf1eb] text-[#155f56]' : 'bg-slate-200 text-slate-600'}`}>
+                          {policy.policy_configured ? (policy.enabled ? 'เปิด' : 'ปิด') : 'ยังไม่ตั้งค่า'}
                         </span>
                       </td>
                     </tr>
@@ -429,6 +434,7 @@ export default function ReagentOrderPoliciesPage() {
                     <NumberField label="เป้าหมายที่อนุมัติต่อเดือน (กล่อง)" value={form.approved_monthly_target_boxes} onChange={(value) => setField('approved_monthly_target_boxes', value)} optional />
                     <NumberField label="จำนวนที่อนุมัติต่อรอบ (กล่อง)" value={form.approved_order_qty_boxes} onChange={(value) => setField('approved_order_qty_boxes', value)} optional integer />
                     <NumberField label="รอบสั่งต่อเดือน" value={form.orders_per_month} onChange={(value) => setField('orders_per_month', value)} integer />
+                    <NumberField label="ช่วงคาดการณ์/รอบทบทวน (วัน)" value={form.review_days} onChange={(value) => setField('review_days', value)} integer hint="ค่าเริ่มต้น 15 วัน ใช้คำนวณยอดแนะนำต่อรายการ" />
                     <NumberField label="Lead time (วัน)" value={form.lead_time_days} onChange={(value) => setField('lead_time_days', value)} integer />
                     <NumberField label="Safety stock (กล่อง)" value={form.safety_stock_boxes} onChange={(value) => setField('safety_stock_boxes', value)} optional />
                     <NumberField label="สั่งขั้นต่ำ (กล่อง)" value={form.min_order_qty_boxes} onChange={(value) => setField('min_order_qty_boxes', value)} integer />
