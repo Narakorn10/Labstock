@@ -63,6 +63,17 @@ interface TrackingDetails {
   history?: TrackingHistoryEvent[];
 }
 
+interface PurchaseOrderEvent {
+  id: number;
+  event_type: string;
+  from_status?: string | null;
+  to_status?: string | null;
+  actor_role?: string | null;
+  source?: string | null;
+  note?: string | null;
+  created_at: string;
+}
+
 const reviewReasonLabels: Record<string, string> = {
   FUTURE_DISPENSE_LOGS_EXCLUDED: "ตัดรายการเบิกวันที่ในอนาคตออกจากการคำนวณ",
   OPEN_PURCHASE_ORDER_WITHOUT_ETA: "มี PO ค้างที่ยังไม่ระบุวันส่ง",
@@ -83,6 +94,7 @@ export default function PODetailPage() {
   }, [params.id]);
   const [po, setPo] = useState<PurchaseOrderDetail | null>(null);
   const [tracking, setTracking] = useState<TrackingDetails | null>(null);
+  const [events, setEvents] = useState<PurchaseOrderEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [reviewNote, setReviewNote] = useState("");
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
@@ -148,6 +160,9 @@ export default function PODetailPage() {
           if (active) {
             setPo(data);
           }
+
+          const eventRes = await fetch(`/api/purchase-orders/${data.id}/events`, { headers });
+          if (eventRes.ok && active) setEvents(((await eventRes.json()) as { items?: PurchaseOrderEvent[] }).items ?? []);
 
           const shipRes = await fetch("/api/vendor/shipments", { headers });
           if (shipRes.ok) {
@@ -424,6 +439,14 @@ export default function PODetailPage() {
           </div>
         </div>
       )}
+
+      <section className="no-print mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="text-lg font-bold text-slate-900">ประวัติการสื่อสารและสถานะ</h2>
+        <div className="mt-4 space-y-3">
+          {events.map((event) => <div key={event.id} className="border-l-2 border-indigo-300 pl-4"><p className="text-sm font-semibold text-slate-900">{event.event_type} {event.to_status ? `→ ${event.to_status}` : ""}</p><p className="text-xs text-slate-500">{new Date(event.created_at).toLocaleString("th-TH")} · {event.actor_role || "ระบบ"} · {event.source || "WEB"}</p>{event.note && <p className="mt-1 text-sm text-slate-700">{event.note}</p>}</div>)}
+          {events.length === 0 && <p className="text-sm text-slate-500">ยังไม่มีประวัติการสื่อสาร</p>}
+        </div>
+      </section>
 
       <style jsx global>{`
         @media print {

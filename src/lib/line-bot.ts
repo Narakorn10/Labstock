@@ -95,6 +95,14 @@ export async function sendLinePush(to: string, messages: messagingApi.Message[])
   }
 }
 
+/** Durable-outbox adapter: unlike the legacy helper, provider failures escape so the worker can retry. */
+export async function sendLinePushStrict(to: string, messages: messagingApi.Message[]) {
+  if (!process.env.LINE_CHANNEL_ACCESS_TOKEN || process.env.LINE_CHANNEL_ACCESS_TOKEN === "DUMMY_TOKEN") {
+    throw new Error("LINE_CHANNEL_ACCESS_TOKEN is not configured");
+  }
+  await lineClient.pushMessage({ to, messages });
+}
+
 export async function sendLineReply(replyToken: string, messages: messagingApi.Message[]) {
   if (!process.env.LINE_CHANNEL_ACCESS_TOKEN || process.env.LINE_CHANNEL_ACCESS_TOKEN === "DUMMY_TOKEN") {
     console.warn("LINE_CHANNEL_ACCESS_TOKEN not set, skipping reply");

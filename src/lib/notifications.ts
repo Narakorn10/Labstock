@@ -33,6 +33,17 @@ export async function sendEmail(to: string, subject: string, html: string): Prom
   }
 }
 
+/** Durable-outbox adapter: provider failures escape so retry state is persisted. */
+export async function sendEmailStrict(to: string, subject: string, html: string): Promise<void> {
+  if (!process.env.SMTP_USER) throw new Error("SMTP_USER is not configured");
+  await transporter.sendMail({
+    from: `"Lab Stock System" <${process.env.SMTP_USER}>`,
+    to,
+    subject,
+    html,
+  });
+}
+
 export type NotifyEvent =
   | 'PO_CREATED'
   | 'PO_REVIEW_REQUIRED'

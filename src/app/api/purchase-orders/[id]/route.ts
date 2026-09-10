@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import sql from "@/lib/db";
 import { getAuthenticatedUser } from "@/lib/auth-utils";
-import { normalizeNotificationSettings, normalizePurchaseOrder, notifyUsers } from "@/lib/notifications";
+import { recordPurchaseOrderCommunication } from "@/lib/po-communication";
 import { isLabPurchasingRole, validatePurchaseOrderItems } from "@/lib/purchase-order-workflow";
 
 async function findPurchaseOrder(id: string) {
@@ -10,28 +10,11 @@ async function findPurchaseOrder(id: string) {
     : sql`SELECT * FROM purchase_orders WHERE po_number = ${id}`;
 }
 
-async function getLabSettings() {
-  const rows = await sql`
-    SELECT n.* FROM notification_settings n
-    JOIN users u ON u.username = n.username
-    WHERE u.role IN ('Admin', 'Manager')
-  `;
-  return normalizeNotificationSettings(rows);
-}
-
-async function getVendorSettings(vendor: string) {
-  const rows = await sql`
-    SELECT n.* FROM notification_settings n
-    JOIN users u ON u.username = n.username
-    WHERE u.role = 'Vendor' AND u.vendor = ${vendor}
-  `;
-  return normalizeNotificationSettings(rows);
-}
-
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await getAuthenticatedUser(request);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (user.role !== "Vendor" && !isLabPurchasingRole(user.role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const { id } = await params;
     const poData = await findPurchaseOrder(id);
@@ -137,7 +120,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       action = "REJECT";
     }
 
-    let recipientSettings;
     let notificationEvent: "PO_CREATED" | "PO_REVIEW_REQUIRED" | "PO_CONFIRMED" | "PO_STATUS_UPDATED";
     if (isVendor) {
       const canAcknowledge = po.proposal_origin === "LAB" && po.status === "SUBMITTED" && action === "ACKNOWLEDGE";
@@ -222,7 +204,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       if (!updated.length) {
         return NextResponse.json({ error: "This order changed before the Vendor response completed" }, { status: 409 });
       }
-      recipientSettings = await getLabSettings();
       notificationEvent = status === "REVISION_REQUESTED"
         ? "PO_REVIEW_REQUIRED"
         : status === "ACKNOWLEDGED"
@@ -283,9 +264,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
           return NextResponse.json({ error: "This order was acknowledged or changed before the update completed" }, { status: 409 });
         }
 
-        recipientSettings = po.status === "SUBMITTED"
-          ? await getVendorSettings(String(po.vendor))
-          : await getLabSettings();
         notificationEvent = po.status === "SUBMITTED" ? "PO_CREATED" : "PO_STATUS_UPDATED";
       } else {
       const approvingManagerReview = po.proposal_origin === "LAB" && po.status === "PENDING_MANAGER_REVIEW" && action === "APPROVE_MANAGER_REVIEW";
@@ -310,9 +288,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         `;
         if (!updated.length) return NextResponse.json({ error: "This order was already reviewed." }, { status: 409 });
 
-        recipientSettings = approvingManagerReview
-          ? await getVendorSettings(String(po.vendor))
-          : await getLabSettings();
         notificationEvent = approvingManagerReview ? "PO_CREATED" : "PO_STATUS_UPDATED";
       } else {
       const awaitingLabReview = po.status === "PENDING_LAB_REVIEW" || po.status === "REVISION_REQUESTED";
@@ -336,7 +311,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       } else if (rejectingRevision) {
         await sql`UPDATE purchase_order_items SET revision_qty = NULL, revision_reason = NULL WHERE po_id = ${po.id}`;
       }
-      recipientSettings = await getVendorSettings(String(po.vendor));
       notificationEvent = status === "CONFIRMED" ? "PO_CONFIRMED" : "PO_STATUS_UPDATED";
       }
       }
@@ -344,10 +318,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
     const updatedRows = await sql`SELECT * FROM purchase_orders WHERE id = ${po.id}`;
     const items = await sql`SELECT * FROM purchase_order_items WHERE po_id = ${po.id} ORDER BY id`;
-    const fullPO = normalizePurchaseOrder(updatedRows[0], items.map((item) => ({
-      item_name: String(item.item_name), quantity: Number(item.quantity), unit: String(item.unit),
-    })));
-    await notifyUsers(notificationEvent, fullPO, recipientSettings);
+    await recordPurchaseOrderCommunication({
+      poId: Number(po.id),
+      eventType: notificationEvent,
+      actor: user,
+      source: "WEB",
+      note,
+      metadata: { fromStatus: po.status, action },
+    });
     return NextResponse.json({ ...updatedRows[0], items });
   } catch (error: unknown) {
     console.error("Error updating purchase order:", error);

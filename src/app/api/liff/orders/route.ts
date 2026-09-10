@@ -1,19 +1,10 @@
 import { NextResponse } from "next/server";
 import sql from "@/lib/db";
-import { normalizeNotificationSettings, normalizePurchaseOrder, notifyUsers } from "@/lib/notifications";
+import { normalizePurchaseOrder } from "@/lib/notifications";
+import { recordPurchaseOrderCommunication } from "@/lib/po-communication";
 import { validatePurchaseOrderItems } from "@/lib/purchase-order-workflow";
 import { getLinePurchasingUserFromRequest, purchaseOrderHasLiffRequestColumn } from "@/lib/line-liff-ordering";
 import { createPurchaseOrderWithAudit, PurchaseOrderCreationError } from "@/lib/purchase-order-creation";
-
-async function getManagerSettings() {
-  const rows = await sql`
-    SELECT n.*
-    FROM notification_settings n
-    JOIN users u ON u.username = n.username
-    WHERE u.role = 'Manager'
-  `;
-  return normalizeNotificationSettings(rows);
-}
 
 export async function POST(request: Request) {
   try {
@@ -58,7 +49,7 @@ export async function POST(request: Request) {
       quantity: Number(item.quantity),
       unit: String(item.unit),
     })));
-    await notifyUsers("PO_REVIEW_REQUIRED", fullPO, await getManagerSettings());
+    await recordPurchaseOrderCommunication({ poId: Number(created.purchaseOrder.id), eventType: "PO_REVIEW_REQUIRED", actor: auth.user, source: "LIFF", metadata: { origin: "LAB" } });
 
     return NextResponse.json(fullPO, { status: 201 });
   } catch (error) {

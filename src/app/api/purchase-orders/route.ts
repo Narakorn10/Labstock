@@ -1,34 +1,16 @@
 import { NextResponse } from "next/server";
 import sql from "@/lib/db";
 import { getAuthenticatedUser } from "@/lib/auth-utils";
-import { normalizeNotificationSettings, normalizePurchaseOrder, notifyUsers } from "@/lib/notifications";
+import { normalizePurchaseOrder } from "@/lib/notifications";
+import { recordPurchaseOrderCommunication } from "@/lib/po-communication";
 import { isLabPurchasingRole, validatePurchaseOrderItems } from "@/lib/purchase-order-workflow";
 import { createPurchaseOrderWithAudit, PurchaseOrderCreationError } from "@/lib/purchase-order-creation";
-
-async function getLabSettings() {
-  const rows = await sql`
-    SELECT n.*
-    FROM notification_settings n
-    JOIN users u ON u.username = n.username
-    WHERE u.role IN ('Admin', 'Manager')
-  `;
-  return normalizeNotificationSettings(rows);
-}
-
-async function getManagerSettings() {
-  const rows = await sql`
-    SELECT n.*
-    FROM notification_settings n
-    JOIN users u ON u.username = n.username
-    WHERE u.role = 'Manager'
-  `;
-  return normalizeNotificationSettings(rows);
-}
 
 export async function GET(request: Request) {
   try {
     const user = await getAuthenticatedUser(request);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (user.role !== "Vendor" && !isLabPurchasingRole(user.role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const requestedVendor = new URL(request.url).searchParams.get("vendor");
     const vendor = user.role === "Vendor" ? user.vendor : requestedVendor;
@@ -151,11 +133,14 @@ export async function POST(request: Request) {
       unit: String(item.unit),
     })));
 
-    await notifyUsers(
-      "PO_REVIEW_REQUIRED",
-      fullPO,
-      origin === "VENDOR" ? await getLabSettings() : await getManagerSettings(),
-    );
+    await recordPurchaseOrderCommunication({
+      poId: Number(created.purchaseOrder.id),
+      eventType: "PO_REVIEW_REQUIRED",
+      actor: user,
+      source: "WEB",
+      metadata: { origin },
+      note,
+    });
     return NextResponse.json(fullPO, { status: 201 });
   } catch (error: unknown) {
     console.error("Error creating purchase order:", error);

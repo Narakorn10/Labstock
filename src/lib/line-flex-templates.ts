@@ -251,19 +251,9 @@ export function generatePONotificationTemplate(po: PurchaseOrder) {
             style: "primary",
             height: "sm",
             action: {
-              type: "postback",
-              label: "✅ ยืนยัน",
-              data: `action=confirm_vendor_po&id=${po.po_number}`
-            }
-          },
-          {
-            type: "button",
-            style: "secondary",
-            height: "sm",
-            action: {
-              type: "postback",
-              label: "❌ ปฏิเสธ",
-              data: `action=start_vendor_reject&id=${po.po_number}`
+              type: "uri",
+              label: "เปิดเว็บดำเนินการ",
+              uri: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/orders/${po.id || po.po_number}`
             }
           }
         ],
