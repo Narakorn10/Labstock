@@ -32,6 +32,8 @@ export type PurchaseOrderSuggestion = {
   data_quality: SuggestionDataQuality;
   review_reasons: string[];
   auto_selectable: boolean;
+  /** False when the reagent has no enabled order policy; such items may only be ordered manually with a reason. */
+  policy_configured: boolean;
   on_order_qty: number;
   overdue_on_order_qty: number;
   committed_no_eta_qty: number;
@@ -98,6 +100,8 @@ export type SuggestionRow = {
   dispense_observation_days?: unknown;
   dispense_observed_calendar_days?: unknown;
   future_dispense_log_count?: unknown;
+  /** Omitted by callers that only pass policy rows; treated as configured. */
+  policy_configured?: unknown;
 };
 
 export type FetchSuggestionOptions = {
@@ -105,6 +109,10 @@ export type FetchSuggestionOptions = {
   keyword?: string;
   includeAll?: boolean;
   limit?: number;
+  /** Also return active reagents without an enabled order policy (search and PO creation, not auto-suggest). */
+  includeUnconfigured?: boolean;
+  /** Restrict to these item IDs (PO creation re-checks exactly the submitted items). */
+  itemIds?: string[];
 };
 
 type InventoryLot = {
@@ -122,6 +130,8 @@ const DEFAULT_LEAD_TIME_DAYS = 5;
 const DAYS_PER_MONTH = 30;
 const ORDERS_PER_MONTH = 2;
 const TARGET_ORDER_COVERAGE_DAYS = 15;
+/** Upper bound on rows read per call; well above the largest Vendor catalogue (PCL: 116 reagents). */
+const MAX_SUGGESTION_ROWS = 1000;
 const LIVE_USAGE_MIN_OBSERVATION_DAYS = 7;
 const BANGKOK_TIME_ZONE = "Asia/Bangkok";
 const DISPENSE_ACTION = "\u0e40\u0e1a\u0e34\u0e01\u0e44\u0e1b\u0e2b\u0e19\u0e49\u0e32\u0e07\u0e32\u0e19";
@@ -257,6 +267,7 @@ function warningForReviewReason(reason: string) {
     OVERDUE_OPEN_PURCHASE_ORDER: "There are purchase orders past their expected delivery date that have not been received, so they were excluded from projected arrivals and require review.",
     STOCKOUT_BEFORE_LEAD_TIME: "Projected stockout occurs before the lead time window; expedite purchasing or manual intervention is required.",
     POLICY_SOURCE_NEEDS_REVIEW: "This policy is marked NEEDS_REVIEW and requires an Admin check before auto-selection.",
+    NO_ORDER_POLICY: "This reagent has no enabled order policy; it can only be ordered with a manual quantity and a reason.",
     MISSING_APPROVED_CYCLE_QTY: "No lab-approved cycle quantity is recorded; select a basis manually before creating a PO.",
     POLICY_DYNAMIC_VARIANCE: "The policy and live/dynamic quantities differ by at least 20% or two boxes.",
   };
@@ -395,8 +406,12 @@ export function calculateSuggestion(row: SuggestionRow, now = new Date()): Purch
   const stockoutParsed = parseDateOnly(stockoutDate);
   const expediteRequired = Boolean(stockoutParsed && stockoutParsed < leadDate);
   const verificationStatus = normalizeVerificationStatus(row.source_verification_status);
+  const policyConfigured = row.policy_configured === undefined || row.policy_configured === null
+    ? true
+    : row.policy_configured === true || row.policy_configured === "t" || row.policy_configured === "true";
   const reviewReasons: string[] = [];
 
+  if (!policyConfigured) reviewReasons.push("NO_ORDER_POLICY");
   if (observationSpanDays === 0) reviewReasons.push("NO_DISPENSE_HISTORY");
   else if (!liveUsageEligible) reviewReasons.push("INSUFFICIENT_DISPENSE_HISTORY");
   if (futureDispenseLogCount > 0) reviewReasons.push("FUTURE_DISPENSE_LOGS_EXCLUDED");
@@ -408,6 +423,7 @@ export function calculateSuggestion(row: SuggestionRow, now = new Date()): Purch
   if (varianceRequiresReview) reviewReasons.push("POLICY_DYNAMIC_VARIANCE");
 
   const autoSelectable =
+    policyConfigured &&
     committedNoEtaQty <= 0 &&
     overdueOnOrderQty <= 0 &&
     hasApprovedOrderQty &&
@@ -440,6 +456,7 @@ export function calculateSuggestion(row: SuggestionRow, now = new Date()): Purch
     },
     review_reasons: reviewReasons,
     auto_selectable: autoSelectable,
+    policy_configured: policyConfigured,
     on_order_qty: allOnOrderLots.reduce((sum, lot) => sum + lot.quantity, 0),
     overdue_on_order_qty: roundToDecimals(overdueOnOrderQty),
     committed_no_eta_qty: committedNoEtaQty,
@@ -483,7 +500,9 @@ async function fetchSuggestionRows(
   policyTableExists: boolean,
   vendor: string | null,
   keyword: string,
-  limit: number
+  limit: number,
+  includeUnconfigured: boolean,
+  itemIds: string[] | null
 ) {
   const searchTerm = `%${keyword}%`;
   const commonCtes = policyTableExists
@@ -530,6 +549,7 @@ async function fetchSuggestionRows(
         p.lead_time_days, p.safety_stock_boxes, p.min_order_qty_boxes, p.order_multiple_boxes, p.review_days,
         p.enabled,
         p.source_verification_status, p.revision,
+        (p.item_id IS NOT NULL) AS policy_configured,
         COALESCE(i.lots, '[]'::jsonb) AS inventory_lots,
         COALESCE(o.lots, '[]'::jsonb) AS on_order_lots,
         COALESCE(o.no_eta_qty, 0) AS committed_no_eta_qty
@@ -538,7 +558,8 @@ async function fetchSuggestionRows(
       LEFT JOIN inventory_lots i ON i.item_id = m.item_id
       LEFT JOIN on_order o ON o.item_id = m.item_id
       WHERE m.is_active = TRUE
-        AND p.item_id IS NOT NULL
+        AND (${includeUnconfigured}::boolean OR p.item_id IS NOT NULL)
+        AND (${itemIds}::text[] IS NULL OR m.item_id = ANY(${itemIds}::text[]))
         AND (${vendor}::text IS NULL OR m.vendor = ${vendor}::text)
         AND (
           ${keyword} = ''
@@ -593,6 +614,7 @@ async function fetchSuggestionRows(
       LEFT JOIN inventory_lots i ON i.item_id = m.item_id
       LEFT JOIN on_order o ON o.item_id = m.item_id
       WHERE m.is_active = TRUE
+        AND (${itemIds}::text[] IS NULL OR m.item_id = ANY(${itemIds}::text[]))
         AND (${vendor}::text IS NULL OR m.vendor = ${vendor}::text)
         AND (
           ${keyword} = ''
@@ -655,9 +677,19 @@ export async function getPurchaseOrderSuggestions(sql: SqlClient, options: Fetch
   const policyTableExists = await hasPolicyTable(sql);
   const vendor = options.vendor?.trim() || null;
   const keyword = options.keyword?.trim() || "";
-  const limit = Math.max(1, Math.min(100, options.limit ?? 100));
+  const itemIds = options.itemIds?.length ? [...new Set(options.itemIds)] : null;
+  // Rows are ordered by lowest stock, so a row cap silently drops reagents:
+  // - an explicit item list (PO creation) is never truncated;
+  // - auto-suggest (not includeAll) must evaluate every reagent before filtering to those
+  //   that need ordering, otherwise a large Vendor (e.g. 116 reagents) is only partly checked;
+  // - only a browse/search result list honours the caller's page size.
+  const limit = itemIds
+    ? itemIds.length
+    : options.includeAll
+      ? Math.max(1, Math.min(MAX_SUGGESTION_ROWS, options.limit ?? 100))
+      : MAX_SUGGESTION_ROWS;
   const [rows, usageRows] = await Promise.all([
-    fetchSuggestionRows(sql, policyTableExists, vendor, keyword, limit),
+    fetchSuggestionRows(sql, policyTableExists, vendor, keyword, limit, Boolean(options.includeUnconfigured), itemIds),
     fetchDispenseUsage(sql),
   ]);
   const usageByItemId = new Map(

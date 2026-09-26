@@ -46,20 +46,22 @@ describe("purchase-order concurrency guard", () => {
   });
 
   it("locks item IDs and checks the pending-PO snapshot before inserting", async () => {
-    mocks.sql.transaction.mockResolvedValue([[], [{ purchase_order: { id: 1 }, items: [] }]]);
+    mocks.sql.transaction.mockResolvedValue([[], [], [{ purchase_order: { id: 1 }, items: [] }]]);
     await createPurchaseOrderWithAudit(input);
 
     const queries = mocks.sql.transaction.mock.calls[0][0] as Array<{ strings: TemplateStringsArray }>;
-    expect(queries).toHaveLength(2);
+    expect(queries).toHaveLength(3);
     expect(Array.from(queries[0].strings).join(" ")).toContain("pg_advisory_xact_lock");
-    const insertSql = Array.from(queries[1].strings).join(" ");
+    expect(Array.from(queries[1].strings).join(" ")).toContain("pg_advisory_xact_lock");
+    const insertSql = Array.from(queries[2].strings).join(" ");
+    expect(insertSql).toContain("po_seq");
     expect(insertSql).toContain("stale_items");
     expect(insertSql).toContain("snapshot_on_order_qty");
     expect(insertSql).toContain("snapshot_no_eta_qty");
   });
 
   it("returns 409 when pending PO state changed after recomputation", async () => {
-    mocks.sql.transaction.mockResolvedValue([[], [{ purchase_order: null, items: [] }]]);
+    mocks.sql.transaction.mockResolvedValue([[], [], [{ purchase_order: null, items: [] }]]);
     await expect(createPurchaseOrderWithAudit(input)).rejects.toMatchObject({ status: 409 });
   });
 });

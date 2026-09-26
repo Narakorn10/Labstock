@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import sql from "@/lib/db";
 import { recordPurchaseOrderCommunication } from "@/lib/po-communication";
 import { getLinePurchasingUserFromRequest } from "@/lib/line-liff-ordering";
+import { applyLabReviewDecision } from "@/lib/purchase-order-review";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -31,24 +32,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     }
 
     const status = action === "APPROVE_REVISION" ? "CONFIRMED" : "REJECTED";
-    const transactionQueries = [sql`
-      UPDATE purchase_orders
-      SET status = ${status},
-          reviewed_at = NOW(),
-          reviewed_by = ${auth.user.username},
-          confirmed_at = ${status === "CONFIRMED" ? new Date().toISOString() : po.confirmed_at},
-          updated_at = NOW()
-      WHERE id = ${po.id} AND status IN ('PENDING_LAB_REVIEW', 'REVISION_REQUESTED')
-      RETURNING id
-    `];
-    if (po.status === "REVISION_REQUESTED") {
-      transactionQueries.push(action === "APPROVE_REVISION"
-        ? sql`UPDATE purchase_order_items SET quantity = COALESCE(revision_qty, quantity), revision_qty = NULL, revision_reason = NULL WHERE po_id = ${po.id}`
-        : sql`UPDATE purchase_order_items SET revision_qty = NULL, revision_reason = NULL WHERE po_id = ${po.id}`);
-    }
-
-    const [updated] = await sql.transaction(transactionQueries);
-    if (updated.length === 0) return NextResponse.json({ error: "This order was already reviewed." }, { status: 409 });
+    const applied = await applyLabReviewDecision(sql, {
+      po: { id: Number(po.id), status: po.status, confirmed_at: po.confirmed_at },
+      decision: status,
+      reviewer: auth.user.username,
+    });
+    if (!applied) return NextResponse.json({ error: "This order was already reviewed." }, { status: 409 });
 
     const updatedRows = await sql`SELECT * FROM purchase_orders WHERE id = ${po.id}`;
     const items = await sql`SELECT * FROM purchase_order_items WHERE po_id = ${po.id} ORDER BY id`;

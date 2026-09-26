@@ -44,6 +44,25 @@ export default function MasterDataPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingReagent, setEditingReagent] = useState<Partial<Reagent> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const canManageShelfLife = user?.role === 'Admin' || user?.role === 'Manager';
+  const [shelfLifeRules, setShelfLifeRules] = useState<Record<string, number>>({});
+  const [shelfLifeAvailable, setShelfLifeAvailable] = useState(false);
+
+  const fetchShelfLifeRules = useCallback(async () => {
+    if (!canManageShelfLife) return;
+    try {
+      const data = await apiClient.getShelfLifeRules();
+      setShelfLifeAvailable(data.available);
+      setShelfLifeRules(data.rules);
+    } catch (error: unknown) {
+      console.error('Shelf-life rules error:', error);
+    }
+  }, [canManageShelfLife]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void fetchShelfLifeRules();
+  }, [fetchShelfLifeRules]);
 
   const fetchReagents = useCallback(async () => {
     try {
@@ -152,6 +171,15 @@ export default function MasterDataPage() {
     try {
       const res = await apiClient.saveMaster(data);
       if (res.success) {
+        const savedItemId = rawItemId || String((res as { itemId?: string }).itemId || '');
+        const shelfLifeInput = formData.get('minShelfLifeDays');
+        if (canManageShelfLife && shelfLifeAvailable && shelfLifeInput !== null && savedItemId) {
+          const nextDays = String(shelfLifeInput).trim() === '' ? null : Number(shelfLifeInput);
+          if (nextDays !== (shelfLifeRules[savedItemId] ?? null)) {
+            await apiClient.setShelfLifeRule(savedItemId, nextDays);
+            await fetchShelfLifeRules();
+          }
+        }
         alert(res.message);
         setIsModalOpen(false);
         fetchReagents();
@@ -490,11 +518,25 @@ export default function MasterDataPage() {
               <input 
                 name="weeklyTarget" 
                 type="number" 
-                defaultValue={editingReagent?.weeklyTarget} 
+                defaultValue={editingReagent?.weeklyTarget}
                 className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
               />
             </div>
           </div>
+
+          {canManageShelfLife && shelfLifeAvailable && (
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-gray-500 uppercase">อายุคงเหลือขั้นต่ำตอนรับ (วัน) — เว้นว่าง = ไม่ตรวจ</label>
+              <input
+                name="minShelfLifeDays"
+                type="number"
+                min={0}
+                max={3650}
+                defaultValue={editingReagent?.itemId ? shelfLifeRules[editingReagent.itemId] ?? '' : ''}
+                className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
+              />
+            </div>
+          )}
 
           <div className="space-y-1">
             <label className="text-xs font-bold text-blue-500 uppercase">บริษัทผู้จำหน่าย (Vendor)</label>

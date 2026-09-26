@@ -34,16 +34,6 @@ export class PurchaseOrderCreationError extends Error {
   }
 }
 
-async function generatePONumber() {
-  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  const result = await sql`
-    SELECT COUNT(*) AS count
-    FROM purchase_orders
-    WHERE po_number LIKE ${`PO-${dateStr}-%`}
-  `;
-  return `PO-${dateStr}-${(Number(result[0]?.count ?? 0) + 1).toString().padStart(3, "0")}`;
-}
-
 export function selectPurchaseOrderBasis(item: PurchaseOrderItemInput, suggestion: PurchaseOrderSuggestion) {
   const requested = item.selected_basis;
   if (requested === "POLICY" && item.quantity === suggestion.policy_order_qty) return "POLICY" as const;
@@ -59,8 +49,16 @@ export function buildAuditedPurchaseOrderItem(
   origin: "LAB" | "VENDOR",
   calculatedAt = new Date().toISOString(),
 ): AuditedPurchaseOrderItem {
-  const selectedBasis = selectPurchaseOrderBasis(item, suggestion);
+  // A reagent without an enabled order policy has no approved quantity to fall back on,
+  // so it is always a manual quantity that needs a documented reason.
+  const policyConfigured = suggestion.policy_configured !== false;
+  const selectedBasis = policyConfigured ? selectPurchaseOrderBasis(item, suggestion) : "MANUAL";
   const overrideReason = item.override_reason?.trim() || null;
+  if (!policyConfigured && !overrideReason) {
+    throw new PurchaseOrderCreationError(
+      `${suggestion.name}: ยังไม่ได้ตั้งนโยบายสั่งซื้อ กรุณาระบุเหตุผลที่สั่ง`,
+    );
+  }
   const requiresReviewReason = origin === "LAB" && selectedBasis === "MANUAL";
   if (requiresReviewReason && !overrideReason) {
     throw new PurchaseOrderCreationError(
@@ -84,10 +82,12 @@ export function buildAuditedPurchaseOrderItem(
 }
 
 async function recomputeItems(input: CreatePurchaseOrderInput): Promise<AuditedPurchaseOrderItem[]> {
+  // Re-check exactly the submitted items, including reagents without an order policy.
   const suggestions = await getPurchaseOrderSuggestions(sql, {
     vendor: input.vendor,
+    itemIds: input.items.map((item) => item.item_id),
+    includeUnconfigured: true,
     includeAll: true,
-    limit: 100,
   });
   const byItemId = new Map(suggestions.map((suggestion) => [suggestion.item_id, suggestion]));
   const calculatedAt = new Date().toISOString();
@@ -95,7 +95,9 @@ async function recomputeItems(input: CreatePurchaseOrderInput): Promise<AuditedP
   return input.items.map((item) => {
     const suggestion = byItemId.get(item.item_id);
     if (!suggestion || suggestion.vendor !== input.vendor) {
-      throw new PurchaseOrderCreationError("Every item must belong to the selected Vendor.");
+      throw new PurchaseOrderCreationError(
+        `${item.item_name || item.item_id}: ไม่ใช่น้ำยาที่ใช้งานอยู่ของบริษัท ${input.vendor}`,
+      );
     }
 
     return buildAuditedPurchaseOrderItem(item, suggestion, input.origin, calculatedAt);
@@ -104,7 +106,11 @@ async function recomputeItems(input: CreatePurchaseOrderInput): Promise<AuditedP
 
 export async function createPurchaseOrderWithAudit(input: CreatePurchaseOrderInput) {
   const auditedItems = await recomputeItems(input);
-  const poNumber = await generatePONumber();
+  // The PO number is assigned inside the insert, under a per-day lock, so concurrent
+  // creations cannot pick the same number (COUNT+1 outside the transaction could).
+  const poDate = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const poNumberPattern = `^PO-${poDate}-[0-9]+$`;
+  const numberLockQuery = sql`SELECT pg_advisory_xact_lock(hashtextextended(${`purchase_order_number:${poDate}`}, 0))`;
   // A Lab-originated PO must be reviewed by a Manager before the Vendor can see it.
   const status = input.origin === "VENDOR" ? "PENDING_LAB_REVIEW" : "PENDING_MANAGER_REVIEW";
   const reviewRequestedAt = new Date().toISOString();
@@ -149,13 +155,17 @@ export async function createPurchaseOrderWithAudit(input: CreatePurchaseOrderInp
         SELECT organization_name, department_name, address, phone, email, logo_url
         FROM lab_profile
         WHERE id = 1
+      ), po_seq AS (
+        SELECT 'PO-' || ${poDate} || '-' || LPAD((COALESCE(MAX(substring(po_number from '([0-9]+)$')::int), 0) + 1)::text, 3, '0') AS po_number
+        FROM purchase_orders
+        WHERE po_number ~ ${poNumberPattern}
       ), new_po AS (
         INSERT INTO purchase_orders (
           po_number, vendor, note, expected_date, created_by, status, proposal_origin,
           review_requested_at, liff_request_id, issuer_name, issuer_department,
           issuer_address, issuer_phone, issuer_email, issuer_logo_url
         ) SELECT
-          ${poNumber}, ${input.vendor}, ${input.note}, ${input.expectedDate}, ${input.user.username},
+          (SELECT po_number FROM po_seq), ${input.vendor}, ${input.note}, ${input.expectedDate}, ${input.user.username},
           ${status}, ${input.origin}, ${reviewRequestedAt}, ${input.liffRequestId || null},
           issuer.organization_name, issuer.department_name, issuer.address,
           issuer.phone, issuer.email, issuer.logo_url
@@ -214,13 +224,17 @@ export async function createPurchaseOrderWithAudit(input: CreatePurchaseOrderInp
         SELECT organization_name, department_name, address, phone, email, logo_url
         FROM lab_profile
         WHERE id = 1
+      ), po_seq AS (
+        SELECT 'PO-' || ${poDate} || '-' || LPAD((COALESCE(MAX(substring(po_number from '([0-9]+)$')::int), 0) + 1)::text, 3, '0') AS po_number
+        FROM purchase_orders
+        WHERE po_number ~ ${poNumberPattern}
       ), new_po AS (
         INSERT INTO purchase_orders (
           po_number, vendor, note, expected_date, created_by, status, proposal_origin,
           review_requested_at, issuer_name, issuer_department, issuer_address,
           issuer_phone, issuer_email, issuer_logo_url
         ) SELECT
-          ${poNumber}, ${input.vendor}, ${input.note}, ${input.expectedDate}, ${input.user.username},
+          (SELECT po_number FROM po_seq), ${input.vendor}, ${input.note}, ${input.expectedDate}, ${input.user.username},
           ${status}, ${input.origin}, ${reviewRequestedAt}, issuer.organization_name,
           issuer.department_name, issuer.address, issuer.phone, issuer.email, issuer.logo_url
         FROM issuer
@@ -247,7 +261,7 @@ export async function createPurchaseOrderWithAudit(input: CreatePurchaseOrderInp
         (SELECT COALESCE(jsonb_agg(to_jsonb(new_items)), '[]'::jsonb) FROM new_items) AS items
     `;
 
-  const [, transactionRows] = await sql.transaction([lockQuery, query]);
+  const [, , transactionRows] = await sql.transaction([numberLockQuery, lockQuery, query]);
   const result = transactionRows[0] as { purchase_order?: Record<string, unknown>; items?: Record<string, unknown>[] } | undefined;
   if (!result?.purchase_order) {
     throw new PurchaseOrderCreationError("สถานะสต็อกหรือ PO ค้างเปลี่ยนไประหว่างคำนวณ กรุณากดแนะนำอัตโนมัติและตรวจสอบอีกครั้ง", 409);

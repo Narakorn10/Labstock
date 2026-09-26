@@ -3,7 +3,7 @@ import sql from "@/lib/db";
 import { getAuthenticatedUser } from "@/lib/auth-utils";
 import { normalizePurchaseOrder } from "@/lib/notifications";
 import { recordPurchaseOrderCommunication } from "@/lib/po-communication";
-import { isLabPurchasingRole, validatePurchaseOrderItems } from "@/lib/purchase-order-workflow";
+import { describeInvalidPurchaseOrderItems, isLabPurchasingRole, validatePurchaseOrderItems } from "@/lib/purchase-order-workflow";
 import { createPurchaseOrderWithAudit, PurchaseOrderCreationError } from "@/lib/purchase-order-creation";
 
 export async function GET(request: Request) {
@@ -107,9 +107,8 @@ export async function POST(request: Request) {
     const note = String(body.note ?? "").trim() || null;
     const expectedDate = body.expected_date || null;
 
-    if (!vendor || !items) {
-      return NextResponse.json({ error: "Vendor and valid order items are required" }, { status: 400 });
-    }
+    if (!vendor) return NextResponse.json({ error: "กรุณาเลือกบริษัท" }, { status: 400 });
+    if (!items) return NextResponse.json({ error: describeInvalidPurchaseOrderItems(body.items) }, { status: 400 });
 
     if (user.role === "Vendor" && user.vendor !== vendor) {
       return NextResponse.json({ error: "Vendor can only propose orders for its own company" }, { status: 403 });

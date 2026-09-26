@@ -1,4 +1,4 @@
-import { comparePassword } from '@/lib/auth-utils';
+import { comparePassword, upgradeLegacyPasswordHash } from '@/lib/auth-utils';
 import sql from '@/lib/db';
 
 export type DatabaseAuthUser = {
@@ -64,7 +64,10 @@ export async function validateCredentials(identifier: string, password: string):
   const user = await findUser(normalizedIdentifier, schema);
   if (!user || !user.password_hash || !isActive(user, schema)) return null;
 
-  return (await comparePassword(password, user.password_hash)) ? user : null;
+  if (!await comparePassword(password, user.password_hash)) return null;
+
+  await upgradeLegacyPasswordHash(user.username, password, user.password_hash);
+  return user;
 }
 
 export async function findActiveUserByEmail(email: string): Promise<DatabaseAuthUser | null> {

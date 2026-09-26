@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import sql from "@/lib/db";
 import { getAuthenticatedUser } from "@/lib/auth-utils";
 import { recordPurchaseOrderCommunication } from "@/lib/po-communication";
+import { applyLabReviewDecision, closePurchaseOrder, runGuardedPurchaseOrderUpdate } from "@/lib/purchase-order-review";
 import { isLabPurchasingRole, validatePurchaseOrderItems } from "@/lib/purchase-order-workflow";
 
 async function findPurchaseOrder(id: string) {
@@ -120,6 +121,27 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       action = "REJECT";
     }
 
+    if (isLab && (action === "CANCEL" || action === "CLOSE_SHORT")) {
+      const closure = await closePurchaseOrder(sql, {
+        po: { id: Number(po.id), po_number: po.po_number, status: po.status },
+        action,
+        reason: note,
+      });
+      if (!closure.ok) return NextResponse.json({ error: closure.error }, { status: closure.httpStatus });
+
+      await recordPurchaseOrderCommunication({
+        poId: Number(po.id),
+        eventType: action === "CANCEL" ? "PO_CANCELLED" : "PO_STATUS_UPDATED",
+        actor: user,
+        source: "WEB",
+        note,
+        metadata: { fromStatus: po.status, action },
+      });
+      const updatedRows = await sql`SELECT * FROM purchase_orders WHERE id = ${po.id}`;
+      const items = await sql`SELECT * FROM purchase_order_items WHERE po_id = ${po.id} ORDER BY id`;
+      return NextResponse.json({ ...updatedRows[0], items });
+    }
+
     let notificationEvent: "PO_CREATED" | "PO_REVIEW_REQUIRED" | "PO_CONFIRMED" | "PO_STATUS_UPDATED";
     if (isVendor) {
       const canAcknowledge = po.proposal_origin === "LAB" && po.status === "SUBMITTED" && action === "ACKNOWLEDGE";
@@ -141,6 +163,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         return NextResponse.json({ error: "Vendor can only acknowledge, confirm availability, request a revision, or reject an eligible Lab purchase order" }, { status: 409 });
       }
 
+      // Item writes and the status change commit together, or not at all if the PO moved on.
+      const vendorItemQueries: ReturnType<typeof sql>[] = [];
       if (canReviseLabOrder) {
         const revisedItems = validatePurchaseOrderItems(body.items);
         if (!revisedItems || !note) {
@@ -158,13 +182,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         if (revisionRows.some(({ item, current, reason }) => Number(current?.quantity) !== item.quantity && !reason)) {
           return NextResponse.json({ error: "A reason is required for every changed line" }, { status: 400 });
         }
-        await Promise.all(revisionRows.map(({ item, reason }) => {
-          return sql`
-            UPDATE purchase_order_items
-            SET revision_qty = ${item.quantity}, revision_reason = ${reason}
-            WHERE po_id = ${po.id} AND item_id = ${item.item_id}
-          `;
-        }));
+        vendorItemQueries.push(...revisionRows.map(({ item, reason }) => sql`
+          UPDATE purchase_order_items
+          SET revision_qty = ${item.quantity}, revision_reason = ${reason}
+          WHERE po_id = ${po.id} AND item_id = ${item.item_id}
+        `));
       }
 
       if (canConfirmAvailability) {
@@ -181,14 +203,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
           !Number.isFinite(availableQty) || availableQty !== Number(item.quantity) || acknowledgedQty !== Number(item.quantity))) {
           return NextResponse.json({ error: "Confirm availability only when every ordered line is available; use REQUEST_REVISION for shortages" }, { status: 409 });
         }
-        await Promise.all(availabilityRows.map(({ item, acknowledgedQty, availableQty }) => sql`
+        vendorItemQueries.push(...availabilityRows.map(({ item, acknowledgedQty, availableQty }) => sql`
           UPDATE purchase_order_items
           SET acknowledged_qty = ${acknowledgedQty}, available_qty = ${availableQty}
           WHERE po_id = ${po.id} AND item_id = ${item.item_id}
         `));
       }
 
-      const updated = await sql`
+      const guarded = await runGuardedPurchaseOrderUpdate(sql, Number(po.id), po.status, [...vendorItemQueries, sql`
         UPDATE purchase_orders
         SET status = ${status}, vendor_note = ${note || po.vendor_note},
             acknowledged_at = ${status === "ACKNOWLEDGED" ? new Date().toISOString() : po.acknowledged_at},
@@ -200,8 +222,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
             updated_at = NOW()
         WHERE id = ${po.id} AND status = ${po.status}
         RETURNING *
-      `;
-      if (!updated.length) {
+      `]);
+      if (!guarded?.at(-1)?.length) {
         return NextResponse.json({ error: "This order changed before the Vendor response completed" }, { status: 409 });
       }
       notificationEvent = status === "REVISION_REQUESTED"
@@ -282,6 +304,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
           SET status = ${status}, reviewed_at = NOW(), reviewed_by = ${user.username},
               review_requested_at = COALESCE(review_requested_at, NOW()),
               vendor_note = ${rejectingManagerReview ? note : po.vendor_note},
+              vendor_response_due_at = ${approvingManagerReview ? new Date(Date.now() + 5 * 86400000).toISOString() : po.vendor_response_due_at},
               updated_at = NOW()
           WHERE id = ${po.id} AND status = 'PENDING_MANAGER_REVIEW'
           RETURNING *
@@ -299,18 +322,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         (status !== "CONFIRMED" && status !== "REJECTED")) {
         return NextResponse.json({ error: "Lab can only confirm or reject an order awaiting Lab review" }, { status: 409 });
       }
-      await sql`
-        UPDATE purchase_orders
-        SET status = ${status}, reviewed_at = NOW(), reviewed_by = ${user.username},
-            confirmed_at = ${status === "CONFIRMED" ? new Date().toISOString() : po.confirmed_at},
-            updated_at = NOW()
-        WHERE id = ${po.id}
-      `;
-      if (approvingRevision) {
-        await sql`UPDATE purchase_order_items SET quantity = COALESCE(revision_qty, quantity), revision_qty = NULL, revision_reason = NULL WHERE po_id = ${po.id}`;
-      } else if (rejectingRevision) {
-        await sql`UPDATE purchase_order_items SET revision_qty = NULL, revision_reason = NULL WHERE po_id = ${po.id}`;
-      }
+      const applied = await applyLabReviewDecision(sql, {
+        po: { id: Number(po.id), status: po.status, confirmed_at: po.confirmed_at },
+        decision: status === "CONFIRMED" ? "CONFIRMED" : "REJECTED",
+        reviewer: user.username,
+      });
+      if (!applied) return NextResponse.json({ error: "This order was already reviewed or changed." }, { status: 409 });
       notificationEvent = status === "CONFIRMED" ? "PO_CONFIRMED" : "PO_STATUS_UPDATED";
       }
       }

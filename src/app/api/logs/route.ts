@@ -1,12 +1,15 @@
 import { NextResponse } from 'next/server';
 import sql from '@/lib/db';
-import { getAuthenticatedUser } from '@/lib/auth-utils';
+import { hasMenuPermission } from '@/lib/auth-utils';
 
 export async function GET(request: Request) {
   try {
-    const user = await getAuthenticatedUser(request);
+    const { user, allowed } = await hasMenuPermission(request, 'logs');
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    if (!allowed) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     const { searchParams } = new URL(request.url);
