@@ -72,6 +72,40 @@ describe("suggestion query and reagents without an order policy (real Postgres)"
   });
 });
 
+describe("large Vendor catalogue (PCL has 116 active reagents in production)", () => {
+  beforeEach(async () => {
+    // 120 reagents for Vendor A; the 40 with the MOST stock still need ordering because of heavy use,
+    // so a lowest-stock-first row cap would have hidden them.
+    await sql.db.exec(`
+      INSERT INTO master_data (item_id, name, unit, vendor, min_threshold, weekly_target, is_active)
+      SELECT 'BIG-' || LPAD(g::text, 3, '0'), 'Big reagent ' || g, 'box', 'Vendor A', 0, 0, TRUE FROM generate_series(1, 120) g;
+      INSERT INTO reagent_order_policy (item_id, approved_monthly_target_boxes, approved_order_qty_boxes, safety_stock_boxes, review_days)
+      SELECT 'BIG-' || LPAD(g::text, 3, '0'), CASE WHEN g > 80 THEN 3000 ELSE 1 END, 5, 0, 15 FROM generate_series(1, 120) g;
+      INSERT INTO inventory (item_id, lot_no, exp_date, quantity, received_on)
+      SELECT 'BIG-' || LPAD(g::text, 3, '0'), 'L', CURRENT_DATE + 400, CASE WHEN g > 80 THEN 200 ELSE 50 END, CURRENT_DATE FROM generate_series(1, 120) g;
+    `);
+  });
+
+  it("auto-suggest evaluates every reagent, even when the caller passes a small limit", async () => {
+    const suggested = await getPurchaseOrderSuggestions(sql as never, { vendor: "Vendor A", limit: 30 });
+    const bigSuggested = suggested.filter((row) => row.item_id.startsWith("BIG-"));
+    expect(bigSuggested).toHaveLength(40);
+    expect(bigSuggested.every((row) => Number(row.item_id.slice(4)) > 80)).toBe(true);
+  });
+
+  it("browsing the catalogue without a keyword can list the whole Vendor", async () => {
+    const browse = await getPurchaseOrderSuggestions(sql as never, { vendor: "Vendor A", includeAll: true, includeUnconfigured: true, limit: 300 });
+    expect(browse.filter((row) => row.item_id.startsWith("BIG-"))).toHaveLength(120);
+  });
+
+  it("creates an order for the reagent with the most stock", async () => {
+    const created = await createPurchaseOrderWithAudit(order([
+      { item_id: "BIG-120", item_name: "Big reagent 120", quantity: 5, unit: "box", selected_basis: "POLICY" },
+    ]));
+    expect(created.purchaseOrder.po_number).toBeTruthy();
+  });
+});
+
 describe("creating an order with a reagent that has no order policy (real Postgres)", () => {
   it("requires a reason", async () => {
     await expect(createPurchaseOrderWithAudit(order([

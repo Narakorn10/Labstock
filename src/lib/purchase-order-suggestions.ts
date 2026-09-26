@@ -130,6 +130,8 @@ const DEFAULT_LEAD_TIME_DAYS = 5;
 const DAYS_PER_MONTH = 30;
 const ORDERS_PER_MONTH = 2;
 const TARGET_ORDER_COVERAGE_DAYS = 15;
+/** Upper bound on rows read per call; well above the largest Vendor catalogue (PCL: 116 reagents). */
+const MAX_SUGGESTION_ROWS = 1000;
 const LIVE_USAGE_MIN_OBSERVATION_DAYS = 7;
 const BANGKOK_TIME_ZONE = "Asia/Bangkok";
 const DISPENSE_ACTION = "\u0e40\u0e1a\u0e34\u0e01\u0e44\u0e1b\u0e2b\u0e19\u0e49\u0e32\u0e07\u0e32\u0e19";
@@ -676,8 +678,16 @@ export async function getPurchaseOrderSuggestions(sql: SqlClient, options: Fetch
   const vendor = options.vendor?.trim() || null;
   const keyword = options.keyword?.trim() || "";
   const itemIds = options.itemIds?.length ? [...new Set(options.itemIds)] : null;
-  // An explicit item list must never be truncated by the default page size.
-  const limit = itemIds ? itemIds.length : Math.max(1, Math.min(100, options.limit ?? 100));
+  // Rows are ordered by lowest stock, so a row cap silently drops reagents:
+  // - an explicit item list (PO creation) is never truncated;
+  // - auto-suggest (not includeAll) must evaluate every reagent before filtering to those
+  //   that need ordering, otherwise a large Vendor (e.g. 116 reagents) is only partly checked;
+  // - only a browse/search result list honours the caller's page size.
+  const limit = itemIds
+    ? itemIds.length
+    : options.includeAll
+      ? Math.max(1, Math.min(MAX_SUGGESTION_ROWS, options.limit ?? 100))
+      : MAX_SUGGESTION_ROWS;
   const [rows, usageRows] = await Promise.all([
     fetchSuggestionRows(sql, policyTableExists, vendor, keyword, limit, Boolean(options.includeUnconfigured), itemIds),
     fetchDispenseUsage(sql),

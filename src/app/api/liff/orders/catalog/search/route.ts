@@ -21,7 +21,9 @@ export async function POST(request: Request) {
       keyword,
       includeAll: searching,
       includeUnconfigured: searching,
-      limit: 30,
+      // Browsing without a keyword must show the whole Vendor catalogue (PCL has 116 reagents);
+      // auto-suggest ignores this and evaluates every reagent anyway.
+      limit: keyword ? 50 : 300,
     });
 
     return NextResponse.json(rows);
