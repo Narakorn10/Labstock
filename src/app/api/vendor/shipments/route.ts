@@ -132,7 +132,7 @@ export async function POST(request: Request) {
         RETURNING id, po_number
       ), new_rows AS (
         INSERT INTO shipments (shipment_batch_id, reference_no, po_number, tracking_no, tracking_provider, vendor, item_id, lot_no, exp_date, quantity, status, mapping_confidence, mapping_provenance)
-        SELECT new_batch.id, ${referenceNo}, ${poNumber}, ${String(body.trackingNo ?? "").trim() || null}, ${String(body.trackingProvider ?? "").trim() || null}, ${user.vendor}, input.item_id, input.lot_no, input.exp_date, input.qty, 'In Transit', input.confidence, input.provenance
+        SELECT new_batch.id, ${referenceNo}, ${poNumber}, ${String(body.trackingNo ?? "").trim() || null}, ${String(body.trackingProvider ?? "").trim() || null}, ${user.vendor}, input.item_id, input.lot_no, input.exp_date::date, input.qty, 'In Transit', input.confidence, input.provenance
         FROM new_batch, jsonb_to_recordset(${JSON.stringify(databaseItems)}::jsonb) AS input(item_id text, lot_no text, exp_date text, qty numeric, confidence text, provenance text)
         RETURNING id
       ), shipped_update AS (

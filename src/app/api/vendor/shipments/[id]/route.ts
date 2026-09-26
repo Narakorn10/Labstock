@@ -19,7 +19,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const body = await request.json() as { action?: string; accepted_qty?: number; rejected_qty?: number; rejection_reason?: string; shelf_life_override_reason?: string };
     const action = body.action;
     const shipmentRows = await sql`
-      SELECT s.*, m.name AS reagent_name
+      SELECT s.*, m.name AS reagent_name, s.exp_date::text AS exp_date_text
       FROM shipments s JOIN master_data m ON s.item_id = m.item_id
       WHERE s.id = ${id} LIMIT 1
     `;
@@ -51,7 +51,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const shelfLifeOverrideReason = String(body.shelf_life_override_reason ?? "").trim();
     const [shortDated] = acceptedQty > 0
       ? findShelfLifeViolations(
-        [{ itemId: String(shipment.item_id), lotNo: String(shipment.lot_no), expDate: String(shipment.exp_date ?? "") }],
+        [{ itemId: String(shipment.item_id), lotNo: String(shipment.lot_no), expDate: String(shipment.exp_date_text ?? "") }],
         await loadMinShelfLifeRules(sql, [String(shipment.item_id)]),
       )
       : [];

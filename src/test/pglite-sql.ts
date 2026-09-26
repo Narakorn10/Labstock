@@ -90,7 +90,7 @@ export const PURCHASE_ORDER_TEST_SCHEMA = `
     reagent_type TEXT, job_type TEXT, machine_type TEXT
   );
   CREATE TABLE inventory (
-    id SERIAL PRIMARY KEY, item_id TEXT, lot_no TEXT, exp_date TEXT, quantity NUMERIC, received_on DATE,
+    id SERIAL PRIMARY KEY, item_id TEXT, lot_no TEXT, exp_date DATE, quantity NUMERIC, received_on DATE,
     UNIQUE (item_id, lot_no, received_on)
   );
   CREATE TABLE logs (
@@ -129,7 +129,7 @@ export const PURCHASE_ORDER_TEST_SCHEMA = `
   );
   CREATE TABLE shipments (
     id SERIAL PRIMARY KEY, shipment_batch_id INT, reference_no TEXT, po_number TEXT, tracking_no TEXT,
-    tracking_provider TEXT, vendor TEXT, item_id TEXT, lot_no TEXT, exp_date TEXT, quantity NUMERIC, status TEXT,
+    tracking_provider TEXT, vendor TEXT, item_id TEXT, lot_no TEXT, exp_date DATE, quantity NUMERIC, status TEXT,
     mapping_confidence TEXT, mapping_provenance TEXT, received_at TIMESTAMPTZ, received_by TEXT,
     accepted_qty NUMERIC, rejected_qty NUMERIC, rejection_reason TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
   );
