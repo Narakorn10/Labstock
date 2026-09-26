@@ -34,16 +34,6 @@ export class PurchaseOrderCreationError extends Error {
   }
 }
 
-async function generatePONumber() {
-  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  const result = await sql`
-    SELECT COUNT(*) AS count
-    FROM purchase_orders
-    WHERE po_number LIKE ${`PO-${dateStr}-%`}
-  `;
-  return `PO-${dateStr}-${(Number(result[0]?.count ?? 0) + 1).toString().padStart(3, "0")}`;
-}
-
 export function selectPurchaseOrderBasis(item: PurchaseOrderItemInput, suggestion: PurchaseOrderSuggestion) {
   const requested = item.selected_basis;
   if (requested === "POLICY" && item.quantity === suggestion.policy_order_qty) return "POLICY" as const;
@@ -104,7 +94,11 @@ async function recomputeItems(input: CreatePurchaseOrderInput): Promise<AuditedP
 
 export async function createPurchaseOrderWithAudit(input: CreatePurchaseOrderInput) {
   const auditedItems = await recomputeItems(input);
-  const poNumber = await generatePONumber();
+  // The PO number is assigned inside the insert, under a per-day lock, so concurrent
+  // creations cannot pick the same number (COUNT+1 outside the transaction could).
+  const poDate = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const poNumberPattern = `^PO-${poDate}-[0-9]+$`;
+  const numberLockQuery = sql`SELECT pg_advisory_xact_lock(hashtextextended(${`purchase_order_number:${poDate}`}, 0))`;
   // A Lab-originated PO must be reviewed by a Manager before the Vendor can see it.
   const status = input.origin === "VENDOR" ? "PENDING_LAB_REVIEW" : "PENDING_MANAGER_REVIEW";
   const reviewRequestedAt = new Date().toISOString();
@@ -149,13 +143,17 @@ export async function createPurchaseOrderWithAudit(input: CreatePurchaseOrderInp
         SELECT organization_name, department_name, address, phone, email, logo_url
         FROM lab_profile
         WHERE id = 1
+      ), po_seq AS (
+        SELECT 'PO-' || ${poDate} || '-' || LPAD((COALESCE(MAX(substring(po_number from '([0-9]+)$')::int), 0) + 1)::text, 3, '0') AS po_number
+        FROM purchase_orders
+        WHERE po_number ~ ${poNumberPattern}
       ), new_po AS (
         INSERT INTO purchase_orders (
           po_number, vendor, note, expected_date, created_by, status, proposal_origin,
           review_requested_at, liff_request_id, issuer_name, issuer_department,
           issuer_address, issuer_phone, issuer_email, issuer_logo_url
         ) SELECT
-          ${poNumber}, ${input.vendor}, ${input.note}, ${input.expectedDate}, ${input.user.username},
+          (SELECT po_number FROM po_seq), ${input.vendor}, ${input.note}, ${input.expectedDate}, ${input.user.username},
           ${status}, ${input.origin}, ${reviewRequestedAt}, ${input.liffRequestId || null},
           issuer.organization_name, issuer.department_name, issuer.address,
           issuer.phone, issuer.email, issuer.logo_url
@@ -214,13 +212,17 @@ export async function createPurchaseOrderWithAudit(input: CreatePurchaseOrderInp
         SELECT organization_name, department_name, address, phone, email, logo_url
         FROM lab_profile
         WHERE id = 1
+      ), po_seq AS (
+        SELECT 'PO-' || ${poDate} || '-' || LPAD((COALESCE(MAX(substring(po_number from '([0-9]+)$')::int), 0) + 1)::text, 3, '0') AS po_number
+        FROM purchase_orders
+        WHERE po_number ~ ${poNumberPattern}
       ), new_po AS (
         INSERT INTO purchase_orders (
           po_number, vendor, note, expected_date, created_by, status, proposal_origin,
           review_requested_at, issuer_name, issuer_department, issuer_address,
           issuer_phone, issuer_email, issuer_logo_url
         ) SELECT
-          ${poNumber}, ${input.vendor}, ${input.note}, ${input.expectedDate}, ${input.user.username},
+          (SELECT po_number FROM po_seq), ${input.vendor}, ${input.note}, ${input.expectedDate}, ${input.user.username},
           ${status}, ${input.origin}, ${reviewRequestedAt}, issuer.organization_name,
           issuer.department_name, issuer.address, issuer.phone, issuer.email, issuer.logo_url
         FROM issuer
@@ -247,7 +249,7 @@ export async function createPurchaseOrderWithAudit(input: CreatePurchaseOrderInp
         (SELECT COALESCE(jsonb_agg(to_jsonb(new_items)), '[]'::jsonb) FROM new_items) AS items
     `;
 
-  const [, transactionRows] = await sql.transaction([lockQuery, query]);
+  const [, , transactionRows] = await sql.transaction([numberLockQuery, lockQuery, query]);
   const result = transactionRows[0] as { purchase_order?: Record<string, unknown>; items?: Record<string, unknown>[] } | undefined;
   if (!result?.purchase_order) {
     throw new PurchaseOrderCreationError("สถานะสต็อกหรือ PO ค้างเปลี่ยนไประหว่างคำนวณ กรุณากดแนะนำอัตโนมัติและตรวจสอบอีกครั้ง", 409);
