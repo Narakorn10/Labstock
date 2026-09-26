@@ -30,6 +30,31 @@ export async function comparePassword(password: string, hash: string) {
   return sha256Hash === hash;
 }
 
+export function isLegacyPasswordHash(hash: string) {
+  return !hash.startsWith('$2');
+}
+
+/**
+ * Re-hashes a legacy unsalted SHA-256 password with bcrypt after a successful
+ * login. Call only once the password has been verified. Never throws, so a
+ * failed upgrade cannot block the login.
+ */
+export async function upgradeLegacyPasswordHash(username: string, password: string, currentHash: string) {
+  if (!isLegacyPasswordHash(currentHash)) return;
+
+  try {
+    const newHash = await hashPassword(password);
+    // Matching the old hash avoids overwriting a password changed in the meantime.
+    await sql`
+      UPDATE users
+      SET password_hash = ${newHash}
+      WHERE username = ${username} AND password_hash = ${currentHash}
+    `;
+  } catch (error) {
+    console.error('Legacy password hash upgrade failed:', error);
+  }
+}
+
 export async function hashPin(pin: string) {
   return await bcrypt.hash(pin, SALT_ROUNDS);
 }
