@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
-import { getAuthenticatedUser } from "@/lib/auth-utils";
+import { hasMenuPermission } from "@/lib/auth-utils";
 import { runDispenseBatch } from "@/lib/stock-transactions";
 
 export async function POST(request: Request) {
   try {
-    const user = await getAuthenticatedUser(request);
+    const { user, allowed } = await hasMenuPermission(request, "dispense");
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (!allowed) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const { batchItems } = await request.json();
