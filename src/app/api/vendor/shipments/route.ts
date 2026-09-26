@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import sql from "@/lib/db";
 import { getAuthenticatedUser } from "@/lib/auth-utils";
 import { recordPurchaseOrderCommunication } from "@/lib/po-communication";
+import { recomputePurchaseOrderStatusQuery } from "@/lib/purchase-order-status";
 import type { ShipmentDraft } from "@/lib/shipment-ocr";
 
 type ShipmentRequest = {
@@ -73,8 +74,9 @@ export async function POST(request: Request) {
       confidence: item.confidence ?? "red", provenance: item.mappingReason || "Manual review",
     }));
 
-    // Lock, remaining-quantity check, idempotency guard, insert, and status update are one statement.
-    const saved = await sql`
+    // Lock, remaining-quantity check, idempotency guard, and insert are one statement. The PO status
+    // is recomputed by a second statement in the same transaction so it sees the new shipment rows.
+    const [saved, recomputed] = await sql.transaction([sql`
       WITH lock AS (
         SELECT pg_advisory_xact_lock(hashtext(${`${user.vendor}:${poNumber}`})) AS locked
       ), existing AS (
@@ -121,24 +123,19 @@ export async function POST(request: Request) {
         SELECT new_batch.id, ${referenceNo}, ${poNumber}, ${String(body.trackingNo ?? "").trim() || null}, ${String(body.trackingProvider ?? "").trim() || null}, ${user.vendor}, input.item_id, input.lot_no, input.exp_date, input.qty, 'In Transit', input.confidence, input.provenance
         FROM new_batch, jsonb_to_recordset(${JSON.stringify(databaseItems)}::jsonb) AS input(item_id text, lot_no text, exp_date text, qty numeric, confidence text, provenance text)
         RETURNING id
-      ), status_update AS (
-        UPDATE purchase_orders p SET status = CASE
-          WHEN NOT EXISTS (SELECT 1 FROM purchase_order_items poi WHERE poi.po_id = p.id AND COALESCE(poi.accepted_qty, 0) < poi.quantity) THEN 'RECEIVED'
-          WHEN EXISTS (SELECT 1 FROM purchase_order_items poi WHERE poi.po_id = p.id AND COALESCE(poi.accepted_qty, 0) > 0) THEN 'PARTIALLY_RECEIVED'
-          WHEN NOT EXISTS (SELECT 1 FROM purchase_order_items poi LEFT JOIN shipments s ON s.po_number = p.po_number AND s.item_id = poi.item_id AND s.status = 'In Transit' WHERE poi.po_id = p.id GROUP BY poi.id, poi.quantity HAVING COALESCE(SUM(s.quantity), 0) < poi.quantity) THEN 'SHIPPED'
-          WHEN EXISTS (SELECT 1 FROM shipments s WHERE s.po_number = p.po_number AND s.status = 'In Transit') THEN 'PARTIALLY_SHIPPED'
-          ELSE 'CONFIRMED' END,
-          shipped_at = NOW(), updated_at = NOW()
+      ), shipped_update AS (
+        UPDATE purchase_orders p SET shipped_at = NOW(), updated_at = NOW()
         WHERE p.id = (SELECT id FROM po) AND EXISTS (SELECT 1 FROM new_batch)
-        RETURNING id, status
+        RETURNING id
       )
       SELECT COALESCE((SELECT id FROM new_batch), (SELECT id FROM existing)) AS batch_id,
         (SELECT COUNT(*) FROM new_rows)::int AS shipment_count,
-        COALESCE((SELECT status FROM status_update), (SELECT status FROM po)) AS status,
-        (SELECT id FROM status_update) AS po_id,
+        (SELECT status FROM po) AS status,
+        (SELECT id FROM shipped_update) AS po_id,
         EXISTS (SELECT 1 FROM existing) AS duplicate
-    `;
-    const result = saved[0];
+    `, recomputePurchaseOrderStatusQuery(sql, poNumber)]);
+    const result = saved[0] as Record<string, unknown> | undefined;
+    if (result) result.status = recomputed[0]?.status ?? result.status;
     if (!result?.batch_id) return NextResponse.json({ error: "This order is not eligible for shipment" }, { status: 409 });
     if (result.duplicate) return NextResponse.json({ success: true, duplicate: true, data: { batchId: Number(result.batch_id), shipmentCount: 0, status: result.status }, message: "Shipment request was already accepted" });
     const poId = Number(result.po_id);

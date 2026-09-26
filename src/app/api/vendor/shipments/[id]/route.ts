@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import sql from "@/lib/db";
 import { getAuthenticatedUser } from "@/lib/auth-utils";
 import { recordPurchaseOrderCommunication } from "@/lib/po-communication";
+import { recomputePurchaseOrderStatusQuery } from "@/lib/purchase-order-status";
 
 function quantitiesMatch(total: number, accepted: number, rejected: number) {
   return Math.abs(accepted + rejected - total) < 0.000001;
@@ -26,27 +27,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (shipment.status !== "In Transit") return NextResponse.json({ error: "Shipment is already processed" }, { status: 400 });
 
     if (action === "cancel") {
-      // Cancellation and PO recomputation are gated by the same row lock.
-      const cancelled = await sql`
-        WITH claimed AS (
-          UPDATE shipments SET status = 'Cancelled'
-          WHERE id = ${id} AND status = 'In Transit'
-          RETURNING id, po_number
-        ), recomputed AS (
-          UPDATE purchase_orders p SET status = CASE
-            WHEN NOT EXISTS (SELECT 1 FROM purchase_order_items poi WHERE poi.po_id = p.id AND COALESCE(poi.accepted_qty, 0) < poi.quantity) THEN 'RECEIVED'
-            WHEN EXISTS (SELECT 1 FROM purchase_order_items poi WHERE poi.po_id = p.id AND COALESCE(poi.accepted_qty, 0) > 0) THEN 'PARTIALLY_RECEIVED'
-            WHEN NOT EXISTS (SELECT 1 FROM purchase_order_items poi LEFT JOIN shipments s ON s.po_number = p.po_number AND s.item_id = poi.item_id AND s.status = 'In Transit' WHERE poi.po_id = p.id GROUP BY poi.id, poi.quantity HAVING COALESCE(SUM(s.quantity), 0) < poi.quantity) THEN 'SHIPPED'
-            WHEN EXISTS (SELECT 1 FROM shipments s WHERE s.po_number = p.po_number AND s.status = 'In Transit') THEN 'PARTIALLY_SHIPPED'
-            ELSE 'CONFIRMED' END,
-            updated_at = NOW()
-          FROM claimed c WHERE p.po_number = c.po_number
-          RETURNING p.id, p.status
-        )
-        SELECT (SELECT id FROM claimed) AS shipment_id, (SELECT id FROM recomputed) AS po_id
-      `;
+      // The PO status is recomputed by a second statement so it sees the cancelled shipment.
+      const [cancelled, recomputed] = await sql.transaction([sql`
+        UPDATE shipments SET status = 'Cancelled'
+        WHERE id = ${id} AND status = 'In Transit'
+        RETURNING id AS shipment_id, po_number
+      `, recomputePurchaseOrderStatusQuery(sql, shipment.po_number ?? null)]);
       if (!cancelled[0]?.shipment_id) return NextResponse.json({ error: "รายการนี้ถูกดำเนินการไปก่อนหน้าแล้ว" }, { status: 400 });
-      if (cancelled[0]?.po_id) await recordPurchaseOrderCommunication({ poId: Number(cancelled[0].po_id), eventType: "PO_CANCELLED", actor: user, source: "WEB", shipmentId: Number(id), metadata: { reason: "Lab cancelled in-transit shipment" } });
+      if (recomputed[0]?.id) await recordPurchaseOrderCommunication({ poId: Number(recomputed[0].id), eventType: "PO_CANCELLED", actor: user, source: "WEB", shipmentId: Number(id), metadata: { reason: "Lab cancelled in-transit shipment" } });
       return NextResponse.json({ success: true, message: "ยกเลิกรายการสำเร็จ" });
     }
 
@@ -58,7 +46,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     }
     if (rejectedQty > 0 && !rejectionReason) return NextResponse.json({ error: "กรุณาระบุเหตุผลเมื่อมีของเสียหรือไม่ผ่าน" }, { status: 400 });
 
-    const received = await sql`
+    // The PO status is recomputed by a second statement so it sees the updated accepted quantities.
+    const [received] = await sql.transaction([sql`
       WITH claimed AS (
         UPDATE shipments
         SET status = 'Received', received_at = CURRENT_TIMESTAMP, received_by = ${user.name},
@@ -85,20 +74,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         WHERE c.po_number IS NOT NULL AND poi.po_id = (SELECT p.id FROM purchase_orders p WHERE p.po_number = c.po_number)
           AND poi.item_id = c.item_id
         RETURNING poi.po_id
-      ), po_update AS (
-        UPDATE purchase_orders p SET status = CASE
-          WHEN NOT EXISTS (SELECT 1 FROM purchase_order_items poi WHERE poi.po_id = p.id AND COALESCE(poi.accepted_qty, 0) < poi.quantity) THEN 'RECEIVED'
-          WHEN EXISTS (SELECT 1 FROM purchase_order_items poi WHERE poi.po_id = p.id AND COALESCE(poi.accepted_qty, 0) > 0) THEN 'PARTIALLY_RECEIVED'
-          WHEN EXISTS (SELECT 1 FROM shipments s WHERE s.po_number = p.po_number AND s.status = 'In Transit') THEN 'PARTIALLY_SHIPPED'
-          ELSE 'CONFIRMED' END,
-          received_at = CASE WHEN NOT EXISTS (SELECT 1 FROM purchase_order_items poi WHERE poi.po_id = p.id AND COALESCE(poi.accepted_qty, 0) < poi.quantity) THEN NOW() ELSE p.received_at END,
-          updated_at = NOW()
-        WHERE p.id IN (SELECT po_id FROM po_item_update)
-        RETURNING p.id, p.status
       )
-      SELECT c.id AS shipment_id, c.po_number, c.rejected_qty, (SELECT id FROM po_update) AS po_id
+      SELECT c.id AS shipment_id, c.po_number, c.rejected_qty, (SELECT po_id FROM po_item_update LIMIT 1) AS po_id
       FROM claimed c
-    `;
+    `, recomputePurchaseOrderStatusQuery(sql, shipment.po_number ?? null)]);
     if (!received.length) return NextResponse.json({ error: "รายการนี้ถูกรับเข้าหรือยกเลิกไปก่อนหน้าแล้ว" }, { status: 400 });
     const row = received[0];
     const poId = row.po_id ? Number(row.po_id) : null;
