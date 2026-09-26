@@ -1,31 +1,8 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { auth } from "@/auth";
+import { findActiveUserByEmail } from "@/lib/auth-service";
 import sql from "@/lib/db";
-
-async function hasUserEmailColumn() {
-  const result = await sql`
-    SELECT EXISTS (
-      SELECT 1
-      FROM information_schema.columns
-      WHERE table_name = 'users' AND column_name = 'email'
-    ) as exists
-  `;
-
-  return Boolean(result[0]?.exists);
-}
-
-async function hasUserAccountStatusColumn() {
-  const result = await sql`
-    SELECT EXISTS (
-      SELECT 1
-      FROM information_schema.columns
-      WHERE table_name = 'users' AND column_name = 'account_status'
-    ) as exists
-  `;
-
-  return Boolean(result[0]?.exists);
-}
 
 export async function POST() {
   try {
@@ -36,49 +13,16 @@ export async function POST() {
       return NextResponse.json({ error: "Google account email is required." }, { status: 401 });
     }
 
-    const localPart = email.split("@")[0];
-    const hasEmail = await hasUserEmailColumn();
-    const hasAccountStatus = await hasUserAccountStatusColumn();
-    const users = hasEmail && hasAccountStatus
-      ? await sql`
-          SELECT username, name, role, vendor, account_status
-          FROM users
-          WHERE LOWER(username) = ${email}
-             OR LOWER(username) = ${localPart}
-             OR LOWER(email) = ${email}
-          LIMIT 1
-        `
-      : hasEmail
-      ? await sql`
-          SELECT username, name, role, vendor
-          FROM users
-          WHERE LOWER(username) = ${email}
-             OR LOWER(username) = ${localPart}
-             OR LOWER(email) = ${email}
-          LIMIT 1
-        `
-      : await sql`
-          SELECT username, name, role, vendor
-          FROM users
-          WHERE LOWER(username) = ${email}
-             OR LOWER(username) = ${localPart}
-          LIMIT 1
-        `;
-
-    if (users.length === 0) {
+    // Match the Auth.js sign-in rule: exact email only. Matching by username or
+    // the part before "@" could link a Google account to someone else's user.
+    const user = await findActiveUserByEmail(email);
+    if (!user) {
       return NextResponse.json(
-        { error: "Google account is not linked to a LabStock user." },
+        { error: "Google account is not linked to an active LabStock user." },
         { status: 403 }
       );
     }
 
-    const user = users[0];
-    if (hasAccountStatus && user.account_status !== "active") {
-      return NextResponse.json(
-        { error: "This account is not active yet." },
-        { status: 403 }
-      );
-    }
     const token = crypto.randomUUID();
     const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
     const expiry = new Date();

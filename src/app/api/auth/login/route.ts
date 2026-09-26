@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import sql from '@/lib/db';
-import { comparePassword } from '@/lib/auth-utils';
+import { comparePassword, upgradeLegacyPasswordHash } from '@/lib/auth-utils';
 
 type LoginRequest = {
   username?: unknown;
@@ -103,6 +103,8 @@ export async function POST(request: Request) {
     if (!isMatch) {
       return NextResponse.json({ error: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' }, { status: 401 });
     }
+
+    await upgradeLegacyPasswordHash(user.username, password, user.password_hash);
 
     const accountStatus = schema.hasAccountStatus ? user.account_status ?? 'active' : 'active';
     if (accountStatus !== 'active') {

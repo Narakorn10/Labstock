@@ -70,11 +70,15 @@ async function sendStockSearch(chatId: string, keyword: string) {
 
 export async function POST(request: Request) {
   try {
-    if (webhookSecret) {
-      const secretHeader = request.headers.get("x-telegram-bot-api-secret-token") || "";
-      if (secretHeader !== webhookSecret) {
-        return NextResponse.json({ error: "Invalid Telegram secret token." }, { status: 401 });
-      }
+    // Fail closed: without a configured secret anyone could call this webhook.
+    if (!webhookSecret) {
+      console.error("[Telegram Webhook] TELEGRAM_WEBHOOK_SECRET is not set; rejecting request.");
+      return NextResponse.json({ error: "Telegram webhook is not configured." }, { status: 503 });
+    }
+
+    const secretHeader = request.headers.get("x-telegram-bot-api-secret-token") || "";
+    if (secretHeader !== webhookSecret) {
+      return NextResponse.json({ error: "Invalid Telegram secret token." }, { status: 401 });
     }
 
     const body = await request.json();
