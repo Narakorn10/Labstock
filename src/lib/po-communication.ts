@@ -10,7 +10,9 @@ export type PurchaseOrderCommunicationEvent =
   | "PO_SHIPPED"
   | "PO_RECEIVED"
   | "PO_CANCELLED"
-  | "SHIPMENT_REPLACEMENT_REQUIRED";
+  | "SHIPMENT_REPLACEMENT_REQUIRED"
+  | "VENDOR_RESPONSE_OVERDUE"
+  | "DELIVERY_OVERDUE";
 
 type Row = Record<string, unknown>;
 
@@ -34,6 +36,8 @@ function eventVisibility(actorRole?: string, recipientRole?: string) {
 function shouldNotifyRecipient(event: PurchaseOrderCommunicationEvent, actorRole: string | undefined, recipientRole: string) {
   const labRecipient = recipientRole === "Admin" || recipientRole === "Manager";
   const vendorRecipient = recipientRole === "Vendor";
+  // Late-Vendor reminders go to the Lab only; the Lab decides whether to chase or cancel.
+  if (event === "VENDOR_RESPONSE_OVERDUE" || event === "DELIVERY_OVERDUE") return labRecipient;
   if (event === "PO_REVIEW_REQUIRED" || event === "SHIPMENT_REPLACEMENT_REQUIRED") return labRecipient || (event === "SHIPMENT_REPLACEMENT_REQUIRED" && vendorRecipient);
   if (event === "PO_CREATED") return vendorRecipient;
   if (event === "PO_SHIPPED") return labRecipient;

@@ -116,6 +116,12 @@ export const PURCHASE_ORDER_TEST_SCHEMA = `
     override_reason TEXT, calculation_version TEXT, calculation_snapshot JSONB, selected_basis TEXT,
     reagent_type TEXT, job_type TEXT, machine_type TEXT
   );
+  CREATE TABLE purchase_order_events (
+    id BIGSERIAL PRIMARY KEY, po_id BIGINT, po_number TEXT NOT NULL, shipment_id BIGINT, event_type TEXT NOT NULL,
+    from_status TEXT, to_status TEXT, actor_username TEXT, actor_role TEXT, source TEXT NOT NULL DEFAULT 'WEB',
+    visibility TEXT NOT NULL DEFAULT 'BOTH', note TEXT, metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
   CREATE TABLE shipment_batches (
     id SERIAL PRIMARY KEY, po_number TEXT, vendor TEXT, reference_no TEXT, delivery_date DATE, tracking_no TEXT,
     tracking_provider TEXT, source_type TEXT, source_file_name TEXT, source_file_hash TEXT, created_by TEXT,

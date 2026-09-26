@@ -304,6 +304,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
           SET status = ${status}, reviewed_at = NOW(), reviewed_by = ${user.username},
               review_requested_at = COALESCE(review_requested_at, NOW()),
               vendor_note = ${rejectingManagerReview ? note : po.vendor_note},
+              vendor_response_due_at = ${approvingManagerReview ? new Date(Date.now() + 5 * 86400000).toISOString() : po.vendor_response_due_at},
               updated_at = NOW()
           WHERE id = ${po.id} AND status = 'PENDING_MANAGER_REVIEW'
           RETURNING *
