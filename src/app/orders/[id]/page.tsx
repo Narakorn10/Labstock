@@ -80,6 +80,7 @@ const reviewReasonLabels: Record<string, string> = {
   OPEN_PURCHASE_ORDER_WITHOUT_ETA: "มี PO ค้างที่ยังไม่ระบุวันส่ง",
   STOCKOUT_BEFORE_LEAD_TIME: "สต็อกอาจหมดก่อนของมาถึง",
   POLICY_SOURCE_NEEDS_REVIEW: "นโยบายรายการนี้ยังต้องทบทวน",
+  NO_ORDER_POLICY: "ยังไม่ได้ตั้งนโยบายสั่งซื้อ (สั่งแบบกำหนดเอง)",
   MISSING_APPROVED_CYCLE_QTY: "ยังไม่มีจำนวนสั่งที่อนุมัติต่อรอบ",
   POLICY_DYNAMIC_VARIANCE: "จำนวนจากการใช้จริงต่างจากนโยบาย",
 };

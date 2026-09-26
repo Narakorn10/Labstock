@@ -49,8 +49,16 @@ export function buildAuditedPurchaseOrderItem(
   origin: "LAB" | "VENDOR",
   calculatedAt = new Date().toISOString(),
 ): AuditedPurchaseOrderItem {
-  const selectedBasis = selectPurchaseOrderBasis(item, suggestion);
+  // A reagent without an enabled order policy has no approved quantity to fall back on,
+  // so it is always a manual quantity that needs a documented reason.
+  const policyConfigured = suggestion.policy_configured !== false;
+  const selectedBasis = policyConfigured ? selectPurchaseOrderBasis(item, suggestion) : "MANUAL";
   const overrideReason = item.override_reason?.trim() || null;
+  if (!policyConfigured && !overrideReason) {
+    throw new PurchaseOrderCreationError(
+      `${suggestion.name}: ยังไม่ได้ตั้งนโยบายสั่งซื้อ กรุณาระบุเหตุผลที่สั่ง`,
+    );
+  }
   const requiresReviewReason = origin === "LAB" && selectedBasis === "MANUAL";
   if (requiresReviewReason && !overrideReason) {
     throw new PurchaseOrderCreationError(
@@ -74,10 +82,12 @@ export function buildAuditedPurchaseOrderItem(
 }
 
 async function recomputeItems(input: CreatePurchaseOrderInput): Promise<AuditedPurchaseOrderItem[]> {
+  // Re-check exactly the submitted items, including reagents without an order policy.
   const suggestions = await getPurchaseOrderSuggestions(sql, {
     vendor: input.vendor,
+    itemIds: input.items.map((item) => item.item_id),
+    includeUnconfigured: true,
     includeAll: true,
-    limit: 100,
   });
   const byItemId = new Map(suggestions.map((suggestion) => [suggestion.item_id, suggestion]));
   const calculatedAt = new Date().toISOString();
@@ -85,7 +95,9 @@ async function recomputeItems(input: CreatePurchaseOrderInput): Promise<AuditedP
   return input.items.map((item) => {
     const suggestion = byItemId.get(item.item_id);
     if (!suggestion || suggestion.vendor !== input.vendor) {
-      throw new PurchaseOrderCreationError("Every item must belong to the selected Vendor.");
+      throw new PurchaseOrderCreationError(
+        `${item.item_name || item.item_id}: ไม่ใช่น้ำยาที่ใช้งานอยู่ของบริษัท ${input.vendor}`,
+      );
     }
 
     return buildAuditedPurchaseOrderItem(item, suggestion, input.origin, calculatedAt);

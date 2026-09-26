@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import sql from "@/lib/db";
 import { normalizePurchaseOrder } from "@/lib/notifications";
 import { recordPurchaseOrderCommunication } from "@/lib/po-communication";
-import { validatePurchaseOrderItems } from "@/lib/purchase-order-workflow";
+import { describeInvalidPurchaseOrderItems, validatePurchaseOrderItems } from "@/lib/purchase-order-workflow";
 import { getLinePurchasingUserFromRequest, purchaseOrderHasLiffRequestColumn } from "@/lib/line-liff-ordering";
 import { createPurchaseOrderWithAudit, PurchaseOrderCreationError } from "@/lib/purchase-order-creation";
 
@@ -17,9 +17,8 @@ export async function POST(request: Request) {
     const expectedDate = auth.body.expected_date ? String(auth.body.expected_date) : null;
     const liffRequestId = String(auth.body.liffRequestId ?? "").trim();
 
-    if (!vendor || !items) {
-      return NextResponse.json({ error: "Vendor and valid order items are required." }, { status: 400 });
-    }
+    if (!vendor) return NextResponse.json({ error: "กรุณาเลือก Vendor" }, { status: 400 });
+    if (!items) return NextResponse.json({ error: describeInvalidPurchaseOrderItems(auth.body.items) }, { status: 400 });
 
     const hasLiffRequestColumn = await purchaseOrderHasLiffRequestColumn();
     if (hasLiffRequestColumn && liffRequestId) {

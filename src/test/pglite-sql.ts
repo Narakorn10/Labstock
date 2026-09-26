@@ -87,7 +87,7 @@ export const PURCHASE_ORDER_TEST_SCHEMA = `
 
   CREATE TABLE master_data (
     item_id TEXT PRIMARY KEY, name TEXT, unit TEXT, vendor TEXT, is_active BOOLEAN DEFAULT TRUE,
-    reagent_type TEXT, job_type TEXT, machine_type TEXT
+    reagent_type TEXT, job_type TEXT, machine_type TEXT, barcode TEXT, min_threshold INTEGER, weekly_target INTEGER
   );
   CREATE TABLE inventory (
     id SERIAL PRIMARY KEY, item_id TEXT, lot_no TEXT, exp_date DATE, quantity NUMERIC, received_on DATE,
@@ -115,6 +115,14 @@ export const PURCHASE_ORDER_TEST_SCHEMA = `
     revision_reason TEXT, acknowledged_qty NUMERIC, available_qty NUMERIC, system_suggested_qty NUMERIC,
     override_reason TEXT, calculation_version TEXT, calculation_snapshot JSONB, selected_basis TEXT,
     reagent_type TEXT, job_type TEXT, machine_type TEXT
+  );
+  CREATE TABLE reagent_order_policy (
+    item_id TEXT PRIMARY KEY, tests_per_box NUMERIC, avg_patient_tests_per_month NUMERIC NOT NULL DEFAULT 0,
+    iqc_tests_per_month NUMERIC NOT NULL DEFAULT 0, documented_actual_withdrawal_boxes NUMERIC,
+    approved_monthly_target_boxes NUMERIC, approved_order_qty_boxes NUMERIC, orders_per_month NUMERIC NOT NULL DEFAULT 2,
+    lead_time_days INTEGER NOT NULL DEFAULT 7, safety_stock_boxes NUMERIC, min_order_qty_boxes INTEGER NOT NULL DEFAULT 1,
+    order_multiple_boxes INTEGER NOT NULL DEFAULT 1, review_days INTEGER, enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    source_verification_status TEXT NOT NULL DEFAULT 'VERIFIED', revision INTEGER NOT NULL DEFAULT 1
   );
   CREATE TABLE purchase_order_events (
     id BIGSERIAL PRIMARY KEY, po_id BIGINT, po_number TEXT NOT NULL, shipment_id BIGINT, event_type TEXT NOT NULL,

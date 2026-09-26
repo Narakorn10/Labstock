@@ -20,6 +20,8 @@ type CatalogItem = {
   confidence: "high" | "low" | "none";
   review_reasons: string[];
   auto_selectable: boolean;
+  /** False for reagents without an order policy: manual quantity with a reason only. */
+  policy_configured?: boolean;
   expedite_required: boolean;
   projected_balance_at_horizon: number;
   safety_stock_boxes: number;
@@ -45,6 +47,7 @@ type DraftItem = {
   override_reason?: string;
   confidence?: "high" | "low" | "none";
   review_reasons?: string[];
+  policy_configured?: boolean;
   suggestion_context?: Pick<CatalogItem, "projected_balance_at_horizon" | "safety_stock_boxes" | "lead_time_days" | "horizon_days" | "expiry_assessment" | "calculation_breakdown">;
 };
 type PurchaseOrder = {
@@ -206,6 +209,7 @@ export default function LiffOrderWorkflow() {
         selected_basis: item.auto_selectable && item.policy_order_qty > 0 ? "POLICY" : "MANUAL",
         confidence: item.confidence,
         review_reasons: item.review_reasons,
+        policy_configured: item.policy_configured !== false,
         suggestion_context: {
           projected_balance_at_horizon: item.projected_balance_at_horizon,
           safety_stock_boxes: item.safety_stock_boxes,
@@ -347,7 +351,8 @@ export default function LiffOrderWorkflow() {
                 {catalog.map((item) => <button type="button" key={item.item_id} onClick={() => addItem(item)} className="w-full rounded-2xl border border-slate-200 bg-white p-3 text-left">
                   <div className="flex justify-between gap-3"><span className="text-sm font-black">{item.name}</span><span className="text-xs font-bold text-red-600">{item.quantity} {item.unit}</span></div>
                   <p className="mt-1 text-xs text-slate-500">{item.item_id} · แล็บอนุมัติ {item.policy_order_qty} · คำนวณสด {item.dynamic_order_qty} {item.unit}</p>
-                  {!item.auto_selectable && <p className="mt-1 text-xs font-black text-amber-700">ตรวจสอบเองก่อนเลือก: {item.review_reasons.join(", ")}</p>}
+                  {item.policy_configured === false && <p className="mt-1 text-xs font-black text-rose-700">ยังไม่ได้ตั้งนโยบายสั่งซื้อ — เพิ่มได้ แต่ต้องระบุเหตุผล</p>}
+                  {!item.auto_selectable && item.review_reasons.some((reason) => reason !== "NO_ORDER_POLICY") && <p className="mt-1 text-xs font-black text-amber-700">ตรวจสอบเองก่อนเลือก: {item.review_reasons.filter((reason) => reason !== "NO_ORDER_POLICY").join(", ")}</p>}
                 </button>)}
               </div>}
 
@@ -371,7 +376,7 @@ export default function LiffOrderWorkflow() {
                       </div>
                       <span className="text-xs font-bold text-slate-500">{item.unit}</span>
                     </div>
-                    {item.policy_order_qty !== undefined && (
+                    {item.policy_order_qty !== undefined && item.policy_configured !== false && (
                       <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                         <button type="button" onClick={() => chooseQuantityBasis(item.item_id, "POLICY")} className={`rounded-xl border p-2 text-left ${item.selected_basis === "POLICY" ? "border-emerald-500 bg-emerald-50" : "border-slate-200"}`}>
                           <span className="block text-[10px] text-slate-500">แล็บอนุมัติ</span><span className="font-black">{item.policy_order_qty}</span>
@@ -385,7 +390,7 @@ export default function LiffOrderWorkflow() {
                       </div>
                     )}
                     {item.selected_basis === "MANUAL" && (
-                      <input value={item.override_reason ?? ""} onChange={(event) => setDraftItems((current) => current.map((row) => row.item_id === item.item_id ? { ...row, override_reason: event.target.value } : row))} placeholder="เหตุผลที่แก้จำนวน*" className="mt-3 w-full rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs font-bold" />
+                      <input value={item.override_reason ?? ""} onChange={(event) => setDraftItems((current) => current.map((row) => row.item_id === item.item_id ? { ...row, override_reason: event.target.value } : row))} placeholder={item.policy_configured === false ? "เหตุผลที่สั่ง (ยังไม่มีนโยบายสั่งซื้อ)*" : "เหตุผลที่แก้จำนวน*"} className="mt-3 w-full rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs font-bold" />
                     )}
                   </div>)}
                 </div>

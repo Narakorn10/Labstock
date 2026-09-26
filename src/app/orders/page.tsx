@@ -686,23 +686,29 @@ export default function PurchaseOrdersPage() {
                       {groupedReagentsByItem[index].length > 0 ? groupedReagentsByItem[index].map(([category, reagents]) => (
                         <div key={category} className="py-1">
                           <p className="sticky top-0 border-y border-teal-100 bg-teal-50 px-3 py-1.5 text-xs font-bold text-teal-800">ประเภท: {category}</p>
-                          {reagents.map((reagent) => (
+                          {reagents.map((reagent) => {
+                            // A reagent already on another row cannot be picked again; the server rejects duplicates.
+                            const alreadyAdded = items.some((row, rowIndex) => rowIndex !== index && row.item_id === reagent.itemId);
+                            return (
                             <button
                               key={reagent.itemId}
                               type="button"
                               role="option"
                               aria-selected={item.item_id === reagent.itemId}
+                              aria-disabled={alreadyAdded}
+                              disabled={alreadyAdded}
                               onMouseDown={(event) => event.preventDefault()}
                               onClick={() => selectReagent(index, reagent)}
-                              className="block w-full px-3 py-2 text-left hover:bg-slate-50 focus:bg-slate-50 focus:outline-none"
+                              className="block w-full px-3 py-2 text-left hover:bg-slate-50 focus:bg-slate-50 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white"
                             >
-                              <span className="block text-sm font-medium text-gray-900">{reagent.name}</span>
+                              <span className="block text-sm font-medium text-gray-900">{reagent.name}{alreadyAdded && <span className="ml-2 text-xs font-semibold text-gray-500">(อยู่ในรายการแล้ว)</span>}</span>
                               <span className="block text-xs text-gray-500">{reagent.jobType || "ไม่ระบุงาน"} · {reagent.itemId} · {reagent.unit}</span>
                               <span className={`mt-1 block text-xs font-semibold ${reagent.quantity <= reagent.minThreshold ? "text-amber-700" : "text-teal-700"}`}>
                                 คงเหลือ {reagent.quantity} {reagent.unit} · ขั้นต่ำ {reagent.minThreshold}
                               </span>
                             </button>
-                          ))}
+                            );
+                          })}
                         </div>
                       )) : (
                         <p className="px-3 py-4 text-center text-sm text-gray-500">ไม่พบรายการน้ำยาที่ตรงกับคำค้นหา</p>

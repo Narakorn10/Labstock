@@ -13,10 +13,14 @@ export async function POST(request: Request) {
     const suggestOnly = Boolean(auth.body.suggestOnly ?? true);
     if (!vendor) return NextResponse.json({ error: "Choose a Vendor first." }, { status: 400 });
 
+    // Auto-suggest stays policy-only; a search also finds reagents without an order policy
+    // so the Lab can add them manually (they then need a reason).
+    const searching = Boolean(keyword) || !suggestOnly;
     const rows = await getPurchaseOrderSuggestions(sql, {
       vendor,
       keyword,
-      includeAll: Boolean(keyword) || !suggestOnly,
+      includeAll: searching,
+      includeUnconfigured: searching,
       limit: 30,
     });
 
