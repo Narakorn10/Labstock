@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth-provider";
 import { exportPurchaseOrderCsv, printPurchaseOrderPdf } from "@/lib/purchase-order-export";
+import { CANCELLABLE_STATUSES, CLOSE_SHORT_STATUSES } from "@/lib/purchase-order-workflow";
 
 interface PurchaseOrderDetailItem {
   id: number;
@@ -215,6 +216,35 @@ export default function PODetailPage() {
     }
   };
 
+  const closeOrder = async (action: "CANCEL" | "CLOSE_SHORT") => {
+    if (!po) return;
+    if (!reviewNote.trim()) {
+      alert("โปรดระบุเหตุผลก่อนปิดใบสั่ง");
+      return;
+    }
+    const question = action === "CANCEL"
+      ? "ยืนยันยกเลิกใบสั่งนี้? บริษัทจะได้รับแจ้ง และจะไม่สามารถจัดส่งตามใบนี้ได้อีก"
+      : "ยืนยันปิดใบสั่งนี้? จำนวนที่ยังไม่ได้รับจะไม่ถูกนับเป็นของที่สั่งไว้อีก";
+    if (!confirm(question)) return;
+    setReviewSubmitting(true);
+    try {
+      const res = await fetch(`/api/purchase-orders/${po.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ action, note: reviewNote.trim() }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        alert(data?.error ?? "ไม่สามารถปิดใบสั่งได้");
+        return;
+      }
+      setPo(data as PurchaseOrderDetail);
+      setReviewNote("");
+    } finally {
+      setReviewSubmitting(false);
+    }
+  };
+
   if (loading) return <div className="p-6">กำลังโหลดใบสั่งน้ำยา...</div>;
   if (!po) return <div className="p-6">ไม่พบใบสั่งน้ำยานี้ หรือคุณไม่มีสิทธิ์ดูรายการ</div>;
 
@@ -403,6 +433,21 @@ export default function PODetailPage() {
             <div className="mt-3 flex flex-wrap gap-3">
               <button type="button" disabled={reviewSubmitting} onClick={() => void reviewManagerOrder("APPROVE_MANAGER_REVIEW")} className="rounded-lg bg-teal-700 px-4 py-2 font-semibold text-white hover:bg-teal-800 disabled:opacity-60">ยืนยันและส่งให้บริษัท</button>
               <button type="button" disabled={reviewSubmitting} onClick={() => void reviewManagerOrder("REJECT_MANAGER_REVIEW")} className="rounded-lg border border-red-300 px-4 py-2 font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60">ไม่อนุมัติ</button>
+            </div>
+          </div>
+        )}
+
+        {canManageLabOrders && (CANCELLABLE_STATUSES.includes(po.status) || CLOSE_SHORT_STATUSES.includes(po.status)) && (
+          <div className="no-print border-t pt-5">
+            <label className="block text-sm font-medium text-slate-700" htmlFor="close-order-reason">เหตุผลในการปิดใบสั่ง (บังคับ แจ้งบริษัทด้วย)</label>
+            <textarea id="close-order-reason" value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} className="mt-2 w-full rounded-lg border border-slate-300 p-3" rows={2} maxLength={500} />
+            <div className="mt-3 flex flex-wrap gap-3">
+              {CANCELLABLE_STATUSES.includes(po.status) && (
+                <button type="button" disabled={reviewSubmitting} onClick={() => void closeOrder("CANCEL")} className="rounded-lg border border-red-300 px-4 py-2 font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60">ยกเลิกใบสั่ง</button>
+              )}
+              {CLOSE_SHORT_STATUSES.includes(po.status) && (
+                <button type="button" disabled={reviewSubmitting} onClick={() => void closeOrder("CLOSE_SHORT")} className="rounded-lg border border-amber-400 px-4 py-2 font-semibold text-amber-800 hover:bg-amber-50 disabled:opacity-60">ปิดใบ ไม่รอรับส่วนที่เหลือ</button>
+              )}
             </div>
           </div>
         )}

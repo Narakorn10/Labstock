@@ -11,6 +11,8 @@ export const purchaseOrderStatuses = [
   "RECEIVED",
   "EXPIRED",
   "REJECTED",
+  "CANCELLED",
+  "CLOSED_SHORT",
 ] as const;
 
 export type PurchaseOrderStatus = (typeof purchaseOrderStatuses)[number];
@@ -24,7 +26,9 @@ export type PurchaseOrderAction =
   | "REQUEST_REVISION"
   | "REJECT"
   | "APPROVE_REVISION"
-  | "REJECT_REVISION";
+  | "REJECT_REVISION"
+  | "CANCEL"
+  | "CLOSE_SHORT";
 
 export type PurchaseOrderItemInput = {
   item_id: string;
@@ -34,6 +38,11 @@ export type PurchaseOrderItemInput = {
   selected_basis?: "POLICY" | "DYNAMIC" | "MANUAL";
   override_reason?: string;
 };
+
+/** Sent to the Vendor but nothing shipped or accepted yet. Before that, use REJECT_MANAGER_REVIEW. */
+export const CANCELLABLE_STATUSES: readonly string[] = ["SUBMITTED", "ACKNOWLEDGED", "REVISION_REQUESTED", "CONFIRMED"];
+/** Part of the order was accepted and the Lab will not wait for the rest. */
+export const CLOSE_SHORT_STATUSES: readonly string[] = ["PARTIALLY_RECEIVED"];
 
 export function isLabPurchasingRole(role: string) {
   return role === "Admin" || role === "Manager";

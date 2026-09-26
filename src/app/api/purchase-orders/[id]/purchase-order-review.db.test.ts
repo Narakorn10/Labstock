@@ -18,6 +18,7 @@ vi.mock("@/lib/po-communication", () => ({ recordPurchaseOrderCommunication: moc
 import dbSql from "@/lib/db";
 import { PURCHASE_ORDER_TEST_SCHEMA } from "@/test/pglite-sql";
 import { applyLabReviewDecision, runGuardedPurchaseOrderUpdate } from "@/lib/purchase-order-review";
+import { recomputePurchaseOrderStatusQuery } from "@/lib/purchase-order-status";
 import { PATCH } from "./route";
 
 const sql = dbSql as unknown as PgliteSql;
@@ -30,7 +31,7 @@ async function resetDatabase(status: string) {
     await sql.db.exec(PURCHASE_ORDER_TEST_SCHEMA);
     schemaReady = true;
   }
-  await sql.db.exec(`TRUNCATE purchase_order_items, purchase_orders RESTART IDENTITY CASCADE;`);
+  await sql.db.exec(`TRUNCATE shipments, purchase_order_items, purchase_orders RESTART IDENTITY CASCADE;`);
   await sql`INSERT INTO purchase_orders (po_number, vendor, status, proposal_origin) VALUES ('PO-1', 'Vendor A', ${status}, 'LAB')`;
   await sql`INSERT INTO purchase_order_items (po_id, item_id, item_name, quantity, unit) VALUES (1, 'X', 'Reagent X', 10, 'box'), (1, 'Y', 'Reagent Y', 5, 'box')`;
 }
@@ -99,6 +100,49 @@ describe("Vendor revision and Lab review (real Postgres)", () => {
 
     expect(await applyLabReviewDecision(sql as never, { po: staleRead, decision: "CONFIRMED", reviewer: "a" })).toBe(true);
     expect(await applyLabReviewDecision(sql as never, { po: staleRead, decision: "REJECTED", reviewer: "b" })).toBe(false);
+    expect(await poStatus()).toBe("CONFIRMED");
+  });
+});
+
+describe("Lab cancel and close-short (real Postgres)", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("cancels a confirmed order with a reason and tells the Vendor", async () => {
+    await resetDatabase("CONFIRMED");
+
+    expect((await patch(manager, { action: "CANCEL", note: "budget freeze" })).status).toBe(200);
+    expect(await poStatus()).toBe("CANCELLED");
+    expect(mocks.recordPurchaseOrderCommunication).toHaveBeenCalledWith(expect.objectContaining({ eventType: "PO_CANCELLED", note: "budget freeze" }));
+  });
+
+  it("requires a reason", async () => {
+    await resetDatabase("CONFIRMED");
+    expect((await patch(manager, { action: "CANCEL" })).status).toBe(400);
+    expect(await poStatus()).toBe("CONFIRMED");
+  });
+
+  it("refuses to cancel while a shipment is in transit", async () => {
+    await resetDatabase("PARTIALLY_SHIPPED");
+    await sql`INSERT INTO shipments (po_number, item_id, lot_no, quantity, status) VALUES ('PO-1', 'X', 'L1', 4, 'In Transit')`;
+
+    expect((await patch(manager, { action: "CANCEL", note: "x" })).status).toBe(409);
+    expect(await poStatus()).toBe("PARTIALLY_SHIPPED");
+  });
+
+  it("closes a partially received order short, and later recomputes leave it closed", async () => {
+    await resetDatabase("PARTIALLY_RECEIVED");
+    await sql`UPDATE purchase_order_items SET accepted_qty = 4 WHERE item_id = 'X'`;
+
+    expect((await patch(manager, { action: "CLOSE_SHORT", note: "vendor discontinued" })).status).toBe(200);
+    expect(await poStatus()).toBe("CLOSED_SHORT");
+
+    await recomputePurchaseOrderStatusQuery(sql as never, "PO-1");
+    expect(await poStatus()).toBe("CLOSED_SHORT");
+  });
+
+  it("does not let a Vendor cancel or close an order", async () => {
+    await resetDatabase("CONFIRMED");
+    expect((await patch(vendor, { action: "CANCEL", note: "x" })).status).toBe(409);
     expect(await poStatus()).toBe("CONFIRMED");
   });
 });

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth-provider";
 
-type PurchaseOrderStatus = "PENDING_MANAGER_REVIEW" | "PENDING_LAB_REVIEW" | "SUBMITTED" | "ACKNOWLEDGED" | "REVISION_REQUESTED" | "CONFIRMED" | "PARTIALLY_SHIPPED" | "SHIPPED" | "PARTIALLY_RECEIVED" | "RECEIVED" | "REJECTED";
+type PurchaseOrderStatus = "PENDING_MANAGER_REVIEW" | "PENDING_LAB_REVIEW" | "SUBMITTED" | "ACKNOWLEDGED" | "REVISION_REQUESTED" | "CONFIRMED" | "PARTIALLY_SHIPPED" | "SHIPPED" | "PARTIALLY_RECEIVED" | "RECEIVED" | "REJECTED" | "CANCELLED" | "CLOSED_SHORT";
 
 interface PurchaseOrderItemDraft {
   item_id: string;
@@ -127,6 +127,8 @@ const statusLabels: Record<PurchaseOrderStatus, string> = {
   PARTIALLY_RECEIVED: "รับเข้าแล้วบางส่วน",
   RECEIVED: "รับเข้าคลังแล้ว",
   REJECTED: "ปฏิเสธ",
+  CANCELLED: "ยกเลิกแล้ว",
+  CLOSED_SHORT: "ปิดใบ (ได้รับไม่ครบ)",
 };
 
 export default function PurchaseOrdersPage() {

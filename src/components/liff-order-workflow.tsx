@@ -67,6 +67,8 @@ const statusLabel: Record<string, string> = {
   PARTIALLY_SHIPPED: "ส่งบางส่วน",
   SHIPPED: "ส่งแล้ว",
   REJECTED: "ปฏิเสธ",
+  CANCELLED: "ยกเลิกแล้ว",
+  CLOSED_SHORT: "ปิดใบ (ได้รับไม่ครบ)",
 };
 
 function makeRequestId() {

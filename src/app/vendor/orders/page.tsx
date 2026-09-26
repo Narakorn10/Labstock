@@ -29,6 +29,8 @@ const statusLabel: Record<string, string> = {
   PARTIALLY_RECEIVED: "รับเข้าแล้วบางส่วน",
   RECEIVED: "Lab รับเข้าแล้ว",
   REJECTED: "ปฏิเสธ",
+  CANCELLED: "Lab ยกเลิกแล้ว",
+  CLOSED_SHORT: "Lab ปิดใบ (ไม่รับส่วนที่เหลือ)",
 };
 
 export default function VendorOrdersPage() {

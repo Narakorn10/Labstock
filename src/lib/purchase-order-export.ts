@@ -42,6 +42,8 @@ const statusLabels: Record<string, string> = {
   RECEIVED: "รับเข้าแล้ว",
   REJECTED: "ปฏิเสธ",
   EXPIRED: "หมดอายุ",
+  CANCELLED: "ยกเลิกแล้ว",
+  CLOSED_SHORT: "ปิดใบ (ได้รับไม่ครบ)",
 };
 
 function formatStatus(status: string) {
