@@ -4,6 +4,7 @@ import sql from "@/lib/db";
 import { getAuthenticatedUser } from "@/lib/auth-utils";
 import { recordPurchaseOrderCommunication } from "@/lib/po-communication";
 import { recomputePurchaseOrderStatusQuery } from "@/lib/purchase-order-status";
+import { describeShelfLifeViolations, findShelfLifeViolations, loadMinShelfLifeRules, SHELF_LIFE_BELOW_MINIMUM } from "@/lib/shelf-life";
 import type { ShipmentDraft } from "@/lib/shipment-ocr";
 
 type ShipmentRequest = {
@@ -61,6 +62,17 @@ export async function POST(request: Request) {
     const referenceNo = String(body.referenceNo ?? "").trim();
     const items = validateItems(body.items);
     if (!poNumber || !referenceNo || !items) return NextResponse.json({ error: "Choose a confirmed order and complete item, lot, expiry, and positive quantity" }, { status: 400 });
+
+    // Lots below the Lab's minimum remaining shelf life are not accepted for shipment.
+    const shelfLifeRules = await loadMinShelfLifeRules(sql, items.map((item) => item.itemId));
+    const shortDated = findShelfLifeViolations(items, shelfLifeRules);
+    if (shortDated.length) {
+      return NextResponse.json({
+        error: `Remaining shelf life is below the Lab minimum: ${describeShelfLifeViolations(shortDated)}`,
+        code: SHELF_LIFE_BELOW_MINIMUM,
+        lots: shortDated,
+      }, { status: 409 });
+    }
 
     const clientRequestId = String(body.clientRequestId ?? "").trim().slice(0, 128) || null;
     const requestFingerprint = crypto.createHash("sha256").update(JSON.stringify({ poNumber, referenceNo, items })).digest("hex");

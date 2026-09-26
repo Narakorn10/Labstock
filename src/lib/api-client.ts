@@ -513,10 +513,14 @@ export const apiClient = {
     return res.data;
   },
 
-  updateShipment: async (id: number, action: 'receive' | 'cancel', quantities?: { accepted_qty: number; rejected_qty: number; rejection_reason?: string }) => {
+  updateShipment: async (id: number, action: 'receive' | 'cancel', quantities?: { accepted_qty: number; rejected_qty: number; rejection_reason?: string; shelf_life_override_reason?: string }) => {
     const res = await instance.patch<ApiResponse>(`/api/vendor/shipments/${id}`, { action, ...quantities });
     return res.data;
   },
+
+  getShelfLifeRules: async () => (await instance.get<{ available: boolean; rules: Record<string, number> }>('/api/master/shelf-life')).data,
+  setShelfLifeRule: async (itemId: string, minShelfLifeDays: number | null) =>
+    (await instance.patch<ApiResponse>('/api/master/shelf-life', { itemId, minShelfLifeDays })).data,
 
   uploadShipments: async (items: ShipmentItem[], referenceNo: string, poNumber?: string, trackingNo?: string, trackingProvider?: string, metadata?: Record<string, string>) => {
     const res = await instance.post<ApiResponse>('/api/vendor/shipments', { items, referenceNo, poNumber, trackingNo, trackingProvider, ...metadata });

@@ -3,6 +3,7 @@ import sql from "@/lib/db";
 import { getAuthenticatedUser } from "@/lib/auth-utils";
 import { recordPurchaseOrderCommunication } from "@/lib/po-communication";
 import { recomputePurchaseOrderStatusQuery } from "@/lib/purchase-order-status";
+import { describeShelfLifeViolations, findShelfLifeViolations, loadMinShelfLifeRules, SHELF_LIFE_BELOW_MINIMUM } from "@/lib/shelf-life";
 
 function quantitiesMatch(total: number, accepted: number, rejected: number) {
   return Math.abs(accepted + rejected - total) < 0.000001;
@@ -15,7 +16,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     const { id } = await params;
-    const body = await request.json() as { action?: string; accepted_qty?: number; rejected_qty?: number; rejection_reason?: string };
+    const body = await request.json() as { action?: string; accepted_qty?: number; rejected_qty?: number; rejection_reason?: string; shelf_life_override_reason?: string };
     const action = body.action;
     const shipmentRows = await sql`
       SELECT s.*, m.name AS reagent_name
@@ -46,12 +47,29 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     }
     if (rejectedQty > 0 && !rejectionReason) return NextResponse.json({ error: "กรุณาระบุเหตุผลเมื่อมีของเสียหรือไม่ผ่าน" }, { status: 400 });
 
+    // Accepting a lot below the minimum remaining shelf life needs a documented exception reason.
+    const shelfLifeOverrideReason = String(body.shelf_life_override_reason ?? "").trim();
+    const [shortDated] = acceptedQty > 0
+      ? findShelfLifeViolations(
+        [{ itemId: String(shipment.item_id), lotNo: String(shipment.lot_no), expDate: String(shipment.exp_date ?? "") }],
+        await loadMinShelfLifeRules(sql, [String(shipment.item_id)]),
+      )
+      : [];
+    if (shortDated && !shelfLifeOverrideReason) {
+      return NextResponse.json({
+        error: `อายุคงเหลือต่ำกว่าเกณฑ์ขั้นต่ำ (${describeShelfLifeViolations([shortDated])}) ต้องปฏิเสธ หรือระบุเหตุผลรับแบบยกเว้น`,
+        code: SHELF_LIFE_BELOW_MINIMUM,
+        lots: [shortDated],
+      }, { status: 409 });
+    }
+    const overrideFragment = shortDated ? sql`, shelf_life_override_reason = ${shelfLifeOverrideReason}` : sql``;
+
     // The PO status is recomputed by a second statement so it sees the updated accepted quantities.
     const [received] = await sql.transaction([sql`
       WITH claimed AS (
         UPDATE shipments
         SET status = 'Received', received_at = CURRENT_TIMESTAMP, received_by = ${user.name},
-            accepted_qty = ${acceptedQty}, rejected_qty = ${rejectedQty}, rejection_reason = ${rejectionReason || null}
+            accepted_qty = ${acceptedQty}, rejected_qty = ${rejectedQty}, rejection_reason = ${rejectionReason || null}${overrideFragment}
         WHERE id = ${id} AND status = 'In Transit'
         RETURNING *
       ), inv_update AS (
@@ -89,7 +107,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         source: "WEB",
         shipmentId: Number(row.shipment_id),
         note: rejectionReason || null,
-        metadata: { acceptedQty, rejectedQty, replacementRequired: rejectedQty > 0 },
+        metadata: {
+          acceptedQty, rejectedQty, replacementRequired: rejectedQty > 0,
+          ...(shortDated ? { shelfLifeException: { ...shortDated, reason: shelfLifeOverrideReason } } : {}),
+        },
       });
     }
     return NextResponse.json({ success: true, replacementRequired: rejectedQty > 0, message: rejectedQty > 0 ? "รับรายการแล้วและแจ้งให้ Vendor จัดส่งทดแทน" : "รับเข้าสต๊อกสำเร็จ" });

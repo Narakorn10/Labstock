@@ -79,7 +79,22 @@ export default function LabVendorReceiptPage() {
         alert(result.error || 'เกิดข้อผิดพลาด');
       }
     } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
+      const error = err as { response?: { data?: { error?: string; code?: string } } };
+      if (action === 'receive' && quantities && error.response?.data?.code === 'SHELF_LIFE_BELOW_MINIMUM') {
+        // Short-dated lot: the Lab either rejects it or records why it accepts it as an exception.
+        const overrideReason = window.prompt(`${error.response.data.error}\n\nระบุเหตุผลถ้าจะรับแบบยกเว้น (เว้นว่าง = ไม่รับ)`)?.trim();
+        if (overrideReason) {
+          try {
+            const retried = await apiClient.updateShipment(shipment.id, action, { ...quantities, shelf_life_override_reason: overrideReason });
+            alert(retried.message);
+            fetchShipments();
+          } catch (retryErr: unknown) {
+            const retryError = retryErr as { response?: { data?: { error?: string } } };
+            alert(retryError.response?.data?.error || 'ดำเนินการไม่สำเร็จ');
+          }
+        }
+        return;
+      }
       const msg = error.response?.data?.error || 'ดำเนินการไม่สำเร็จ';
       alert(msg);
     } finally {

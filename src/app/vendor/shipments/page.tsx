@@ -127,7 +127,9 @@ export default function VendorShipmentsPage() {
       setItems([blankRow()]); setReferenceNo(""); setTrackingNo(""); setSource({ type: "MANUAL" });
       await load();
     } catch (error: unknown) {
-      setNotice(error instanceof Error ? error.message : "Unable to submit shipment");
+      // Show the API's reason (e.g. short shelf life, quantity exceeded), not the generic HTTP error.
+      const apiError = (error as { response?: { data?: { error?: string } } }).response?.data?.error;
+      setNotice(apiError || (error instanceof Error ? error.message : "Unable to submit shipment"));
     } finally { setSubmitting(false); }
   };
 
