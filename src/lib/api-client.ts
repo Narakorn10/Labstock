@@ -134,6 +134,7 @@ export interface User {
   name: string;
   role: string;
   vendor?: string;
+  department?: string | null;
   email?: string;
   accountStatus?: 'active' | 'pending' | 'suspended';
   vendorRequest?: string;

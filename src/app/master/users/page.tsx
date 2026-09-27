@@ -87,7 +87,7 @@ export default function UsersPage() {
 
   const openAddModal = () => {
     setIsEdit(false);
-    setForm({ username: '', password: '', name: '', role: 'User', vendor: '', pin: '' });
+    setForm({ username: '', password: '', name: '', role: 'User', vendor: '', department: '', pin: '' });
     setModalOpen(true);
   };
 
@@ -99,6 +99,7 @@ export default function UsersPage() {
       name: user.name, 
       role: user.role,
       vendor: user.vendor || '',
+      department: user.department || '',
       pin: ''
     });
     setModalOpen(true);
@@ -285,6 +286,7 @@ export default function UsersPage() {
                     </span>
                   )}
                 </div>
+                {u.department && <p className="mt-1 text-[10px] font-medium text-gray-500 truncate">{u.department}</p>}
                 {u.email && <p className="mt-1 text-[10px] font-medium text-gray-400 truncate">{u.email}</p>}
                 {u.vendorRequest && <p className="mt-1 text-[10px] font-medium text-amber-600 truncate">ขอเพิ่มบริษัท: {u.vendorRequest}</p>}
               </div>
@@ -375,6 +377,21 @@ export default function UsersPage() {
               className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
             />
           </div>
+
+          {form.role !== 'Vendor' && (
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">หน่วยงาน (Department)</label>
+              <input
+                type="text"
+                maxLength={160}
+                value={form.department || ''}
+                onChange={e => setForm({ ...form, department: e.target.value })}
+                placeholder="เช่น ห้องปฏิบัติการเคมีคลินิก"
+                className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+              />
+              <p className="text-xs font-medium text-gray-500">ใช้เป็นหัวกระดาษของใบสั่งของ (PO) ที่ผู้ใช้นี้สร้าง</p>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import sql from '@/lib/db';
-import { getAuthenticatedUser, hasUserAccountStatusColumn, hasUserPinColumn, hashPassword, hashPin, isAdmin } from '@/lib/auth-utils';
+import { getAuthenticatedUser, hasUserAccountStatusColumn, hasUserDepartmentColumn, hasUserPinColumn, hashPassword, hashPin, isAdmin } from '@/lib/auth-utils';
 
 const ALLOWED_ROLES = new Set(['User', 'Operator', 'Manager', 'Admin', 'Vendor']);
 
@@ -28,7 +28,11 @@ export async function PUT(
     const pin = normalizeOptionalText(updateData.pin);
     const name = normalizeOptionalText(updateData.name);
     const role = normalizeOptionalText(updateData.role);
+    const department = normalizeOptionalText(updateData.department);
 
+    if (department.length > 160) {
+      return NextResponse.json({ error: 'ชื่อหน่วยงานต้องไม่เกิน 160 ตัวอักษร' }, { status: 400 });
+    }
     if (!name || name.length > 160) {
       return NextResponse.json({ error: 'กรุณาระบุชื่อผู้ใช้ให้ถูกต้อง' }, { status: 400 });
     }
@@ -100,6 +104,12 @@ export async function PUT(
           role = ${role}, 
           vendor = ${normalizeOptionalText(updateData.vendor)},
           pin_hash = COALESCE(${newPinHash}, pin_hash)
+        WHERE LOWER(username) = LOWER(${username.trim()})
+      `;
+    }
+    if ('department' in updateData && await hasUserDepartmentColumn()) {
+      await sql`
+        UPDATE users SET department = ${department || null}
         WHERE LOWER(username) = LOWER(${username.trim()})
       `;
     }

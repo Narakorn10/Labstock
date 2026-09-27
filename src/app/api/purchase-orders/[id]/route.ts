@@ -11,6 +11,19 @@ async function findPurchaseOrder(id: string) {
     : sql`SELECT * FROM purchase_orders WHERE po_number = ${id}`;
 }
 
+async function loadPrintDetails(po: Record<string, unknown>) {
+  const rows = await sql`
+    SELECT
+      (SELECT name FROM users WHERE username = ${po.created_by ?? null}) AS created_by_name,
+      (SELECT name FROM users WHERE username = ${po.reviewed_by ?? null}) AS reviewed_by_name,
+      (SELECT name FROM users WHERE username = ${po.acknowledged_by ?? null}) AS acknowledged_by_name,
+      v.contact_person AS vendor_contact_person, v.phone AS vendor_phone, v.email AS vendor_email
+    FROM (SELECT 1) one
+    LEFT JOIN LATERAL (SELECT contact_person, phone, email FROM vendors WHERE name = ${po.vendor ?? null} LIMIT 1) v ON TRUE
+  `;
+  return rows[0] ?? {};
+}
+
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await getAuthenticatedUser(request);
@@ -60,9 +73,15 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
           WHERE poi.po_id = ${po.id}
           ORDER BY poi.id
         `;
+    const printDetails = await loadPrintDetails(po);
 
     if (user.role === "Vendor") {
       return NextResponse.json({
+        ...printDetails,
+        reviewed_by: po.reviewed_by,
+        reviewed_at: po.reviewed_at,
+        acknowledged_by: po.acknowledged_by,
+        acknowledged_at: po.acknowledged_at,
         id: po.id,
         po_number: po.po_number,
         vendor: po.vendor,
@@ -82,7 +101,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       });
     }
 
-    return NextResponse.json({ ...po, items });
+    return NextResponse.json({ ...po, ...printDetails, items });
   } catch (error: unknown) {
     console.error("Error fetching purchase order:", error);
     return NextResponse.json({ error: "Failed to fetch purchase order" }, { status: 500 });

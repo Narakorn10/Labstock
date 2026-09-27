@@ -97,6 +97,9 @@ export const PURCHASE_ORDER_TEST_SCHEMA = `
     id SERIAL PRIMARY KEY, timestamp TIMESTAMPTZ DEFAULT NOW(), item_id TEXT, name TEXT, lot_no TEXT, action TEXT,
     quantity NUMERIC, username TEXT, user_agent TEXT, ip_address TEXT
   );
+  CREATE TABLE users (
+    username TEXT PRIMARY KEY, name TEXT, role TEXT, vendor TEXT, department TEXT
+  );
   CREATE TABLE lab_profile (
     id INT PRIMARY KEY, organization_name TEXT, department_name TEXT, address TEXT, phone TEXT, email TEXT, logo_url TEXT
   );

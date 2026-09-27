@@ -71,6 +71,18 @@ export async function hasUserPinColumn() {
   return Boolean(result[0]?.exists);
 }
 
+export async function hasUserDepartmentColumn() {
+  const result = await sql`
+    SELECT EXISTS (
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_name = 'users' AND column_name = 'department'
+    ) as exists
+  `;
+
+  return Boolean(result[0]?.exists);
+}
+
 export async function hasUserAccountStatusColumn() {
   const result = await sql`
     SELECT EXISTS (
