@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import sql from '@/lib/db';
-import { hasUserPinColumn, hashPassword, hashPin, isAdmin } from '@/lib/auth-utils';
+import { hasUserDepartmentColumn, hasUserPinColumn, hashPassword, hashPin, isAdmin } from '@/lib/auth-utils';
 
 const ALLOWED_ROLES = new Set(['User', 'Operator', 'Manager', 'Admin', 'Vendor']);
 
@@ -27,26 +27,26 @@ export async function GET(request: Request) {
     ]);
     const data = emailRegistrationEnabled && pinEnabled
       ? await sql`
-          SELECT username, name, role, vendor, email, account_status as "accountStatus", vendor_request as "vendorRequest",
+          SELECT username, name, role, vendor, to_jsonb(users) ->> 'department' AS department, email, account_status as "accountStatus", vendor_request as "vendorRequest",
                  (pin_hash IS NOT NULL AND pin_hash != '') as "hasPin"
           FROM users
           ORDER BY CASE account_status WHEN 'pending' THEN 0 WHEN 'suspended' THEN 1 ELSE 2 END, username ASC
         `
       : emailRegistrationEnabled
         ? await sql`
-            SELECT username, name, role, vendor, email, account_status as "accountStatus", vendor_request as "vendorRequest",
+            SELECT username, name, role, vendor, to_jsonb(users) ->> 'department' AS department, email, account_status as "accountStatus", vendor_request as "vendorRequest",
                    false as "hasPin"
             FROM users
             ORDER BY CASE account_status WHEN 'pending' THEN 0 WHEN 'suspended' THEN 1 ELSE 2 END, username ASC
           `
       : pinEnabled
       ? await sql`
-          SELECT username, name, role, vendor, (pin_hash IS NOT NULL AND pin_hash != '') as "hasPin"
+          SELECT username, name, role, vendor, to_jsonb(users) ->> 'department' AS department, (pin_hash IS NOT NULL AND pin_hash != '') as "hasPin"
           FROM users
           ORDER BY username ASC
         `
       : await sql`
-          SELECT username, name, role, vendor, false as "hasPin"
+          SELECT username, name, role, vendor, to_jsonb(users) ->> 'department' AS department, false as "hasPin"
           FROM users
           ORDER BY username ASC
         `;
@@ -71,6 +71,10 @@ export async function POST(request: Request) {
     const password = typeof userData.password === 'string' ? userData.password : '';
     const role = typeof userData.role === 'string' ? userData.role : 'User';
     const pin = typeof userData.pin === 'string' ? userData.pin.trim() : '';
+    const department = typeof userData.department === 'string' ? userData.department.trim() : '';
+    if (department.length > 160) {
+      return NextResponse.json({ error: 'ชื่อหน่วยงานต้องไม่เกิน 160 ตัวอักษร' }, { status: 400 });
+    }
     if (!/^[A-Za-z0-9._-]{2,80}$/.test(username)) {
       return NextResponse.json({ error: 'Username ต้องเป็นภาษาอังกฤษ ตัวเลข จุด ขีดกลาง หรือขีดล่าง ความยาว 2-80 ตัวอักษร' }, { status: 400 });
     }
@@ -109,6 +113,9 @@ export async function POST(request: Request) {
         ${typeof userData.vendor === 'string' ? userData.vendor.trim() : ''}
       )
     `;
+    if (department && await hasUserDepartmentColumn()) {
+      await sql`UPDATE users SET department = ${department} WHERE username = ${username}`;
+    }
 
     return NextResponse.json({ success: true, message: 'เพิ่มผู้ใช้สำเร็จ' });
   } catch (error: unknown) {

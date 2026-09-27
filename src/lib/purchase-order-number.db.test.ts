@@ -39,9 +39,9 @@ describe("purchase-order number assignment (real Postgres)", () => {
       schemaReady = true;
     }
     await sql.db.exec(`
-      TRUNCATE purchase_order_items, purchase_orders, master_data, lab_profile RESTART IDENTITY CASCADE;
+      TRUNCATE purchase_order_items, purchase_orders, master_data, lab_profile, users RESTART IDENTITY CASCADE;
       INSERT INTO master_data (item_id, name, unit, vendor) VALUES ('CHEM-R-001', 'Glucose', 'box', 'Vendor A');
-      INSERT INTO lab_profile (id, organization_name) VALUES (1, 'Test Lab');
+      INSERT INTO lab_profile (id, organization_name, department_name) VALUES (1, 'Test Lab', 'Lab Profile Dept');
     `);
     mocks.getSuggestions.mockResolvedValue([calculateSuggestion({
       item_id: "CHEM-R-001", name: "Glucose", unit: "box", vendor: "Vendor A",
@@ -69,5 +69,16 @@ describe("purchase-order number assignment (real Postgres)", () => {
     const created = await createPurchaseOrderWithAudit(input);
 
     expect(created.purchaseOrder.po_number).toBe(`PO-${today}-006`);
+  });
+
+  it("prints the creator's department on the PO, falling back to the Lab profile", async () => {
+    await sql`INSERT INTO users (username, name, role, department) VALUES ('admin', 'Admin', 'Admin', 'ห้องปฏิบัติการเคมีคลินิก')`;
+    const withDepartment = await createPurchaseOrderWithAudit(input);
+    await sql`DELETE FROM purchase_order_items`;
+    await sql`UPDATE users SET department = '  ' WHERE username = 'admin'`;
+    const blankDepartment = await createPurchaseOrderWithAudit(input);
+
+    expect(withDepartment.purchaseOrder.issuer_department).toBe("ห้องปฏิบัติการเคมีคลินิก");
+    expect(blankDepartment.purchaseOrder.issuer_department).toBe("Lab Profile Dept");
   });
 });

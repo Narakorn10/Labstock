@@ -152,7 +152,13 @@ export async function createPurchaseOrderWithAudit(input: CreatePurchaseOrderInp
         WHERE COALESCE(current.on_order_qty, 0) IS DISTINCT FROM input.snapshot_on_order_qty
            OR COALESCE(current.no_eta_qty, 0) IS DISTINCT FROM input.snapshot_no_eta_qty
       ), issuer AS (
-        SELECT organization_name, department_name, address, phone, email, logo_url
+        -- to_jsonb keeps PO creation working before upgrade_v27 adds users.department.
+        SELECT organization_name,
+          COALESCE(
+            NULLIF(TRIM((SELECT to_jsonb(u) ->> 'department' FROM users u WHERE u.username = ${input.user.username})), ''),
+            department_name
+          ) AS department_name,
+          address, phone, email, logo_url
         FROM lab_profile
         WHERE id = 1
       ), po_seq AS (
@@ -221,7 +227,13 @@ export async function createPurchaseOrderWithAudit(input: CreatePurchaseOrderInp
         WHERE COALESCE(current.on_order_qty, 0) IS DISTINCT FROM input.snapshot_on_order_qty
            OR COALESCE(current.no_eta_qty, 0) IS DISTINCT FROM input.snapshot_no_eta_qty
       ), issuer AS (
-        SELECT organization_name, department_name, address, phone, email, logo_url
+        -- to_jsonb keeps PO creation working before upgrade_v27 adds users.department.
+        SELECT organization_name,
+          COALESCE(
+            NULLIF(TRIM((SELECT to_jsonb(u) ->> 'department' FROM users u WHERE u.username = ${input.user.username})), ''),
+            department_name
+          ) AS department_name,
+          address, phone, email, logo_url
         FROM lab_profile
         WHERE id = 1
       ), po_seq AS (
