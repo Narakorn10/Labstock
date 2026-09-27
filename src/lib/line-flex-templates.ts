@@ -263,10 +263,10 @@ export function generatePONotificationTemplate(po: PurchaseOrder) {
   };
 }
 
-export function generatePOStatusTemplate(po: PurchaseOrder) {
+export function generatePOStatusTemplate(po: PurchaseOrder, heading?: string) {
   return {
     type: "flex",
-    altText: `PO Status: ${po.po_number}`,
+    altText: heading ? `${heading}: ${po.po_number}` : `PO Status: ${po.po_number}`,
     contents: {
       type: "bubble",
       body: {
@@ -275,9 +275,10 @@ export function generatePOStatusTemplate(po: PurchaseOrder) {
         contents: [
           {
             type: "text",
-            text: "PO STATUS",
+            text: heading ?? "PO STATUS",
             weight: "bold",
-            color: "#2563EB",
+            wrap: true,
+            color: heading ? "#DC2626" : "#2563EB",
             size: "sm"
           },
           {
