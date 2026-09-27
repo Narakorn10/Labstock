@@ -30,11 +30,16 @@ function emailFor(row: OutboxRow) {
   };
 }
 
+const REMINDER_HEADINGS: Record<string, string> = {
+  VENDOR_RESPONSE_OVERDUE: "⏰ Vendor ยังไม่ยืนยัน order",
+  DELIVERY_OVERDUE: "⏰ เลยกำหนดส่งของ",
+};
+
 async function deliver(row: OutboxRow) {
   if (row.channel === "LINE") {
     const po = poFromPayload(row.payload);
     if (!po) throw new Error("Outbox payload has no purchase order");
-    await sendLinePushStrict(row.recipient_address, [generatePOStatusTemplate(po) as messagingApi.Message]);
+    await sendLinePushStrict(row.recipient_address, [generatePOStatusTemplate(po, REMINDER_HEADINGS[row.event_type]) as messagingApi.Message]);
     return;
   }
   const email = emailFor(row);

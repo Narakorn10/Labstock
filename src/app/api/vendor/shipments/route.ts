@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { NextResponse } from "next/server";
 import sql from "@/lib/db";
 import { getAuthenticatedUser } from "@/lib/auth-utils";
+import { SHIPMENTS_DISABLED_MESSAGE, SHIPMENTS_ENABLED } from "@/lib/feature-flags";
 import { recordPurchaseOrderCommunication } from "@/lib/po-communication";
 import { recomputePurchaseOrderStatusQuery } from "@/lib/purchase-order-status";
 import { describeShelfLifeViolations, findShelfLifeViolations, loadMinShelfLifeRules, SHELF_LIFE_BELOW_MINIMUM } from "@/lib/shelf-life";
@@ -54,6 +55,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  if (!SHIPMENTS_ENABLED) return NextResponse.json({ error: SHIPMENTS_DISABLED_MESSAGE }, { status: 503 });
   try {
     const user = await getAuthenticatedUser(request);
     if (!user || user.role !== "Vendor" || !user.vendor) return NextResponse.json({ error: "Unauthorized: Vendors only" }, { status: 401 });

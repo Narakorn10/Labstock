@@ -18,6 +18,7 @@ import {
   ShieldCheck,
   ShoppingCart,
 } from "lucide-react";
+import { SHIPMENTS_ENABLED } from "@/lib/feature-flags";
 
 export type MenuItem = {
   id: string;
@@ -32,7 +33,9 @@ export type NavigationGroup = {
   items: MenuItem[];
 };
 
-export const NAVIGATION_GROUPS: NavigationGroup[] = [
+const SHIPMENT_MENU_IDS = new Set(["receive_vendor", "vendor_shipments"]);
+
+const ALL_NAVIGATION_GROUPS: NavigationGroup[] = [
   {
     title: "Overview",
     items: [
@@ -83,6 +86,11 @@ export const NAVIGATION_GROUPS: NavigationGroup[] = [
     ],
   },
 ];
+
+export const NAVIGATION_GROUPS: NavigationGroup[] = ALL_NAVIGATION_GROUPS.map((group) => ({
+  ...group,
+  items: group.items.filter((item) => SHIPMENTS_ENABLED || !SHIPMENT_MENU_IDS.has(item.id)),
+}));
 
 export const ALL_MENUS = NAVIGATION_GROUPS.flatMap((group) => group.items);
 

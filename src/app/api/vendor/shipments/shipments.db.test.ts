@@ -15,6 +15,7 @@ vi.mock("@/lib/db", async () => {
 });
 vi.mock("@/lib/auth-utils", () => ({ getAuthenticatedUser: mocks.getAuthenticatedUser }));
 vi.mock("@/lib/po-communication", () => ({ recordPurchaseOrderCommunication: mocks.recordPurchaseOrderCommunication }));
+vi.mock("@/lib/feature-flags", () => ({ SHIPMENTS_ENABLED: true, SHIPMENTS_DISABLED_MESSAGE: "disabled" }));
 
 import dbSql from "@/lib/db";
 import { PURCHASE_ORDER_TEST_SCHEMA } from "@/test/pglite-sql";
