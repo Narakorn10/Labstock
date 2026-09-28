@@ -219,25 +219,30 @@ export async function isAdmin(request: Request) {
   return user?.role === 'Admin';
 }
 
-/** Returns true when the authenticated user may manage a menu-scoped feature. */
-export async function hasMenuPermission(request: Request, menuId: string) {
-  const user = await getAuthenticatedUser(request);
-  if (!user) return { user: null, allowed: false };
-  if (user.role === 'Admin') return { user, allowed: true };
+/** Returns true when the role may use a menu-scoped feature. Admin always may; any lookup error denies. */
+export async function roleHasMenu(role: string, menuId: string) {
+  if (role === 'Admin') return true;
 
   try {
     const rows = await sql`
       SELECT allowed_menus
       FROM role_permissions
-      WHERE role = ${user.role}
+      WHERE role = ${role}
       LIMIT 1
     `;
     const allowedMenus = Array.isArray(rows[0]?.allowed_menus) ? rows[0].allowed_menus as string[] : [];
-    return { user, allowed: allowedMenus.includes(menuId) };
+    return allowedMenus.includes(menuId);
   } catch (error) {
     console.error('RBAC permission check failed:', error);
-    return { user, allowed: false };
+    return false;
   }
+}
+
+/** Returns true when the authenticated user may manage a menu-scoped feature. */
+export async function hasMenuPermission(request: Request, menuId: string) {
+  const user = await getAuthenticatedUser(request);
+  if (!user) return { user: null, allowed: false };
+  return { user, allowed: await roleHasMenu(user.role, menuId) };
 }
 
 export async function canManageBarcodeLearningV2(request: Request) {
