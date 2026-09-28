@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 @theme inline {
-  --font-sans: var(--font-noto-sans-thai), "Noto Sans Thai", Tahoma, Arial, sans-serif;
+  --font-sans: var(--font-barlow), var(--font-ibm-plex-sans-thai), "IBM Plex Sans Thai", Tahoma, Arial, sans-serif;
   --font-mono: var(--font-lab-mono);
 
   --color-background: var(--background);
@@ -20,6 +20,20 @@
   --color-warning: var(--warning);
   --color-danger: var(--danger);
   --color-focus: var(--focus);
+
+  /* Mobile / LINE surfaces (design_handoff_labstock). */
+  --color-ground: var(--ground);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-line: var(--line);
+  --color-ok: var(--ok);
+  --color-ok-bg: var(--ok-bg);
+  --color-warn: var(--warn);
+  --color-warn-bg: var(--warn-bg);
+  --color-crit: var(--crit);
+  --color-crit-bg: var(--crit-bg);
+  --color-line-green: var(--line-green);
+  --color-line-green-ink: var(--line-green-ink);
 
   /* Backwards-compatible names used by the existing clinical surfaces. */
   --color-clinical-900: var(--primary-strong);
@@ -51,6 +65,20 @@
   --danger: #b91c1c;
   --focus: #0e7490;
 
+  /* Mobile / LINE surfaces. Desktop keeps the palette above until it is redesigned. */
+  --ground: #f2f2f3;
+  --ink: #1d1f20;
+  --ink-muted: #6b6e72;
+  --line: #dcdcdf;
+  --ok: oklch(0.5 0.12 150);
+  --ok-bg: oklch(0.955 0.045 150);
+  --warn: oklch(0.56 0.12 65);
+  --warn-bg: oklch(0.955 0.055 85);
+  --crit: oklch(0.55 0.19 27);
+  --crit-bg: oklch(0.955 0.03 25);
+  --line-green: #06c755; /* decoration only (progress, PIN focus) */
+  --line-green-ink: oklch(0.45 0.13 150); /* text and buttons on green */
+
   /* Existing component aliases kept for incremental adoption. */
   --clinical-900: var(--primary-strong);
   --clinical-700: var(--primary);
@@ -64,17 +92,13 @@
 
 html {
   min-height: 100%;
-  background: var(--background);
+  background: var(--ground);
 }
 
 body {
   min-height: 100%;
   margin: 0;
-  background:
-    linear-gradient(90deg, rgb(14 116 144 / 0.035) 1px, transparent 1px),
-    linear-gradient(rgb(14 116 144 / 0.035) 1px, transparent 1px),
-    var(--background);
-  background-size: 28px 28px;
+  background: var(--ground);
   color: var(--text);
   font-variant-numeric: tabular-nums;
   line-height: 1.5;
