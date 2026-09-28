@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import liff from "@line/liff";
-import { CheckCircle2, ClipboardList, Loader2, Minus, PackageCheck, Plus, RefreshCw, Search, Send, ShieldCheck, ShoppingCart, XCircle } from "lucide-react";
+import { Check, ClipboardList, Loader2, PackageCheck, RefreshCw, Search, Send, ShieldCheck, ShoppingCart, X, XCircle } from "lucide-react";
+import QtyStepper from "@/components/mobile/qty-stepper";
 
 type LinkedUser = { username: string; name: string; role: string };
 type VendorOption = { vendor: string; item_count: number };
@@ -63,7 +64,9 @@ type PurchaseOrder = {
 };
 
 const statusLabel: Record<string, string> = {
+  PENDING_MANAGER_REVIEW: "รอหัวหน้าตรวจ",
   SUBMITTED: "ส่งให้ Vendor แล้ว",
+  ACKNOWLEDGED: "Vendor รับทราบ",
   PENDING_LAB_REVIEW: "รอ Lab ตรวจ",
   REVISION_REQUESTED: "Vendor ขอแก้ไข",
   CONFIRMED: "Vendor ยืนยัน",
@@ -73,6 +76,15 @@ const statusLabel: Record<string, string> = {
   CANCELLED: "ยกเลิกแล้ว",
   CLOSED_SHORT: "ปิดใบ (ได้รับไม่ครบ)",
 };
+
+/** Statuses that need somebody to act, shown in the amber tone. */
+const ATTENTION_STATUSES = new Set(["PENDING_MANAGER_REVIEW", "PENDING_LAB_REVIEW", "REVISION_REQUESTED"]);
+
+const fieldClass =
+  "min-h-12 w-full rounded-xl border border-line bg-white px-3.5 text-base outline-none transition focus:border-ink focus:ring-2 focus:ring-ink/10";
+
+const primaryButtonClass =
+  "flex min-h-[54px] w-full items-center justify-center gap-2 rounded-[14px] bg-line-green-ink px-4 font-semibold text-white transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50";
 
 function makeRequestId() {
   return `liff-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -222,9 +234,10 @@ export default function LiffOrderWorkflow() {
     });
   };
 
-  const changeQty = (itemId: string, delta: number) => {
+  // Any change to the quantity is a manual override, which then requires a reason. The value can be 0 while typing; submit rejects it.
+  const setQuantity = (itemId: string, quantity: number) => {
     setDraftItems((current) => current.map((item) => (
-      item.item_id === itemId ? { ...item, quantity: Math.max(1, item.quantity + delta), selected_basis: "MANUAL" } : item
+      item.item_id === itemId && item.quantity !== quantity ? { ...item, quantity: Math.max(0, quantity), selected_basis: "MANUAL" } : item
     )));
   };
 
@@ -248,6 +261,11 @@ export default function LiffOrderWorkflow() {
       setError("เลือก Vendor และรายการก่อนส่งใบสั่งซื้อ");
       return;
     }
+    const zeroQuantity = draftItems.find((item) => !(item.quantity > 0));
+    if (zeroQuantity) {
+      setError(`กรุณาระบุจำนวนมากกว่า 0 ของ ${zeroQuantity.item_name}`);
+      return;
+    }
     const missingReason = draftItems.find((item) => item.selected_basis === "MANUAL" && !item.override_reason?.trim());
     if (missingReason) {
       setError(`กรุณาระบุเหตุผลที่แก้จำนวนของ ${missingReason.item_name}`);
@@ -263,7 +281,8 @@ export default function LiffOrderWorkflow() {
         note,
         liffRequestId: draftRequestId,
       });
-      setMessage(`ส่งใบสั่งซื้อ ${po.po_number} ให้ Vendor แล้ว`);
+      // A Lab-created PO waits for a Manager review before the Vendor can see it.
+      setMessage(`สร้างใบสั่งซื้อ ${po.po_number} แล้ว รอหัวหน้าตรวจก่อนส่งให้ Vendor`);
       setDraftItems([]);
       setCatalog([]);
       setNote("");
@@ -292,141 +311,194 @@ export default function LiffOrderWorkflow() {
   };
 
   if (loading) {
-    return <div className="flex min-h-screen items-center justify-center gap-3 bg-slate-950 px-6 text-sm font-bold text-white"><Loader2 className="animate-spin text-emerald-300" size={22} />กำลังเปิดเมนูสั่งน้ำยา...</div>;
+    return (
+      <div className="flex min-h-screen items-center justify-center gap-3 bg-ground px-6 text-sm text-ink-muted" aria-live="polite">
+        <Loader2 className="animate-spin text-line-green-ink" size={22} />
+        กำลังเปิดเมนูสั่งน้ำยา...
+      </div>
+    );
   }
 
   if (error && !user) {
-    return <main className="flex min-h-screen items-center justify-center bg-slate-950 px-6 text-center text-sm font-bold text-red-100">{error}</main>;
+    return <main className="flex min-h-screen items-center justify-center bg-ground px-6 text-center text-sm font-medium text-crit" role="alert">{error}</main>;
   }
 
-  return (
-    <main className="min-h-screen bg-[#0f172a] px-4 py-5 text-slate-950">
-      <section className="mx-auto max-w-md overflow-hidden rounded-[28px] bg-slate-50 shadow-2xl shadow-black/30">
-        <div className="bg-slate-950 px-5 py-5 text-white">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.2em] text-emerald-300">LabStock LIFF</p>
-              <h1 className="mt-2 text-2xl font-black">สั่งน้ำยา</h1>
-              <p className="mt-1 text-xs text-slate-300">{user?.name || user?.username} · {user?.role}</p>
+  const reviewPanel = reviewOrders.length > 0 && (
+    <section className="rounded-2xl bg-warn-bg p-3.5" aria-label="ใบสั่งซื้อรอ Lab ตรวจ">
+      <div className="flex items-center gap-2 text-warn"><ShieldCheck size={18} /><h2 className="text-sm font-semibold">รอตรวจจาก Lab {reviewOrders.length} ใบ</h2></div>
+      <div className="mt-2.5 space-y-2.5">
+        {reviewOrders.map((order) => (
+          <div key={order.id} className="rounded-xl bg-white p-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="font-semibold">{order.po_number}</p>
+              <p className="truncate text-xs text-ink-muted">{order.vendor}</p>
             </div>
-            <button type="button" onClick={() => refreshWorkspace()} disabled={busy} className="rounded-2xl border border-white/10 bg-white/10 p-3 text-white">
-              <RefreshCw size={18} className={busy ? "animate-spin" : ""} />
-            </button>
+            <p className="mt-0.5 text-xs text-ink-muted">{statusLabel[order.status] ?? order.status} · {order.items?.length ?? 0} รายการ</p>
+            {order.items && order.items.length > 0 && (
+              <p className="mt-1 text-xs text-ink-muted">{order.items.map((item) => `${item.item_name} ×${item.quantity}`).join(" · ")}</p>
+            )}
+            {order.vendor_note && <p className="mt-2 rounded-lg bg-warn-bg p-2.5 text-xs font-medium text-warn">{order.vendor_note}</p>}
+            <div className="mt-2.5 grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => reviewOrder(order, "CONFIRMED")} disabled={busy} className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl bg-line-green-ink text-sm font-semibold text-white disabled:opacity-50"><Check size={16} />อนุมัติ</button>
+              <button type="button" onClick={() => reviewOrder(order, "REJECTED")} disabled={busy} className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-crit/30 bg-crit-bg text-sm font-semibold text-crit disabled:opacity-50"><X size={16} />ปฏิเสธ</button>
+            </div>
           </div>
-          <div className="mt-5 grid grid-cols-2 gap-3">
-            <button type="button" onClick={() => setTab("create")} className={`rounded-2xl px-4 py-3 text-left text-sm font-black ${tab === "create" ? "bg-emerald-400 text-slate-950" : "bg-white/10 text-white"}`}>
-              <ShoppingCart size={18} />สร้าง PO
-            </button>
-            <button type="button" onClick={() => setTab("track")} className={`rounded-2xl px-4 py-3 text-left text-sm font-black ${tab === "track" ? "bg-amber-300 text-slate-950" : "bg-white/10 text-white"}`}>
-              <ClipboardList size={18} />ติดตาม
-            </button>
+        ))}
+      </div>
+    </section>
+  );
+
+  return (
+    <main className={`min-h-screen bg-ground text-ink ${tab === "create" && draftItems.length > 0 ? "pb-[calc(8rem+env(safe-area-inset-bottom))]" : "pb-8"}`}>
+      <div className="mx-auto max-w-md space-y-3 px-4 pt-[max(0.875rem,env(safe-area-inset-top))]">
+        <header className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="truncate text-xs text-ink-muted">{user?.name || user?.username} · {user?.role}</p>
+            <h1 className="text-2xl font-semibold">สั่งน้ำยา</h1>
           </div>
+          <button type="button" onClick={() => refreshWorkspace()} disabled={busy} aria-label="โหลดข้อมูลใหม่" className="flex size-11 shrink-0 items-center justify-center rounded-full border border-line bg-white disabled:opacity-50">
+            <RefreshCw size={17} className={busy ? "animate-spin" : ""} />
+          </button>
+        </header>
+
+        <div className="grid grid-cols-2 gap-1.5 rounded-2xl border border-line bg-white p-1" role="tablist" aria-label="เมนูสั่งน้ำยา">
+          <button type="button" role="tab" aria-selected={tab === "create"} onClick={() => setTab("create")} className={`flex min-h-11 items-center justify-center gap-2 rounded-xl text-sm font-medium ${tab === "create" ? "bg-ink text-white" : "text-ink-muted"}`}>
+            <ShoppingCart size={16} />สร้าง PO
+          </button>
+          <button type="button" role="tab" aria-selected={tab === "track"} onClick={() => setTab("track")} className={`flex min-h-11 items-center justify-center gap-2 rounded-xl text-sm font-medium ${tab === "track" ? "bg-ink text-white" : "text-ink-muted"}`}>
+            <ClipboardList size={16} />ติดตาม
+            {reviewOrders.length > 0 && <span className="rounded-full bg-crit px-1.5 text-[11px] leading-5 text-white">{reviewOrders.length}</span>}
+          </button>
         </div>
 
-        <div className="space-y-4 p-5">
-          {message && <p className="rounded-2xl bg-emerald-50 p-3 text-sm font-bold text-emerald-800">{message}</p>}
-          {error && <p className="rounded-2xl bg-red-50 p-3 text-sm font-bold text-red-700">{error}</p>}
+        {message && <p className="rounded-2xl border border-ok/25 bg-ok-bg p-3.5 text-sm font-medium text-ok" role="status">{message}</p>}
+        {error && <p className="rounded-2xl border border-crit/25 bg-crit-bg p-3.5 text-sm font-medium text-crit" role="alert">{error}</p>}
 
-          {tab === "create" ? (
-            <>
-              <label className="block text-xs font-black uppercase text-slate-500">Vendor</label>
-              <select value={vendor} onChange={(event) => { setVendor(event.target.value); setCatalog([]); setDraftItems([]); }} className="w-full rounded-2xl border border-slate-200 bg-white p-4 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500">
+        {tab === "create" ? (
+          <>
+            {reviewPanel}
+
+            <section className="space-y-2.5 rounded-[18px] border border-line bg-white p-3.5">
+              <label htmlFor="liff-order-vendor" className="block text-xs font-medium text-ink-muted">Vendor</label>
+              <select id="liff-order-vendor" value={vendor} onChange={(event) => { setVendor(event.target.value); setCatalog([]); setDraftItems([]); }} className={fieldClass}>
                 {vendors.map((option) => <option key={option.vendor} value={option.vendor}>{option.vendor} · {option.item_count} รายการ</option>)}
               </select>
 
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <Search className="absolute left-4 top-4 text-slate-400" size={18} />
-                  <input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="ค้นหาน้ำยา/รหัส/บาร์โค้ด" className="w-full rounded-2xl border border-slate-200 bg-white py-4 pl-11 pr-3 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500" />
+              <div className="grid grid-cols-[minmax(0,1fr)_48px] gap-2">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8a8d91]" size={18} />
+                  <input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="ค้นหาน้ำยา/รหัส/บาร์โค้ด" aria-label="ค้นหาน้ำยา" enterKeyHint="search" className={`${fieldClass} pl-10`} />
                 </div>
-                <button type="button" onClick={() => loadSuggestions(false)} disabled={busy} className="rounded-2xl bg-slate-900 px-4 text-white"><Search size={18} /></button>
+                <button type="button" onClick={() => loadSuggestions(false)} disabled={busy} aria-label="ค้นหา" className="flex items-center justify-center rounded-xl bg-ink text-white disabled:opacity-50"><Search size={18} /></button>
               </div>
 
-              <button type="button" onClick={() => loadSuggestions(true)} disabled={busy || !vendor} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-600 py-4 text-sm font-black text-white disabled:opacity-50">
+              <button type="button" onClick={() => loadSuggestions(true)} disabled={busy || !vendor} className={primaryButtonClass}>
                 {busy ? <Loader2 className="animate-spin" size={18} /> : <PackageCheck size={18} />}
                 แนะนำรายการใกล้หมด
               </button>
+            </section>
 
-              {catalog.length > 0 && <div className="space-y-2">
-                {catalog.map((item) => <button type="button" key={item.item_id} onClick={() => addItem(item)} className="w-full rounded-2xl border border-slate-200 bg-white p-3 text-left">
-                  <div className="flex justify-between gap-3"><span className="text-sm font-black">{item.name}</span><span className="text-xs font-bold text-red-600">{item.quantity} {item.unit}</span></div>
-                  <p className="mt-1 text-xs text-slate-500">{item.item_id} · แล็บอนุมัติ {item.policy_order_qty} · คำนวณสด {item.dynamic_order_qty} {item.unit}</p>
-                  {item.policy_configured === false && <p className="mt-1 text-xs font-black text-rose-700">ยังไม่ได้ตั้งนโยบายสั่งซื้อ — เพิ่มได้ แต่ต้องระบุเหตุผล</p>}
-                  {!item.auto_selectable && item.review_reasons.some((reason) => reason !== "NO_ORDER_POLICY") && <p className="mt-1 text-xs font-black text-amber-700">ตรวจสอบเองก่อนเลือก: {item.review_reasons.filter((reason) => reason !== "NO_ORDER_POLICY").join(", ")}</p>}
-                </button>)}
-              </div>}
+            {catalog.length > 0 && (
+              <section className="space-y-2" aria-label="ผลการค้นหา">
+                {catalog.map((item) => (
+                  <button type="button" key={item.item_id} onClick={() => addItem(item)} className="w-full rounded-2xl border border-line bg-white p-3 text-left active:scale-[0.99]">
+                    <div className="flex justify-between gap-3"><span className="text-sm font-medium">{item.name}</span><span className="shrink-0 text-xs font-medium text-crit">{item.quantity} {item.unit}</span></div>
+                    <p className="mt-1 text-xs text-ink-muted">{item.item_id} · แล็บอนุมัติ {item.policy_order_qty} · คำนวณสด {item.dynamic_order_qty} {item.unit}</p>
+                    {item.policy_configured === false && <p className="mt-1 text-xs font-medium text-crit">ยังไม่ได้ตั้งนโยบายสั่งซื้อ — เพิ่มได้ แต่ต้องระบุเหตุผล</p>}
+                    {!item.auto_selectable && item.review_reasons.some((reason) => reason !== "NO_ORDER_POLICY") && <p className="mt-1 text-xs font-medium text-warn">ตรวจสอบเองก่อนเลือก: {item.review_reasons.filter((reason) => reason !== "NO_ORDER_POLICY").join(", ")}</p>}
+                  </button>
+                ))}
+              </section>
+            )}
 
-              <div className="rounded-3xl bg-white p-4 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-black">รายการที่จะสั่ง</h2>
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black">{totalItems} รายการ · {totalUnits} หน่วย</span>
-                </div>
-                <div className="mt-3 space-y-3">
-                  {draftItems.length === 0 && <p className="py-4 text-center text-sm font-bold text-slate-400">กดแนะนำรายการใกล้หมด หรือค้นหาเพิ่มเอง</p>}
-                  {draftItems.map((item) => <div key={item.item_id} className="rounded-2xl border border-slate-100 p-3">
+            <section className="rounded-[18px] border border-line bg-white p-3.5" aria-labelledby="order-lines-heading">
+              <div className="flex items-center justify-between gap-3">
+                <h2 id="order-lines-heading" className="font-semibold">รายการที่จะสั่ง</h2>
+                <span className="rounded-full bg-[#f6f6f7] px-2.5 py-1 text-xs font-medium">{totalItems} รายการ · {totalUnits} หน่วย</span>
+              </div>
+              <div className="mt-3 space-y-3">
+                {draftItems.length === 0 && <p className="py-4 text-center text-sm text-ink-muted">กดแนะนำรายการใกล้หมด หรือค้นหาเพิ่มเอง</p>}
+                {draftItems.map((item) => (
+                  <div key={item.item_id} className="rounded-2xl border border-[#ececee] p-3">
                     <div className="flex justify-between gap-3">
-                      <div><p className="text-sm font-black">{item.item_name}</p><p className="mt-1 text-xs text-slate-500">เหลือ {item.current_qty ?? "-"} · Min {item.min_threshold ?? "-"}</p></div>
-                      <button type="button" onClick={() => removeItem(item.item_id)} className="text-slate-400"><XCircle size={18} /></button>
-                    </div>
-                    <div className="mt-3 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <button type="button" onClick={() => changeQty(item.item_id, -1)} className="rounded-full bg-slate-100 p-2"><Minus size={16} /></button>
-                        <span className="w-16 text-center text-sm font-black">{item.quantity}</span>
-                        <button type="button" onClick={() => changeQty(item.item_id, 1)} className="rounded-full bg-slate-100 p-2"><Plus size={16} /></button>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium">{item.item_name}</p>
+                        <p className="mt-0.5 text-xs text-ink-muted">เหลือ {item.current_qty ?? "-"} · Min {item.min_threshold ?? "-"}</p>
                       </div>
-                      <span className="text-xs font-bold text-slate-500">{item.unit}</span>
+                      <button type="button" onClick={() => removeItem(item.item_id)} aria-label={`เอา ${item.item_name} ออก`} className="-mr-2 -mt-2 flex size-11 shrink-0 items-center justify-center text-ink-muted"><XCircle size={18} /></button>
                     </div>
-                    {item.policy_order_qty !== undefined && item.policy_configured !== false && (
-                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                        <button type="button" onClick={() => chooseQuantityBasis(item.item_id, "POLICY")} className={`rounded-xl border p-2 text-left ${item.selected_basis === "POLICY" ? "border-emerald-500 bg-emerald-50" : "border-slate-200"}`}>
-                          <span className="block text-[10px] text-slate-500">แล็บอนุมัติ</span><span className="font-black">{item.policy_order_qty}</span>
-                        </button>
-                        <button type="button" onClick={() => chooseQuantityBasis(item.item_id, "DYNAMIC")} disabled={!item.dynamic_order_qty} className={`rounded-xl border p-2 text-left disabled:cursor-not-allowed disabled:opacity-50 ${item.selected_basis === "DYNAMIC" ? "border-blue-500 bg-blue-50" : "border-slate-200"}`}>
-                          <span className="block text-[10px] text-slate-500">คำนวณสด</span><span className="font-black">{item.dynamic_order_qty}</span>
-                        </button>
-                        <p className="col-span-2 text-slate-500">ความเชื่อมั่น {item.confidence === "high" ? "สูง" : item.confidence === "low" ? "ต่ำ" : "ยังไม่มีข้อมูล"}</p>
-                        {item.suggestion_context && <p className="col-span-2 rounded-lg bg-teal-50 p-2 text-teal-950">รอบสั่ง {item.suggestion_context.horizon_days} วัน; ระยะรอของ {item.suggestion_context.lead_time_days} วัน: คาดเหลือ {item.suggestion_context.projected_balance_at_horizon} {item.unit}, Safety stock {item.suggestion_context.safety_stock_boxes} {item.unit}; ใช้ {item.suggestion_context.calculation_breakdown.dailyDemandBoxes} {item.unit}/วัน{item.suggestion_context.expiry_assessment.expired_qty_excluded > 0 ? ` · ไม่นับหมดอายุแล้ว ${item.suggestion_context.expiry_assessment.expired_qty_excluded} ${item.unit}` : ""}{item.suggestion_context.expiry_assessment.expiring_within_horizon_qty > 0 ? ` · FEFO: ใกล้หมดอายุ ${item.suggestion_context.expiry_assessment.expiring_within_horizon_qty} ${item.unit}` : ""}</p>}
-                        {!!item.review_reasons?.length && <p className="col-span-2 font-bold text-amber-700">ทบทวน: {item.review_reasons.join(", ")}</p>}
-                      </div>
-                    )}
-                    {item.selected_basis === "MANUAL" && (
-                      <input value={item.override_reason ?? ""} onChange={(event) => setDraftItems((current) => current.map((row) => row.item_id === item.item_id ? { ...row, override_reason: event.target.value } : row))} placeholder={item.policy_configured === false ? "เหตุผลที่สั่ง (ยังไม่มีนโยบายสั่งซื้อ)*" : "เหตุผลที่แก้จำนวน*"} className="mt-3 w-full rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs font-bold" />
-                    )}
-                  </div>)}
-                </div>
-              </div>
 
-              <textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="หมายเหตุถึง Vendor (ถ้ามี)" className="min-h-24 w-full rounded-2xl border border-slate-200 bg-white p-4 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500" />
-              <button type="button" onClick={submitOrder} disabled={busy || !draftItems.length} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 py-4 text-sm font-black text-white disabled:opacity-50">
-                {busy ? <Loader2 className="animate-spin" size={18} /> : <Send size={18} />}
-                ส่งใบสั่งซื้อให้ Vendor
-              </button>
-            </>
-          ) : (
-            <div className="space-y-3">
-              <div className="rounded-3xl bg-amber-50 p-4">
-                <div className="flex items-center gap-2 text-amber-900"><ShieldCheck size={18} /><h2 className="text-sm font-black">รอตรวจจาก Lab {reviewOrders.length} ใบ</h2></div>
+                    {item.policy_order_qty !== undefined && item.policy_configured !== false && (
+                      <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                        <button type="button" onClick={() => chooseQuantityBasis(item.item_id, "POLICY")} aria-pressed={item.selected_basis === "POLICY"} className={`min-h-11 rounded-xl border p-2 text-left ${item.selected_basis === "POLICY" ? "border-line-green-ink bg-[#e6f9ee]" : "border-line"}`}>
+                          <span className="block text-[11px] text-ink-muted">แล็บอนุมัติ</span><span className="font-semibold">{item.policy_order_qty}</span>
+                        </button>
+                        <button type="button" onClick={() => chooseQuantityBasis(item.item_id, "DYNAMIC")} disabled={!item.dynamic_order_qty} aria-pressed={item.selected_basis === "DYNAMIC"} className={`min-h-11 rounded-xl border p-2 text-left disabled:cursor-not-allowed disabled:opacity-50 ${item.selected_basis === "DYNAMIC" ? "border-ink bg-[#f6f6f7]" : "border-line"}`}>
+                          <span className="block text-[11px] text-ink-muted">คำนวณสด</span><span className="font-semibold">{item.dynamic_order_qty}</span>
+                        </button>
+                      </div>
+                    )}
+
+                    <div className="mt-3 flex items-center justify-between gap-3">
+                      <p className="text-xs text-ink-muted">จำนวนที่สั่ง ({item.unit})</p>
+                      <QtyStepper value={item.quantity} onChange={(value) => setQuantity(item.item_id, value)} label={`จำนวน ${item.item_name}`} />
+                    </div>
+
+                    {item.policy_order_qty !== undefined && item.policy_configured !== false && (
+                      <div className="mt-2 space-y-1.5 text-xs text-ink-muted">
+                        <p>ความเชื่อมั่น {item.confidence === "high" ? "สูง" : item.confidence === "low" ? "ต่ำ" : "ยังไม่มีข้อมูล"}</p>
+                        {item.suggestion_context && <p className="rounded-lg bg-[#f6f6f7] p-2">รอบสั่ง {item.suggestion_context.horizon_days} วัน; ระยะรอของ {item.suggestion_context.lead_time_days} วัน: คาดเหลือ {item.suggestion_context.projected_balance_at_horizon} {item.unit}, Safety stock {item.suggestion_context.safety_stock_boxes} {item.unit}; ใช้ {item.suggestion_context.calculation_breakdown.dailyDemandBoxes} {item.unit}/วัน{item.suggestion_context.expiry_assessment.expired_qty_excluded > 0 ? ` · ไม่นับหมดอายุแล้ว ${item.suggestion_context.expiry_assessment.expired_qty_excluded} ${item.unit}` : ""}{item.suggestion_context.expiry_assessment.expiring_within_horizon_qty > 0 ? ` · FEFO: ใกล้หมดอายุ ${item.suggestion_context.expiry_assessment.expiring_within_horizon_qty} ${item.unit}` : ""}</p>}
+                        {!!item.review_reasons?.length && <p className="font-medium text-warn">ทบทวน: {item.review_reasons.join(", ")}</p>}
+                      </div>
+                    )}
+                    {item.policy_configured === false && <p className="mt-2 text-xs font-medium text-crit">ยังไม่ได้ตั้งนโยบายสั่งซื้อ — เพิ่มได้ แต่ต้องระบุเหตุผล</p>}
+                    {item.selected_basis === "MANUAL" && (
+                      <input value={item.override_reason ?? ""} onChange={(event) => setDraftItems((current) => current.map((row) => row.item_id === item.item_id ? { ...row, override_reason: event.target.value } : row))} placeholder={item.policy_configured === false ? "เหตุผลที่สั่ง (ยังไม่มีนโยบายสั่งซื้อ)*" : "เหตุผลที่แก้จำนวน*"} aria-label="เหตุผลที่สั่ง" className="mt-2.5 min-h-11 w-full rounded-xl border border-warn/40 bg-warn-bg px-3 text-base outline-none focus:border-ink" />
+                    )}
+                  </div>
+                ))}
               </div>
-              {orders.map((order) => <div key={order.id} className="rounded-3xl bg-white p-4 shadow-sm">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-black">{order.po_number}</p>
-                    <p className="mt-1 text-xs font-bold text-slate-500">{order.vendor} · {statusLabel[order.status] ?? order.status}</p>
-                    {order.vendor_note && <p className="mt-2 rounded-2xl bg-amber-50 p-3 text-xs font-bold text-amber-800">{order.vendor_note}</p>}
+            </section>
+
+            <textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="หมายเหตุถึง Vendor (ถ้ามี)" aria-label="หมายเหตุถึง Vendor" className="min-h-24 w-full rounded-2xl border border-line bg-white p-3.5 text-base outline-none focus:border-ink focus:ring-2 focus:ring-ink/10" />
+          </>
+        ) : (
+          <div className="space-y-3">
+            {reviewPanel}
+            {orders.length === 0 && <p className="rounded-2xl border border-dashed border-line bg-white/60 p-6 text-center text-sm text-ink-muted">ยังไม่มีใบสั่งซื้อที่กำลังดำเนินการ</p>}
+            {orders.filter((order) => !reviewOrders.includes(order)).map((order) => {
+              const attention = ATTENTION_STATUSES.has(order.status);
+              return (
+                <div key={order.id} className="rounded-2xl border border-line bg-white p-3.5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-semibold">{order.po_number}</p>
+                      <p className="mt-0.5 truncate text-xs text-ink-muted">{order.vendor}</p>
+                    </div>
+                    <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${attention ? "bg-warn-bg text-warn" : "bg-[#f6f6f7] text-ink"}`}>{statusLabel[order.status] ?? order.status}</span>
                   </div>
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black">{order.items?.length ?? 0}</span>
+                  <p className="mt-1.5 text-xs text-ink-muted">{order.items?.length ?? 0} รายการ</p>
+                  {order.vendor_note && <p className="mt-2 rounded-xl bg-warn-bg p-2.5 text-xs font-medium text-warn">{order.vendor_note}</p>}
+                  {order.status === "PENDING_MANAGER_REVIEW" && (
+                    <a href={`/orders/${order.id}`} className="mt-2.5 flex min-h-11 items-center justify-center rounded-xl border border-line text-sm font-medium text-ink!">อนุมัติได้ที่หน้าเว็บ LabStock</a>
+                  )}
                 </div>
-                {(order.status === "PENDING_LAB_REVIEW" || order.status === "REVISION_REQUESTED") && (
-                  <div className="mt-4 grid grid-cols-2 gap-2">
-                    <button type="button" onClick={() => reviewOrder(order, "CONFIRMED")} disabled={busy} className="flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 py-3 text-xs font-black text-white"><CheckCircle2 size={16} />อนุมัติ</button>
-                    <button type="button" onClick={() => reviewOrder(order, "REJECTED")} disabled={busy} className="flex items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 py-3 text-xs font-black text-red-700"><XCircle size={16} />ปฏิเสธ</button>
-                  </div>
-                )}
-              </div>)}
-            </div>
-          )}
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {tab === "create" && draftItems.length > 0 && (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-white px-4 pt-3 pb-[calc(1.75rem+env(safe-area-inset-bottom))]">
+          <div className="mx-auto max-w-md">
+            <button type="button" onClick={submitOrder} disabled={busy} className={primaryButtonClass}>
+              {busy ? <Loader2 className="animate-spin" size={18} /> : <Send size={18} />}
+              ส่งใบสั่งให้หัวหน้าตรวจ ({draftItems.length} รายการ)
+            </button>
+          </div>
         </div>
-      </section>
+      )}
     </main>
   );
 }
