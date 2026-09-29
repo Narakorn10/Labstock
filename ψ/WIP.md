@@ -1,6 +1,27 @@
-# WIP — 2026-09-28 23:36
+# WIP — 2026-09-29
 
-## Forward Handoff — 2026-09-28 23:36 (PR มือถือ/LINE เปิดแล้ว รอ merge + ทดสอบใน LINE จริง)
+## Forward Handoff — 2026-09-29 (มือถือ/LINE ขึ้น production แล้ว เบิกผ่าน LIFF ทดสอบสำเร็จ; เหลือ rich menu rollout)
+
+### สถานะ
+- ผู้ใช้ merge PR #12–#17 เมื่อ 2026-09-29 (08:04Z) แต่ #14, #15, #16 ถูกรวมเข้า branch ฐานของตัวเอง ไม่ใช่ `main` (ไม่ได้ลบ branch ของ #13 GitHub เลยไม่ย้าย base) → เปิด PR #18 (`update/mobile-home-workflow` → `main`) merge 08:09Z; ยืนยันด้วย `git merge-base --is-ancestor` ว่า `da58b99 921cda0 ed4b167 519615f` อยู่ใน `main`
+- Vercel production Ready; probe ไม่ล็อกอิน: `/login` `/mobile` `/liff/dispense` 200, `/api/mobile/confirm` GET 405
+- ผู้ใช้ทดสอบเบิกผ่าน LIFF บน production: สำเร็จ (ผู้ใช้รายงาน ไม่ทราบบัญชี/รายการที่ใช้ทดสอบ)
+- PR #19 `update/line-rich-menu` (rich menu 3 แบบ + สคริปต์ create/link/default/sync) เปิดแล้ว รอ merge; rebase หลัง #12 แล้ว ใช้ `roleHasMenu` ของ #12; vitest 174 ผ่าน; ยังไม่ได้เรียก LINE API จริง
+
+### งานค้าง
+- [ ] ผู้ใช้ merge PR #19 แล้ว rollout: `create` → `link <lineUserId> <menuId>` ทดสอบบัญชีเดียว → ใส่ `LINE_RECEIVE_RICH_MENU_ID` (+ ID ใหม่อื่น) ใน Vercel → `default <no-receive id>` → `sync` (ดู `LINE_LIFF_ORDERING_ROLLOUT.md`; ID เก่าเป็น rollback)
+- [ ] ยังไม่ทดสอบใน LINE จริง: ผูกบัญชี PIN 4/6 หลัก, อนุมัติ PO ผ่าน LIFF, กล้องสแกน, การ์ด Flex
+- [ ] Rich menu Vendor (3b) เลื่อนไปรอบหน้า
+- [ ] ผู้ใช้ตัดสินใจ desktop redesign (เสนอ 4 PR, แทนสี Tailwind ~1,480 จุด)
+- [ ] ลบ `.next/dev/cache.stale-bak` เมื่อสะดวก
+- [ ] ค้างจากรอบ 26 ก.ย.: ดู history ด้านล่าง
+
+### บทเรียน
+- PR ซ้อนสาย (stacked): merge ตามลำดับแล้วต้อง "ลบ branch" ของใบก่อนหน้า ไม่งั้นใบถัดไปไปรวมเข้า branch เดิม ไม่เข้า `main` — หลัง merge ให้เช็กด้วย `git merge-base --is-ancestor <commit> origin/main`
+
+---
+
+## (history) Handoff 2026-09-28 23:36 — เก็บไว้ ไม่ได้ลบ (PR มือถือ/LINE เปิดแล้ว รอ merge + ทดสอบใน LINE จริง)
 
 ### Git Status
 ```text
