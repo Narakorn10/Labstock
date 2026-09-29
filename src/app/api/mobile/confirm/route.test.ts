@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  sql: vi.fn().mockResolvedValue([]),
   hasUserPinColumn: vi.fn(),
   verifyUserPin: vi.fn(),
   roleHasMenu: vi.fn(),
@@ -11,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   runDispenseBatch: vi.fn(),
 }));
 
+vi.mock("@/lib/db", () => ({ default: mocks.sql }));
 vi.mock("@/lib/auth-utils", () => ({
   hasUserPinColumn: mocks.hasUserPinColumn,
   verifyUserPin: mocks.verifyUserPin,
