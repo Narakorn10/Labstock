@@ -7,6 +7,10 @@ import { Camera, CheckCircle, RotateCcw, X } from 'lucide-react';
 interface QRScannerProps {
   onScan: (text: string) => void;
   onClose: () => void;
+  /** "mobile" uses the dark full-screen layout of the mobile/LINE redesign. Scanning behaviour is identical. */
+  variant?: 'default' | 'mobile';
+  /** Heading shown in the mobile layout, e.g. "รับเข้าคลังหลัก". */
+  title?: string;
 }
 
 type CameraDevice = Awaited<ReturnType<typeof Html5Qrcode.getCameras>>[number];
@@ -91,7 +95,7 @@ function playBeep() {
   }
 }
 
-export default function QRScanner({ onScan, onClose }: QRScannerProps) {
+export default function QRScanner({ onScan, onClose, variant = 'default', title }: QRScannerProps) {
   const [isScannerStarted, setIsScannerStarted] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -200,6 +204,100 @@ export default function QRScanner({ onScan, onClose }: QRScannerProps) {
     setSelectedCameraId(cameraId);
     localStorage.setItem(savedCameraKey, cameraId);
   };
+
+  if (variant === 'mobile') {
+    return (
+      <div className="fixed inset-0 z-[100] flex flex-col bg-[#0d1116] text-white">
+        <div className="flex items-center gap-3 px-[18px] pb-2 pt-3">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="ปิดกล้อง"
+            className="flex size-11 shrink-0 items-center justify-center rounded-full bg-white/[0.12]"
+          >
+            <X size={20} />
+          </button>
+          <div className="min-w-0 flex-1 text-center">
+            <p className="text-xs tracking-[0.14em] text-[#9aa3ad]">สแกนก่อน</p>
+            <p className="truncate font-semibold">{title || 'สแกนบาร์โค้ด'}</p>
+          </div>
+          <span className="size-11 shrink-0" aria-hidden="true" />
+        </div>
+
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 px-[18px]">
+          <div className={`relative aspect-square w-full max-w-md overflow-hidden rounded-[22px] bg-[#161b22] transition-colors ${isSuccess ? 'ring-4 ring-[oklch(0.7_0.17_150)]' : 'ring-1 ring-white/20'}`}>
+            <div id={scannerId} className="h-full w-full" />
+
+            {isSuccess && (
+              <div className="absolute inset-0 flex items-center justify-center bg-[oklch(0.7_0.17_150)]/25 backdrop-blur-sm">
+                <CheckCircle className="text-[oklch(0.7_0.17_150)]" size={72} />
+              </div>
+            )}
+
+            {!error && isScannerStarted && !isSuccess && !isProcessing && (
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                <div className="relative h-[170px] w-[260px] rounded-[22px] border-[3px] border-white shadow-[0_0_0_2000px_rgba(13,17,22,0.45)]">
+                  <div className="absolute inset-x-3.5 top-0 h-0.5 animate-[scan_2s_ease-in-out_infinite] bg-[oklch(0.7_0.17_150)] shadow-[0_0_12px_oklch(0.7_0.17_150)]" />
+                </div>
+              </div>
+            )}
+
+            {error && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-[#161b22] p-6 text-center">
+                <p className="text-sm">{error}</p>
+                <button
+                  type="button"
+                  onClick={() => window.location.reload()}
+                  className="flex min-h-11 items-center gap-2 rounded-full bg-white px-6 font-medium text-[#1d1f20]"
+                >
+                  <RotateCcw size={18} />
+                  ลองใหม่
+                </button>
+              </div>
+            )}
+          </div>
+
+          <p className="text-[13px] text-[#c7ced6]">วางบาร์โค้ด GS1 หรือ QR ให้อยู่ในกรอบ</p>
+
+          {cameras.length > 1 && (
+            <label className="w-full max-w-md">
+              <span className="mb-1.5 flex items-center gap-2 text-xs text-[#9aa3ad]">
+                <Camera size={14} />
+                เลือกกล้อง
+              </span>
+              <select
+                value={selectedCameraId}
+                onChange={(event) => handleCameraChange(event.target.value)}
+                disabled={isProcessing || isSuccess}
+                className="min-h-11 w-full rounded-xl border border-white/10 bg-white/10 px-3 text-sm text-white outline-none disabled:opacity-50"
+              >
+                {cameras.map((camera, index) => (
+                  <option key={camera.id} value={camera.id} className="text-gray-900">
+                    {camera.label || `Camera ${index + 1}`}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
+
+        <style jsx global>{`
+          @keyframes scan {
+            0%, 100% { top: 0%; opacity: 0; }
+            10% { opacity: 1; }
+            50% { top: 100%; opacity: 1; }
+            90% { opacity: 1; }
+            95% { opacity: 0; }
+          }
+          #qr-reader__scan_region video {
+            object-fit: cover !important;
+            width: 100% !important;
+            height: 100% !important;
+          }
+        `}</style>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 bg-black z-[100] flex flex-col items-center justify-center p-4">
