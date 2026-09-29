@@ -24,7 +24,7 @@ const usage = `Usage: node scripts/setup-line-rich-menu.mjs <command>
 Menu ids read by sync (set them in .env.local / Vercel after create):
   LINE_RECEIVE_RICH_MENU_ID      receive + dispense + open web   (roles allowed the "receive" menu)
   LINE_DISPENSE_RICH_MENU_ID     dispense + open web             (other roles, and the default menu)
-  LINE_PURCHASING_RICH_MENU_ID   order + dispense + open web     (Admin / Manager)`;
+  LINE_PURCHASING_RICH_MENU_ID   order + receive + dispense + web (Admin / Manager)`;
 
 function getAppBaseUrl() {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
@@ -137,6 +137,12 @@ const thirds = [
   { x: 833, width: 834 },
   { x: 1667, width: 833 },
 ];
+const quarters = [
+  { x: 0, width: 625 },
+  { x: 625, width: 625 },
+  { x: 1250, width: 625 },
+  { x: 1875, width: 625 },
+];
 const halves = [
   { x: 0, width: 1250 },
   { x: 1250, width: 1250 },
@@ -173,14 +179,15 @@ function buildMenus() {
       ]),
     },
     purchasing: {
-      name: "LabStock menu - order, dispense, web",
+      name: "LabStock menu - order, receive, dispense, web",
       image: "purchasing.png",
       envName: "LINE_PURCHASING_RICH_MENU_ID",
       get areas() {
         const orderUrl = resolveOrderUrl();
         validateUrl("Ordering", orderUrl);
-        return cells(thirds, [
+        return cells(quarters, [
           uri("สั่งน้ำยา", orderUrl),
+          uri("รับเข้า", `${appUrl}/mobile/receive`),
           uri("เบิกน้ำยา", dispenseUrl),
           uri("เปิด LabStock", `${appUrl}/`),
         ]);
