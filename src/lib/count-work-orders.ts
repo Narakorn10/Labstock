@@ -133,6 +133,8 @@ export async function confirmCountWorkOrder(user: AuthenticatedUser, id: number,
   assertLabUser(user);
   const normalized = normalizeAllocations(allocations);
   const payload = JSON.stringify(normalized);
+  // Only the requested items are dispensed. Other items still waiting for a refill keep the order OPEN,
+  // and a dispensed item is zeroed so replaying the same request cannot dispense it twice.
   const [resultRows] = await sql.transaction([sql`
     WITH locked_order AS (
       SELECT id FROM count_work_orders WHERE id = ${id} AND status = 'OPEN' AND LOWER(owner_username) = LOWER(${user.username}) FOR UPDATE
@@ -141,13 +143,17 @@ export async function confirmCountWorkOrder(user: AuthenticatedUser, id: number,
       FROM JSONB_ARRAY_ELEMENTS(${payload}::jsonb) entry
     ), requested_totals AS (
       SELECT item_key, SUM(qty) AS qty FROM requested GROUP BY item_key
-    ), requirements AS (
+    ), pending AS (
       SELECT LOWER(i.item_id) AS item_key, i.id AS work_item_id, i.required_qty, i.item_id, i.name
       FROM count_work_order_items i JOIN locked_order o ON o.id = i.work_order_id WHERE i.required_qty > 0
+    ), requirements AS (
+      SELECT p.* FROM pending p WHERE EXISTS (SELECT 1 FROM requested r WHERE r.item_key = p.item_key)
+    ), remaining AS (
+      SELECT COUNT(*)::int AS n FROM pending p WHERE NOT EXISTS (SELECT 1 FROM requested r WHERE r.item_key = p.item_key)
     ), valid AS (
-      SELECT COUNT(*) = (SELECT COUNT(*) FROM requirements) AND NOT EXISTS (
+      SELECT EXISTS (SELECT 1 FROM requested) AND NOT EXISTS (
         SELECT 1 FROM requirements r LEFT JOIN requested_totals q ON q.item_key = r.item_key WHERE COALESCE(q.qty, 0) <> r.required_qty
-      ) AND NOT EXISTS (SELECT 1 FROM requested r LEFT JOIN requirements q ON q.item_key = r.item_key WHERE q.item_key IS NULL) AND NOT EXISTS (
+      ) AND NOT EXISTS (SELECT 1 FROM requested r LEFT JOIN pending q ON q.item_key = r.item_key WHERE q.item_key IS NULL) AND NOT EXISTS (
         SELECT 1 FROM requested r LEFT JOIN inventory inv ON inv.id = r.inventory_id AND LOWER(inv.item_id) = r.item_key WHERE inv.id IS NULL
       ) AS ok
     ), locked_inventory AS (
@@ -170,19 +176,29 @@ export async function confirmCountWorkOrder(user: AuthenticatedUser, id: number,
       FROM deducted d JOIN requirements req ON LOWER(req.item_id) = LOWER(d.item_id)
     ), closed AS (
       UPDATE count_work_orders SET status = 'CONFIRMED', confirmed_at = NOW(), updated_at = NOW()
-      WHERE id = ${id} AND (SELECT ok FROM valid) AND (SELECT ok FROM sufficient)
+      WHERE id = ${id} AND (SELECT ok FROM valid) AND (SELECT ok FROM sufficient) AND (SELECT n FROM remaining) = 0
       RETURNING id
+    ), dispensed_items AS (
+      UPDATE count_work_order_items i SET required_qty = 0, updated_at = NOW() FROM requirements req
+      WHERE i.id = req.work_item_id AND (SELECT ok FROM valid) AND (SELECT ok FROM sufficient) AND (SELECT n FROM remaining) > 0
+      RETURNING i.id
     ), audit_saved AS (
       INSERT INTO count_work_order_audit (work_order_id, action, actor_username, after_data)
-      SELECT id, 'CONFIRMED', ${user.username}, jsonb_build_object('allocationCount', (SELECT COUNT(*) FROM allocations_saved)) FROM closed
+      SELECT ${id}, CASE WHEN (SELECT n FROM remaining) = 0 THEN 'CONFIRMED' ELSE 'PARTIAL_CONFIRMED' END, ${user.username},
+        jsonb_build_object('allocationCount', (SELECT COUNT(*) FROM allocations_saved), 'remainingItems', (SELECT n FROM remaining))
+      WHERE (SELECT ok FROM valid) AND (SELECT ok FROM sufficient)
     )
     SELECT (SELECT COUNT(*) FROM locked_order)::int AS "owned", (SELECT ok FROM valid) AS valid,
-      (SELECT ok FROM sufficient) AS sufficient, (SELECT COUNT(*) FROM closed)::int AS "closed"
+      (SELECT ok FROM sufficient) AS sufficient, (SELECT COUNT(*) FROM closed)::int AS "closed",
+      (SELECT n FROM remaining) AS "remaining", (SELECT COUNT(*) FROM deducted)::int AS "dispensed"
   `]);
-  const result = resultRows[0] as { owned: number; valid: boolean; sufficient: boolean; closed: number } | undefined;
+  const result = resultRows[0] as { owned: number; valid: boolean; sufficient: boolean; closed: number; remaining: number; dispensed: number } | undefined;
   if (!result?.owned) throw new Error("ไม่พบใบงานที่เปิดอยู่หรือคุณไม่ใช่ผู้สร้าง");
   if (!result.valid) throw new Error("ยอดจัดสรร Lot ต้องครบและตรงกับยอดที่ต้องเบิกทุกรายการ");
   if (!result.sufficient) throw new Error("Lot มีจำนวนไม่พอหรือถูกเบิกไปก่อนหน้า กรุณาโหลด Lot ล่าสุดแล้วเลือกใหม่");
-  if (Number(result.closed) !== 1) throw new Error("ยืนยันใบงานไม่สำเร็จ");
-  return { success: true, message: "ยืนยันเบิกจากใบงานเรียบร้อยแล้ว" };
+  if (Number(result.closed) === 1) return { success: true, message: "ยืนยันเบิกจากใบงานเรียบร้อยแล้ว" };
+  if (Number(result.remaining) > 0 && Number(result.dispensed) > 0) {
+    return { success: true, message: `เบิกตามรายการที่เลือกแล้ว ใบงานยังเปิดอยู่ (เหลืออีก ${Number(result.remaining)} รายการ)` };
+  }
+  throw new Error("ยืนยันใบงานไม่สำเร็จ");
 }
