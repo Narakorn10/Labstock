@@ -1,14 +1,13 @@
 "use client";
 
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import liff from "@line/liff";
 import {
-  Calendar,
   Camera,
   CheckCircle,
   HandHelping,
   Loader2,
-  Minus,
   Plus,
   RefreshCw,
   Search,
@@ -17,8 +16,11 @@ import {
   X,
   XCircle,
 } from "lucide-react";
+import PinInput from "@/components/mobile/pin-input";
+import QtyStepper from "@/components/mobile/qty-stepper";
 import { BarcodePattern, BarcodePatternV2Runtime, Lot, Reagent } from "@/lib/api-client";
 import { findMatchingReagentWithV2 } from "@/lib/barcode-parser";
+import { formatThaiDate } from "@/lib/thai-date";
 import QRScanner from "@/components/lazy-qr-scanner";
 
 type LinkedUser = { username: string; name: string; role: string };
@@ -45,21 +47,17 @@ type MobileLookupResponse = {
 
 const createCartId = (itemId: string) => `${itemId}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-function formatThaiDate(value?: string) {
-  if (!value) return "-";
+const PURPOSE_PRESETS = ["งานประจำวัน", "QC", "Calibrate"];
 
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
+const fieldClass =
+  "min-h-[50px] w-full rounded-xl border border-line bg-white px-3.5 text-base outline-none transition focus:border-ink focus:ring-2 focus:ring-ink/10";
 
-  return date.toLocaleDateString("th-TH", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-}
+const primaryButtonClass =
+  "flex min-h-[54px] w-full items-center justify-center gap-2 rounded-[14px] bg-line-green-ink px-4 font-semibold text-white transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50";
 
 export default function LiffDispenseWorkflow() {
   const [idToken, setIdToken] = useState("");
+  const [lineName, setLineName] = useState("");
   const [user, setUser] = useState<LinkedUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -79,6 +77,7 @@ export default function LiffDispenseWorkflow() {
   const [cart, setCart] = useState<MobileCartItem[]>([]);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; msg: string } | null>(null);
   const [purpose, setPurpose] = useState("");
+  const [otherPurpose, setOtherPurpose] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [approverUsername, setApproverUsername] = useState("");
   const [approverPin, setApproverPin] = useState("");
@@ -98,6 +97,8 @@ export default function LiffDispenseWorkflow() {
         const token = liff.getIDToken();
         if (!token) throw new Error("ไม่พบข้อมูลยืนยันตัวตนจาก LINE");
         setIdToken(token);
+        // The name is only present when the LIFF app was granted the profile scope; the bind screen works without it.
+        setLineName(liff.getDecodedIDToken()?.name || "");
 
         const response = await fetch("/api/mobile/line-auth", {
           method: "POST",
@@ -321,6 +322,21 @@ export default function LiffDispenseWorkflow() {
     });
   };
 
+  const choosePurposePreset = (preset: string) => {
+    setOtherPurpose(false);
+    setPurpose((current) => (current === preset ? "" : preset));
+  };
+
+  const chooseOtherPurpose = () => {
+    if (otherPurpose) {
+      setOtherPurpose(false);
+      setPurpose("");
+      return;
+    }
+    setOtherPurpose(true);
+    setPurpose((current) => (PURPOSE_PRESETS.includes(current) ? "" : current));
+  };
+
   const openConfirm = () => {
     const validItems = cart.filter((item) => item.qty > 0);
     if (validItems.length === 0) {
@@ -380,6 +396,7 @@ export default function LiffDispenseWorkflow() {
       setCart([]);
       setApproverPin("");
       setPurpose("");
+      setOtherPurpose(false);
       setConfirmOpen(false);
       await loadLookupData();
     } catch (err: unknown) {
@@ -396,13 +413,13 @@ export default function LiffDispenseWorkflow() {
 
   if (loading) {
     return (
-      <section className="flex min-h-[100dvh] flex-col items-center justify-center gap-4 bg-[#edf5f1] px-6 text-center text-slate-700" aria-live="polite">
-        <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-sm">
-          <Loader2 className="animate-spin text-emerald-700" size={28} />
+      <section className="flex min-h-[100dvh] flex-col items-center justify-center gap-4 bg-ground px-6 text-center text-ink" aria-live="polite">
+        <span className="flex size-14 items-center justify-center rounded-2xl border border-line bg-white">
+          <Loader2 className="animate-spin text-line-green-ink" size={28} />
         </span>
         <div>
-          <p className="text-base font-black">กำลังเปิดการเบิกจ่าย</p>
-          <p className="mt-1 text-sm font-medium text-slate-500">กำลังยืนยันตัวตนผ่าน LINE...</p>
+          <p className="text-base font-semibold">กำลังเปิดการเบิกจ่าย</p>
+          <p className="mt-1 text-sm text-ink-muted">กำลังยืนยันตัวตนผ่าน LINE...</p>
         </div>
       </section>
     );
@@ -410,11 +427,11 @@ export default function LiffDispenseWorkflow() {
 
   if (error && !idToken) {
     return (
-      <section className="flex min-h-[100dvh] items-center justify-center bg-[#edf5f1] px-5 text-center" role="alert">
-        <div className="max-w-sm rounded-[28px] border border-red-100 bg-white p-6 shadow-sm">
-          <XCircle className="mx-auto text-red-600" size={34} />
-          <h1 className="mt-4 text-xl font-black text-slate-950">เปิดหน้าการเบิกจ่ายไม่สำเร็จ</h1>
-          <p className="mt-2 text-sm font-medium leading-6 text-red-700">{error}</p>
+      <section className="flex min-h-[100dvh] items-center justify-center bg-ground px-5 text-center" role="alert">
+        <div className="max-w-sm rounded-[22px] border border-line bg-white p-6">
+          <XCircle className="mx-auto text-crit" size={34} />
+          <h1 className="mt-4 text-xl font-semibold text-ink">เปิดหน้าการเบิกจ่ายไม่สำเร็จ</h1>
+          <p className="mt-2 text-sm leading-6 text-crit">{error}</p>
         </div>
       </section>
     );
@@ -422,134 +439,132 @@ export default function LiffDispenseWorkflow() {
 
   if (!user) {
     return (
-      <section className="min-h-[100dvh] bg-[#edf5f1] px-4 py-[max(1.5rem,env(safe-area-inset-top))] text-slate-950" aria-label="ผูกบัญชี LINE">
-        <section className="mx-auto max-w-md overflow-hidden rounded-[28px] border border-emerald-100 bg-white shadow-xl shadow-emerald-950/5">
-          <div className="bg-[#0b2b26] px-5 py-5 text-white">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-300 text-[#0b2b26]">
-              <ShieldCheck size={25} />
+      <section className="min-h-[100dvh] bg-ground px-[18px] py-[max(1.125rem,env(safe-area-inset-top))] text-ink" aria-label="ผูกบัญชี LINE">
+        <div className="mx-auto flex min-h-[calc(100dvh-2.25rem)] max-w-md flex-col gap-3.5">
+          <div className="rounded-[22px] bg-line-green-ink p-5 text-white">
+            <div className="flex items-center gap-2.5">
+              <Image src="/images/logo-spr-lab.png" alt="" width={40} height={40} className="size-10 rounded-[10px]" />
+              <p className="text-xs tracking-[0.12em]">LABSTOCK × LINE</p>
             </div>
-            <p className="mt-4 text-xs font-black uppercase tracking-[0.18em] text-emerald-200">LabStock LIFF</p>
-            <h1 className="mt-1 text-2xl font-black">ผูกบัญชี LINE ครั้งแรก</h1>
-            <p className="mt-2 text-sm leading-6 text-emerald-50/80">ยืนยันด้วย username และ PIN เพียงครั้งเดียว แล้วเริ่มเบิกจ่ายผ่าน LINE ได้ทันที</p>
+            <h1 className="mb-1.5 mt-3.5 text-2xl font-semibold">ผูกบัญชี LINE ครั้งแรก</h1>
+            <p className="text-sm leading-relaxed text-[#e7fbef]">ยืนยันด้วย username และ PIN เพียงครั้งเดียว แล้วเริ่มเบิกจ่ายผ่าน LINE ได้ทันที</p>
           </div>
 
           <form
-            className="space-y-4 p-5"
+            className="flex flex-1 flex-col gap-3"
             onSubmit={(event) => {
               event.preventDefault();
               void linkAccount();
             }}
           >
-            <label className="block space-y-1.5">
-              <span className="text-xs font-black text-slate-600">Username LabStock</span>
-              <input
-                value={username}
-                onChange={(event) => setUsername(event.target.value)}
-                autoComplete="username"
-                placeholder="เช่น staff01"
-                className="min-h-14 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-base font-bold outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20"
-              />
-            </label>
-            <label className="block space-y-1.5">
-              <span className="text-xs font-black text-slate-600">PIN</span>
-              <input
-                type="password"
-                inputMode="numeric"
-                autoComplete="current-password"
-                value={pin}
-                onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 6))}
-                placeholder="PIN 4-6 หลัก"
-                className="min-h-14 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-base font-bold outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20"
-              />
-            </label>
-            {error && <p className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-bold text-red-700" role="alert">{error}</p>}
-            <button type="submit" disabled={linking} className="flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-700 px-4 text-base font-black text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">
+            <div className="space-y-3 rounded-[18px] border border-line bg-white p-4">
+              {lineName && (
+                <div className="flex items-center gap-2.5 border-b border-[#ececee] pb-3">
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#e8e8eb] font-semibold" aria-hidden="true">
+                    {Array.from(lineName)[0]}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-xs text-ink-muted">บัญชี LINE</p>
+                    <p className="truncate font-semibold">{lineName}</p>
+                  </div>
+                </div>
+              )}
+              <label className="block space-y-1.5">
+                <span className="text-sm font-medium">Username LabStock</span>
+                <input
+                  value={username}
+                  onChange={(event) => setUsername(event.target.value)}
+                  autoComplete="username"
+                  placeholder="เช่น staff01"
+                  className={fieldClass}
+                />
+              </label>
+              <div className="space-y-1.5">
+                <span className="block text-sm font-medium">PIN 4-6 หลัก</span>
+                <PinInput value={pin} onChange={setPin} label="PIN 4-6 หลัก" disabled={linking} />
+              </div>
+              {error && <p className="rounded-xl border border-crit/25 bg-crit-bg p-3.5 text-sm font-medium text-crit" role="alert">{error}</p>}
+            </div>
+
+            <button type="submit" disabled={linking} className={`${primaryButtonClass} mt-auto`}>
               {linking ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle size={20} />}
               ยืนยันและผูกบัญชี
             </button>
+            <p className="text-center text-xs text-ink-muted">ผูกได้ 1 บัญชี LINE ต่อ 1 ผู้ใช้ LabStock</p>
           </form>
-        </section>
+        </div>
       </section>
     );
   }
 
   return (
-    <section className="min-h-[100dvh] bg-[#edf5f1] text-slate-950" aria-label="เบิกจ่ายน้ำยาผ่าน LINE">
-      <div className="mx-auto max-w-md pb-[calc(8.5rem+env(safe-area-inset-bottom))]">
-        <header className="sticky top-0 z-30 border-b border-emerald-950/20 bg-[#0b2b26]/95 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] text-white backdrop-blur">
+    <section className="min-h-[100dvh] bg-ground text-ink" aria-label="เบิกจ่ายน้ำยาผ่าน LINE">
+      <div className="mx-auto max-w-md pb-[calc(9rem+env(safe-area-inset-bottom))]">
+        <header className="space-y-3 px-4 pb-1 pt-[max(0.875rem,env(safe-area-inset-top))]">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-200">LabStock · LIFF</p>
-              <h1 className="mt-1 text-xl font-black tracking-tight">เบิกจ่ายน้ำยา</h1>
-              <p className="mt-1 truncate text-xs font-medium text-emerald-50/75">{user.name || user.username} · {user.role}</p>
+              <p className="truncate text-xs text-ink-muted">{user.name || user.username} · {user.role}</p>
+              <h1 className="text-[22px] font-semibold">เบิกจ่ายน้ำยา</h1>
             </div>
-            <button
-              type="button"
-              onClick={() => void loadLookupData()}
-              disabled={lookupLoading}
-              aria-label="โหลดข้อมูลน้ำยาใหม่"
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/15 bg-white/10 text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <RefreshCw size={18} className={lookupLoading ? "animate-spin" : ""} />
-            </button>
+            <div className="flex shrink-0 items-center gap-2">
+              <span className="rounded-full bg-[#e6f9ee] px-2.5 py-1 text-xs font-medium text-line-green-ink">ผูก LINE แล้ว</span>
+              <button
+                type="button"
+                onClick={() => void loadLookupData()}
+                disabled={lookupLoading}
+                aria-label="โหลดข้อมูลน้ำยาใหม่"
+                className="flex size-11 items-center justify-center rounded-full border border-line bg-white text-ink transition disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <RefreshCw size={17} className={lookupLoading ? "animate-spin" : ""} />
+              </button>
+            </div>
           </div>
 
-          <div className="mt-4 grid grid-cols-3 gap-2" aria-label="ความคืบหน้าการเบิกจ่าย">
-            {[
-              { step: 1, label: "เลือกน้ำยา" },
-              { step: 2, label: "ตรวจล็อต" },
-              { step: 3, label: "ยืนยัน" },
-            ].map((item) => {
-              const isCurrent = activeStep === item.step;
-              const isComplete = activeStep > item.step;
-              return (
-                <div key={item.step} className={`min-h-11 rounded-xl px-2 py-2 text-center ${isCurrent ? "bg-emerald-300 text-[#0b2b26]" : isComplete ? "bg-white/15 text-white" : "bg-white/5 text-emerald-50/60"}`}>
-                  <span className="text-[10px] font-black">{item.step}. {item.label}</span>
-                </div>
-              );
-            })}
+          <div className="grid grid-cols-3 gap-1" role="progressbar" aria-label="ความคืบหน้าการเบิกจ่าย" aria-valuemin={1} aria-valuemax={3} aria-valuenow={activeStep} aria-valuetext={`ขั้นตอนที่ ${activeStep} จาก 3`}>
+            {[1, 2, 3].map((step) => (
+              <span key={step} className={`h-[5px] rounded-[3px] ${activeStep >= step ? "bg-line-green" : "bg-[#d6d6d9]"}`} />
+            ))}
           </div>
         </header>
 
-        <div className="space-y-4 px-4 py-4">
+        <div className="space-y-3 px-4 py-3">
           {feedback && (
-            <div className={`flex items-start gap-3 rounded-2xl border p-4 ${feedback.type === "success" ? "border-emerald-100 bg-emerald-50 text-emerald-800" : "border-red-100 bg-red-50 text-red-700"}`} role="status" aria-live="polite">
+            <div className={`flex items-start gap-3 rounded-2xl border p-3.5 ${feedback.type === "success" ? "border-ok/25 bg-ok-bg text-ok" : "border-crit/25 bg-crit-bg text-crit"}`} role="status" aria-live="polite">
               {feedback.type === "success" ? <CheckCircle className="mt-0.5 shrink-0" size={20} /> : <XCircle className="mt-0.5 shrink-0" size={20} />}
-              <p className="min-w-0 flex-1 text-sm font-bold leading-5">{feedback.msg}</p>
-              <button type="button" onClick={() => setFeedback(null)} className="min-h-11 shrink-0 rounded-xl px-3 text-xs font-black underline underline-offset-2">ปิด</button>
+              <p className="min-w-0 flex-1 text-sm font-medium leading-5">{feedback.msg}</p>
+              <button type="button" onClick={() => setFeedback(null)} className="min-h-11 shrink-0 rounded-xl px-3 text-xs font-medium underline underline-offset-2">ปิด</button>
             </div>
           )}
 
           {loadError && (
-            <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-red-700" role="alert">
-              <p className="text-sm font-bold">{loadError}</p>
-              <button type="button" onClick={() => void loadLookupData()} className="mt-3 min-h-11 rounded-xl border border-red-200 bg-white px-4 text-sm font-black">ลองโหลดใหม่</button>
+            <div className="rounded-2xl border border-crit/25 bg-crit-bg p-3.5 text-crit" role="alert">
+              <p className="text-sm font-medium">{loadError}</p>
+              <button type="button" onClick={() => void loadLookupData()} className="mt-3 min-h-11 rounded-xl border border-crit/25 bg-white px-4 text-sm font-medium">ลองโหลดใหม่</button>
             </div>
           )}
 
-          <section className="rounded-[26px] border border-emerald-100 bg-white p-4 shadow-sm shadow-emerald-950/5" aria-labelledby="discovery-heading">
+          <section className="rounded-[18px] border border-line bg-white p-3.5" aria-labelledby="discovery-heading">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-emerald-700">ขั้นตอนที่ 1</p>
-                <h2 id="discovery-heading" className="mt-1 text-base font-black">สแกนหรือค้นหาน้ำยา</h2>
+                <p className="text-[11px] font-semibold tracking-[0.16em] text-line-green-ink">ขั้นตอนที่ 1</p>
+                <h2 id="discovery-heading" className="font-semibold">สแกนหรือค้นหาน้ำยา</h2>
               </div>
-              <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-[11px] font-black text-emerald-800">เริ่มที่บาร์โค้ด</span>
+              <span className="rounded-full bg-[#e6f9ee] px-2.5 py-1 text-[11px] font-medium text-line-green-ink">เริ่มที่บาร์โค้ด</span>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setScanMode(true)}
-              disabled={lookupLoading}
-              className="mt-4 flex min-h-14 w-full items-center justify-center gap-3 rounded-2xl bg-emerald-700 px-4 text-base font-black text-white shadow-sm transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Camera size={22} />
-              สแกนบาร์โค้ด
-            </button>
-
-            <form onSubmit={handleManualAdd} className="mt-3 space-y-3">
-              <label className="relative block">
+            <div className="mt-3 grid grid-cols-[52px_minmax(0,1fr)] gap-2">
+              <button
+                type="button"
+                onClick={() => setScanMode(true)}
+                disabled={lookupLoading}
+                aria-label="สแกนบาร์โค้ด"
+                className="flex h-12 items-center justify-center rounded-xl bg-line-green-ink text-white transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Camera size={20} />
+              </button>
+              <form onSubmit={handleManualAdd} className="relative">
                 <span className="sr-only">ค้นหาน้ำยา</span>
-                <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={19} />
+                <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8a8d91]" size={18} />
                 <input
                   type="text"
                   value={search}
@@ -558,164 +573,169 @@ export default function LiffDispenseWorkflow() {
                     setShowResults(true);
                   }}
                   onFocus={() => setShowResults(true)}
-                  placeholder="รหัส ชื่อน้ำยา หรือบาร์โค้ด"
-                  className="min-h-14 w-full rounded-2xl border border-slate-200 bg-slate-50 py-3 pl-11 pr-4 text-base font-bold outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20"
+                  placeholder="ค้นหาน้ำยา"
+                  enterKeyHint="search"
+                  className="h-12 w-full rounded-xl border border-line bg-white pl-10 pr-3 text-base outline-none transition focus:border-ink focus:ring-2 focus:ring-ink/10"
                 />
-              </label>
+              </form>
+            </div>
 
-              {showResults && search.trim() && (
-                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white" role="listbox" aria-label="ผลการค้นหาน้ำยา">
-                  {filteredResults.length > 0 ? filteredResults.map((item) => (
-                    <button
-                      key={item.itemId}
-                      type="button"
-                      onClick={() => addToCart(item)}
-                      className="flex min-h-14 w-full items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 text-left last:border-b-0 hover:bg-emerald-50"
-                    >
-                      <span className="min-w-0">
-                        <span className="block truncate text-sm font-black text-slate-950">{item.name}</span>
-                        <span className="mt-0.5 block text-[11px] font-bold text-slate-500">รหัส: {item.itemId}</span>
-                      </span>
-                      <Plus className="shrink-0 text-emerald-700" size={20} />
-                    </button>
-                  )) : (
-                    <p className="px-4 py-4 text-sm font-bold text-slate-500">ไม่พบรายการที่ตรงกับคำค้น</p>
-                  )}
-                </div>
-              )}
-
-              <button type="submit" disabled={lookupLoading} className="min-h-12 w-full rounded-2xl border border-slate-300 bg-white px-4 text-sm font-black text-slate-800 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
-                เพิ่มด้วยรหัส/บาร์โค้ดที่พิมพ์
-              </button>
-            </form>
+            {showResults && search.trim() && (
+              <div className="mt-2 overflow-hidden rounded-xl border border-line bg-white" role="listbox" aria-label="ผลการค้นหาน้ำยา">
+                {filteredResults.length > 0 ? filteredResults.map((item) => (
+                  <button
+                    key={item.itemId}
+                    type="button"
+                    onClick={() => addToCart(item)}
+                    className="flex min-h-14 w-full items-center justify-between gap-3 border-b border-[#ececee] px-4 py-2.5 text-left last:border-b-0"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium">{item.name}</span>
+                      <span className="mt-0.5 block text-xs text-ink-muted">รหัส: {item.itemId}</span>
+                    </span>
+                    <Plus className="shrink-0 text-line-green-ink" size={20} />
+                  </button>
+                )) : (
+                  <p className="px-4 py-4 text-sm text-ink-muted">ไม่พบรายการที่ตรงกับคำค้น</p>
+                )}
+              </div>
+            )}
 
             {lookupLoading && (
-              <div className="mt-3 flex min-h-11 items-center gap-2 rounded-xl bg-slate-50 px-3 text-xs font-bold text-slate-600" aria-live="polite">
-                <Loader2 className="animate-spin text-emerald-700" size={16} />
+              <div className="mt-3 flex min-h-11 items-center gap-2 rounded-xl bg-[#f6f6f7] px-3 text-xs text-ink-muted" aria-live="polite">
+                <Loader2 className="animate-spin text-line-green-ink" size={16} />
                 กำลังอัปเดตรายการน้ำยา...
               </div>
             )}
           </section>
 
-          <section className="rounded-[26px] border border-slate-200 bg-white p-4 shadow-sm shadow-emerald-950/5" aria-labelledby="selection-heading">
+          <section className="rounded-[18px] border border-line bg-white p-3.5" aria-labelledby="selection-heading">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-emerald-700">ขั้นตอนที่ 2</p>
-                <h2 id="selection-heading" className="mt-1 text-base font-black">รายการที่เลือก</h2>
-                <p className="mt-1 text-xs font-medium text-slate-500">{validItems.length} รายการ · {totalUnits} หน่วย</p>
+                <p className="text-[11px] font-semibold tracking-[0.16em] text-line-green-ink">ขั้นตอนที่ 2</p>
+                <h2 id="selection-heading" className="font-semibold">รายการที่เลือก</h2>
+                <p className="mt-0.5 text-xs text-ink-muted">{validItems.length} รายการ · {totalUnits} หน่วย</p>
               </div>
               {cart.length > 0 && (
-                <button type="button" onClick={() => setCart([])} className="min-h-11 rounded-xl px-3 text-xs font-black text-red-700 underline underline-offset-2">ล้างทั้งหมด</button>
+                <button type="button" onClick={() => setCart([])} className="min-h-11 rounded-xl px-3 text-xs font-medium text-crit underline underline-offset-2">ล้างทั้งหมด</button>
               )}
             </div>
 
             {cart.length === 0 ? (
-              <div className="mt-4 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 px-5 py-8 text-center">
-                <HandHelping className="mx-auto text-slate-300" size={38} />
-                <p className="mt-3 text-sm font-black text-slate-600">ยังไม่มีรายการเบิกจ่าย</p>
-                <p className="mt-1 text-xs font-medium leading-5 text-slate-500">สแกนบาร์โค้ดหรือค้นหาน้ำยา แล้วระบบจะเลือกล็อตให้ตาม FEFO</p>
+              <div className="mt-3 rounded-2xl border-2 border-dashed border-line bg-[#f6f6f7] px-5 py-8 text-center">
+                <HandHelping className="mx-auto text-[#b8bbbf]" size={38} strokeWidth={1.5} />
+                <p className="mt-3 text-sm font-medium text-ink-muted">ยังไม่มีรายการเบิกจ่าย</p>
+                <p className="mt-1 text-xs leading-5 text-ink-muted">สแกนบาร์โค้ดหรือค้นหาน้ำยา แล้วระบบจะเลือกล็อตให้ตาม FEFO</p>
               </div>
             ) : (
-              <div className="mt-4 space-y-3">
+              <div className="mt-3 space-y-3">
                 {cart.map((item) => {
                   const fefoLot = item.availableLots?.[0];
                   const isFefoSelected = fefoLot?.inventoryId === item.inventoryId;
+                  const canChangeLot = (item.availableLots?.length ?? 0) > 1;
                   return (
-                    <article key={item.cartId} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                      <div className="flex items-start justify-between gap-3">
+                    <article key={item.cartId} className="rounded-2xl border border-[#ececee] p-3">
+                      <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <h3 className="truncate text-sm font-black text-slate-950">{item.name}</h3>
-                          <p className="mt-1 text-[11px] font-bold text-slate-500">รหัส: {item.itemId}</p>
+                          <h3 className="truncate text-sm font-semibold">{item.name}</h3>
+                          <p className="mt-0.5 text-xs text-ink-muted">รหัส: {item.itemId}</p>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => removeFromCart(item.cartId)}
-                          aria-label={`ลบ ${item.name} ออกจากรายการ`}
-                          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700"
-                        >
-                          <Trash2 size={18} />
-                        </button>
-                      </div>
-
-                      <div className="mt-4">
-                        <div className="mb-2 flex items-center justify-between gap-2">
-                          <label htmlFor={`lot-${item.cartId}`} className="text-xs font-black text-slate-700">ล็อตที่เลือก</label>
-                          <span className={`rounded-full px-2.5 py-1 text-[10px] font-black ${isFefoSelected ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${isFefoSelected ? "bg-ok-bg text-ok" : "bg-warn-bg text-warn"}`}>
                             {isFefoSelected ? "FEFO แนะนำ" : "เลือกล็อตอื่น"}
                           </span>
-                        </div>
-                        <select
-                          id={`lot-${item.cartId}`}
-                          value={String(item.inventoryId)}
-                          onChange={(event) => updateDispenseLot(item.cartId, event.target.value)}
-                          className="min-h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-900 outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20"
-                        >
-                          {item.availableLots?.map((lot, index) => (
-                            <option key={lot.inventoryId} value={String(lot.inventoryId)}>
-                              {`${index === 0 ? "FEFO · " : ""}${lot.lotNo} · EXP ${formatThaiDate(lot.expDate)} · คงเหลือ ${lot.qty}`}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                        <div className="rounded-xl bg-white p-3 text-slate-600">
-                          <span className="block font-bold text-slate-400">หมดอายุ</span>
-                          <span className="mt-1 flex items-center gap-1.5 font-black text-slate-800"><Calendar size={14} />{formatThaiDate(item.expDate)}</span>
-                        </div>
-                        <div className="rounded-xl bg-white p-3 text-slate-600">
-                          <span className="block font-bold text-slate-400">คงเหลือในล็อต</span>
-                          <span className="mt-1 block font-black text-slate-800">{item.maxQty} {item.unit}</span>
+                          <button
+                            type="button"
+                            onClick={() => removeFromCart(item.cartId)}
+                            aria-label={`ลบ ${item.name} ออกจากรายการ`}
+                            className="flex size-11 items-center justify-center rounded-xl text-ink-muted"
+                          >
+                            <Trash2 size={17} />
+                          </button>
                         </div>
                       </div>
 
-                      <div className="mt-4">
-                        <p className="mb-2 text-xs font-black text-slate-700">จำนวนที่เบิก</p>
-                        <div className="grid grid-cols-[3rem_minmax(0,1fr)_3rem_auto] items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => updateQty(item.cartId, String(Math.max(0, item.qty - 1)))}
-                            aria-label={`ลดจำนวน ${item.name}`}
-                            className="flex h-12 w-12 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-100"
-                          >
-                            <Minus size={18} />
-                          </button>
-                          <input
-                            type="number"
-                            inputMode="numeric"
-                            min="0"
-                            max={item.maxQty}
-                            value={item.qty}
-                            onChange={(event) => updateQty(item.cartId, event.target.value)}
-                            aria-label={`จำนวน ${item.name}`}
-                            className="min-h-12 w-full rounded-xl border border-slate-200 bg-white px-2 text-center text-lg font-black text-slate-950 outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => updateQty(item.cartId, String(item.qty + 1))}
-                            aria-label={`เพิ่มจำนวน ${item.name}`}
-                            className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-700 text-white transition hover:bg-emerald-800"
-                          >
-                            <Plus size={18} />
-                          </button>
-                          <span className="min-w-10 text-right text-xs font-black text-slate-600">{item.unit}</span>
+                      <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <span className="block text-[#8a8d91]">หมดอายุ</span>
+                          <span className="mt-0.5 block font-medium">{formatThaiDate(item.expDate)} · {item.lotNo}</span>
                         </div>
+                        <div>
+                          <span className="block text-[#8a8d91]">คงเหลือในล็อต</span>
+                          <span className="mt-0.5 block font-medium">{item.maxQty} {item.unit}</span>
+                        </div>
+                      </div>
+
+                      {canChangeLot && (
+                        <div className="mt-3">
+                          <label htmlFor={`lot-${item.cartId}`} className="mb-1 block text-xs font-medium">ล็อตที่เลือก</label>
+                          <select
+                            id={`lot-${item.cartId}`}
+                            value={String(item.inventoryId)}
+                            onChange={(event) => updateDispenseLot(item.cartId, event.target.value)}
+                            className="min-h-12 w-full rounded-xl border border-line bg-white px-3 text-sm outline-none transition focus:border-ink focus:ring-2 focus:ring-ink/10"
+                          >
+                            {item.availableLots?.map((lot, index) => (
+                              <option key={lot.inventoryId} value={String(lot.inventoryId)}>
+                                {`${index === 0 ? "FEFO · " : ""}${lot.lotNo} · ${formatThaiDate(lot.expDate)} · เหลือ ${lot.qty}`}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
+                      <div className="mt-3">
+                        <p className="mb-1.5 text-xs font-semibold">จำนวนที่เบิก ({item.unit})</p>
+                        <QtyStepper
+                          wide
+                          value={item.qty}
+                          onChange={(value) => updateQty(item.cartId, String(value))}
+                          max={item.maxQty}
+                          label={`จำนวน ${item.name}`}
+                        />
                       </div>
                     </article>
                   );
                 })}
 
-                <label className="block rounded-2xl border border-slate-200 bg-white p-4">
-                  <span className="text-sm font-black text-slate-900">วัตถุประสงค์การเบิก</span>
-                  <span className="mt-1 block text-xs font-medium leading-5 text-slate-500">ใช้ตรวจทานในสรุปก่อนยืนยัน เช่น งานประจำวัน หรือ QC</span>
-                  <textarea
-                    value={purpose}
-                    onChange={(event) => setPurpose(event.target.value)}
-                    maxLength={120}
-                    placeholder="ระบุวัตถุประสงค์ (ไม่บังคับ)"
-                    className="mt-3 min-h-24 w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm font-bold outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20"
-                  />
-                </label>
+                <div className="rounded-2xl border border-[#ececee] p-3">
+                  <p className="text-sm font-semibold">วัตถุประสงค์การเบิก</p>
+                  <p className="mt-0.5 text-xs leading-5 text-ink-muted">ใช้ตรวจทานในสรุปก่อนยืนยัน เช่น งานประจำวัน หรือ QC</p>
+                  <div className="mt-2.5 flex flex-wrap gap-2" role="group" aria-label="เลือกวัตถุประสงค์">
+                    {PURPOSE_PRESETS.map((preset) => {
+                      const selected = !otherPurpose && purpose === preset;
+                      return (
+                        <button
+                          key={preset}
+                          type="button"
+                          aria-pressed={selected}
+                          onClick={() => choosePurposePreset(preset)}
+                          className={`min-h-11 rounded-full border px-3.5 text-[13px] ${selected ? "border-ink bg-ink text-white" : "border-line bg-white text-ink"}`}
+                        >
+                          {preset}
+                        </button>
+                      );
+                    })}
+                    <button
+                      type="button"
+                      aria-pressed={otherPurpose}
+                      onClick={chooseOtherPurpose}
+                      className={`min-h-11 rounded-full border px-3.5 text-[13px] ${otherPurpose ? "border-ink bg-ink text-white" : "border-line bg-white text-ink"}`}
+                    >
+                      อื่น ๆ
+                    </button>
+                  </div>
+                  {otherPurpose && (
+                    <textarea
+                      value={purpose}
+                      onChange={(event) => setPurpose(event.target.value)}
+                      maxLength={120}
+                      placeholder="ระบุวัตถุประสงค์"
+                      aria-label="วัตถุประสงค์การเบิก"
+                      className="mt-2.5 min-h-20 w-full resize-none rounded-xl border border-line bg-white p-3 text-base outline-none transition focus:border-ink focus:ring-2 focus:ring-ink/10"
+                    />
+                  )}
+                </div>
               </div>
             )}
           </section>
@@ -723,84 +743,87 @@ export default function LiffDispenseWorkflow() {
       </div>
 
       {cart.length > 0 && (
-        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-emerald-100 bg-white/95 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-12px_28px_rgba(15,23,42,0.08)] backdrop-blur">
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-white px-4 pt-3 pb-[calc(1.75rem+env(safe-area-inset-bottom))]">
           <div className="mx-auto max-w-md">
-            <div className="mb-2 flex items-center justify-between gap-3 px-1">
-              <p className="text-xs font-bold text-slate-600">พร้อมตรวจสอบ <span className="font-black text-slate-950">{validItems.length} รายการ · {totalUnits} หน่วย</span></p>
-              {purpose.trim() && <p className="max-w-32 truncate text-right text-[11px] font-bold text-slate-500">{purpose.trim()}</p>}
-            </div>
-            <button
-              type="button"
-              onClick={openConfirm}
-              disabled={submitting}
-              className="flex min-h-14 w-full items-center justify-center gap-3 rounded-2xl bg-[#0b2b26] px-4 text-base font-black text-white shadow-lg shadow-emerald-950/15 transition hover:bg-[#123a33] disabled:cursor-not-allowed disabled:opacity-50"
-            >
+            <button type="button" onClick={openConfirm} disabled={submitting} className={primaryButtonClass}>
               {submitting ? <Loader2 className="animate-spin" size={21} /> : <CheckCircle size={21} />}
-              ตรวจสอบก่อนยืนยันเบิกจ่าย
+              ตรวจทานก่อนยืนยัน ({validItems.length} รายการ)
             </button>
           </div>
         </div>
       )}
 
       {confirmOpen && (
-        <div className="fixed inset-0 z-[60] flex items-end bg-slate-950/55 p-3 sm:items-center sm:p-6" role="presentation">
+        <div className="fixed inset-0 z-[60] flex items-end bg-[rgba(20,22,24,0.55)] sm:items-center sm:p-6" role="presentation">
           <button type="button" aria-label="ปิดหน้าต่างยืนยัน" onClick={closeConfirm} tabIndex={-1} className="absolute inset-0 cursor-default" disabled={submitting} />
-          <section className="relative z-10 max-h-[90dvh] w-full overflow-y-auto rounded-[28px] bg-white shadow-2xl sm:mx-auto sm:max-w-md" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
-            <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-5">
+          <section className="relative z-10 max-h-[92dvh] w-full overflow-y-auto rounded-t-[28px] bg-white px-[18px] pb-[calc(1.75rem+env(safe-area-inset-bottom))] pt-2.5 sm:mx-auto sm:max-w-md sm:rounded-[28px]" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+            <div className="mx-auto mb-3 h-[5px] w-10 rounded-[3px] bg-line" aria-hidden="true" />
+            <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-emerald-700">ขั้นตอนที่ 3</p>
-                <h2 id="confirm-title" className="mt-1 text-xl font-black text-slate-950">ยืนยันการเบิกจ่าย</h2>
+                <p className="text-[11px] font-semibold tracking-[0.16em] text-line-green-ink">ขั้นตอนที่ 3</p>
+                <h2 id="confirm-title" className="text-[22px] font-semibold">ยืนยันการเบิกจ่าย</h2>
               </div>
-              <button type="button" onClick={closeConfirm} disabled={submitting} aria-label="ปิดหน้าต่างยืนยัน" className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 disabled:opacity-50">
-                <X size={22} />
+              <button type="button" onClick={closeConfirm} disabled={submitting} aria-label="ปิดหน้าต่างยืนยัน" className="flex size-11 shrink-0 items-center justify-center rounded-full bg-[#f6f6f7] text-ink-muted disabled:opacity-50">
+                <X size={20} />
               </button>
             </div>
 
-            <div className="space-y-4 p-5">
-              <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
-                <div className="flex items-center gap-2 text-emerald-900"><ShieldCheck size={18} /><p className="text-sm font-black">ยืนยันผ่าน LINE</p></div>
-                <p className="mt-1 text-sm font-medium text-emerald-800">ผู้อนุมัติ: {user.name || user.username} · {user.role}</p>
+            <div className="mt-3 space-y-3">
+              <div className="flex items-center gap-2.5 rounded-[14px] bg-[#e6f9ee] px-3.5 py-3 text-[#04873b]">
+                <ShieldCheck size={18} className="shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">ยืนยันผ่าน LINE</p>
+                  <p className="truncate text-xs">{lineName ? `${lineName} ↔ ${user.username}` : `${user.name || user.username} · ${user.role}`}</p>
+                </div>
               </div>
 
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="rounded-[14px] border border-[#ececee] px-3.5 py-3">
                 <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-black text-slate-950">สรุปรายการ</p>
-                  <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-700">{validItems.length} รายการ · {totalUnits} หน่วย</span>
+                  <p className="text-sm font-semibold">สรุปรายการ</p>
+                  <span className="text-xs text-ink-muted">{validItems.length} รายการ · {totalUnits} หน่วย</span>
                 </div>
-                <ul className="mt-3 space-y-2">
+                <ul className="mt-2">
                   {validItems.map((item) => (
-                    <li key={item.cartId} className="flex items-start justify-between gap-3 border-t border-slate-200 pt-2 text-sm">
-                      <span className="min-w-0"><span className="block truncate font-black text-slate-900">{item.name}</span><span className="block text-xs font-bold text-slate-500">ล็อต {item.lotNo}{item.availableLots?.[0]?.inventoryId === item.inventoryId ? " · FEFO" : ""}</span></span>
-                      <span className="shrink-0 font-black text-slate-900">{item.qty} {item.unit}</span>
+                    <li key={item.cartId} className="flex items-start justify-between gap-3 border-t border-[#f0f0f2] py-2 text-sm">
+                      <span className="min-w-0">
+                        <span className="block truncate">{item.name}</span>
+                        <span className="block text-xs text-ink-muted">ล็อต {item.lotNo}{item.availableLots?.[0]?.inventoryId === item.inventoryId ? " · FEFO" : ""}</span>
+                      </span>
+                      <span className="shrink-0 font-semibold">{item.qty} {item.unit}</span>
                     </li>
                   ))}
+                  <li className="flex items-center justify-between gap-3 border-t border-[#f0f0f2] pt-2 text-[13px] text-ink-muted">
+                    <span>วัตถุประสงค์</span>
+                    <span className="text-ink">{purpose.trim() || "ไม่ได้ระบุ"}</span>
+                  </li>
                 </ul>
-                <div className="mt-3 border-t border-slate-200 pt-3 text-sm">
-                  <p className="font-bold text-slate-500">วัตถุประสงค์</p>
-                  <p className="mt-1 font-black text-slate-900">{purpose.trim() || "ไม่ได้ระบุ"}</p>
-                </div>
               </div>
 
               {!idToken && (
-                <div className="space-y-3 rounded-2xl border border-slate-200 p-4">
-                  <p className="text-sm font-black text-slate-900">ยืนยันด้วยบัญชี LabStock</p>
-                  <input value={approverUsername} onChange={(event) => setApproverUsername(event.target.value)} placeholder="Username" className="min-h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20" />
-                  <input type="password" inputMode="numeric" value={approverPin} onChange={(event) => setApproverPin(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="PIN 4-6 หลัก" className="min-h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20" />
+                <div className="space-y-3 rounded-[14px] border border-line p-3.5">
+                  <p className="text-sm font-semibold">ยืนยันด้วยบัญชี LabStock</p>
+                  <input value={approverUsername} onChange={(event) => setApproverUsername(event.target.value)} placeholder="Username" autoComplete="username" aria-label="Username" className={fieldClass} />
+                  <PinInput value={approverPin} onChange={setApproverPin} label="PIN 4-6 หลัก" autoComplete="one-time-code" />
                 </div>
               )}
 
-              {confirmError && <p className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-bold text-red-700" role="alert">{confirmError}</p>}
+              {confirmError && <p className="rounded-xl border border-crit/25 bg-crit-bg p-3.5 text-sm font-medium text-crit" role="alert">{confirmError}</p>}
 
-              <button type="button" onClick={handleSubmit} disabled={submitting} className="flex min-h-14 w-full items-center justify-center gap-3 rounded-2xl bg-emerald-700 px-4 text-base font-black text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">
-                {submitting ? <Loader2 className="animate-spin" size={21} /> : <CheckCircle size={21} />}
-                ยืนยันเบิกจ่ายด้วย LINE
-              </button>
+              <div className="grid grid-cols-[1fr_1.6fr] gap-2.5">
+                <button type="button" onClick={closeConfirm} disabled={submitting} className="min-h-[54px] rounded-[14px] border border-line bg-white font-medium disabled:opacity-50">
+                  แก้ไข
+                </button>
+                <button type="button" onClick={handleSubmit} disabled={submitting} className={primaryButtonClass}>
+                  {submitting ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle size={20} />}
+                  ยืนยันเบิกจ่าย
+                </button>
+              </div>
             </div>
           </section>
         </div>
       )}
 
-      {scanMode && <QRScanner onScan={handleScan} onClose={() => setScanMode(false)} />}
+      {scanMode && <QRScanner variant="mobile" title="เบิกจ่ายน้ำยา" onScan={handleScan} onClose={() => setScanMode(false)} />}
     </section>
   );
 }
