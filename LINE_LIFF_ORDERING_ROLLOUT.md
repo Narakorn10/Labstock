@@ -39,7 +39,7 @@ Three menus, one per audience:
 | --- | --- | --- | --- |
 | general | receive (web `/mobile/receive`), dispense (LIFF), open LabStock | `LINE_RECEIVE_RICH_MENU_ID` | roles allowed the `receive` menu |
 | no-receive | dispense (LIFF), open LabStock | `LINE_DISPENSE_RICH_MENU_ID` | other roles (e.g. Operator) and the default menu |
-| purchasing | order (LIFF), dispense (LIFF), open LabStock | `LINE_PURCHASING_RICH_MENU_ID` | Admin, Manager |
+| purchasing | order (LIFF), receive (web `/mobile/receive`), dispense (LIFF), open LabStock | `LINE_PURCHASING_RICH_MENU_ID` | Admin, Manager |
 
 Rollout (each step is separate and nothing is deleted, so the old menu ids remain the rollback):
 

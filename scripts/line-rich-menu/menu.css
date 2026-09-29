@@ -57,3 +57,13 @@ html, body {
 .brand img { width: 213px; height: 213px; border-radius: 47px; }
 .brand .name { font-size: 87px; font-weight: 600; line-height: 1.1; }
 .brand .org { font-size: 47px; color: var(--muted); }
+
+.menu.four { grid-template-columns: repeat(4, 625px); }
+.four .cell { padding: 56px; }
+.four .tag { font-size: 36px; }
+.four .title { font-size: 96px; }
+.four .sub { font-size: 36px; margin-top: 14px; }
+.four .brand { flex-direction: column; align-items: flex-start; gap: 24px; }
+.four .brand img { width: 150px; height: 150px; border-radius: 34px; }
+.four .brand .name { font-size: 62px; }
+.four .brand .org { font-size: 36px; }
