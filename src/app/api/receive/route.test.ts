@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  sql: vi.fn().mockResolvedValue([]),
   hasMenuPermission: vi.fn(),
   runReceiveBatch: vi.fn(),
 }));
 
+vi.mock("@/lib/db", () => ({ default: mocks.sql }));
 vi.mock("@/lib/auth-utils", () => ({ hasMenuPermission: mocks.hasMenuPermission }));
 vi.mock("@/lib/stock-transactions", () => ({ runReceiveBatch: mocks.runReceiveBatch }));
 

@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  sql: vi.fn().mockResolvedValue([]),
   hasMenuPermission: vi.fn(),
   runDispenseBatch: vi.fn(),
 }));
 
+vi.mock("@/lib/db", () => ({ default: mocks.sql }));
 vi.mock("@/lib/auth-utils", () => ({ hasMenuPermission: mocks.hasMenuPermission }));
 vi.mock("@/lib/stock-transactions", () => ({ runDispenseBatch: mocks.runDispenseBatch }));
 
@@ -45,5 +47,14 @@ describe("Dispense API permissions", () => {
     expect(response.status).toBe(200);
     expect(mocks.hasMenuPermission).toHaveBeenCalledWith(expect.any(Request), "dispense");
     expect(mocks.runDispenseBatch).toHaveBeenCalledWith(expect.any(Array), user, expect.any(Object));
+  });
+
+  it("records who tried to dispense and why it was refused", async () => {
+    mocks.hasMenuPermission.mockResolvedValue({ user: { username: "6928", role: "Vendor" }, allowed: false });
+
+    await POST(dispenseRequest());
+
+    const values = mocks.sql.mock.calls[0].slice(1);
+    expect(values).toEqual(expect.arrayContaining(["6928", "Vendor", "dispense", "/api/dispense", "rejected", 403, "Forbidden"]));
   });
 });

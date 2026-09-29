@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
+import { trackRoute } from "@/lib/app-events";
 import { hasUserPinColumn, roleHasMenu, verifyUserPin } from "@/lib/auth-utils";
 import { getLineLinkedUser, hasUserLineIdColumn, verifyLineIdToken } from "@/lib/line-liff-auth";
 import { runDispenseBatch, runReceiveBatch, StockBatchItem } from "@/lib/stock-transactions";
 
 type MobileMode = "receive" | "dispense";
 
-export async function POST(request: Request) {
+export const POST = trackRoute({ action: "mobile.confirm" }, async (request: Request, ctx) => {
   try {
     const body = await request.json() as {
       mode?: MobileMode;
@@ -20,6 +21,7 @@ export async function POST(request: Request) {
     const pin = String(body.pin || "").trim();
     const lineIdToken = String(body.lineIdToken || "").trim();
     const batchItems = Array.isArray(body.batchItems) ? body.batchItems : [];
+    ctx.details = { mode, attemptedUser: username, count: batchItems.length, items: batchItems };
 
     if (mode !== "receive" && mode !== "dispense") {
       return NextResponse.json({ error: "Invalid mobile action." }, { status: 400 });
@@ -56,6 +58,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: lineIdToken ? "This LINE account is not linked to a LabStock user." : "Invalid username or PIN." }, { status: 401 });
     }
 
+    ctx.user = user;
+
     if (user.role === "Vendor") {
       return NextResponse.json({ error: "This role cannot approve mobile stock transactions." }, { status: 403 });
     }
@@ -86,4 +90,4 @@ export async function POST(request: Request) {
     const status = errorMessage.startsWith('REAGENT_INACTIVE') ? 409 : 400;
     return NextResponse.json({ error: errorMessage }, { status });
   }
-}
+});
