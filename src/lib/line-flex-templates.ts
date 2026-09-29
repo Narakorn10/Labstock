@@ -31,6 +31,7 @@ export interface LowStockItem {
   quantity: number;
   minThreshold: number;
   unit: string;
+  vendor?: string;
 }
 
 export interface ExpiringSoonItem {
@@ -41,6 +42,7 @@ export interface ExpiringSoonItem {
   quantity: number;
   unit: string;
   daysUntilExpiry: number;
+  vendor?: string;
 }
 
 export interface WeeklyStockSummaryItem {
