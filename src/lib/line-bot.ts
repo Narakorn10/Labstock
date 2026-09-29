@@ -1,4 +1,5 @@
 import { messagingApi } from "@line/bot-sdk";
+import { roleHasMenu } from "./auth-utils";
 import {
   ExpiringSoonItem,
   generateExpiringSoonTemplate,
@@ -115,13 +116,26 @@ export async function sendLineReply(replyToken: string, messages: messagingApi.M
   }
 }
 
+export function resolveRichMenuId(
+  role: string,
+  canReceive: boolean,
+  env: Record<string, string | undefined> = process.env,
+) {
+  const purchasing = env.LINE_PURCHASING_RICH_MENU_ID?.trim();
+  const receive = env.LINE_RECEIVE_RICH_MENU_ID?.trim();
+  const dispense = env.LINE_DISPENSE_RICH_MENU_ID?.trim();
+
+  if (role === "Admin" || role === "Manager") return purchasing;
+  return (canReceive ? receive : undefined) || dispense;
+}
+
 export async function linkLineRichMenuForRole(lineUserId: string, role: string) {
   const channelAccessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim();
   if (!channelAccessToken || channelAccessToken === "DUMMY_TOKEN") return;
 
-  const richMenuId = role === "Admin" || role === "Manager"
-    ? process.env.LINE_PURCHASING_RICH_MENU_ID?.trim()
-    : process.env.LINE_DISPENSE_RICH_MENU_ID?.trim();
+  const isPurchasing = role === "Admin" || role === "Manager";
+  const canReceive = isPurchasing ? false : await roleHasMenu(role, "receive");
+  const richMenuId = resolveRichMenuId(role, canReceive);
   if (!richMenuId) return;
 
   try {
