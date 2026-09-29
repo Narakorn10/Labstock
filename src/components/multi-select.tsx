@@ -66,7 +66,7 @@ export default function MultiSelect({
         `}
       >
         {isAllSelected ? (
-          <span className="px-3 py-1 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 shadow-md shadow-blue-100">
+          <span className="px-3 py-1 bg-ink text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 shadow-md shadow-gray-900/10">
             <CheckCircle2 size={12} /> ทั้งหมด
           </span>
         ) : (
@@ -98,7 +98,7 @@ export default function MultiSelect({
       </div>
 
       {isOpen && (
-        <div className="absolute z-[60] w-full mt-3 bg-white border border-gray-100 rounded-[2rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 slide-in-from-top-2 duration-300 origin-top">
+        <div className="absolute z-[60] w-full mt-3 bg-white border border-gray-100 rounded-[20px] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 slide-in-from-top-2 duration-300 origin-top">
           {/* Search Area */}
           <div className="p-4 border-b border-gray-50 bg-gray-50/50">
             <div className="relative">
@@ -127,7 +127,7 @@ export default function MultiSelect({
               <div className="flex items-center gap-3">
                 <div className={`
                   w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-all
-                  ${isAllSelected ? 'bg-blue-600 border-blue-600' : 'bg-white border-gray-200'}
+                  ${isAllSelected ? 'bg-ink border-blue-600' : 'bg-white border-gray-200'}
                 `}>
                   {isAllSelected && <Check size={14} className="text-white stroke-[3px]" />}
                 </div>
@@ -149,7 +149,7 @@ export default function MultiSelect({
                   <div className="flex items-center gap-3">
                     <div className={`
                       w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-all
-                      ${isSelected ? 'bg-blue-600 border-blue-600' : 'bg-white border-gray-200'}
+                      ${isSelected ? 'bg-ink border-blue-600' : 'bg-white border-gray-200'}
                     `}>
                       {isSelected && <Check size={14} className="text-white stroke-[3px]" />}
                     </div>

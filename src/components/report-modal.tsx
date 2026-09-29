@@ -79,7 +79,7 @@ export default function ReportModal({ isOpen, onClose, data, jobTypes }: ReportM
         </div>
 
         {/* Report Preview */}
-        <div className="border border-gray-100 rounded-[2.5rem] overflow-hidden bg-gray-50/50 shadow-inner">
+        <div className="border border-gray-100 rounded-[20px] overflow-hidden bg-gray-50/50 shadow-inner">
            <div ref={reportRef} className="bg-white p-8 sm:p-12">
               <div className="flex justify-between items-start mb-8 border-b border-gray-50 pb-8">
                 <div>
@@ -96,7 +96,7 @@ export default function ReportModal({ isOpen, onClose, data, jobTypes }: ReportM
                     </p>
                   </div>
                 </div>
-                <div className="w-16 h-16 bg-blue-600 rounded-[1.5rem] flex items-center justify-center text-white shadow-xl shadow-blue-100">
+                <div className="w-16 h-16 bg-ink rounded-2xl flex items-center justify-center text-white shadow-xl shadow-gray-900/10">
                   <Database size={32} />
                 </div>
               </div>
@@ -133,7 +133,7 @@ export default function ReportModal({ isOpen, onClose, data, jobTypes }: ReportM
         <div className="grid grid-cols-2 gap-3">
           <button 
             onClick={nativeShare}
-            className="flex items-center justify-center gap-2 p-4 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all active:scale-95"
+            className="flex items-center justify-center gap-2 p-4 bg-ink text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-gray-900/10 hover:bg-black transition-all active:scale-95"
           >
             <Share2 size={16} />
             แชร์เข้า LINE

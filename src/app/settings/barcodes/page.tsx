@@ -597,7 +597,7 @@ export default function BarcodeSettingsPage() {
         <button type="button" onClick={() => setActiveTab('legacy')} className="min-h-11 flex-1 rounded-xl bg-slate-100 px-4 text-sm font-black text-slate-700">รูปแบบเดิม (Admin)</button>
       </div>
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold text-gray-900">ตั้งค่า Barcode/QR Code (Smart Parser)</h1>
+        <h1 className="text-[32px] leading-tight font-medium text-ink">ตั้งค่า Barcode/QR Code (Smart Parser)</h1>
       </div>
 
       <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-6">
@@ -686,7 +686,7 @@ export default function BarcodeSettingsPage() {
                     let textColor = 'text-gray-600';
                     let borderColor = 'border-gray-200';
                     
-                    if (isSelected) { bgColor = 'bg-blue-600'; textColor = 'text-white'; borderColor = 'border-blue-700'; }
+                    if (isSelected) { bgColor = 'bg-ink'; textColor = 'text-white'; borderColor = 'border-blue-700'; }
                     else if (isItem) { bgColor = 'bg-green-100'; textColor = 'text-green-700'; borderColor = 'border-green-300'; }
                     else if (isLot) { bgColor = 'bg-purple-100'; textColor = 'text-purple-700'; borderColor = 'border-purple-300'; }
                     else if (isExp) { bgColor = 'bg-orange-100'; textColor = 'text-orange-700'; borderColor = 'border-orange-300'; }
@@ -766,7 +766,7 @@ export default function BarcodeSettingsPage() {
         </div>
 
         <div className="flex justify-end">
-          <button onClick={handleSave} disabled={saving || !canSave} className="bg-blue-600 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2 disabled:opacity-50">
+          <button onClick={handleSave} disabled={saving || !canSave} className="bg-ink text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2 disabled:opacity-50">
             {saving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />} บันทึกรูปแบบ
           </button>
         </div>

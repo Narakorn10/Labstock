@@ -171,7 +171,7 @@ export default function ReagentDetailModal({
           </div>
         </div>
 
-        <div className="bg-gray-900 rounded-[2rem] p-8 text-white flex flex-col md:flex-row justify-between items-center gap-6 shadow-xl">
+        <div className="bg-gray-900 rounded-[20px] p-8 text-white flex flex-col md:flex-row justify-between items-center gap-6 shadow-xl">
           <div className="text-center md:text-left">
             <p className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.2em] mb-1">Live Quantity</p>
             <div className="flex items-baseline gap-2">
@@ -265,7 +265,7 @@ export default function ReagentDetailModal({
         </div>
 
         {canReconcile && editingLot && (
-          <form onSubmit={handleReconcile} className="space-y-4 border border-blue-100 bg-blue-50 rounded-[2rem] p-6">
+          <form onSubmit={handleReconcile} className="space-y-4 border border-blue-100 bg-blue-50 rounded-[20px] p-6">
             <div className="space-y-1">
               <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest">Inventory Reconciliation</p>
               <h4 className="text-lg font-black text-blue-900">{reagent.name}</h4>
@@ -305,7 +305,7 @@ export default function ReagentDetailModal({
                 step="any"
                 autoFocus
                 defaultValue={editingLot.qty}
-                className="w-full border-2 border-blue-600 rounded-[1.5rem] px-6 py-4 text-center font-black text-3xl text-blue-600 focus:bg-white transition outline-none"
+                className="w-full border-2 border-blue-600 rounded-2xl px-6 py-4 text-center font-black text-3xl text-blue-600 focus:bg-white transition outline-none"
               />
             </div>
 
@@ -325,7 +325,7 @@ export default function ReagentDetailModal({
               <button
                 type="submit"
                 disabled={submitting}
-                className="flex-1 px-4 py-3 bg-blue-600 text-white rounded-2xl hover:bg-blue-700 transition-all shadow-lg font-black text-sm uppercase flex items-center justify-center gap-2"
+                className="flex-1 px-4 py-3 bg-ink text-white rounded-2xl hover:bg-black transition-all shadow-lg font-black text-sm uppercase flex items-center justify-center gap-2"
               >
                 {submitting && <Loader2 size={18} className="animate-spin" />}
                 Save Changes

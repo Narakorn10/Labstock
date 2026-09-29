@@ -45,6 +45,19 @@ export default function InventoryOverview() {
   const [error, setError] = useState<string | null>(null);
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Search handed over from the header (?q=... on arrival, or an event when already on this page).
+  useEffect(() => {
+    const initial = new URLSearchParams(window.location.search).get('q');
+    // Deferred so the state update is not synchronous inside the effect.
+    const timer = initial ? window.setTimeout(() => setSearchTerm(initial), 0) : undefined;
+    const onSearch = (event: Event) => setSearchTerm(String((event as CustomEvent<string>).detail ?? ''));
+    window.addEventListener('labstock:search', onSearch);
+    return () => {
+      if (timer) window.clearTimeout(timer);
+      window.removeEventListener('labstock:search', onSearch);
+    };
+  }, []);
   const [selectedJobType, setSelectedJobType] = useState<string>('ทั้งหมด');
   const [selectedReagentType, setSelectedReagentType] = useState<string>('ทั้งหมด');
   const [selectedReagent, setSelectedReagent] = useState<Reagent | null>(null);

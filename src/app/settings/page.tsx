@@ -43,7 +43,7 @@ const Section = ({ title, icon: Icon, type, items, placeholder, loading, newValu
       />
       <button 
         onClick={() => onAdd(type)}
-        className="p-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all shadow-sm"
+        className="p-2.5 bg-ink text-white rounded-xl hover:bg-black transition-all shadow-sm"
       >
         <Plus size={20} />
       </button>
@@ -132,10 +132,10 @@ export default function SettingsPage() {
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-3">
-          <div className="bg-blue-600 p-2 rounded-xl text-white shadow-lg shadow-blue-200">
+          <div className="bg-ink p-2 rounded-xl text-white shadow-lg shadow-gray-900/10">
             <Settings size={24} />
           </div>
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900">ตั้งค่าระบบ (System Settings)</h1>
+          <h1 className="text-[32px] leading-tight font-medium tracking-tight text-ink">ตั้งค่าระบบ (System Settings)</h1>
         </div>
         <p className="text-gray-500 text-sm ml-12">จัดการข้อมูลตัวเลือกใน Dropdown เช่น ประเภทน้ำยา, ประเภทงาน และชื่อเครื่องมือ</p>
       </div>

@@ -260,8 +260,8 @@ export default function PODetailPage() {
           <div className="flex flex-col justify-between gap-6 sm:flex-row sm:items-start">
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-600">Official procurement document</p>
-              <h1 className="mt-2 text-3xl font-black text-slate-950">ใบสั่งซื้อน้ำยา</h1>
-              <p className="mt-1 text-sm font-semibold text-slate-500">Purchase Order</p>
+              <h1 className="mt-2 text-[32px] leading-tight font-medium text-ink">ใบสั่งซื้อน้ำยา</h1>
+              <p className="mt-1 text-sm text-ink-muted">Purchase Order</p>
               <p className="mt-4 font-bold text-slate-900">{po.issuer_name || "LabStock"}</p>
               {po.issuer_department && <p className="text-sm text-slate-600">{po.issuer_department}</p>}
               {po.issuer_address && <p className="mt-1 max-w-xl whitespace-pre-line text-xs text-slate-500">{po.issuer_address}</p>}

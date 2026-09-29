@@ -111,8 +111,8 @@ export default function LabVendorReceiptPage() {
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-24">
       <div>
-        <h1 className="text-3xl font-black text-gray-900 tracking-tight">รับสินค้าจากบริษัท (Vendor Receipt)</h1>
-        <p className="text-gray-500 text-sm font-bold mt-1">ยืนยันรายการน้ำยาที่บริษัทแจ้งส่งมอบล่วงหน้า เพื่อเข้าสต๊อกจริง</p>
+        <h1 className="text-[32px] leading-tight font-medium text-ink tracking-tight">รับสินค้าจากบริษัท (Vendor Receipt)</h1>
+        <p className="mt-1 text-sm text-ink-muted">ยืนยันรายการน้ำยาที่บริษัทแจ้งส่งมอบล่วงหน้า เพื่อเข้าสต๊อกจริง</p>
       </div>
 
       <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-4">
@@ -135,13 +135,13 @@ export default function LabVendorReceiptPage() {
             <p className="text-gray-400 font-bold text-xs uppercase tracking-widest">กำลังตรวจสอบรายการจัดส่ง...</p>
           </div>
         ) : filtered.length === 0 ? (
-          <div className="py-20 text-center flex flex-col items-center gap-4 bg-white rounded-[2.5rem] border border-dashed border-gray-200">
+          <div className="py-20 text-center flex flex-col items-center gap-4 bg-white rounded-[20px] border border-dashed border-gray-200">
              <Package className="text-gray-200" size={64} />
              <p className="text-gray-400 font-bold italic">ไม่พบรายการสินค้าที่กำลังจัดส่งในขณะนี้</p>
           </div>
         ) : (
           filtered.map((ship, idx) => (
-            <div key={idx} className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row items-center justify-between gap-6 group">
+            <div key={idx} className="bg-white p-6 rounded-[20px] border border-gray-100 shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row items-center justify-between gap-6 group">
               <div className="flex items-center gap-6 w-full">
                 <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center shrink-0 group-hover:bg-blue-600 group-hover:text-white transition-colors">
                   <Truck size={32} />

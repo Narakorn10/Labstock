@@ -262,7 +262,7 @@ export default function LendPage() {
           <div className="w-12 h-12 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center">
             <ArrowUpFromLine size={28} />
           </div>
-          <h1 className="text-3xl font-black tracking-tight text-gray-900">ระบบให้ยืม (Lend)</h1>
+          <h1 className="text-[32px] leading-tight font-medium tracking-tight text-ink">ระบบให้ยืม (Lend)</h1>
         </div>
         <p className="text-gray-500 text-sm font-bold">จัดการน้ำยาที่เราให้หน่วยงานอื่นยืมไป</p>
       </div>

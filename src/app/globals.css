@@ -65,6 +65,12 @@
   --color-teal-800: #324860;
   --color-teal-900: #2b3c4f;
   --color-teal-950: #1c2733;
+
+  /* Softer corners and shadows (design_handoff_labstock: 16-20px cards, hairline borders). */
+  --radius-3xl: 1.25rem;
+  --shadow-lg: 0 2px 10px -2px rgb(29 31 32 / 0.08);
+  --shadow-xl: 0 4px 16px -4px rgb(29 31 32 / 0.1);
+  --shadow-2xl: 0 8px 24px -8px rgb(29 31 32 / 0.14);
 }
 
 @theme inline {

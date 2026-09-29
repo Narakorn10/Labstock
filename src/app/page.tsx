@@ -103,7 +103,7 @@ export default function LandingPage() {
 
         <div className="relative min-h-[420px] sm:min-h-[540px] lg:min-h-[650px]">
           <div className="absolute -right-20 top-8 size-72 rounded-full bg-blue-300/20 blur-3xl" aria-hidden="true" />
-          <div className="relative h-full min-h-[420px] overflow-hidden rounded-[2rem] border border-white/80 bg-gray-950 shadow-[0_30px_80px_-34px_rgba(16,42,67,0.6)] sm:min-h-[540px] lg:min-h-[650px]">
+          <div className="relative h-full min-h-[420px] overflow-hidden rounded-[20px] border border-white/80 bg-gray-950 shadow-[0_30px_80px_-34px_rgba(16,42,67,0.6)] sm:min-h-[540px] lg:min-h-[650px]">
             <Image src="/images/labstock-clinical-inventory-hero.png" alt="ชั้นวางน้ำยาและอุปกรณ์สำหรับเครื่องตรวจวิเคราะห์อัตโนมัติในห้องปฏิบัติการ" fill priority sizes="(max-width: 1024px) 100vw, 58vw" className="object-cover object-center opacity-90" />
             <div className="absolute inset-0 bg-gradient-to-t from-gray-950 via-gray-950/15 to-transparent" />
             <div className="absolute inset-x-5 top-5 flex items-center justify-between rounded-2xl border border-white/15 bg-gray-950/60 px-4 py-3 text-white backdrop-blur-md sm:inset-x-7 sm:top-7">

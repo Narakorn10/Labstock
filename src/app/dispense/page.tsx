@@ -306,15 +306,10 @@ export default function DispensePage() {
   }
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-2xl mx-auto pb-24">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-24">
       {/* Header */}
       <div className="flex flex-col gap-2">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center">
-            <HandHelping size={28} />
-          </div>
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900">เบิกไปหน้างาน</h1>
-        </div>
+        <h1 className="text-[32px] leading-tight font-medium tracking-tight text-ink">เบิกไปหน้างาน</h1>
         <p className="text-gray-500 text-sm">ตัดสต๊อกด้วยระบบ FEFO (แนะนำ Lot ที่หมดอายุก่อนอัตโนมัติ)</p>
       </div>
 
@@ -334,11 +329,12 @@ export default function DispensePage() {
         </div>
       )}
 
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
       {/* Action Area */}
-      <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-4">
+      <div className="space-y-4 rounded-[20px] border border-line bg-white p-5">
         <button 
           onClick={() => setScanMode(true)}
-          className="w-full bg-red-600 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-red-700 transition-all active:scale-[0.98] shadow-lg shadow-red-100"
+          className="w-full bg-ink text-white py-4 rounded-2xl font-medium flex items-center justify-center gap-2 hover:bg-black transition-all active:scale-[0.98] shadow-lg shadow-gray-900/10"
         >
           <Camera size={20} />
           เปิดกล้องแสกนเพื่อเบิก
@@ -356,7 +352,7 @@ export default function DispensePage() {
               }}
               onFocus={() => setShowResults(true)}
               placeholder="รหัสน้ำยา หรือ บาร์โค้ด..."
-              className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-red-500 outline-none transition-all"
+              className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-gray-400 outline-none transition-all"
             />
             
             {/* Autocomplete Results */}
@@ -387,37 +383,37 @@ export default function DispensePage() {
               />
             )}
           </div>
-          <button type="submit" className="bg-red-50 text-red-600 px-6 rounded-xl font-bold text-sm hover:bg-red-100 transition-colors relative z-10">
+          <button type="submit" className="border border-line bg-white text-ink px-6 rounded-xl font-medium text-sm hover:bg-gray-50 transition-colors relative z-10">
             ค้นหา
           </button>
         </form>
       </div>
 
       {/* Cart Area */}
-      <div className="space-y-4">
-        <h2 className="font-bold text-gray-800 flex items-center gap-2 px-2">
+      <div className="space-y-4 rounded-[20px] border border-line bg-white p-5">
+        <h2 className="text-lg font-medium text-ink flex items-center gap-2">
           รายการเตรียมเบิก 
-          <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full text-[10px]">{cart.length}</span>
+          <span className="bg-gray-100 text-gray-700 px-2.5 py-0.5 rounded-full text-xs font-medium">{cart.length}</span>
         </h2>
 
         {cart.length === 0 ? (
-          <div className="bg-gray-50/50 border-2 border-dashed border-gray-100 rounded-3xl p-12 text-center">
+          <div className="border border-dashed border-line rounded-2xl p-12 text-center">
             <HandHelping className="mx-auto text-gray-200 mb-4" size={48} />
             <p className="text-gray-400 text-sm">ยังไม่มีรายการเบิก<br/>แสกนบาร์โค้ดเพื่อเลือก Lot อัตโนมัติ</p>
           </div>
         ) : (
           <div className="space-y-3">
             {cart.map((item) => (
-              <div key={item.cartId} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-4 animate-in fade-in slide-in-from-right-4 duration-300">
+              <div key={item.cartId} className="bg-white p-4 rounded-2xl border border-line flex items-center gap-4 animate-in fade-in slide-in-from-right-4 duration-300">
                 <div className="flex-1 min-w-0">
                   <h3 className="font-bold text-gray-900 truncate">{item.name}</h3>
                   <div className="flex flex-wrap items-center gap-3 mt-1 text-[11px] font-medium">
                     <label className="flex items-center gap-2 text-gray-500">
-                      <span className="text-red-600 bg-red-50 px-1.5 py-0.5 rounded font-bold">ล็อต</span>
+                      <span className="text-ink-muted bg-gray-100 px-1.5 py-0.5 rounded font-medium">ล็อต</span>
                       <select
                         value={String(item.inventoryId)}
                         onChange={(e) => updateLotSelection(item.cartId, e.target.value)}
-                        className="min-w-28 bg-white border border-gray-200 rounded-lg px-2 py-1 text-[11px] font-bold text-gray-700 outline-none focus:ring-2 focus:ring-red-500"
+                        className="min-w-28 bg-white border border-gray-200 rounded-lg px-2 py-1 text-[11px] font-bold text-gray-700 outline-none focus:ring-2 focus:ring-gray-400"
                       >
                         {item.availableLots.map((lot) => (
                           <option key={lot.inventoryId} value={String(lot.inventoryId)}>
@@ -441,7 +437,7 @@ export default function DispensePage() {
                       value={item.qty}
                       max={item.maxQty}
                       onChange={(e) => updateQty(item.cartId, e.target.value)}
-                      className="w-16 text-center font-bold bg-gray-50 border border-gray-100 rounded-lg py-1.5 text-red-600 outline-none focus:ring-2 focus:ring-red-500"
+                      className="w-16 text-center font-bold bg-gray-50 border border-gray-100 rounded-lg py-1.5 text-ink outline-none focus:ring-2 focus:ring-gray-400"
                     />
                     <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] font-bold text-gray-400 uppercase whitespace-nowrap">{item.unit}</span>
                   </div>
@@ -459,7 +455,7 @@ export default function DispensePage() {
               <button 
                 onClick={handleSubmit}
                 disabled={submitting}
-                className="w-full bg-red-600 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-red-700 transition-all active:scale-[0.98] shadow-lg shadow-red-100 disabled:opacity-50"
+                className="w-full bg-ink text-white py-4 rounded-2xl font-medium flex items-center justify-center gap-2 hover:bg-black transition-all active:scale-[0.98] shadow-lg shadow-gray-900/10 disabled:opacity-50"
               >
                 {submitting ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle size={20} />}
                 ยืนยันการเบิกจ่าย {cart.length} รายการ
@@ -467,6 +463,8 @@ export default function DispensePage() {
             </div>
           </div>
         )}
+      </div>
+
       </div>
 
       {scanMode && (

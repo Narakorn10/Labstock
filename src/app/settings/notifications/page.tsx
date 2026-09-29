@@ -148,7 +148,7 @@ export default function NotificationSettingsPage() {
           <div className="bg-indigo-600 p-2 rounded-xl text-white shadow-lg shadow-indigo-200">
             <BellRing size={24} />
           </div>
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900">การแจ้งเตือน (Notifications)</h1>
+          <h1 className="text-[32px] leading-tight font-medium tracking-tight text-ink">การแจ้งเตือน (Notifications)</h1>
         </div>
         <p className="text-gray-500 text-sm ml-12">ตั้งค่าช่องทางและเหตุการณ์ที่คุณต้องการรับการแจ้งเตือนจากระบบ</p>
       </div>

@@ -24,6 +24,13 @@ interface LogEntry {
   user: string;
 }
 
+const LOG_ACTION_CHIPS = [
+  { label: 'ทั้งหมด', value: '' },
+  { label: 'รับเข้า', value: 'รับเข้าสต๊อกหลัก' },
+  { label: 'เบิกไปหน้างาน', value: 'เบิกไปหน้างาน' },
+  { label: 'ปรับยอด', value: 'ปรับปรุงยอดสต๊อก (Reconciliation)' },
+];
+
 function sortLogsNewestFirst(entries: LogEntry[]) {
   return entries.toSorted((a, b) => {
     const timeDiff = new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
@@ -95,8 +102,8 @@ export default function LogsPage() {
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-24">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-black tracking-tight text-gray-900">ศูนย์ตรวจสอบรายการ (Audit Center)</h1>
-          <p className="text-gray-500 text-sm font-bold">สืบค้นประวัติการรับเข้าและเบิกจ่ายเชิงลึกด้วย SQL</p>
+          <h1 className="text-[32px] font-medium leading-tight tracking-tight text-ink">ศูนย์ตรวจสอบรายการ (Audit Center)</h1>
+          <p className="mt-1 text-sm text-ink-muted">ทุกการรับเข้า เบิกจ่าย และปรับยอดถูกบันทึกพร้อมผู้ทำรายการ</p>
         </div>
         
         <div className="flex items-center gap-2">
@@ -109,7 +116,7 @@ export default function LogsPage() {
           </button>
           <button 
             onClick={exportCSV}
-            className="flex items-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-xl shadow-lg hover:bg-blue-700 transition-all font-bold text-xs uppercase tracking-widest"
+            className="flex items-center gap-2 px-4 py-3 bg-ink text-white rounded-xl shadow-lg hover:bg-black transition-all font-bold text-xs uppercase tracking-widest"
           >
             <Download size={16} />
             Export CSV
@@ -124,30 +131,19 @@ export default function LogsPage() {
       )}
 
       {/* Advanced Filters */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="md:col-span-2 relative">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
           <input
             type="text"
             placeholder="ค้นหาตามชื่อ, รหัส หรือ Lot..."
-            className="w-full pl-12 pr-4 py-4 bg-white rounded-[1.5rem] border border-gray-100 shadow-sm outline-none font-bold text-sm focus:ring-2 focus:ring-blue-500/20 transition-all"
+            className="w-full pl-12 pr-4 py-4 bg-white rounded-2xl border border-gray-100 shadow-sm outline-none font-bold text-sm focus:ring-2 focus:ring-blue-500/20 transition-all"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
 
-        <select 
-          value={actionFilter}
-          onChange={(e) => setActionFilter(e.target.value)}
-          className="px-4 py-4 bg-white rounded-[1.5rem] border border-gray-100 shadow-sm outline-none font-bold text-sm text-gray-700 appearance-none cursor-pointer"
-        >
-          <option value="">ทุกประเภทรายการ</option>
-          <option value="รับเข้าสต๊อกหลัก">รับเข้าสต๊อกหลัก</option>
-          <option value="เบิกไปหน้างาน">เบิกไปหน้างาน</option>
-          <option value="ปรับปรุงยอดสต๊อก (Reconciliation)">ปรับปรุงยอด (Reconcile)</option>
-        </select>
-
-        <div className="flex items-center gap-2 bg-white px-4 py-1 rounded-[1.5rem] border border-gray-100 shadow-sm">
+        <div className="flex items-center gap-2 bg-white px-4 py-1 rounded-2xl border border-gray-100 shadow-sm">
           <Calendar size={16} className="text-gray-400" />
           <div className="flex flex-col">
             <span className="text-[8px] font-black text-gray-400 uppercase">Range</span>
@@ -170,7 +166,21 @@ export default function LogsPage() {
         </div>
       </div>
 
-      <div className="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm overflow-hidden">
+      <div className="flex flex-wrap items-center gap-2" role="group" aria-label="กรองตามประเภทรายการ">
+        {LOG_ACTION_CHIPS.map((chip) => (
+          <button
+            key={chip.label}
+            type="button"
+            aria-pressed={actionFilter === chip.value}
+            onClick={() => setActionFilter(chip.value)}
+            className={`rounded-full border px-4 py-2 text-sm font-medium transition-colors ${actionFilter === chip.value ? 'border-ink bg-ink text-white' : 'border-line bg-white text-ink hover:bg-gray-50'}`}
+          >
+            {chip.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="bg-white rounded-[20px] border border-gray-100 shadow-sm overflow-hidden">
         {loading && logs.length === 0 ? (
           <div className="p-20 flex flex-col items-center justify-center gap-4">
             <Loader2 className="animate-spin text-blue-600" size={40} />

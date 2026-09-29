@@ -41,7 +41,7 @@ export default function LoginPage() {
 
   return (
     <main className="min-h-screen bg-ground pb-6 text-gray-900 lg:bg-gray-50 lg:p-8 lg:pb-8">
-      <div className="mx-auto grid max-w-[480px] gap-0 px-[18px] pt-3 lg:min-h-[calc(100vh-4rem)] lg:max-w-[1440px] lg:grid-cols-[1.08fr_0.92fr] lg:overflow-hidden lg:rounded-[2rem] lg:border lg:border-gray-300 lg:bg-white lg:p-0 lg:shadow-[0_28px_80px_-42px_rgba(16,42,67,0.55)]">
+      <div className="mx-auto grid max-w-[480px] gap-0 px-[18px] pt-3 lg:min-h-[calc(100vh-4rem)] lg:max-w-[1440px] lg:grid-cols-[1.08fr_0.92fr] lg:overflow-hidden lg:rounded-[20px] lg:border lg:border-gray-300 lg:bg-white lg:p-0 lg:shadow-[0_28px_80px_-42px_rgba(16,42,67,0.55)]">
         <section aria-label="LabStock · SPR LAB" className="relative flex min-h-[170px] flex-col items-center justify-center gap-2.5 overflow-hidden rounded-[20px] bg-gray-950 px-[22px] py-5 text-center text-white lg:hidden">
           <Image src="/images/labstock-clinical-inventory-hero.png" alt="" fill sizes="480px" priority className="object-cover object-right" />
           <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(10,22,34,0.7),rgba(10,22,34,0.94))]" />

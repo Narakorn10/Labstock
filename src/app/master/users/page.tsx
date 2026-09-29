@@ -169,7 +169,7 @@ export default function UsersPage() {
       <div className="max-w-xl mx-auto py-20 text-center">
         <XCircle className="mx-auto mb-4 text-red-500" size={48} />
         <h1 className="text-xl font-black text-gray-900">ไม่มีสิทธิ์จัดการผู้ใช้งาน</h1>
-        <p className="mt-2 text-sm text-gray-500">หน้านี้สำหรับผู้ดูแลระบบเท่านั้น</p>
+        <p className="mt-1 text-sm text-ink-muted">หน้านี้สำหรับผู้ดูแลระบบเท่านั้น</p>
       </div>
     );
   }
@@ -188,12 +188,12 @@ export default function UsersPage() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-black tracking-tight text-gray-900">จัดการผู้ใช้งาน</h1>
-          <p className="text-gray-500 text-sm font-bold">เพิ่มหรือลบบัญชีรายชื่อผู้มีสิทธิ์ใช้งานระบบ</p>
+          <h1 className="text-[32px] leading-tight font-medium tracking-tight text-ink">จัดการผู้ใช้งาน</h1>
+          <p className="mt-1 text-sm text-ink-muted">เพิ่มหรือลบบัญชีรายชื่อผู้มีสิทธิ์ใช้งานระบบ</p>
         </div>
         <button 
           onClick={openAddModal}
-          className="flex items-center justify-center gap-2 px-6 py-4 bg-blue-600 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all active:scale-95"
+          className="flex items-center justify-center gap-2 px-6 py-4 bg-ink text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-lg shadow-gray-900/10 hover:bg-black transition-all active:scale-95"
         >
           <UserPlus size={18} />
           เพิ่มผู้ใช้ใหม่
@@ -251,7 +251,7 @@ export default function UsersPage() {
       {/* Users Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {visibleUsers.map(u => (
-          <div key={u.username} className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm flex items-center justify-between hover:shadow-md transition-shadow group">
+          <div key={u.username} className="bg-white p-6 rounded-[20px] border border-gray-100 shadow-sm flex items-center justify-between hover:shadow-md transition-shadow group">
             <div className="flex items-center gap-4 min-w-0">
               <div className="w-14 h-14 bg-gray-50 text-gray-400 rounded-2xl flex items-center justify-center group-hover:bg-blue-50 group-hover:text-blue-500 transition-colors shrink-0">
                 <User size={28} />

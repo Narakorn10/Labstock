@@ -181,7 +181,7 @@ export default function PermissionsPage() {
       <div className="flex flex-col items-center justify-center h-96 gap-4">
         <Lock className="text-red-500" size={48} />
         <h1 className="text-xl font-bold">Access Denied</h1>
-        <p className="text-gray-500 text-sm">Only Admin can open this page.</p>
+        <p className="mt-1 text-sm text-ink-muted">Only Admin can open this page.</p>
       </div>
     );
   }
@@ -190,11 +190,11 @@ export default function PermissionsPage() {
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-3 duration-500 pb-20">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
-          <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight flex items-center gap-3">
+          <h1 className="text-[32px] leading-tight font-medium text-ink tracking-tight flex items-center gap-3">
             Permissions <span className="text-gray-400 font-normal">/</span>{' '}
             <span className="bg-[#e7f0ff] text-[#166ee1] px-3 py-1 rounded-lg text-xl font-bold">RBAC Management</span>
           </h1>
-          <p className="text-gray-500 text-sm mt-1 font-medium">Control which menus each user role can see and access.</p>
+          <p className="mt-1 text-sm text-ink-muted">Control which menus each user role can see and access.</p>
         </div>
         <button
           onClick={fetchPermissions}
@@ -212,7 +212,7 @@ export default function PermissionsPage() {
         </div>
       )}
 
-      <div className="bg-white border border-gray-100 rounded-[2rem] shadow-sm overflow-hidden">
+      <div className="bg-white border border-gray-100 rounded-[20px] shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -225,7 +225,7 @@ export default function PermissionsPage() {
                       <button
                         onClick={() => savePermissions(role)}
                         disabled={saving === role}
-                        className={`mt-1 p-1.5 rounded-lg transition-all ${saving === role ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-500 hover:bg-blue-600 hover:text-white'}`}
+                        className={`mt-1 p-1.5 rounded-lg transition-all ${saving === role ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-500 hover:bg-black hover:text-white'}`}
                         title="Save role permissions"
                       >
                         {saving === role ? <RefreshCw size={12} className="animate-spin" /> : <Save size={12} />}
@@ -260,7 +260,7 @@ export default function PermissionsPage() {
                           className={`
                             w-6 h-6 rounded-md border-2 transition-all flex items-center justify-center mx-auto
                             ${isAllowed
-                              ? 'bg-blue-600 border-blue-600 text-white shadow-sm shadow-blue-200'
+                              ? 'bg-ink border-blue-600 text-white shadow-sm shadow-gray-900/10'
                               : 'bg-white border-gray-200 text-transparent hover:border-blue-300'}
                           `}
                         >

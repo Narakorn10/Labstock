@@ -282,7 +282,7 @@ export default function ReagentOrderPoliciesPage() {
       <div className="flex h-96 flex-col items-center justify-center gap-3 text-center">
         <Lock className="text-rose-600" size={44} />
         <h1 className="text-xl font-bold text-slate-900">ไม่มีสิทธิ์เข้าถึง</h1>
-        <p className="max-w-md text-sm text-slate-600">เฉพาะ Admin หรือ Manager เท่านั้นที่แก้ไขนโยบายการสั่งซื้อน้ำยาได้</p>
+        <p className="mt-1 text-sm text-ink-muted">เฉพาะ Admin หรือ Manager เท่านั้นที่แก้ไขนโยบายการสั่งซื้อน้ำยาได้</p>
       </div>
     );
   }
@@ -292,8 +292,8 @@ export default function ReagentOrderPoliciesPage() {
       <header className="flex flex-col justify-between gap-4 border-b border-gray-300 pb-5 lg:flex-row lg:items-end">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Lab procurement controls</p>
-          <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-slate-950">นโยบายการสั่งซื้อน้ำยา</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+          <h1 className="mt-1 text-[32px] leading-tight font-medium tracking-tight text-ink">นโยบายการสั่งซื้อน้ำยา</h1>
+          <p className="mt-1 text-sm text-ink-muted">
             ตรวจทานค่าอ้างอิงจากเอกสาร ยอดที่แล็บอนุมัติ และค่าทฤษฎีโดยไม่เปลี่ยนจำนวน PO อัตโนมัติ
           </p>
         </div>

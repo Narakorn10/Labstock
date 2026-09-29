@@ -1,7 +1,7 @@
 'use client';
 
-import { usePathname } from 'next/navigation';
-import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { usePathname, useRouter } from 'next/navigation';
+import { PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import Sidebar from '@/components/sidebar';
 import { useAuth } from '@/components/auth-provider';
@@ -29,12 +29,26 @@ export default function AppShell({ children }: AppShellProps) {
   const pathname = usePathname();
   const isMobileSurface = pathname.startsWith('/mobile');
   const isPublicSurface = pathname === '/' || pathname === '/login';
+  const router = useRouter();
   const [sidebarHidden, setSidebarHidden] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
   const { user } = useAuth();
   const crumb = findCrumb(pathname);
   // The header (breadcrumb + sidebar toggle) only makes sense with a signed-in user. LIFF and
   // sign-up pages keep the original spacing so their layout does not change.
   const showHeader = Boolean(user);
+  const canSearch = Boolean(user) && user?.role !== 'Vendor';
+
+  // The inventory overview owns the search box; the header hands the term over to it.
+  const handleSearch = (event: React.FormEvent) => {
+    event.preventDefault();
+    const term = searchTerm.trim();
+    if (pathname === '/dashboard') {
+      window.dispatchEvent(new CustomEvent('labstock:search', { detail: term }));
+    } else {
+      router.push(term ? `/dashboard?q=${encodeURIComponent(term)}` : '/dashboard');
+    }
+  };
 
   useEffect(() => {
     const handleSidebarShortcut = (event: KeyboardEvent) => {
@@ -113,6 +127,19 @@ export default function AppShell({ children }: AppShellProps) {
               <span className="hidden text-gray-300 sm:inline" aria-hidden="true">/</span>
               <span className="truncate font-medium text-ink" aria-current="page">{crumb.label}</span>
             </nav>
+          )}
+          {canSearch && (
+            <form role="search" onSubmit={handleSearch} className="relative ml-auto w-full max-w-sm">
+              <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-muted" size={16} strokeWidth={1.5} aria-hidden="true" />
+              <input
+                type="search"
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="ค้นหารหัส หรือชื่อน้ำยา..."
+                aria-label="ค้นหารหัส หรือชื่อน้ำยา"
+                className="h-10 w-full rounded-full border border-line bg-white pl-10 pr-4 text-sm text-ink outline-none placeholder:text-ink-muted focus:border-gray-400"
+              />
+            </form>
           )}
         </header>
         )}

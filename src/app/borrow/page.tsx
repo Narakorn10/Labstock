@@ -266,7 +266,7 @@ export default function BorrowPage() {
           <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center">
             <ArrowDownToLine size={28} />
           </div>
-          <h1 className="text-3xl font-black tracking-tight text-gray-900">ระบบยืม (Borrow)</h1>
+          <h1 className="text-[32px] leading-tight font-medium tracking-tight text-ink">ระบบยืม (Borrow)</h1>
         </div>
         <p className="text-gray-500 text-sm font-bold">จัดการน้ำยาที่เราไปยืมหน่วยงานอื่นมา</p>
       </div>
@@ -330,7 +330,7 @@ export default function BorrowPage() {
       <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-4">
         <button 
           onClick={() => setScanMode(true)}
-          className={`w-full text-white py-4 rounded-2xl font-black flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-lg ${mode === 'BORROW_IN' ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-200' : 'bg-rose-600 hover:bg-rose-700 shadow-rose-200'}`}
+          className={`w-full text-white py-4 rounded-2xl font-black flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-lg ${mode === 'BORROW_IN' ? 'bg-ink hover:bg-black shadow-gray-900/10' : 'bg-rose-600 hover:bg-rose-700 shadow-rose-200'}`}
         >
           <Camera size={20} />
           เปิดกล้องแสกนบาร์โค้ด

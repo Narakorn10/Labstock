@@ -48,7 +48,7 @@ export default function SqlExplorerPage() {
           <button
             onClick={handleRunQuery}
             disabled={loading}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+            className="flex items-center gap-2 bg-ink hover:bg-black disabled:bg-blue-300 text-white px-4 py-2 rounded-lg font-medium transition-colors"
           >
             {loading ? <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" /> : <Play className="w-4 h-4" />}
             Run Query

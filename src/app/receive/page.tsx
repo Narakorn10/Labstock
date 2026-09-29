@@ -229,15 +229,10 @@ export default function ReceivePage() {
   }
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-2xl mx-auto pb-24">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-24">
       {/* Header */}
       <div className="flex flex-col gap-2">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 bg-green-50 text-green-600 rounded-2xl flex items-center justify-center">
-            <PackagePlus size={28} />
-          </div>
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900">รับเข้าคลังหลัก</h1>
-        </div>
+        <h1 className="text-[32px] leading-tight font-medium tracking-tight text-ink">รับเข้าคลังหลัก</h1>
         <p className="text-gray-500 text-sm">แสกนบาร์โค้ด GS1 หรือพิมพ์รหัสเพื่อเพิ่มลงตะกร้า</p>
       </div>
 
@@ -258,11 +253,12 @@ export default function ReceivePage() {
         </div>
       )}
 
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
       {/* Action Area */}
-      <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-4">
+      <div className="space-y-4 rounded-[20px] border border-line bg-white p-5">
         <button 
           onClick={() => setScanMode(true)}
-          className="w-full bg-gray-900 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-gray-800 transition-all active:scale-[0.98] shadow-lg shadow-gray-200"
+          className="w-full bg-ink text-white py-4 rounded-2xl font-medium flex items-center justify-center gap-2 hover:bg-black transition-all active:scale-[0.98]"
         >
           <Camera size={20} />
           เปิดกล้องแสกน Barcode
@@ -286,7 +282,7 @@ export default function ReceivePage() {
               }}
               onFocus={() => setShowResults(true)}
               placeholder="รหัสน้ำยา หรือ บาร์โค้ด..."
-              className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+              className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-gray-400 outline-none transition-all"
             />
             
             {/* Autocomplete Results */}
@@ -321,26 +317,26 @@ export default function ReceivePage() {
       </div>
 
       {/* Cart Area */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between px-2">
-          <h2 className="font-bold text-gray-800 flex items-center gap-2">
+      <div className="space-y-4 rounded-[20px] border border-line bg-white p-5">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-medium text-ink flex items-center gap-2">
             รายการในตะกร้า 
-            <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full text-[10px]">{cart.length}</span>
+            <span className="bg-gray-100 text-gray-700 px-2.5 py-0.5 rounded-full text-xs font-medium">{cart.length}</span>
           </h2>
           {cart.length > 0 && (
-            <button onClick={() => setCart([])} className="text-xs font-bold text-red-500 uppercase tracking-widest">ล้างตะกร้า</button>
+            <button onClick={() => setCart([])} className="text-xs font-medium text-crit">ล้างตะกร้า</button>
           )}
         </div>
 
         {cart.length === 0 ? (
-          <div className="bg-gray-50/50 border-2 border-dashed border-gray-100 rounded-3xl p-12 text-center">
+          <div className="border border-dashed border-line rounded-2xl p-12 text-center">
             <PackagePlus className="mx-auto text-gray-200 mb-4" size={48} />
             <p className="text-gray-400 text-sm">ยังไม่มีรายการในตะกร้า<br/>เริ่มแสกนเพื่อทำรายการรับเข้า</p>
           </div>
         ) : (
           <div className="space-y-3">
             {cart.map((item) => (
-              <div key={item.cartId} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-4 animate-in fade-in slide-in-from-right-4 duration-300">
+              <div key={item.cartId} className="bg-white p-4 rounded-2xl border border-line flex items-center gap-4 animate-in fade-in slide-in-from-right-4 duration-300">
                 <div className="flex-1 min-w-0">
                   <h3 className="font-bold text-gray-900 truncate">{item.name}</h3>
                   <div className="flex flex-wrap gap-x-3 gap-y-2 mt-2 text-[11px] font-medium text-gray-500">
@@ -352,7 +348,7 @@ export default function ReceivePage() {
                         value={item.lotNo} 
                         onChange={e => updateLotNo(item.cartId, e.target.value)}
                         placeholder="ระบุ Lot"
-                        className="border border-gray-200 rounded px-1.5 py-0.5 text-xs outline-none focus:ring-1 focus:ring-blue-500 w-24"
+                        className="border border-gray-200 rounded px-1.5 py-0.5 text-xs outline-none focus:ring-1 focus:ring-gray-400 w-24"
                       />
                     </div>
                     <div className="flex items-center gap-1">
@@ -361,7 +357,7 @@ export default function ReceivePage() {
                         type="date" 
                         value={item.expDate} 
                         onChange={e => updateExpDate(item.cartId, e.target.value)}
-                        className="border border-gray-200 rounded px-1.5 py-0.5 text-xs outline-none focus:ring-1 focus:ring-blue-500"
+                        className="border border-gray-200 rounded px-1.5 py-0.5 text-xs outline-none focus:ring-1 focus:ring-gray-400"
                       />
                     </div>
                   </div>
@@ -373,7 +369,7 @@ export default function ReceivePage() {
                       type="number"
                       value={item.qty}
                       onChange={(e) => updateQty(item.cartId, e.target.value)}
-                      className="w-16 text-center font-bold bg-gray-50 border border-gray-100 rounded-lg py-1.5 text-blue-600 outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-16 text-center font-bold bg-gray-50 border border-gray-100 rounded-lg py-1.5 text-blue-600 outline-none focus:ring-2 focus:ring-gray-400"
                     />
                     <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] font-bold text-gray-400 uppercase whitespace-nowrap">{item.unit}</span>
                   </div>
@@ -391,7 +387,7 @@ export default function ReceivePage() {
               <button 
                 onClick={handleSubmit}
                 disabled={submitting}
-                className="w-full bg-green-600 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-green-700 transition-all active:scale-[0.98] shadow-lg shadow-green-100 disabled:opacity-50"
+                className="w-full bg-ink text-white py-4 rounded-2xl font-medium flex items-center justify-center gap-2 hover:bg-black transition-all active:scale-[0.98] disabled:opacity-50"
               >
                 {submitting ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle size={20} />}
                 ยืนยันการรับเข้า {cart.length} รายการ
@@ -399,6 +395,8 @@ export default function ReceivePage() {
             </div>
           </div>
         )}
+      </div>
+
       </div>
 
       {/* Scanner Modal */}
