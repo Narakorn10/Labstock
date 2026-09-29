@@ -1,4 +1,5 @@
 import axios from 'axios';
+import type { AppEventsResponse } from '@/lib/app-events-types';
 
 // Create axios instance
 const instance = axios.create();
@@ -368,6 +369,14 @@ export const apiClient = {
   updateCountWorkOrder: async (id: number, items: Array<{ itemId: string; countedQty: number }>) => (await instance.patch(`/api/count-work-orders/${id}`, { items })).data,
   getCountWorkOrderLots: async (id: number) => (await instance.get<Lot[]>(`/api/count-work-orders/${id}/lots`)).data,
   cancelCountWorkOrder: async (id: number) => (await instance.delete(`/api/count-work-orders/${id}`)).data,
+
+  getAppEvents: async (filters: { username?: string; action?: string; outcome?: string; startDate?: string; endDate?: string; before?: number; limit?: number } = {}) => {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(filters)) {
+      if (value !== undefined && value !== "") params.set(key, String(value));
+    }
+    return (await instance.get<AppEventsResponse>(`/api/app-events?${params.toString()}`)).data;
+  },
 
   getLogs: async (limit: number = 100, filters?: { search?: string, action?: string, startDate?: string, endDate?: string }) => {
     let url = `/api/logs?limit=${limit}`;
