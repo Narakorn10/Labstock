@@ -1,4 +1,30 @@
-# WIP — 2026-09-29 (อัปเดตท้ายวัน)
+# WIP — 2026-09-29 21:55
+
+## Forward Handoff — 2026-09-29 21:55 (ต่อจากนี้: รอผู้ใช้ preview PR #27 desktop redesign)
+
+### Git Status
+```text
+branch: docs/session-2026-09-28 (PR #26 เปิดอยู่ ยังไม่ merge) — งานโค้ดอยู่ที่ branch update/desktop-shell (PR #27 เปิดอยู่, push แล้ว, working tree สะอาด)
+?? "ψ/memory/retrospectives/2026-09/29/"   (รอ commit บน branch นี้)
+ M "ψ/WIP.md"                              (รอ commit บน branch นี้)
+```
+
+### งานค้าง
+- [ ] ผู้ใช้ preview PR #27 (https://stocklabspr-git-update-desktop-shell-narakorn10s-projects.vercel.app ดูอย่างเดียว ห้ามกดธุรกรรม) แล้วบอกหน้าที่ต้องแก้; แก้ต่อบน branch `update/desktop-shell`; ไม่ทำ: badge ข้างเมนู, ตัวสลับ role/บัญชีเดโม, กราฟ Analysis/RBAC matrix/รายละเอียดใบสั่งซื้อ (แค่เปลี่ยนสี)
+- [ ] เปิด `/activity` บน production หลังทำรายการ 1 ครั้ง ให้ตรวจแถวใน `app_events`
+- [ ] 6928 ยืนยันเบิกใบงาน #31 ใหม่; 5783 ยกเลิกใบงาน #1
+- [ ] ทดสอบแจ้งเตือน Vendor (PR #21) และ log cron outbox 02:00 UTC
+- [ ] ใบสั่งซื้อค้าง 5 ใบเตือนครั้งสุดท้าย 09-30 แล้วหยุด; ผู้ใช้ตัดสินใจปิดใบเก่า
+- [ ] สรุปรายสัปดาห์ ดูรอบ 2026-10-05 15:00 ไทย
+- [ ] ขยาย `trackRoute` ไป login/ใบสั่งซื้อ/LIFF
+
+### Context
+- ทั้งหมดของวันนี้ merge แล้ว ยกเว้น PR #26 (เอกสาร) และ #27 (redesign); รายละเอียดและบทเรียน: `ψ/memory/retrospectives/2026-09/29/21.55_rich-menu-bugfixes-monitoring-desktop-redesign.md`
+- Preview ใช้ฐานข้อมูล production; ตัวจับภาพ UI (playwright-core + mock `/api/**`) อยู่ใน scratchpad ของ session นี้ ไม่ได้ commit
+
+---
+
+## (history) อัปเดตท้ายวัน 2026-09-29 (เก็บไว้)
 
 ## Forward Handoff — 2026-09-29 ท้ายวัน (แก้บั๊ก 3 จุด + ระบบบันทึกกิจกรรม; merge ครบ #21–#25)
 
