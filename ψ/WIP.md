@@ -1,4 +1,33 @@
-# WIP — 2026-09-29
+# WIP — 2026-09-29 (อัปเดตท้ายวัน)
+
+## Forward Handoff — 2026-09-29 ท้ายวัน (แก้บั๊ก 3 จุด + ระบบบันทึกกิจกรรม; merge ครบ #21–#25)
+
+### สิ่งที่ทำวันนี้ (ทั้งหมด merge เข้า `main` แล้ว ยืนยันด้วย `git merge-base --is-ancestor`)
+- **PR #21** แจ้งเตือนสต็อกต่ำ/ใกล้หมดอายุรั่วให้ Vendor เห็นน้ำยาบริษัทอื่น (`stock-transactions.ts`, `expiring-soon/route.ts` ไม่กรอง role/vendor) → Vendor เห็นเฉพาะของตัวเอง; DB มี Vendor 2 บัญชีที่เปิดรับทั้งสองแจ้งเตือน
+- **PR #22** ยืนยันเบิกจากใบงานนับได้เฉพาะใบที่มี 1 รายการ: `SELECT COUNT(*) = (SELECT COUNT(*) FROM requirements)` ไม่มี FROM ทำให้ COUNT เป็น 1 เสมอ (พิสูจน์ด้วย SQL) → user 6928 และ 5783 เบิกไม่ได้ ขึ้น "ยอดจัดสรร Lot ต้องครบ…"; แก้ให้เบิกเฉพาะรายการที่ส่งมา ใบงานที่เหลือเปิดค้าง เทสต์ `count-work-orders.db.test.ts`
+- **PR #23** ตาราง `app_events` (migration `upgrade_v28_app_events.sql`, **รันบน production แล้ว**) + `trackRoute` ใน `src/lib/app-events.ts` บันทึกใคร/ทำอะไร/สถานะ/ข้อความ error/สรุปข้อมูล (allowlist ไม่เก็บ pin/token) ใช้กับ count-work-orders, dispense, receive, mobile/confirm
+- **PR #24** หน้า Admin `/activity` (เมนู `activity`), API `/api/app-events`, ปัญหาที่เกิดซ้ำ 7 วัน, ลบข้อมูลเก่ากว่า 90 วันตอน Admin เปิดหน้าแรก
+- **PR #25** cron `outbox` ของ Vercel เรียก GET แต่ GET เป็นแค่รายงาน ไม่ส่งข้อความ → GET ที่มี `CRON_SECRET` ส่งคิวจริง (ตอนตรวจ DB คิวว่าง 91 แถว DELIVERED ทั้งหมด)
+- retrospectives 25/26/27 commit แล้วบน branch นี้
+
+### งานค้าง
+- [ ] เปิด `/activity` ดูหน้าจอจริง แล้วเบิก/นับ 1 ครั้งเพื่อยืนยันว่ามีแถวใน `app_events` (ยังไม่ได้ดูหน้าจอ ยังไม่ทดสอบบน production)
+- [ ] ให้ 6928 ลองยืนยันเบิกใบงาน #31 ใหม่ (ไม่ต้องยกเลิก); ให้ 5783 **ยกเลิกใบงาน #1** (ค้างตั้งแต่ 09-14 ยอดนับเก่า)
+- [ ] ทดสอบแจ้งเตือนสต็อกต่ำ/ใกล้หมดอายุของ Vendor หลัง #21 (ผู้ใช้จะทดสอบภายหลัง)
+- [ ] ดู log Vercel ของ cron outbox รอบ 02:00 UTC ว่าได้ 200 และมี `claimed`
+- [ ] เตือน VENDOR_RESPONSE_OVERDUE: 5 ใบ SUBMITTED (PO-20260811-002/-003/-004, PO-20260831-001, PO-20260916-002) ไม่มี `vendor_response_due_at` ส่งวันละ 15 ข้อความ (5 ใบ × 3 คน) ตามเพดาน 3 ครั้ง/ใบ (`purchase-order-overdue.ts:10`): ส่งไปแล้ว 09-28, 09-29 ครั้งสุดท้าย 09-30 แล้วหยุดเอง; ผู้ใช้ตัดสินใจว่าจะปิด/ยกเลิกใบเก่าไหม
+- [ ] ผลสรุปรายสัปดาห์ (ยังไม่ยืนยันว่าส่งถึงคนจริงไหม): ดูรอบจันทร์ 2026-10-05 15:00 ไทย
+- [ ] ขยาย `trackRoute` ไป login (ระวัง PIN/รหัสผ่าน), ใบสั่งซื้อ, LIFF; เทียบ Sentry ทีหลังถ้าต้องการ stack trace
+- [ ] ที่ค้างเดิมด้านล่าง (desktop redesign, Vendor rich menu, `mobile/lookup` ไม่ล็อกอิน ฯลฯ)
+
+### บทเรียน
+- route ที่ catch แล้วคืน 400 ไม่มี log ฝั่งเซิร์ฟเวอร์ จึงหาสาเหตุย้อนหลังไม่ได้ → ใช้ `app_events`
+- SQL `SELECT COUNT(*) = (...)` ที่ไม่มี FROM ให้ COUNT เป็น 1 เสมอ; เขียนเทสต์บน Postgres จำลอง (PGlite) แล้วยืนยันว่าล้มกับโค้ดเดิมก่อนแก้
+- ไฟล์ส่วนใหญ่ใน repo เป็น CRLF: สคริปต์แก้ไฟล์ต้องรักษา EOL เดิม (grep `$'\r'` ใน Git Bash ไม่เชื่อถือได้ ใช้ node ตรวจ)
+
+---
+
+<!-- ด้านล่างคือ handoff เช้า 2026-09-29 (เก็บไว้ ไม่ได้ลบ) -->
 
 ## Forward Handoff — 2026-09-29 (มือถือ/LINE + rich menu ขึ้น production แล้ว เบิกผ่าน LIFF ทดสอบสำเร็จ)
 
