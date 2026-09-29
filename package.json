@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "test": "vitest run",
-    "line:generate-rich-menu": "powershell -ExecutionPolicy Bypass -File scripts/generate-line-rich-menu-assets.ps1",
+    "line:render-rich-menu": "powershell -ExecutionPolicy Bypass -File scripts/render-line-rich-menu.ps1",
+    "line:generate-rich-menu":"powershell -ExecutionPolicy Bypass -File scripts/generate-line-rich-menu-assets.ps1",
     "line:setup-rich-menu": "node scripts/setup-line-rich-menu.mjs",
     "lint": "eslint"
   },
