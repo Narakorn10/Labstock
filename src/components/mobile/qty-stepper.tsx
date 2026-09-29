@@ -9,15 +9,17 @@ interface QtyStepperProps {
   min?: number;
   /** When set, the plus button is disabled at this value. Callers still cap typed values. */
   max?: number;
+  /** Stretch to the full width with a shaded value box (LIFF layout) instead of the compact inline control. */
+  wide?: boolean;
 }
 
 /** Mobile quantity control with 44px hit targets. Typing a number is still allowed for large receive quantities. */
-export default function QtyStepper({ value, onChange, label, min = 1, max }: QtyStepperProps) {
+export default function QtyStepper({ value, onChange, label, min = 1, max, wide = false }: QtyStepperProps) {
   const atMax = max !== undefined && value >= max;
   const atMin = value <= min;
 
   return (
-    <div className="flex items-center gap-2">
+    <div className={wide ? 'grid grid-cols-[44px_minmax(0,1fr)_44px] items-center gap-2' : 'flex items-center gap-2'}>
       <button
         type="button"
         onClick={() => onChange(Math.max(min, value - 1))}
@@ -35,7 +37,9 @@ export default function QtyStepper({ value, onChange, label, min = 1, max }: Qty
         value={value}
         onChange={(event) => onChange(parseInt(event.target.value, 10) || 0)}
         aria-label={label}
-        className="h-11 w-14 rounded-xl bg-transparent text-center text-xl font-semibold text-ink outline-none focus:bg-white focus:ring-2 focus:ring-ink/20 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+        className={`h-11 rounded-xl text-center text-xl font-semibold text-ink outline-none focus:bg-white focus:ring-2 focus:ring-ink/20 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
+          wide ? 'w-full bg-[#f6f6f7] text-lg' : 'w-14 bg-transparent'
+        }`}
       />
       <button
         type="button"

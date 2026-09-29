@@ -8,7 +8,7 @@ export const metadata: Metadata = {
 
 export default function LiffDispensePage() {
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-[#edf5f1]">
+    <div className="fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-ground">
       <LiffDispenseWorkflow />
     </div>
   );

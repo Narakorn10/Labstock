@@ -18,7 +18,7 @@ export async function POST(request: Request) {
     const orders = await sql`
       SELECT p.*
       FROM purchase_orders p
-      WHERE p.status IN ('SUBMITTED', 'PENDING_LAB_REVIEW', 'REVISION_REQUESTED', 'CONFIRMED', 'PARTIALLY_SHIPPED', 'SHIPPED')
+      WHERE p.status IN ('PENDING_MANAGER_REVIEW', 'SUBMITTED', 'ACKNOWLEDGED', 'PENDING_LAB_REVIEW', 'REVISION_REQUESTED', 'CONFIRMED', 'PARTIALLY_SHIPPED', 'SHIPPED')
       ORDER BY p.updated_at DESC NULLS LAST, p.created_at DESC
       LIMIT 30
     `;
