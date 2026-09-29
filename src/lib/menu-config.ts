@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
+  Activity,
   ArrowDownToLine,
   ArrowUpFromLine,
   BarChart3,
@@ -42,6 +43,7 @@ const ALL_NAVIGATION_GROUPS: NavigationGroup[] = [
       { id: "dashboard", name: "Inventory Overview", label: "Inventory Overview", href: "/dashboard", icon: LayoutDashboard },
       { id: "analysis", name: "Analysis (วิเคราะห์)", label: "Analysis", href: "/analysis", icon: BarChart3 },
       { id: "logs", name: "Logs (ประวัติ)", label: "History Logs", href: "/logs", icon: History },
+      { id: "activity", name: "กิจกรรมผู้ใช้ (Activity)", label: "User Activity", href: "/activity", icon: Activity },
     ],
   },
   {
@@ -97,7 +99,7 @@ export const ALL_MENUS = NAVIGATION_GROUPS.flatMap((group) => group.items);
 export const ROLES = ["Admin", "Manager", "Operator", "User", "Vendor"] as const;
 
 const ROLE_FALLBACK_MENUS: Record<string, string[]> = {
-  Admin: ["dashboard", "master_data", "user_management", "rbac", "reagent_order_policies"],
+  Admin: ["dashboard", "master_data", "user_management", "rbac", "reagent_order_policies", "activity"],
   Manager: ["dashboard", "master_data"],
 };
 
