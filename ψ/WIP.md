@@ -1,15 +1,23 @@
 # WIP — 2026-09-29
 
-## Forward Handoff — 2026-09-29 (มือถือ/LINE ขึ้น production แล้ว เบิกผ่าน LIFF ทดสอบสำเร็จ; เหลือ rich menu rollout)
+## Forward Handoff — 2026-09-29 (มือถือ/LINE + rich menu ขึ้น production แล้ว เบิกผ่าน LIFF ทดสอบสำเร็จ)
+
+### Rich menu rollout — เสร็จ 2026-09-29 (PR #19, #20 merged; เฟส 6 ปิด)
+- สร้างเมนูใหม่ใน LINE ด้วย `create` (ไม่ลบเก่า): receive+dispense+web `richmenu-e89843676a73d162658ce95430b6af16` (`LINE_RECEIVE_RICH_MENU_ID`), dispense+web ไม่มีรับเข้า `richmenu-e28fca146a2c3d91b991d905867fbf14` (`LINE_DISPENSE_RICH_MENU_ID` และ default ของ LINE ตั้งแล้ว), purchasing 4 ช่อง สั่ง/รับเข้า/เบิก/เว็บ `richmenu-7cc4c0326e4b53ee549d4711417b5fa2` (`LINE_PURCHASING_RICH_MENU_ID`)
+- ผู้ใช้รัน `default` และ `sync` เอง (ระบบสิทธิ์ของ Claude Code บล็อกการเขียนเมนู LINE ทั้งระบบ): ผูก Admin 2, Manager 1 → purchasing; User 1 → receive; Operator/Vendor ไม่มีบัญชี LINE
+- ผู้ใช้ยืนยันว่า LINE แสดงเมนู 4 ช่องแล้ว; ยังไม่ยืนยันการกดปุ่ม "รับเข้า" เปิด `/mobile/receive` และยังไม่ยืนยันว่าค่า `LINE_PURCHASING_RICH_MENU_ID` ใน Vercel เป็น ID ล่าสุด (`…7cc4…`) + redeploy แล้ว (มีผลกับคนผูกบัญชีใหม่)
+- เหตุที่ต้องทำ PR #20: เมนู purchasing 3 ช่องแรก (#19) ไม่มีปุ่มรับเข้า แต่ Admin/Manager มีสิทธิ์รับเข้า → หลัง `sync` ปุ่มรับเข้าหาย
+- Rollback (ID เก่า): dispense `richmenu-0147218be85e50cb1bcd43ad3c3d6ecf`, purchasing เดิม `richmenu-96289d3ca640b431513b004c06af684d`, purchasing 3 ช่อง `richmenu-31b2fe7b9242fa26d04788d7d898f9f3`; ใช้ `link <lineUserId> <id>` / `default <id>`
+- สถานะ repo ในเครื่อง: detached ที่ `4ebb56f` (origin/main); `main` ในเครื่องต่างจาก GitHub (ไม่ได้แตะ)
 
 ### สถานะ
 - ผู้ใช้ merge PR #12–#17 เมื่อ 2026-09-29 (08:04Z) แต่ #14, #15, #16 ถูกรวมเข้า branch ฐานของตัวเอง ไม่ใช่ `main` (ไม่ได้ลบ branch ของ #13 GitHub เลยไม่ย้าย base) → เปิด PR #18 (`update/mobile-home-workflow` → `main`) merge 08:09Z; ยืนยันด้วย `git merge-base --is-ancestor` ว่า `da58b99 921cda0 ed4b167 519615f` อยู่ใน `main`
 - Vercel production Ready; probe ไม่ล็อกอิน: `/login` `/mobile` `/liff/dispense` 200, `/api/mobile/confirm` GET 405
 - ผู้ใช้ทดสอบเบิกผ่าน LIFF บน production: สำเร็จ (ผู้ใช้รายงาน ไม่ทราบบัญชี/รายการที่ใช้ทดสอบ)
-- PR #19 `update/line-rich-menu` (rich menu 3 แบบ + สคริปต์ create/link/default/sync) เปิดแล้ว รอ merge; rebase หลัง #12 แล้ว ใช้ `roleHasMenu` ของ #12; vitest 174 ผ่าน; ยังไม่ได้เรียก LINE API จริง
+- PR #19 (rich menu 3 แบบ + สคริปต์ create/link/default/sync, ใช้ `roleHasMenu` ของ #12) และ #20 (purchasing 4 ช่อง) merge แล้ว; vitest 174 ผ่าน
 
 ### งานค้าง
-- [ ] ผู้ใช้ merge PR #19 แล้ว rollout: `create` → `link <lineUserId> <menuId>` ทดสอบบัญชีเดียว → ใส่ `LINE_RECEIVE_RICH_MENU_ID` (+ ID ใหม่อื่น) ใน Vercel → `default <no-receive id>` → `sync` (ดู `LINE_LIFF_ORDERING_ROLLOUT.md`; ID เก่าเป็น rollback)
+- [ ] ตรวจใน Vercel production: `LINE_PURCHASING_RICH_MENU_ID` = `…7cc4…` แล้ว redeploy; กดปุ่ม "รับเข้า" ใน LINE ว่าเปิด `/mobile/receive`
 - [ ] ยังไม่ทดสอบใน LINE จริง: ผูกบัญชี PIN 4/6 หลัก, อนุมัติ PO ผ่าน LIFF, กล้องสแกน, การ์ด Flex
 - [ ] Rich menu Vendor (3b) เลื่อนไปรอบหน้า
 - [ ] ผู้ใช้ตัดสินใจ desktop redesign (เสนอ 4 PR, แทนสี Tailwind ~1,480 จุด)
