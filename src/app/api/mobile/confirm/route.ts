@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { hasUserPinColumn, verifyUserPin } from "@/lib/auth-utils";
+import { hasUserPinColumn, roleHasMenu, verifyUserPin } from "@/lib/auth-utils";
 import { getLineLinkedUser, hasUserLineIdColumn, verifyLineIdToken } from "@/lib/line-liff-auth";
 import { runDispenseBatch, runReceiveBatch, StockBatchItem } from "@/lib/stock-transactions";
 
@@ -58,6 +58,11 @@ export async function POST(request: Request) {
 
     if (user.role === "Vendor") {
       return NextResponse.json({ error: "This role cannot approve mobile stock transactions." }, { status: 403 });
+    }
+
+    // Same menu RBAC as /api/receive and /api/dispense, so the mobile/LINE path cannot bypass it.
+    if (!await roleHasMenu(user.role, mode)) {
+      return NextResponse.json({ error: mode === "receive" ? "บัญชีนี้ไม่มีสิทธิ์รับเข้า" : "บัญชีนี้ไม่มีสิทธิ์เบิกจ่าย" }, { status: 403 });
     }
 
     const userAgent = request.headers.get("user-agent") || "Unknown";

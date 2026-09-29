@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({ sql: vi.fn() }));
 
 vi.mock("./db", () => ({ default: mocks.sql }));
 
-import { comparePassword, isLegacyPasswordHash, upgradeLegacyPasswordHash } from "./auth-utils";
+import { comparePassword, isLegacyPasswordHash, roleHasMenu, upgradeLegacyPasswordHash } from "./auth-utils";
 
 const sha256 = (value: string) => crypto.createHash("sha256").update(value).digest("hex");
 
@@ -42,5 +42,35 @@ describe("legacy password hash upgrade", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     mocks.sql.mockRejectedValue(new Error("db down"));
     await expect(upgradeLegacyPasswordHash("staff", "secret", sha256("secret"))).resolves.toBeUndefined();
+  });
+});
+
+describe("roleHasMenu", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("always allows Admin without querying the database", async () => {
+    await expect(roleHasMenu("Admin", "receive")).resolves.toBe(true);
+    expect(mocks.sql).not.toHaveBeenCalled();
+  });
+
+  it("allows a role whose allowed_menus contains the menu", async () => {
+    mocks.sql.mockResolvedValue([{ allowed_menus: ["dashboard", "dispense"] }]);
+    await expect(roleHasMenu("Operator", "dispense")).resolves.toBe(true);
+  });
+
+  it("denies a role whose allowed_menus lacks the menu, or has no row", async () => {
+    mocks.sql.mockResolvedValueOnce([{ allowed_menus: ["dashboard"] }]);
+    await expect(roleHasMenu("Operator", "receive")).resolves.toBe(false);
+    mocks.sql.mockResolvedValueOnce([]);
+    await expect(roleHasMenu("Ghost", "receive")).resolves.toBe(false);
+  });
+
+  it("denies when the permission lookup fails", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mocks.sql.mockRejectedValue(new Error("db down"));
+    await expect(roleHasMenu("Operator", "receive")).resolves.toBe(false);
+    spy.mockRestore();
   });
 });
