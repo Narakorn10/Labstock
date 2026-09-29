@@ -4,9 +4,25 @@ import { usePathname } from 'next/navigation';
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import Sidebar from '@/components/sidebar';
+import { useAuth } from '@/components/auth-provider';
+import { NAVIGATION_GROUPS } from '@/lib/menu-config';
 
 interface AppShellProps {
   children: React.ReactNode;
+}
+
+/** Finds the menu entry (most specific href) that the current path belongs to. */
+function findCrumb(pathname: string) {
+  let best: { group: string; label: string; length: number } | null = null;
+  for (const group of NAVIGATION_GROUPS) {
+    for (const item of group.items) {
+      const matches = pathname === item.href || pathname.startsWith(item.href + '/');
+      if (matches && (!best || item.href.length > best.length)) {
+        best = { group: group.title, label: item.label, length: item.href.length };
+      }
+    }
+  }
+  return best;
 }
 
 export default function AppShell({ children }: AppShellProps) {
@@ -14,6 +30,11 @@ export default function AppShell({ children }: AppShellProps) {
   const isMobileSurface = pathname.startsWith('/mobile');
   const isPublicSurface = pathname === '/' || pathname === '/login';
   const [sidebarHidden, setSidebarHidden] = useState(false);
+  const { user } = useAuth();
+  const crumb = findCrumb(pathname);
+  // The header (breadcrumb + sidebar toggle) only makes sense with a signed-in user. LIFF and
+  // sign-up pages keep the original spacing so their layout does not change.
+  const showHeader = Boolean(user);
 
   useEffect(() => {
     const handleSidebarShortcut = (event: KeyboardEvent) => {
@@ -42,7 +63,7 @@ export default function AppShell({ children }: AppShellProps) {
 
   if (isMobileSurface) {
     return (
-      <div className="min-h-screen bg-[#f6f8f7]">
+      <div className="min-h-screen bg-gray-50">
         <a
           href="#app-main"
           className="sr-only z-[60] rounded-lg bg-clinical-900 px-4 py-2 text-sm font-semibold text-white focus:not-sr-only focus:fixed focus:left-4 focus:top-4"
@@ -67,29 +88,40 @@ export default function AppShell({ children }: AppShellProps) {
         ข้ามไปยังเนื้อหาหลัก
       </a>
       <Sidebar desktopHidden={sidebarHidden} />
-      <button
-        type="button"
-        onClick={() => setSidebarHidden((current) => !current)}
-        aria-label={sidebarHidden ? 'แสดงเมนูด้านข้าง' : 'ซ่อนเมนูด้านข้าง'}
-        aria-controls="primary-navigation"
-        aria-expanded={!sidebarHidden}
-        aria-keyshortcuts="Control+B Meta+B"
-        title={sidebarHidden ? 'แสดงเมนูด้านข้าง (Ctrl+B)' : 'ซ่อนเมนูด้านข้าง (Ctrl+B)'}
-        className={`hidden lg:inline-flex fixed top-5 z-30 size-10 items-center justify-center rounded-lg border border-clinical-border bg-white text-clinical-700 shadow-sm transition-all hover:bg-[#eff6f3] active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-clinical-700 ${sidebarHidden ? 'left-5' : 'left-[18.5rem]'}`}
-      >
-        {sidebarHidden ? <PanelLeftOpen size={19} /> : <PanelLeftClose size={19} />}
-      </button>
       <main
         id="app-main"
         tabIndex={-1}
-        className={`relative flex min-h-screen min-w-0 flex-1 flex-col transition-[margin] duration-300 ${sidebarHidden ? 'lg:ml-0' : 'lg:ml-72'}`}
+        className={`relative flex min-h-screen min-w-0 flex-1 flex-col transition-[margin] duration-300 ${showHeader && !sidebarHidden ? 'lg:ml-[260px]' : 'lg:ml-0'}`}
       >
-        <div className="mx-auto w-full max-w-[1600px] flex-1 px-4 pb-10 pt-20 sm:px-6 sm:pb-12 sm:pt-20 lg:px-10 lg:pt-8 xl:px-12">
+        {showHeader && (
+        <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-line bg-white/90 pl-16 pr-4 backdrop-blur lg:px-6">
+          <button
+            type="button"
+            onClick={() => setSidebarHidden((current) => !current)}
+            aria-label={sidebarHidden ? 'แสดงเมนูด้านข้าง' : 'ซ่อนเมนูด้านข้าง'}
+            aria-controls="primary-navigation"
+            aria-expanded={!sidebarHidden}
+            aria-keyshortcuts="Control+B Meta+B"
+            title={sidebarHidden ? 'แสดงเมนูด้านข้าง (Ctrl+B)' : 'ซ่อนเมนูด้านข้าง (Ctrl+B)'}
+            className="hidden size-9 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-gray-100 hover:text-ink active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent lg:inline-flex"
+          >
+            {sidebarHidden ? <PanelLeftOpen size={19} strokeWidth={1.5} /> : <PanelLeftClose size={19} strokeWidth={1.5} />}
+          </button>
+          {crumb && (
+            <nav aria-label="ตำแหน่งหน้าปัจจุบัน" className="flex min-w-0 items-center gap-2 text-sm">
+              <span className="hidden text-ink-muted sm:inline">{crumb.group}</span>
+              <span className="hidden text-gray-300 sm:inline" aria-hidden="true">/</span>
+              <span className="truncate font-medium text-ink" aria-current="page">{crumb.label}</span>
+            </nav>
+          )}
+        </header>
+        )}
+        <div className={`mx-auto w-full max-w-[1600px] flex-1 px-4 pb-10 sm:px-6 sm:pb-12 lg:px-10 xl:px-12 ${showHeader ? 'pt-6' : 'pt-20 lg:pt-8'}`}>
           {children}
         </div>
-        <footer className="border-t border-clinical-border bg-white/80 px-6 py-5 text-center text-xs text-[var(--clinical-muted)] backdrop-blur-sm">
+        <footer className="border-t border-line bg-white/80 px-6 py-5 text-center text-xs text-ink-muted backdrop-blur-sm">
           <div className="flex items-center justify-center gap-2.5">
-            <div className="size-2 rounded-full bg-clinical-700" aria-hidden="true" />
+            <div className="size-2 rounded-full bg-gray-400" aria-hidden="true" />
             <p className="font-medium tracking-wide">LabStock · ระบบบริหารคลังน้ำยา</p>
           </div>
         </footer>

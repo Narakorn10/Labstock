@@ -252,7 +252,7 @@ function BarcodeLearningV2Panel() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 pb-12">
-      <div className="rounded-3xl bg-[#0b2b26] p-6 text-white shadow-sm">
+      <div className="rounded-3xl bg-gray-950 p-6 text-white shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.22em] text-emerald-200">Barcode Learning V2</p>
@@ -269,8 +269,8 @@ function BarcodeLearningV2Panel() {
         <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="mb-6 flex items-center justify-between gap-2 overflow-x-auto" aria-label="ขั้นตอนการสอน">
             {[['1', 'ข้อมูลรูปแบบ'], ['2', 'ตัวอย่างที่ 1'], ['3', 'ตัวอย่างที่ 2'], ['4', 'ตรวจสอบ']].map(([number, label]) => (
-              <div key={number} className={`flex min-w-max items-center gap-2 text-sm ${Number(number) === step ? 'font-black text-[#087f70]' : 'font-semibold text-slate-400'}`}>
-                <span className={`flex h-9 w-9 items-center justify-center rounded-full border-2 ${Number(number) <= step ? 'border-[#087f70] bg-[#e6f5f1] text-[#087f70]' : 'border-slate-200'}`}>{number}</span>
+              <div key={number} className={`flex min-w-max items-center gap-2 text-sm ${Number(number) === step ? 'font-black text-blue-700' : 'font-semibold text-slate-400'}`}>
+                <span className={`flex h-9 w-9 items-center justify-center rounded-full border-2 ${Number(number) <= step ? 'border-gray-800 bg-gray-100 text-blue-700' : 'border-slate-200'}`}>{number}</span>
                 <span>{label}</span>
               </div>
             ))}
@@ -285,10 +285,10 @@ function BarcodeLearningV2Panel() {
               <fieldset>
                 <legend className="mb-2 text-sm font-bold text-slate-700">รูปแบบการผูกน้ำยา</legend>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <button type="button" onClick={() => setMappingMode('CAPTURED_IDENTIFIER')} className={`min-h-20 rounded-2xl border-2 p-4 text-left ${mappingMode === 'CAPTURED_IDENTIFIER' ? 'border-[#087f70] bg-[#e6f5f1]' : 'border-slate-200'}`}>
+                  <button type="button" onClick={() => setMappingMode('CAPTURED_IDENTIFIER')} className={`min-h-20 rounded-2xl border-2 p-4 text-left ${mappingMode === 'CAPTURED_IDENTIFIER' ? 'border-gray-800 bg-gray-100' : 'border-slate-200'}`}>
                     <span className="block font-black">มีรหัสสินค้าใน QR</span><span className="mt-1 block text-xs text-slate-500">ดึง Item ID จากตำแหน่งใน QR</span>
                   </button>
-                  <button type="button" onClick={() => setMappingMode('FIXED_REAGENT')} className={`min-h-20 rounded-2xl border-2 p-4 text-left ${mappingMode === 'FIXED_REAGENT' ? 'border-[#087f70] bg-[#e6f5f1]' : 'border-slate-200'}`}>
+                  <button type="button" onClick={() => setMappingMode('FIXED_REAGENT')} className={`min-h-20 rounded-2xl border-2 p-4 text-left ${mappingMode === 'FIXED_REAGENT' ? 'border-gray-800 bg-gray-100' : 'border-slate-200'}`}>
                     <span className="block font-black">ผูกกับน้ำยารายการเดียว</span><span className="mt-1 block text-xs text-slate-500">QR นี้ไม่มี Item ID ให้เลือกจาก Master</span>
                   </button>
                 </div>
@@ -302,7 +302,7 @@ function BarcodeLearningV2Panel() {
                   </select>
                 </div>
               )}
-              <div className="flex justify-end"><button type="button" onClick={() => setStep(2)} disabled={!name.trim() || (mappingMode === 'FIXED_REAGENT' && !fixedItemId)} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#087f70] px-5 text-sm font-bold text-white disabled:opacity-40">ถัดไป <ArrowRight size={18} /></button></div>
+              <div className="flex justify-end"><button type="button" onClick={() => setStep(2)} disabled={!name.trim() || (mappingMode === 'FIXED_REAGENT' && !fixedItemId)} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-gray-900 px-5 text-sm font-bold text-white disabled:opacity-40">ถัดไป <ArrowRight size={18} /></button></div>
             </div>
           )}
 
@@ -318,8 +318,8 @@ function BarcodeLearningV2Panel() {
                   <div><label className="mb-2 block text-sm font-bold text-slate-700">ค่าที่คาดหวัง: Lot</label><input value={example.expected_lot || ''} onChange={(event) => updateExample(index, 'expected_lot', event.target.value)} className="min-h-11 w-full rounded-xl border border-slate-300 px-3" placeholder="เช่น LOT24001" /><p className="mt-1 text-xs text-slate-400">ระบบจะเก็บตำแหน่ง Lot จากตัวอย่าง</p></div>
                   <div><label className="mb-2 block text-sm font-bold text-slate-700">ค่าที่คาดหวัง: Expiry</label><input value={example.expected_exp_date || ''} onChange={(event) => updateExample(index, 'expected_exp_date', event.target.value)} className="min-h-11 w-full rounded-xl border border-slate-300 px-3" placeholder="YYYY-MM-DD หรือค่าบนฉลาก" /><p className="mt-1 text-xs text-slate-400">ระบบจะจัดรูปแบบวันที่ให้อัตโนมัติ</p></div>
                 </div>
-                {index === 1 && <div className="rounded-2xl bg-[#f6faf9] p-4 text-sm text-slate-700"><p className="font-bold">ก่อนตรวจสอบ</p><ul className="mt-2 list-disc space-y-1 pl-5"><li>ตัวอย่างทั้งสองต้องไม่ใช่ QR ที่ V1 อ่านได้อยู่แล้ว</li><li>Item/Lot/Expiry ที่คาดหวังต้องตรงกับค่าที่เห็นจริง</li><li>หากตรวจสอบไม่ครบ ระบบจะบันทึกได้เฉพาะฉบับร่าง</li></ul></div>}
-                <div className="flex justify-between"><button type="button" onClick={() => setStep(index === 0 ? 1 : 2)} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 px-4 text-sm font-bold"><ArrowLeft size={18} /> ย้อนกลับ</button><button type="button" onClick={() => index === 0 ? setStep(3) : validate()} disabled={!example.raw_barcode.trim()} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#087f70] px-5 text-sm font-bold text-white disabled:opacity-40">{index === 0 ? <>ถัดไป <ArrowRight size={18} /></> : <><ClipboardCheck size={18} /> ตรวจสอบตัวอย่าง</>}</button></div>
+                {index === 1 && <div className="rounded-2xl bg-gray-50 p-4 text-sm text-slate-700"><p className="font-bold">ก่อนตรวจสอบ</p><ul className="mt-2 list-disc space-y-1 pl-5"><li>ตัวอย่างทั้งสองต้องไม่ใช่ QR ที่ V1 อ่านได้อยู่แล้ว</li><li>Item/Lot/Expiry ที่คาดหวังต้องตรงกับค่าที่เห็นจริง</li><li>หากตรวจสอบไม่ครบ ระบบจะบันทึกได้เฉพาะฉบับร่าง</li></ul></div>}
+                <div className="flex justify-between"><button type="button" onClick={() => setStep(index === 0 ? 1 : 2)} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 px-4 text-sm font-bold"><ArrowLeft size={18} /> ย้อนกลับ</button><button type="button" onClick={() => index === 0 ? setStep(3) : validate()} disabled={!example.raw_barcode.trim()} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-gray-900 px-5 text-sm font-bold text-white disabled:opacity-40">{index === 0 ? <>ถัดไป <ArrowRight size={18} /></> : <><ClipboardCheck size={18} /> ตรวจสอบตัวอย่าง</>}</button></div>
               </div>
             );
           })()}
@@ -329,7 +329,7 @@ function BarcodeLearningV2Panel() {
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><h2 className="text-xl font-black">ตรวจสอบและบันทึก</h2><div className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><div><span className="text-slate-500">ชื่อรูปแบบ</span><p className="font-bold">{name}</p></div><div><span className="text-slate-500">การผูก</span><p className="font-bold">{mappingMode === 'FIXED_REAGENT' ? `น้ำยา ${fixedItemId}` : 'รหัสสินค้าใน QR'}</p></div><div><span className="text-slate-500">ตัวอย่าง</span><p className="font-bold">{examples.filter((example) => example.raw_barcode).length}/2 รายการ</p></div><div><span className="text-slate-500">สถานะตรวจสอบ</span><p className={`font-bold ${verification?.status === 'VERIFIED' ? 'text-emerald-700' : 'text-amber-700'}`}>{verification?.status === 'VERIFIED' ? 'ผ่านการตรวจสอบ' : 'ยังไม่ผ่าน — จะเก็บเป็นฉบับร่าง'}</p></div></div><div className="mt-4 rounded-xl border border-slate-200 bg-white p-3"><p className="text-xs font-bold text-slate-500">ตำแหน่ง Capture Group จากการตรวจสอบล่าสุด</p><div className="mt-2 grid grid-cols-3 gap-2 text-xs"><span>Item: <strong>{itemIdGroup ?? '-'}</strong></span><span>Lot: <strong>{lotNoGroup ?? '-'}</strong></span><span>Expiry: <strong>{expDateGroup ?? '-'}</strong></span></div></div></div>
               {verification?.errors?.length ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800"><p className="font-bold">รายการที่ต้องแก้</p><ul className="mt-2 list-disc space-y-1 pl-5">{verification.errors.map((item) => <li key={item}>{item}</li>)}</ul></div> : verification?.status === 'VERIFIED' ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800"><p className="font-bold">ผ่าน checklist</p><p className="mt-1">V1 ไม่ชนตัวอย่าง, V2 อ่านค่าตรงกัน และพร้อมให้ Admin ตรวจเปิดใช้</p></div> : <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><p className="font-bold">ยังไม่ได้ตรวจสอบรอบล่าสุด</p><p className="mt-1">กด “ตรวจสอบตัวอย่าง” หลังแก้ข้อมูลหรือ Regex เพื่อบันทึกผลการตรวจสอบใหม่</p></div>}
               {isAdmin && <details className="rounded-2xl border border-slate-200 p-4" open={advancedRegexEnabled}><summary className="cursor-pointer text-sm font-bold">ตัวเลือกขั้นสูงสำหรับ Admin: Regex และตำแหน่ง Capture Group</summary><p className="mt-2 text-xs text-slate-500">ปล่อย Regex ว่างเพื่อให้ระบบสร้างรูปแบบจากตัวอย่างอัตโนมัติ หากแก้ Regex เอง ต้องระบุหมายเลขกลุ่มให้ตรงกับวงเล็บจับค่า</p><textarea value={regexPattern} onChange={(event) => updateAdvancedRegex(event.target.value)} className="mt-3 min-h-24 w-full rounded-xl border border-slate-300 p-3 font-mono text-xs" placeholder="เว้นว่างเพื่อให้ระบบสร้าง Regex portable ให้อัตโนมัติ" /><div className="mt-3 grid gap-3 sm:grid-cols-3"><label className="text-xs font-bold text-slate-700">Item ID group<input type="number" min="1" value={itemIdGroup ?? ''} onChange={(event) => updateCaptureGroup(setItemIdGroup, event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-3 font-normal" placeholder="เช่น 1" /></label><label className="text-xs font-bold text-slate-700">Lot group<input type="number" min="1" value={lotNoGroup ?? ''} onChange={(event) => updateCaptureGroup(setLotNoGroup, event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-3 font-normal" placeholder="เช่น 2" /></label><label className="text-xs font-bold text-slate-700">Expiry group<input type="number" min="1" value={expDateGroup ?? ''} onChange={(event) => updateCaptureGroup(setExpDateGroup, event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-3 font-normal" placeholder="เช่น 3" /></label></div></details>}
-              <div className="flex justify-between"><button type="button" onClick={() => setStep(3)} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 px-4 text-sm font-bold"><ArrowLeft size={18} /> แก้ไขตัวอย่าง</button><button type="button" onClick={saveDraft} disabled={saving} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#087f70] px-5 text-sm font-bold text-white disabled:opacity-40">{saving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />} {editingPatternId !== null ? 'อัปเดตฉบับร่าง' : 'บันทึกเป็นฉบับร่าง'}</button></div>
+              <div className="flex justify-between"><button type="button" onClick={() => setStep(3)} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 px-4 text-sm font-bold"><ArrowLeft size={18} /> แก้ไขตัวอย่าง</button><button type="button" onClick={saveDraft} disabled={saving} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-gray-900 px-5 text-sm font-bold text-white disabled:opacity-40">{saving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />} {editingPatternId !== null ? 'อัปเดตฉบับร่าง' : 'บันทึกเป็นฉบับร่าง'}</button></div>
             </div>
           )}
         </div>
@@ -551,7 +551,7 @@ export default function BarcodeSettingsPage() {
     return (
       <div className="space-y-4">
         <div className="mx-auto flex max-w-6xl gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
-          <button type="button" onClick={() => setActiveTab('v2')} className="min-h-11 flex-1 rounded-xl bg-[#e6f5f1] px-4 text-sm font-black text-[#087f70]">รูปแบบใหม่ V2</button>
+          <button type="button" onClick={() => setActiveTab('v2')} className="min-h-11 flex-1 rounded-xl bg-gray-100 px-4 text-sm font-black text-blue-700">รูปแบบใหม่ V2</button>
           <button type="button" onClick={() => setActiveTab('legacy')} className="min-h-11 flex-1 rounded-xl px-4 text-sm font-bold text-slate-500 hover:bg-slate-50">รูปแบบเดิม</button>
         </div>
         <BarcodeLearningV2Panel />
