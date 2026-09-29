@@ -201,7 +201,7 @@ export default function VendorOrdersPage() {
       <section className="overflow-hidden rounded-xl border bg-white">
         <div className="flex flex-col justify-between gap-3 border-b p-4 sm:flex-row sm:items-center">
           <div><h2 className="font-bold">น้ำยาที่ต้องพิจารณาสั่ง</h2><p className="text-sm text-gray-500">ข้อมูลคงเหลือจากคลัง Lab</p></div>
-          <button onClick={openNewProposal} disabled={suggestions.length === 0} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">ส่งรายการเสนอให้ Lab ตรวจสอบ</button>
+          <button onClick={openNewProposal} disabled={suggestions.length === 0} className="rounded-lg bg-ink px-4 py-2 text-sm font-medium text-white disabled:opacity-50">ส่งรายการเสนอให้ Lab ตรวจสอบ</button>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm"><thead className="bg-gray-50 text-left text-gray-500"><tr><th className="px-4 py-3">น้ำยา</th><th className="px-4 py-3 text-right">คงเหลือ</th><th className="px-4 py-3 text-right">Min</th><th className="px-4 py-3 text-right">แนะนำสั่ง</th></tr></thead>
@@ -229,7 +229,7 @@ export default function VendorOrdersPage() {
       {draftItems.length > 0 && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"><div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-6"><h2 className="text-xl font-bold">{editingOrder ? "แก้ไขรายการเพื่อส่ง Lab ตรวจสอบ" : "เสนอรายการสั่งน้ำยาให้ Lab"}</h2><p className="mt-1 text-sm text-gray-500">Lab ต้องยืนยันก่อนรายการนี้จะเป็นคำสั่งซื้อที่ตกลงแล้ว</p>
         <div className="mt-4 space-y-2">{draftItems.map((item, index) => <div key={item.item_id} className="flex items-center gap-3 rounded border p-3"><div className="flex-1"><div className="font-medium">{item.item_name}</div><div className="text-xs text-gray-500">{item.item_id}</div></div><input aria-label={`จำนวน ${item.item_name}`} type="number" min="1" value={item.quantity} onChange={(event) => setDraftItems((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, quantity: Number(event.target.value) } : row))} className="w-24 rounded border p-2 text-right"/><span className="w-12 text-sm text-gray-500">{item.unit}</span></div>)}</div>
         <label className="mt-4 block text-sm font-medium">หมายเหตุ{editingOrder ? " (จำเป็น)" : ""}</label><textarea value={draftNote} onChange={(event) => setDraftNote(event.target.value)} className="mt-1 w-full rounded border p-2" rows={3}/>
-        <div className="mt-5 flex justify-end gap-2"><button onClick={() => { setDraftItems([]); setEditingOrder(null); }} className="rounded border px-4 py-2">ยกเลิก</button><button onClick={() => void saveDraft()} disabled={saving} className="rounded bg-indigo-600 px-4 py-2 text-white disabled:opacity-50">{saving ? "กำลังส่ง..." : "ส่งให้ Lab ตรวจสอบ"}</button></div>
+        <div className="mt-5 flex justify-end gap-2"><button onClick={() => { setDraftItems([]); setEditingOrder(null); }} className="rounded border px-4 py-2">ยกเลิก</button><button onClick={() => void saveDraft()} disabled={saving} className="rounded bg-ink px-4 py-2 text-white disabled:opacity-50">{saving ? "กำลังส่ง..." : "ส่งให้ Lab ตรวจสอบ"}</button></div>
       </div></div>}
     </div>
   );

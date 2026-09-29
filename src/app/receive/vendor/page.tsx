@@ -143,7 +143,7 @@ export default function LabVendorReceiptPage() {
           filtered.map((ship, idx) => (
             <div key={idx} className="bg-white p-6 rounded-[20px] border border-gray-100 shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row items-center justify-between gap-6 group">
               <div className="flex items-center gap-6 w-full">
-                <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center shrink-0 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center shrink-0 group-hover:bg-black group-hover:text-white transition-colors">
                   <Truck size={32} />
                 </div>
                 <div className="space-y-1">

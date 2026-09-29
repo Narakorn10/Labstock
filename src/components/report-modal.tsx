@@ -140,7 +140,7 @@ export default function ReportModal({ isOpen, onClose, data, jobTypes }: ReportM
           </button>
           <button 
             onClick={exportImage}
-            className="flex items-center justify-center gap-2 p-4 bg-indigo-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all active:scale-95"
+            className="flex items-center justify-center gap-2 p-4 bg-ink text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-indigo-100 hover:bg-black transition-all active:scale-95"
           >
             <ImageIcon size={16} />
             เซฟเป็นรูปภาพ

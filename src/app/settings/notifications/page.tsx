@@ -145,7 +145,7 @@ export default function NotificationSettingsPage() {
     <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in pb-12">
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-3">
-          <div className="bg-indigo-600 p-2 rounded-xl text-white shadow-lg shadow-indigo-200">
+          <div className="bg-ink p-2 rounded-xl text-white shadow-lg shadow-indigo-200">
             <BellRing size={24} />
           </div>
           <h1 className="text-[32px] leading-tight font-medium tracking-tight text-ink">การแจ้งเตือน (Notifications)</h1>
@@ -268,7 +268,7 @@ export default function NotificationSettingsPage() {
         <button 
           onClick={handleSave}
           disabled={saving}
-          className="bg-indigo-600 text-white px-8 py-3 rounded-2xl font-bold flex items-center gap-2 shadow-lg shadow-indigo-100 hover:bg-indigo-700 hover:shadow-indigo-200 transition-all active:scale-95 disabled:opacity-50"
+          className="bg-ink text-white px-8 py-3 rounded-2xl font-bold flex items-center gap-2 shadow-lg shadow-indigo-100 hover:bg-black hover:shadow-indigo-200 transition-all active:scale-95 disabled:opacity-50"
         >
           {saving ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />}
           บันทึกการตั้งค่าทั้งหมด

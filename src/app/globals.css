@@ -66,6 +66,54 @@
   --color-teal-900: #2b3c4f;
   --color-teal-950: #1c2733;
 
+  --color-purple-50: #f2f6fa;
+  --color-purple-100: #e2eaf2;
+  --color-purple-200: #c8d7e6;
+  --color-purple-300: #a3bcd3;
+  --color-purple-400: #7c9dbf;
+  --color-purple-500: #5980a6;
+  --color-purple-600: #486a8d;
+  --color-purple-700: #3b5673;
+  --color-purple-800: #324860;
+  --color-purple-900: #2b3c4f;
+  --color-purple-950: #1c2733;
+
+  --color-violet-50: #f2f6fa;
+  --color-violet-100: #e2eaf2;
+  --color-violet-200: #c8d7e6;
+  --color-violet-300: #a3bcd3;
+  --color-violet-400: #7c9dbf;
+  --color-violet-500: #5980a6;
+  --color-violet-600: #486a8d;
+  --color-violet-700: #3b5673;
+  --color-violet-800: #324860;
+  --color-violet-900: #2b3c4f;
+  --color-violet-950: #1c2733;
+
+  --color-pink-50: #f2f6fa;
+  --color-pink-100: #e2eaf2;
+  --color-pink-200: #c8d7e6;
+  --color-pink-300: #a3bcd3;
+  --color-pink-400: #7c9dbf;
+  --color-pink-500: #5980a6;
+  --color-pink-600: #486a8d;
+  --color-pink-700: #3b5673;
+  --color-pink-800: #324860;
+  --color-pink-900: #2b3c4f;
+  --color-pink-950: #1c2733;
+
+  --color-fuchsia-50: #f2f6fa;
+  --color-fuchsia-100: #e2eaf2;
+  --color-fuchsia-200: #c8d7e6;
+  --color-fuchsia-300: #a3bcd3;
+  --color-fuchsia-400: #7c9dbf;
+  --color-fuchsia-500: #5980a6;
+  --color-fuchsia-600: #486a8d;
+  --color-fuchsia-700: #3b5673;
+  --color-fuchsia-800: #324860;
+  --color-fuchsia-900: #2b3c4f;
+  --color-fuchsia-950: #1c2733;
+
   /* Softer corners and shadows (design_handoff_labstock: 16-20px cards, hairline borders). */
   --radius-3xl: 1.25rem;
   --shadow-lg: 0 2px 10px -2px rgb(29 31 32 / 0.08);

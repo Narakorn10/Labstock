@@ -432,7 +432,7 @@ export default function PODetailPage() {
             <label className="block text-sm font-medium text-slate-700" htmlFor="manager-review-note">หมายเหตุหัวหน้า (ต้องระบุเมื่อไม่อนุมัติ)</label>
             <textarea id="manager-review-note" value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} className="mt-2 w-full rounded-lg border border-slate-300 p-3" rows={3} maxLength={500} />
             <div className="mt-3 flex flex-wrap gap-3">
-              <button type="button" disabled={reviewSubmitting} onClick={() => void reviewManagerOrder("APPROVE_MANAGER_REVIEW")} className="rounded-lg bg-teal-700 px-4 py-2 font-semibold text-white hover:bg-teal-800 disabled:opacity-60">ยืนยันและส่งให้บริษัท</button>
+              <button type="button" disabled={reviewSubmitting} onClick={() => void reviewManagerOrder("APPROVE_MANAGER_REVIEW")} className="rounded-lg bg-ink px-4 py-2 font-semibold text-white hover:bg-black disabled:opacity-60">ยืนยันและส่งให้บริษัท</button>
               <button type="button" disabled={reviewSubmitting} onClick={() => void reviewManagerOrder("REJECT_MANAGER_REVIEW")} className="rounded-lg border border-red-300 px-4 py-2 font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60">ไม่อนุมัติ</button>
             </div>
           </div>
@@ -475,7 +475,7 @@ export default function PODetailPage() {
           <div className="relative border-l-2 border-indigo-200 ml-4 pl-6 space-y-6">
             {tracking.history?.map((event, i) => (
               <div key={i} className="relative">
-                <div className="absolute w-4 h-4 bg-indigo-500 rounded-full -left-[31px] top-1 border-4 border-white"></div>
+                <div className="absolute w-4 h-4 bg-ink rounded-full -left-[31px] top-1 border-4 border-white"></div>
                 <p className="text-sm text-gray-500 mb-1">{new Date(event.timestamp).toLocaleString()}</p>
                 <p className="font-bold">{event.status}</p>
                 <p className="text-sm text-gray-600">{event.location}</p>

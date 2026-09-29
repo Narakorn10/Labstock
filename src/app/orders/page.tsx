@@ -830,7 +830,7 @@ export default function PurchaseOrdersPage() {
               <button
                 onClick={handleSave}
                 disabled={loading || items.length === 0 || !vendor || items.some((item) => !item.item_id)}
-                className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50"
+                className="px-4 py-2 bg-ink text-white rounded hover:bg-black disabled:opacity-50"
               >
                 {loading ? "กำลังบันทึก..." : editingOrder ? "บันทึกการแก้ไข" : "บันทึกและส่งใบสั่งน้ำยาให้บริษัท"}
               </button>

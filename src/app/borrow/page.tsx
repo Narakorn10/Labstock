@@ -259,23 +259,16 @@ export default function BorrowPage() {
   }
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-2xl mx-auto pb-24">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-24">
       {/* Header */}
       <div className="flex flex-col gap-2">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center">
-            <ArrowDownToLine size={28} />
-          </div>
-          <h1 className="text-[32px] leading-tight font-medium tracking-tight text-ink">ระบบยืม (Borrow)</h1>
-        </div>
+        <h1 className="text-[32px] leading-tight font-medium tracking-tight text-ink">ระบบยืม (Borrow)</h1>
         <p className="text-gray-500 text-sm font-bold">จัดการน้ำยาที่เราไปยืมหน่วยงานอื่นมา</p>
       </div>
 
-      {/* Mode Toggle */}
-      <section className="space-y-3 rounded-3xl border border-blue-100 bg-blue-50/40 p-4">
-        <div><h2 className="font-black text-slate-900">รายการยืมเข้าที่ยังค้างส่งคืน</h2><p className="text-xs text-slate-600">เลือกหนึ่งรายการเพื่อบันทึกการส่งคืน</p></div>
-        <OutstandingLoans loans={outstandingLoans} loading={outstandingLoading} onSelect={selectOutstandingLoan} />
-      </section>
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
+        <div className="space-y-6">
+
       <div className="bg-gray-100 p-1.5 rounded-2xl flex relative shadow-inner">
         <button 
           onClick={() => {
@@ -377,7 +370,15 @@ export default function BorrowPage() {
           </button>
         </form>
       </div>
+        </div>
+        <div className="space-y-6">
+      {/* Mode Toggle */}
+      <section className="space-y-3 rounded-[20px] border border-line bg-white p-5">
+        <div><h2 className="font-black text-slate-900">รายการยืมเข้าที่ยังค้างส่งคืน</h2><p className="text-xs text-slate-600">เลือกหนึ่งรายการเพื่อบันทึกการส่งคืน</p></div>
+        <OutstandingLoans loans={outstandingLoans} loading={outstandingLoading} onSelect={selectOutstandingLoan} />
+      </section>
 
+          <div className="rounded-[20px] border border-line bg-white p-5">
       {/* Cart Area */}
       <div className="space-y-4">
         <div className="flex items-center justify-between px-2">
@@ -463,6 +464,9 @@ export default function BorrowPage() {
             </div>
           </div>
         )}
+      </div>
+          </div>
+        </div>
       </div>
 
       {scanMode && (

@@ -256,21 +256,15 @@ export default function LendPage() {
   }
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-2xl mx-auto pb-24">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-24">
       <div className="flex flex-col gap-2">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center">
-            <ArrowUpFromLine size={28} />
-          </div>
-          <h1 className="text-[32px] leading-tight font-medium tracking-tight text-ink">ระบบให้ยืม (Lend)</h1>
-        </div>
+        <h1 className="text-[32px] leading-tight font-medium tracking-tight text-ink">ระบบให้ยืม (Lend)</h1>
         <p className="text-gray-500 text-sm font-bold">จัดการน้ำยาที่เราให้หน่วยงานอื่นยืมไป</p>
       </div>
 
-      <section className="space-y-3 rounded-3xl border border-violet-100 bg-violet-50/40 p-4">
-        <div><h2 className="font-black text-slate-900">รายการให้ยืมที่ยังค้างรับคืน</h2><p className="text-xs text-slate-600">เลือกหนึ่งรายการเพื่อบันทึกรับคืน</p></div>
-        <OutstandingLoans loans={outstandingLoans} loading={outstandingLoading} onSelect={selectOutstandingLoan} />
-      </section>
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
+        <div className="space-y-6">
+
 
       <div className="bg-gray-100 p-1.5 rounded-2xl flex relative shadow-inner">
         <button 
@@ -324,7 +318,7 @@ export default function LendPage() {
       <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-4">
         <button 
           onClick={() => setScanMode(true)}
-          className={`w-full text-white py-4 rounded-2xl font-black flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-lg ${mode === 'LEND_OUT' ? 'bg-purple-600 hover:bg-purple-700 shadow-purple-200' : 'bg-teal-600 hover:bg-teal-700 shadow-teal-200'}`}
+          className={`w-full text-white py-4 rounded-2xl font-black flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-lg ${mode === 'LEND_OUT' ? 'bg-ink hover:bg-black' : 'bg-ink hover:bg-black shadow-teal-200'}`}
         >
           <Camera size={20} />
           เปิดกล้องแสกนบาร์โค้ด
@@ -369,7 +363,14 @@ export default function LendPage() {
           </button>
         </form>
       </div>
+        </div>
+        <div className="space-y-6">
+      <section className="space-y-3 rounded-[20px] border border-line bg-white p-5">
+        <div><h2 className="font-black text-slate-900">รายการให้ยืมที่ยังค้างรับคืน</h2><p className="text-xs text-slate-600">เลือกหนึ่งรายการเพื่อบันทึกรับคืน</p></div>
+        <OutstandingLoans loans={outstandingLoans} loading={outstandingLoading} onSelect={selectOutstandingLoan} />
+      </section>
 
+          <div className="rounded-[20px] border border-line bg-white p-5">
       <div className="space-y-4">
         <div className="flex items-center justify-between px-2">
           <h2 className="font-black text-gray-800 flex items-center gap-2">
@@ -446,7 +447,7 @@ export default function LendPage() {
               <button 
                 onClick={handleSubmit}
                 disabled={submitting}
-                className={`w-full text-white py-4 rounded-2xl font-black flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-lg disabled:opacity-50 ${mode === 'RETURN_IN' ? 'bg-green-600 hover:bg-green-700 shadow-green-200' : 'bg-purple-600 hover:bg-purple-700 shadow-purple-200'}`}
+                className={`w-full text-white py-4 rounded-2xl font-black flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-lg disabled:opacity-50 ${mode === 'RETURN_IN' ? 'bg-green-600 hover:bg-green-700 shadow-green-200' : 'bg-ink hover:bg-black'}`}
               >
                 {submitting ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle size={20} />}
                 ยืนยันการบันทึก {cart.length} รายการ
@@ -454,6 +455,9 @@ export default function LendPage() {
             </div>
           </div>
         )}
+      </div>
+          </div>
+        </div>
       </div>
 
       {scanMode && (
