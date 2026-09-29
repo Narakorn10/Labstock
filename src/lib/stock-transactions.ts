@@ -1,6 +1,6 @@
 import sql from "@/lib/db";
 import { AuthenticatedUser } from "@/lib/auth-utils";
-import { normalizeNotificationSettings, notifyUsers } from "@/lib/notifications";
+import { notifyUsers, notifyUsersVendorScoped } from "@/lib/notifications";
 import type { LowStockItem } from "@/lib/line-flex-templates";
 
 export interface StockBatchItem {
@@ -40,6 +40,7 @@ async function notifyLowStockForAffectedItems(itemIds: string[]) {
         m.name,
         m.unit,
         m.min_threshold as "minThreshold",
+        COALESCE(m.vendor, '') as vendor,
         COALESCE(i.current_qty, 0) as quantity
       FROM master_data m
       LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)
@@ -55,15 +56,14 @@ async function notifyLowStockForAffectedItems(itemIds: string[]) {
     if (affectedLowStock.length === 0) return;
 
     const settingsRows = await sql`
-      SELECT *
-      FROM notification_settings
-      WHERE notify_low_stock = true
+      SELECT n.*, u.role, u.vendor
+      FROM notification_settings n
+      JOIN users u ON u.username = n.username
+      WHERE n.notify_low_stock = true
     `;
 
-    const settings = normalizeNotificationSettings(settingsRows);
-
-    if (settings.length > 0) {
-      await notifyUsers("LOW_STOCK", affectedLowStock, settings);
+    if (settingsRows.length > 0) {
+      await notifyUsersVendorScoped("LOW_STOCK", affectedLowStock, settingsRows);
     }
   } catch (error) {
     console.error("[Stock Transactions] Low stock notification failed:", error);

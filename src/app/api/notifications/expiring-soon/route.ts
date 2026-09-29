@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import sql from "@/lib/db";
 import { getAuthenticatedUser } from "@/lib/auth-utils";
-import { normalizeNotificationSettings, notifyUsers } from "@/lib/notifications";
+import { notifyUsersVendorScoped } from "@/lib/notifications";
 import { ExpiringSoonItem } from "@/lib/line-flex-templates";
 
 const ALERT_WINDOW_DAYS = 30;
@@ -60,15 +60,14 @@ export async function POST(request: Request) {
     await ensureExpiryNotificationSchema();
 
     const settingsRows = await sql`
-      SELECT username, email, line_user_id, notify_expiring_soon
-      FROM notification_settings
-      WHERE notify_expiring_soon = true
-        AND (line_user_id IS NOT NULL OR email IS NOT NULL)
+      SELECT n.username, n.email, n.line_user_id, n.notify_expiring_soon, u.role, u.vendor
+      FROM notification_settings n
+      JOIN users u ON u.username = n.username
+      WHERE n.notify_expiring_soon = true
+        AND (n.line_user_id IS NOT NULL OR n.email IS NOT NULL)
     `;
 
-    const settings = normalizeNotificationSettings(settingsRows);
-
-    if (settings.length === 0) {
+    if (settingsRows.length === 0) {
       return NextResponse.json({
         success: true,
         notified: 0,
@@ -84,7 +83,8 @@ export async function POST(request: Request) {
         i.exp_date::date as "expDate",
         i.quantity,
         m.unit,
-        GREATEST(0, (i.exp_date::date - CURRENT_DATE))::int as "daysUntilExpiry"
+        GREATEST(0, (i.exp_date::date - CURRENT_DATE))::int as "daysUntilExpiry",
+        COALESCE(m.vendor, '') as vendor
       FROM inventory i
       JOIN master_data m ON m.item_id = i.item_id
       WHERE i.quantity > 0
@@ -110,6 +110,7 @@ export async function POST(request: Request) {
       quantity: Number(row.quantity),
       unit: String(row.unit),
       daysUntilExpiry: Number(row.daysUntilExpiry),
+      vendor: String(row.vendor ?? ""),
     }));
 
     if (items.length === 0) {
@@ -120,7 +121,7 @@ export async function POST(request: Request) {
       });
     }
 
-    await notifyUsers("EXPIRING_SOON", items, settings);
+    await notifyUsersVendorScoped("EXPIRING_SOON", items, settingsRows);
 
     for (const item of items) {
       await sql`
@@ -133,7 +134,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       notified: items.length,
-      recipients: settings.length
+      recipients: settingsRows.length
     });
   } catch (error: unknown) {
     console.error("Expiring soon notification error:", error);

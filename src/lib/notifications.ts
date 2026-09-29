@@ -2,6 +2,7 @@ import nodemailer from 'nodemailer';
 import { messagingApi } from '@line/bot-sdk';
 import { PurchaseOrder, LowStockItem, ExpiringSoonItem, WeeklyStockSummaryItem, WeeklyStockAlertPayload } from './line-flex-templates';
 import { ReagentUsageInsight } from './reagent-usage-insights';
+import { itemsForVendor, splitRecipientsByVendor } from './vendor-notification-scope';
 
 // For Email (Nodemailer)
 const transporter = nodemailer.createTransport({
@@ -123,6 +124,25 @@ export function normalizePurchaseOrder(
     expected_date: row.expected_date ? String(row.expected_date) : null,
     items,
   };
+}
+
+/**
+ * Sends LOW_STOCK / EXPIRING_SOON so staff see every item while each Vendor
+ * only sees items of their own vendor. Rows must include users.role/vendor.
+ */
+export async function notifyUsersVendorScoped<T extends { vendor?: string }>(
+  event: 'LOW_STOCK' | 'EXPIRING_SOON',
+  items: T[],
+  recipientRows: DbRow[]
+) {
+  const { staff, vendors } = splitRecipientsByVendor(recipientRows);
+  const payload = (list: T[]) => list as unknown as LowStockItem[] & ExpiringSoonItem[];
+
+  if (staff.length) await notifyUsers(event, payload(items), normalizeNotificationSettings(staff));
+  for (const { vendor, row } of vendors) {
+    const own = itemsForVendor(items, vendor);
+    if (own.length) await notifyUsers(event, payload(own), normalizeNotificationSettings([row]));
+  }
 }
 
 function isWeeklyStockPayload(data: NotifyPayload): data is WeeklyStockSummaryItem[] {
