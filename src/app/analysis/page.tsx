@@ -6,7 +6,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
-  Legend,
+  LabelList,
   Line,
   LineChart,
   Pie,
@@ -24,6 +24,7 @@ import {
   CircleAlert,
   Clock3,
   Loader2,
+  Lock,
   PackageCheck,
   ShoppingCart,
   TrendingUp
@@ -41,9 +42,9 @@ import { useAuth } from '@/components/auth-provider';
 type RiskFilter = 'all' | ReorderStatus;
 
 const statusMeta: Record<ReorderStatus, { label: string; color: string; badge: string }> = {
-  normal: { label: 'ปกติ', color: '#10b981', badge: 'bg-emerald-50 text-emerald-700' },
-  reorder: { label: 'ควรสั่ง', color: '#f59e0b', badge: 'bg-amber-50 text-amber-700' },
-  critical: { label: 'วิกฤต', color: '#ef4444', badge: 'bg-red-50 text-red-700' }
+  normal: { label: 'ปกติ', color: '#237a3f', badge: 'bg-ok-bg text-ok' },
+  reorder: { label: 'ควรสั่ง', color: '#a5670f', badge: 'bg-warn-bg text-warn' },
+  critical: { label: 'วิกฤต', color: '#c9302c', badge: 'bg-crit-bg text-crit' }
 };
 
 function formatNumber(value: number, maximumFractionDigits = 1) {
@@ -170,66 +171,267 @@ export default function AnalysisPage() {
   if (loading && usage.length === 0 && insights.length === 0) {
     return (
       <div className="flex min-h-[24rem] flex-col items-center justify-center gap-4">
-        <Loader2 className="animate-spin text-indigo-600" size={48} />
-        <p className="text-xs font-black text-gray-500">กำลังวิเคราะห์ข้อมูลการใช้น้ำยา...</p>
+        <Loader2 className="animate-spin text-gray-600" size={44} />
+        <p className="text-sm text-gray-600">กำลังวิเคราะห์ข้อมูลการใช้น้ำยา...</p>
       </div>
     );
   }
 
+  const riskChart = riskItems.slice(0, 10).map((item) => ({ ...item, days: item.daysUntilMin ?? 0 }));
+  const peakUsage = dailyTrend.reduce((max, row) => Math.max(max, row.used), 0);
+  const cardClass = 'rounded-2xl border border-line bg-white p-5';
+  const axisTick = { fontSize: 12, fill: '#6b6e72' };
+  const nameTick = { fontSize: 12, fill: '#1d1f20' };
+  const shortDate = (value: string) => new Date(`${value.slice(0, 10)}T00:00:00`).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
   return (
-    <div className="space-y-8 pb-24">
-      <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
-        <div>
-          <h1 className="text-[32px] leading-tight font-medium tracking-tight text-ink">Dashboard การใช้น้ำยา</h1>
-          <p className="mt-1 text-sm text-ink-muted">จัดลำดับน้ำยาที่ควรสั่งซื้อจากยอดเบิกย้อนหลัง 90 วัน</p>
+    <div className="space-y-6 pb-24">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="mr-auto">
+          <h1 className="text-[32px] leading-tight font-medium text-ink">Dashboard การใช้น้ำยา</h1>
+          <p className="mt-1.5 text-[15px] text-gray-600">จัดลำดับน้ำยาที่ควรสั่งซื้อจากยอดเบิกย้อนหลัง 90 วัน</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-gray-100 bg-white p-2 shadow-sm">
-          <Calendar size={14} className="ml-2 text-gray-400" />
-          <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} className="w-28 bg-transparent p-1 text-xs font-bold outline-none" />
-          <span className="text-xs font-black text-gray-300">ถึง</span>
-          <input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} className="w-28 bg-transparent p-1 text-xs font-bold outline-none" />
+        <div className="flex flex-wrap items-center gap-2 rounded-[10px] border border-line bg-white px-3 py-1.5 text-sm">
+          <Calendar size={16} className="text-gray-600" aria-hidden="true" />
+          <input type="date" aria-label="วันที่เริ่มต้น" value={startDate} onChange={(event) => setStartDate(event.target.value)} className="bg-transparent p-1 text-sm outline-none" />
+          <span className="text-gray-600">ถึง</span>
+          <input type="date" aria-label="วันที่สิ้นสุด" value={endDate} onChange={(event) => setEndDate(event.target.value)} className="bg-transparent p-1 text-sm outline-none" />
         </div>
       </div>
 
-      {error && <div className="flex items-center gap-3 rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-bold text-red-600"><AlertTriangle size={20} />{error}</div>}
+      {error && <div role="alert" className="flex items-center gap-3 rounded-xl bg-crit-bg px-4 py-3 text-sm font-medium text-crit"><AlertTriangle size={20} />{error}</div>}
 
       {!canPlanPurchases ? (
-        <div className="rounded-3xl border border-amber-100 bg-amber-50 p-6 text-sm font-bold text-amber-800">
+        <div className="flex items-center gap-3 rounded-2xl bg-warn-bg px-6 py-5 text-[15px] font-medium text-warn">
+          <Lock size={18} aria-hidden="true" />
           บัญชีนี้ดูยอดการใช้ได้ แต่ Dashboard วางแผนจัดซื้อสงวนสำหรับ Admin และ Manager
         </div>
       ) : <>
-        <div className="flex gap-4 overflow-x-auto pb-2 lg:grid lg:grid-cols-4 lg:overflow-visible">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(230px,1fr))] gap-4">
           {[
-            { label: 'รายการวิกฤต', value: criticalCount, icon: CircleAlert, style: 'text-red-600 bg-red-50' },
-            { label: 'รายการควรสั่ง', value: reorderCount, icon: ShoppingCart, style: 'text-amber-600 bg-amber-50' },
-            { label: 'จำนวนแนะนำให้สั่ง', value: formatNumber(recommendedOrderTotal, 0), icon: PackageCheck, style: 'text-indigo-600 bg-indigo-50' },
-            { label: 'ล็อตเสี่ยงใช้ไม่ทัน', value: expiryRisks.length, icon: Clock3, style: 'text-rose-600 bg-rose-50' }
-          ].map(({ label, value, icon: Icon, style }) => (
-            <div key={label} className="min-w-56 rounded-3xl border border-gray-100 bg-white p-6 shadow-sm lg:min-w-0">
-              <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">{label}</p>
-              <div className="mt-2 flex items-center justify-between"><p className="text-3xl font-black text-gray-900">{value}</p><div className={`flex h-10 w-10 items-center justify-center rounded-xl ${style}`}><Icon size={20} /></div></div>
+            { label: 'รายการวิกฤต', value: criticalCount, unit: 'รายการ', icon: CircleAlert, style: 'text-crit bg-crit-bg' },
+            { label: 'รายการควรสั่ง', value: reorderCount, unit: 'รายการ', icon: ShoppingCart, style: 'text-warn bg-warn-bg' },
+            { label: 'จำนวนแนะนำให้สั่ง', value: formatNumber(recommendedOrderTotal, 0), unit: 'หน่วย', icon: PackageCheck, style: 'bg-blue-100 text-blue-800' },
+            { label: 'ล็อตเสี่ยงใช้ไม่ทัน', value: expiryRisks.length, unit: 'lot', icon: Clock3, style: 'text-crit bg-crit-bg' }
+          ].map(({ label, value, unit, icon: Icon, style }) => (
+            <div key={label} className={`${cardClass} flex items-center justify-between gap-3`}>
+              <div>
+                <p className="text-[15px] text-gray-600">{label}</p>
+                <p className="mt-1.5 text-[40px] font-medium leading-[1.1] tracking-[-0.02em]">{value} <span className="text-sm font-normal text-gray-600">{unit}</span></p>
+              </div>
+              <span className={`grid size-11 shrink-0 place-items-center rounded-xl ${style}`} aria-hidden="true"><Icon size={20} strokeWidth={1.5} /></span>
             </div>
           ))}
         </div>
 
-        <div className="grid grid-cols-1 gap-8 xl:grid-cols-3">
-          <section className="rounded-[20px] border border-gray-100 bg-white p-6 shadow-sm xl:col-span-2">
-            <div className="mb-5 flex items-start justify-between gap-4"><div><h2 className="flex items-center gap-2 text-lg font-black text-gray-800"><ShoppingCart className="text-red-500" size={21} />วันคงเหลือเทียบเวลารอของ</h2><p className="mt-1 text-xs font-bold text-gray-400">เส้นแดง = 7 วัน กดแท่งเพื่อดูแนวโน้มรายน้ำยา</p></div></div>
-            <div className="h-[22rem]"><ResponsiveContainer width="100%" height="100%"><BarChart data={riskItems.slice(0, 10)} layout="vertical" margin={{ left: 8, right: 28 }} onClick={selectChartItem}><CartesianGrid stroke="#f3f4f6" horizontal={false} /><XAxis type="number" tick={{ fontSize: 10 }} /><YAxis type="category" dataKey="name" width={118} tick={{ fontSize: 10, fontWeight: 700 }} /><Tooltip formatter={(value) => [`${formatNumber(Number(value) || 0)} วัน`, 'เหลือก่อนถึง Min']} /><ReferenceLine x={7} stroke="#ef4444" strokeDasharray="4 4" label={{ value: '7 วัน', fill: '#ef4444', fontSize: 10 }} /><Bar dataKey={(item: ReagentUsageInsight) => item.daysUntilMin ?? 0} name="วันคงเหลือ" radius={[0, 8, 8, 0]}>{riskItems.slice(0, 10).map((item) => <Cell key={item.itemId} fill={statusMeta[item.status].color} cursor="pointer" />)}</Bar></BarChart></ResponsiveContainer></div>
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.9fr)_minmax(0,1fr)]">
+          <section aria-labelledby="days-left-heading" className={cardClass}>
+            <div className="mb-4 flex items-start gap-2.5">
+              <ShoppingCart className="mt-0.5 text-crit" size={20} strokeWidth={1.5} aria-hidden="true" />
+              <div>
+                <h2 id="days-left-heading" className="text-xl font-medium">วันคงเหลือเทียบเวลารอของ</h2>
+                <p className="mt-0.5 text-[13px] text-gray-600">เส้นแดง = 7 วัน กดแท่งเพื่อดูแนวโน้มรายน้ำยา</p>
+              </div>
+            </div>
+            {riskChart.length === 0 ? (
+              <p className="py-6 text-sm text-gray-600">ไม่มีน้ำยาที่ควรสั่งหรือวิกฤตในตอนนี้</p>
+            ) : (
+              <div className="h-[22rem]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={riskChart} layout="vertical" margin={{ left: 8, right: 64, bottom: 16 }} onClick={selectChartItem}>
+                    <XAxis type="number" hide domain={[0, (max: number) => Math.max(max, 8)]} />
+                    <YAxis type="category" dataKey="name" width={205} tick={nameTick} tickLine={false} axisLine={false} />
+                    <Tooltip formatter={(value) => [`${formatNumber(Number(value) || 0)} วัน`, 'เหลือก่อนถึง Min']} />
+                    <ReferenceLine x={7} stroke="#c9302c" strokeDasharray="3 3" label={{ value: '7 วัน', fill: '#c9302c', fontSize: 12, position: 'bottom' }} />
+                    <Bar dataKey="days" name="วันคงเหลือ" barSize={18} minPointSize={3} radius={[0, 4, 4, 0]}>
+                      {riskChart.map((item) => <Cell key={item.itemId} fill={statusMeta[item.status].color} cursor="pointer" />)}
+                      <LabelList dataKey="days" position="right" formatter={(value) => `${formatNumber(Number(value) || 0)} วัน`} style={{ fontSize: 12, fill: '#6b6e72' }} />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
           </section>
 
-          <section className="rounded-[20px] border border-gray-100 bg-white p-6 shadow-sm"><h2 className="text-lg font-black text-gray-800">สถานะน้ำยา</h2><p className="mt-1 text-xs font-bold text-gray-400">กดสีเพื่อกรองรายการด้านล่าง</p><div className="relative h-64"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={statusPie} dataKey="value" nameKey="name" innerRadius={62} outerRadius={88} paddingAngle={4} onClick={selectStatus}>{statusPie.map((entry) => <Cell key={entry.status} fill={entry.color} cursor="pointer" />)}</Pie><Tooltip /><Legend verticalAlign="bottom" height={28} /></PieChart></ResponsiveContainer><div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center"><span className="text-[10px] font-black uppercase text-gray-400">ทั้งหมด</span><span className="text-2xl font-black text-gray-900">{insights.length}</span></div></div></section>
+          <section aria-labelledby="status-heading" className={cardClass}>
+            <h2 id="status-heading" className="text-xl font-medium">สถานะน้ำยา</h2>
+            <p className="mt-0.5 text-[13px] text-gray-600">กดสีเพื่อกรองรายการด้านล่าง</p>
+            <div className="relative mt-3 h-[210px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={statusPie} dataKey="value" nameKey="name" innerRadius={66} outerRadius={96} paddingAngle={0} startAngle={90} endAngle={-270} stroke="none" onClick={selectStatus}>
+                    {statusPie.map((entry) => <Cell key={entry.status} fill={entry.color} cursor="pointer" />)}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                <span className="text-xs text-gray-600">ทั้งหมด</span>
+                <span className="text-[32px] font-medium leading-none">{insights.length}</span>
+              </div>
+            </div>
+            <div className="mt-4">
+              {statusPie.map((entry) => (
+                <button
+                  key={entry.status}
+                  type="button"
+                  onClick={() => setRiskFilter(riskFilter === entry.status ? 'all' : entry.status)}
+                  aria-pressed={riskFilter === entry.status}
+                  className={`flex w-full items-center gap-2.5 rounded-[10px] px-2.5 py-3 text-left text-sm transition-colors hover:bg-[#fafafa] ${riskFilter === entry.status ? 'bg-gray-100' : ''}`}
+                >
+                  <span className="size-2.5 rounded-full" style={{ background: entry.color }} aria-hidden="true" />
+                  <span className="flex-1">{entry.name}</span>
+                  <span className="font-semibold">{entry.value}</span>
+                </button>
+              ))}
+            </div>
+          </section>
         </div>
 
-        <div className="grid grid-cols-1 gap-8 xl:grid-cols-2">
-          <section className="rounded-[20px] border border-gray-100 bg-white p-6 shadow-sm"><div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div><h2 className="flex items-center gap-2 text-lg font-black text-gray-800"><TrendingUp className="text-indigo-600" size={21} />แนวโน้มการใช้รายวัน</h2><p className="mt-1 text-xs font-bold text-gray-400">{selectedItem ? selectedItem.name : 'ภาพรวมทุกน้ำยา'} พร้อมค่าเฉลี่ยเคลื่อนที่ 7 วัน</p></div>{selectedItemId !== 'TOTAL' && <button onClick={() => setSelectedItemId('TOTAL')} className="rounded-xl bg-indigo-50 px-3 py-2 text-xs font-black text-indigo-600">ดูภาพรวม</button>}</div><div className="h-72"><ResponsiveContainer width="100%" height="100%"><LineChart data={dailyTrend}><CartesianGrid stroke="#f3f4f6" vertical={false} /><XAxis dataKey="displayDate" minTickGap={28} tick={{ fontSize: 10 }} /><YAxis tick={{ fontSize: 10 }} /><Tooltip /><Legend /><Line type="monotone" dataKey="used" name="ยอดเบิก" stroke="#4f46e5" strokeWidth={3} dot={false} /><Line type="monotone" dataKey="average7Days" name="เฉลี่ย 7 วัน" stroke="#f59e0b" strokeWidth={2} strokeDasharray="5 5" dot={false} /></LineChart></ResponsiveContainer></div></section>
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+          <section aria-labelledby="trend-heading" className={cardClass}>
+            <div className="mb-3 flex flex-wrap items-start gap-2.5">
+              <TrendingUp className="mt-0.5 text-blue-800" size={20} strokeWidth={1.5} aria-hidden="true" />
+              <div className="mr-auto">
+                <h2 id="trend-heading" className="text-xl font-medium">แนวโน้มการใช้รายวัน</h2>
+                <p className="mt-0.5 text-[13px] text-gray-600">{selectedItem ? selectedItem.name : 'ภาพรวมทุกน้ำยา'} พร้อมค่าเฉลี่ยเคลื่อนที่ 7 วัน</p>
+              </div>
+              {selectedItemId !== 'TOTAL' && (
+                <button type="button" onClick={() => setSelectedItemId('TOTAL')} className="rounded-[10px] border border-line bg-white px-3 py-1.5 text-[13px] font-medium text-ink hover:bg-gray-50">ดูภาพรวม</button>
+              )}
+            </div>
+            <div className="mb-2 flex items-center gap-4 text-[13px] text-gray-600">
+              <span className="inline-flex items-center gap-1.5"><span className="h-0.5 w-3.5 bg-[#3f5f80]" aria-hidden="true" />ยอดเบิก</span>
+              <span className="inline-flex items-center gap-1.5"><span className="w-3.5 border-t-2 border-dashed border-[#a5670f]" aria-hidden="true" />เฉลี่ย 7 วัน</span>
+              <span className="ml-auto">สูงสุด {formatNumber(peakUsage, 0)} / วัน</span>
+            </div>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={dailyTrend} margin={{ left: 0, right: 8 }}>
+                  <CartesianGrid stroke="#dcdcdf" strokeDasharray="0" vertical={false} />
+                  <XAxis dataKey="displayDate" minTickGap={60} tick={axisTick} tickLine={false} axisLine={false} />
+                  <YAxis hide />
+                  <Tooltip />
+                  <Line type="linear" dataKey="used" name="ยอดเบิก" stroke="#3f5f80" strokeWidth={1.5} dot={false} />
+                  <Line type="linear" dataKey="average7Days" name="เฉลี่ย 7 วัน" stroke="#a5670f" strokeWidth={1.5} strokeDasharray="4 3" dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
 
-          <section className="rounded-[20px] border border-gray-100 bg-white p-6 shadow-sm"><h2 className="mb-1 text-lg font-black text-gray-800">Top 10 น้ำยาที่ใช้มากสุด</h2><p className="mb-5 text-xs font-bold text-gray-400">ตามช่วงวันที่เลือก กดแท่งเพื่อดูแนวโน้ม</p><div className="h-72"><ResponsiveContainer width="100%" height="100%"><BarChart data={topUsage} layout="vertical" margin={{ left: 8, right: 20 }} onClick={selectChartItem}><CartesianGrid stroke="#f3f4f6" horizontal={false} /><XAxis type="number" tick={{ fontSize: 10 }} /><YAxis type="category" dataKey="name" width={118} tick={{ fontSize: 10, fontWeight: 700 }} /><Tooltip /><Bar dataKey="dispensed" name="ยอดเบิก" fill="#2563eb" radius={[0, 8, 8, 0]} cursor="pointer" /></BarChart></ResponsiveContainer></div></section>
+          <section aria-labelledby="top-heading" className={cardClass}>
+            <h2 id="top-heading" className="text-xl font-medium">Top 10 น้ำยาที่ใช้มากสุด</h2>
+            <p className="mb-3 mt-0.5 text-[13px] text-gray-600">ตามช่วงวันที่เลือก กดแท่งเพื่อดูแนวโน้ม</p>
+            <div className="h-[22rem]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={topUsage} layout="vertical" margin={{ left: 8, right: 28 }} onClick={selectChartItem}>
+                  <XAxis type="number" hide />
+                  <YAxis type="category" dataKey="name" width={205} tick={nameTick} tickLine={false} axisLine={false} />
+                  <Tooltip />
+                  <Bar dataKey="dispensed" name="ยอดเบิก" fill="#5980a6" barSize={16} radius={[0, 4, 4, 0]} cursor="pointer">
+                    <LabelList dataKey="dispensed" position="right" style={{ fontSize: 12, fontWeight: 600, fill: '#1d1f20' }} />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
         </div>
 
-        <section className="rounded-[20px] border border-gray-100 bg-white p-6 shadow-sm"><div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div><h2 className="flex items-center gap-2 text-lg font-black text-gray-800"><AlertTriangle className="text-rose-500" size={21} />ลดของเสีย: ล็อตเสี่ยงใช้ไม่ทัน</h2><p className="mt-1 text-xs font-bold text-gray-400">เรียงตาม FEFO และใช้ค่าเฉลี่ยการเบิก 90 วัน</p></div><span className="rounded-xl bg-rose-50 px-3 py-2 text-xs font-black text-rose-700">{expiryRisks.length} ล็อต</span></div><div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">{expiryRisks.slice(0, 9).map((lot) => <div key={`${lot.itemId}-${lot.lotNo}`} className="rounded-2xl border border-rose-100 bg-rose-50 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-black text-gray-900">{lot.name}</p><p className="mt-1 text-xs font-bold text-rose-600">Lot {lot.lotNo} · EXP {lot.expDate}</p></div><span className="whitespace-nowrap text-xs font-black text-rose-700">{lot.daysUntilExpiry} วัน</span></div><p className="mt-3 text-xs font-bold text-gray-600">คงเหลือ {formatNumber(lot.quantity)} {lot.unit}{lot.expectedDaysToUse !== null && ` · คาดใช้หมด ${formatNumber(lot.expectedDaysToUse)} วัน`}</p></div>)}{expiryRisks.length === 0 && <p className="col-span-full py-8 text-center text-sm font-bold text-gray-400">ไม่พบล็อตที่คาดว่าจะใช้ไม่ทันก่อนหมดอายุ</p>}</div></section>
+        <section aria-labelledby="expiry-heading" className={cardClass}>
+          <div className="mb-3.5 flex items-start gap-2.5">
+            <AlertTriangle className="mt-0.5 text-crit" size={20} strokeWidth={1.5} aria-hidden="true" />
+            <div className="mr-auto">
+              <h2 id="expiry-heading" className="text-xl font-medium">ลดของเสีย: ล็อตเสี่ยงใช้ไม่ทัน</h2>
+              <p className="mt-0.5 text-[13px] text-gray-600">เรียงตาม FEFO และใช้ค่าเฉลี่ยการเบิก 90 วัน</p>
+            </div>
+            <span className="inline-flex items-center whitespace-nowrap rounded-full bg-crit-bg px-2.5 py-[3px] text-xs font-medium text-crit">{expiryRisks.length} ล็อต</span>
+          </div>
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3">
+            {expiryRisks.slice(0, 9).map((lot) => (
+              <div key={`${lot.itemId}-${lot.lotNo}`} className="rounded-xl bg-crit-bg p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="font-medium">{lot.name}</p>
+                  <span className="whitespace-nowrap text-[13px] font-semibold text-crit">{lot.daysUntilExpiry < 0 ? 'หมดอายุแล้ว' : `${lot.daysUntilExpiry} วัน`}</span>
+                </div>
+                <p className="mt-1 text-xs text-crit">Lot {lot.lotNo} · EXP {shortDate(lot.expDate)}</p>
+                <p className="mt-2.5 text-[13px] text-gray-700">คงเหลือ {formatNumber(lot.quantity)} {lot.unit}{lot.expectedDaysToUse !== null && ` · คาดใช้หมด ${formatNumber(lot.expectedDaysToUse)} วัน`}</p>
+              </div>
+            ))}
+            {expiryRisks.length === 0 && <p className="col-span-full py-6 text-sm text-gray-600">ไม่พบล็อตที่คาดว่าจะใช้ไม่ทันก่อนหมดอายุ</p>}
+          </div>
+        </section>
 
-        <section className="overflow-hidden rounded-[20px] border border-gray-100 bg-white shadow-sm"><div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-100 p-6"><div><h2 className="text-lg font-black text-gray-800">แผนจัดซื้อรายน้ำยา</h2><p className="mt-1 text-xs font-bold text-gray-400">ค่าเฉลี่ยการใช้และคำแนะนำคำนวณจาก 90 วันล่าสุด</p></div><div className="flex gap-2">{(['all', 'critical', 'reorder', 'normal'] as RiskFilter[]).map((status) => <button key={status} onClick={() => setRiskFilter(status)} className={`rounded-xl px-3 py-2 text-xs font-black ${riskFilter === status ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-500'}`}>{status === 'all' ? 'ทั้งหมด' : statusMeta[status].label}</button>)}</div></div><div className="hidden overflow-x-auto md:block"><table className="w-full text-left"><thead className="bg-gray-50 text-[10px] uppercase tracking-wider text-gray-400"><tr><th className="px-6 py-4">น้ำยา</th><th className="px-4 py-4 text-right">คงเหลือ</th><th className="px-4 py-4 text-right">เฉลี่ย/วัน</th><th className="px-4 py-4 text-right">เหลือก่อน Min</th><th className="px-4 py-4 text-right">แนะนำสั่ง</th><th className="px-6 py-4 text-right">สถานะ</th></tr></thead><tbody className="divide-y divide-gray-100">{filteredInsights.map((item) => <tr key={item.itemId} onClick={() => setSelectedItemId(item.itemId)} className="cursor-pointer hover:bg-indigo-50/50"><td className="px-6 py-4"><p className="font-bold text-gray-900">{item.name}</p><p className="text-xs font-bold text-gray-400">{item.itemId}</p></td><td className="px-4 py-4 text-right font-bold">{formatNumber(item.quantity)} {item.unit}</td><td className="px-4 py-4 text-right font-bold">{formatNumber(item.averageDailyUsage)}</td><td className="px-4 py-4 text-right font-bold">{item.daysUntilMin === null ? 'ข้อมูลไม่พอ' : `${formatNumber(item.daysUntilMin)} วัน`}</td><td className="px-4 py-4 text-right font-black text-indigo-600">{item.recommendedOrderQty ? `${formatNumber(item.recommendedOrderQty, 0)} ${item.unit}` : '-'}</td><td className="px-6 py-4 text-right"><span className={`rounded-full px-3 py-1.5 text-xs font-black ${statusMeta[item.status].badge}`}>{statusMeta[item.status].label}</span></td></tr>)}</tbody></table></div><div className="space-y-3 p-4 md:hidden">{filteredInsights.map((item) => <button key={item.itemId} onClick={() => setSelectedItemId(item.itemId)} className="w-full rounded-2xl border border-gray-100 p-4 text-left"><div className="flex items-start justify-between gap-3"><div><p className="font-black text-gray-900">{item.name}</p><p className="mt-1 text-xs font-bold text-gray-400">เหลือ {formatNumber(item.quantity)} {item.unit} · เฉลี่ย {formatNumber(item.averageDailyUsage)}/วัน</p></div><ChevronRight className="text-gray-400" size={18} /></div><div className="mt-3 flex items-center justify-between"><span className={`rounded-full px-2.5 py-1 text-xs font-black ${statusMeta[item.status].badge}`}>{statusMeta[item.status].label}</span><span className="text-xs font-black text-indigo-600">แนะนำสั่ง {formatNumber(item.recommendedOrderQty, 0)} {item.unit}</span></div></button>)}</div>{filteredInsights.length === 0 && <p className="p-10 text-center text-sm font-bold text-gray-400">ไม่พบรายการในสถานะที่เลือก</p>}</section>
+        <section aria-labelledby="plan-heading" className={cardClass}>
+          <div className="mb-3.5 flex flex-wrap items-center gap-4">
+            <div className="mr-auto">
+              <h2 id="plan-heading" className="text-xl font-medium">แผนจัดซื้อรายน้ำยา</h2>
+              <p className="mt-0.5 text-[13px] text-gray-600">ค่าเฉลี่ยการใช้และคำแนะนำคำนวณจาก 90 วันล่าสุด</p>
+            </div>
+            <div className="flex flex-wrap gap-2" role="group" aria-label="กรองตามสถานะ">
+              {(['all', 'critical', 'reorder', 'normal'] as RiskFilter[]).map((status) => (
+                <button
+                  key={status}
+                  type="button"
+                  onClick={() => setRiskFilter(status)}
+                  aria-pressed={riskFilter === status}
+                  className={`rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors ${riskFilter === status ? 'border-ink bg-ink text-white' : 'border-line bg-white text-gray-700 hover:bg-gray-50'}`}
+                >
+                  {status === 'all' ? 'ทั้งหมด' : statusMeta[status].label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="hidden overflow-x-auto md:block">
+            <table className="w-full border-separate border-spacing-0 text-left">
+              <caption className="sr-only">แผนจัดซื้อรายน้ำยา</caption>
+              <thead>
+                <tr>
+                  <th scope="col" className="rounded-l-[10px] bg-ground px-3.5 py-2.5 text-[13px] font-medium text-gray-600">น้ำยา</th>
+                  <th scope="col" className="bg-ground px-3.5 py-2.5 text-[13px] font-medium text-gray-600">คงเหลือ</th>
+                  <th scope="col" className="bg-ground px-3.5 py-2.5 text-[13px] font-medium text-gray-600">เฉลี่ย/วัน</th>
+                  <th scope="col" className="bg-ground px-3.5 py-2.5 text-[13px] font-medium text-gray-600">เหลือก่อน Min</th>
+                  <th scope="col" className="bg-ground px-3.5 py-2.5 text-[13px] font-medium text-gray-600">แนะนำสั่ง</th>
+                  <th scope="col" className="rounded-r-[10px] bg-ground px-3.5 py-2.5 text-[13px] font-medium text-gray-600">สถานะ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredInsights.map((item) => (
+                  <tr key={item.itemId} onClick={() => setSelectedItemId(item.itemId)} className="cursor-pointer transition-colors hover:bg-[#fafafa]">
+                    <td className="border-b border-line px-3.5 py-3 text-sm">
+                      <div className="font-medium">{item.name}</div>
+                      <div className="text-xs text-gray-600">{item.itemId}</div>
+                    </td>
+                    <td className="border-b border-line px-3.5 py-3 text-sm">{formatNumber(item.quantity)} {item.unit}</td>
+                    <td className="border-b border-line px-3.5 py-3 text-sm">{formatNumber(item.averageDailyUsage)}</td>
+                    <td className="border-b border-line px-3.5 py-3 text-sm">{item.daysUntilMin === null ? 'ข้อมูลไม่พอ' : `${formatNumber(item.daysUntilMin)} วัน`}</td>
+                    <td className="border-b border-line px-3.5 py-3 text-sm font-semibold">{item.recommendedOrderQty ? `${formatNumber(item.recommendedOrderQty, 0)} ${item.unit}` : '-'}</td>
+                    <td className="border-b border-line px-3.5 py-3 text-sm">
+                      <span className={`inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-[3px] text-xs font-medium ${statusMeta[item.status].badge}`}>{statusMeta[item.status].label}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="space-y-3 md:hidden">
+            {filteredInsights.map((item) => (
+              <button key={item.itemId} type="button" onClick={() => setSelectedItemId(item.itemId)} className="w-full rounded-xl border border-line p-4 text-left">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-medium">{item.name}</p>
+                    <p className="mt-1 text-xs text-gray-600">เหลือ {formatNumber(item.quantity)} {item.unit} · เฉลี่ย {formatNumber(item.averageDailyUsage)}/วัน</p>
+                  </div>
+                  <ChevronRight className="text-gray-400" size={18} />
+                </div>
+                <div className="mt-3 flex items-center justify-between">
+                  <span className={`rounded-full px-2.5 py-[3px] text-xs font-medium ${statusMeta[item.status].badge}`}>{statusMeta[item.status].label}</span>
+                  <span className="text-xs font-semibold">แนะนำสั่ง {formatNumber(item.recommendedOrderQty, 0)} {item.unit}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+          {filteredInsights.length === 0 && <p className="py-10 text-sm text-gray-600">ไม่พบรายการในสถานะที่เลือก</p>}
+        </section>
       </>}
     </div>
   );
