@@ -5,16 +5,12 @@ import { useAuth } from '@/components/auth-provider';
 import { apiClient, BarcodePattern, Lot, Reagent } from '@/lib/api-client';
 import { findMatchingReagentWithV2 } from '@/lib/barcode-parser';
 import QRScanner from '@/components/lazy-qr-scanner';
-import { 
-  HandHelping, 
-  Camera, 
-  Search, 
-  Trash2, 
-  Loader2, 
+import {
+  Camera,
+  Trash2,
+  Loader2,
   CheckCircle,
-  XCircle,
-  AlertCircle,
-  Calendar
+  X,
 } from 'lucide-react';
 
 interface CartItem {
@@ -305,115 +301,137 @@ export default function DispensePage() {
     return null;
   }
 
+  const totalQty = cart.reduce((sum, item) => sum + (item.qty > 0 ? item.qty : 0), 0);
+  const fieldClass = 'min-h-[38px] w-full rounded-[10px] border border-line bg-white px-3 py-[7px] text-sm text-ink outline-none focus:border-gray-400 focus:ring-4 focus:ring-gray-400/10';
+  const cellClass = 'border-b border-line px-3.5 py-3 align-middle text-sm';
+  const headClass = 'bg-ground px-3.5 py-2.5 text-left text-[13px] font-medium text-gray-600';
+  // FEFO suggestion = the lot that expires first among lots that have not expired yet.
+  const fefoLotId = (item: CartItem) => {
+    const usable = item.availableLots
+      .filter((lot) => new Date(lot.expDate) >= new Date())
+      .sort((a, b) => new Date(a.expDate).getTime() - new Date(b.expDate).getTime());
+    return usable[0]?.inventoryId;
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-24">
       {/* Header */}
-      <div className="flex flex-col gap-2">
-        <h1 className="text-[32px] leading-tight font-medium tracking-tight text-ink">เบิกไปหน้างาน</h1>
-        <p className="text-gray-500 text-sm">ตัดสต๊อกด้วยระบบ FEFO (แนะนำ Lot ที่หมดอายุก่อนอัตโนมัติ)</p>
+      <div>
+        <h1 className="text-[32px] leading-tight font-medium text-ink">เบิกไปหน้างาน</h1>
+        <p className="mt-1.5 text-[15px] text-gray-600">ตัดสต๊อกด้วยระบบ FEFO (แนะนำ Lot ที่หมดอายุก่อนอัตโนมัติ)</p>
       </div>
 
-      {feedback && (
-        <div className={`p-4 rounded-xl flex items-center gap-3 animate-in slide-in-from-top-4 duration-300 ${
-          feedback.type === 'success' ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-700 border border-red-100'
-        }`}>
-          {feedback.type === 'success' ? <CheckCircle size={20} /> : <XCircle size={20} />}
-          <p className="text-sm font-bold flex-1">{feedback.msg}</p>
-          <button onClick={() => setFeedback(null)}><AlertCircle size={16} className="opacity-50" /></button>
-        </div>
-      )}
-
       {loadError && (
-        <div className="p-4 rounded-xl bg-red-50 text-red-700 border border-red-100 text-sm font-bold">
+        <div role="alert" className="rounded-xl bg-crit-bg px-3.5 py-3 text-sm font-medium text-crit">
           โหลดข้อมูลไม่สำเร็จ: {loadError}
         </div>
       )}
 
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
-      {/* Action Area */}
-      <div className="space-y-4 rounded-[20px] border border-line bg-white p-5">
-        <button 
-          onClick={() => setScanMode(true)}
-          className="w-full bg-ink text-white py-4 rounded-2xl font-medium flex items-center justify-center gap-2 hover:bg-black transition-all active:scale-[0.98] shadow-lg shadow-gray-900/10"
-        >
-          <Camera size={20} />
-          เปิดกล้องแสกนเพื่อเบิก
-        </button>
-
-        <form onSubmit={handleManualAdd} className="flex gap-2">
-          <div className="relative flex-1">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-            <input 
-              type="text"
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setShowResults(true);
-              }}
-              onFocus={() => setShowResults(true)}
-              placeholder="รหัสน้ำยา หรือ บาร์โค้ด..."
-              className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-gray-400 outline-none transition-all"
-            />
-            
-            {/* Autocomplete Results */}
-            {showResults && filteredResults.length > 0 && (
-              <div className="absolute z-10 w-full mt-2 bg-white border border-gray-100 rounded-2xl shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-                {filteredResults.map(item => (
-                  <button
-                    key={item.itemId}
-                    type="button"
-                    onClick={() => addToCart(item)}
-                    className="w-full text-left px-4 py-3 hover:bg-gray-50 flex flex-col border-b border-gray-50 last:border-none"
-                  >
-                    <div className="flex justify-between items-start">
-                      <span className="text-sm font-bold text-gray-900">{item.name}</span>
-                      <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">คงเหลือ: {item.quantity}</span>
-                    </div>
-                      <span className="text-[10px] font-bold text-gray-400 uppercase">รหัส: {item.itemId}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-            
-            {/* Click away listener */}
-            {showResults && (
-              <div 
-                className="fixed inset-0 z-0" 
-                onClick={() => setShowResults(false)}
-              />
-            )}
-          </div>
-          <button type="submit" className="border border-line bg-white text-ink px-6 rounded-xl font-medium text-sm hover:bg-gray-50 transition-colors relative z-10">
-            ค้นหา
+      <div className="grid items-start gap-6 lg:grid-cols-[340px_minmax(0,1fr)]">
+        {/* Action Area */}
+        <section aria-labelledby="dispense-scan-heading" className="flex min-w-0 flex-col gap-3.5 rounded-2xl border border-line bg-white p-5">
+          <h2 id="dispense-scan-heading" className="text-lg font-medium">สแกน / ค้นหา</h2>
+          <button
+            type="button"
+            onClick={() => setScanMode(true)}
+            className="inline-flex items-center justify-center gap-2 rounded-[10px] border border-ink bg-ink px-[18px] py-4 text-base font-medium text-white transition hover:bg-black active:scale-[0.99] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-800"
+          >
+            <Camera size={20} />
+            เปิดกล้องแสกนเพื่อเบิก
           </button>
-        </form>
-      </div>
 
-      {/* Cart Area */}
-      <div className="space-y-4 rounded-[20px] border border-line bg-white p-5">
-        <h2 className="text-lg font-medium text-ink flex items-center gap-2">
-          รายการเตรียมเบิก 
-          <span className="bg-gray-100 text-gray-700 px-2.5 py-0.5 rounded-full text-xs font-medium">{cart.length}</span>
-        </h2>
+          <form onSubmit={handleManualAdd} className="flex gap-2">
+            <div className="relative flex-1">
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setShowResults(true);
+                }}
+                onFocus={() => setShowResults(true)}
+                placeholder="รหัสน้ำยา หรือ บาร์โค้ด..."
+                aria-label="รหัสน้ำยา หรือ บาร์โค้ด"
+                className={fieldClass}
+              />
 
-        {cart.length === 0 ? (
-          <div className="border border-dashed border-line rounded-2xl p-12 text-center">
-            <HandHelping className="mx-auto text-gray-200 mb-4" size={48} />
-            <p className="text-gray-400 text-sm">ยังไม่มีรายการเบิก<br/>แสกนบาร์โค้ดเพื่อเลือก Lot อัตโนมัติ</p>
+              {/* Autocomplete Results */}
+              {showResults && filteredResults.length > 0 && (
+                <div className="absolute z-10 mt-2 w-full overflow-hidden rounded-xl border border-line bg-white shadow-lg">
+                  {filteredResults.map(item => (
+                    <button
+                      key={item.itemId}
+                      type="button"
+                      onClick={() => addToCart(item)}
+                      className="flex w-full items-center gap-2.5 border-b border-line px-3.5 py-2.5 text-left last:border-none hover:bg-[#fafafa]"
+                    >
+                      <span className="min-w-0 flex-1">
+                        <span className="block font-medium">{item.name}</span>
+                        <span className="block text-xs text-gray-600">รหัส: {item.itemId}</span>
+                      </span>
+                      <span className="inline-flex items-center whitespace-nowrap rounded-full bg-gray-200 px-2.5 py-[3px] text-xs font-medium">คงเหลือ: {item.quantity}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Click away listener */}
+              {showResults && (
+                <div
+                  className="fixed inset-0 z-0"
+                  onClick={() => setShowResults(false)}
+                />
+              )}
+            </div>
+            <button type="submit" className="relative z-10 inline-flex items-center rounded-[10px] border border-line bg-white px-4 py-[9px] text-sm font-medium text-ink transition hover:bg-gray-50">
+              ค้นหา
+            </button>
+          </form>
+
+          {/* Feedback */}
+          {feedback && (
+            <div role="status" className={`flex items-start gap-3 rounded-xl px-3.5 py-3 text-sm font-medium ${feedback.type === 'success' ? 'bg-ok-bg text-ok' : 'bg-crit-bg text-crit'}`}>
+              <span className="flex-1">{feedback.msg}</span>
+              <button type="button" onClick={() => setFeedback(null)} aria-label="ปิดข้อความ" className="opacity-70 hover:opacity-100"><X size={16} /></button>
+            </div>
+          )}
+        </section>
+
+        {/* Cart Area */}
+        <section aria-labelledby="dispense-cart-heading" className="min-w-0 rounded-2xl border border-line bg-white p-5">
+          <div className="mb-3 flex items-center">
+            <h2 id="dispense-cart-heading" className="mr-auto text-lg font-medium">
+              รายการเตรียมเบิก
+              <span className="ml-1 inline-flex items-center rounded-full bg-gray-200 px-2.5 py-[3px] text-xs font-medium">{cart.length}</span>
+            </h2>
           </div>
-        ) : (
-          <div className="space-y-3">
-            {cart.map((item) => (
-              <div key={item.cartId} className="bg-white p-4 rounded-2xl border border-line flex items-center gap-4 animate-in fade-in slide-in-from-right-4 duration-300">
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-bold text-gray-900 truncate">{item.name}</h3>
-                  <div className="flex flex-wrap items-center gap-3 mt-1 text-[11px] font-medium">
-                    <label className="flex items-center gap-2 text-gray-500">
-                      <span className="text-ink-muted bg-gray-100 px-1.5 py-0.5 rounded font-medium">ล็อต</span>
+
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] border-separate border-spacing-0 text-left">
+              <caption className="sr-only">รายการเตรียมเบิก</caption>
+              <thead>
+                <tr>
+                  <th scope="col" className={`${headClass} rounded-l-[10px]`}>รายการ</th>
+                  <th scope="col" className={`${headClass} w-[300px]`}>ล็อต</th>
+                  <th scope="col" className={`${headClass} w-[90px]`}>จำนวน</th>
+                  <th scope="col" className={`${headClass} w-11 rounded-r-[10px]`}><span className="sr-only">ลบ</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {cart.map((item) => (
+                  <tr key={item.cartId}>
+                    <td className={cellClass}>
+                      <div className="font-medium">{item.name}</div>
+                      <div className="text-xs text-gray-600">
+                        หมดอายุ: {new Date(item.expDate).toLocaleDateString('th-TH')} · คงเหลือในล็อต: {item.maxQty} {item.unit}
+                      </div>
+                    </td>
+                    <td className={cellClass}>
                       <select
                         value={String(item.inventoryId)}
                         onChange={(e) => updateLotSelection(item.cartId, e.target.value)}
-                        className="min-w-28 bg-white border border-gray-200 rounded-lg px-2 py-1 text-[11px] font-bold text-gray-700 outline-none focus:ring-2 focus:ring-gray-400"
+                        aria-label={`ล็อตของ ${item.name}`}
+                        className={fieldClass}
                       >
                         {item.availableLots.map((lot) => (
                           <option key={lot.inventoryId} value={String(lot.inventoryId)}>
@@ -421,56 +439,71 @@ export default function DispensePage() {
                           </option>
                         ))}
                       </select>
-                    </label>
-                    <span className="text-gray-400 flex items-center gap-1">
-                      <Calendar size={12} />
-                      หมดอายุ: {new Date(item.expDate).toLocaleDateString('th-TH')}
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-gray-400 mt-1">คงเหลือในล็อต: {item.maxQty} {item.unit}</p>
-                </div>
-                
-                <div className="flex items-center gap-3">
-                  <div className="relative">
-                    <input 
-                      type="number"
-                      value={item.qty}
-                      max={item.maxQty}
-                      onChange={(e) => updateQty(item.cartId, e.target.value)}
-                      className="w-16 text-center font-bold bg-gray-50 border border-gray-100 rounded-lg py-1.5 text-ink outline-none focus:ring-2 focus:ring-gray-400"
-                    />
-                    <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] font-bold text-gray-400 uppercase whitespace-nowrap">{item.unit}</span>
-                  </div>
-                  <button 
-                    onClick={() => removeFromCart(item.cartId)}
-                    className="p-2 text-gray-300 hover:text-red-500 transition-colors"
-                  >
-                    <Trash2 size={18} />
-                  </button>
-                </div>
-              </div>
-            ))}
-
-            <div className="pt-4 px-2">
-              <button 
-                onClick={handleSubmit}
-                disabled={submitting}
-                className="w-full bg-ink text-white py-4 rounded-2xl font-medium flex items-center justify-center gap-2 hover:bg-black transition-all active:scale-[0.98] shadow-lg shadow-gray-900/10 disabled:opacity-50"
-              >
-                {submitting ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle size={20} />}
-                ยืนยันการเบิกจ่าย {cart.length} รายการ
-              </button>
-            </div>
+                      {fefoLotId(item) === item.inventoryId && (
+                        <div className="mt-0.5 text-[11px] font-medium text-ok">FEFO แนะนำ</div>
+                      )}
+                    </td>
+                    <td className={cellClass}>
+                      <input
+                        type="number"
+                        min="0"
+                        value={item.qty}
+                        max={item.maxQty}
+                        onChange={(e) => updateQty(item.cartId, e.target.value)}
+                        aria-label={`จำนวน (${item.unit}) ของ ${item.name}`}
+                        className={`${fieldClass} font-semibold`}
+                      />
+                      <div className="text-[11px] text-gray-600">{item.unit}</div>
+                    </td>
+                    <td className={cellClass}>
+                      <button
+                        type="button"
+                        onClick={() => removeFromCart(item.cartId)}
+                        aria-label={`ลบ ${item.name}`}
+                        className="inline-flex rounded-[10px] px-2 py-1.5 text-gray-700 hover:bg-gray-100 hover:text-crit"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        )}
-      </div>
 
+          {cart.length === 0 && (
+            <div className="mt-3 rounded-xl border-[1.5px] border-dashed border-line px-3.5 py-12">
+              <p className="text-[17px] font-medium">ยังไม่มีรายการเบิก</p>
+              <p className="text-sm text-gray-600">แสกนบาร์โค้ดเพื่อเลือก Lot อัตโนมัติ</p>
+            </div>
+          )}
+
+          <div className="mt-[18px] flex flex-wrap items-center gap-x-7 gap-y-3 rounded-xl bg-[#fafafa] px-4 py-3.5">
+            <div>
+              <div className="text-xs text-gray-600">รายการ</div>
+              <div className="text-2xl font-medium">{cart.length}</div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-600">จำนวนรวม</div>
+              <div className="text-2xl font-medium">{totalQty}</div>
+            </div>
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={submitting || cart.length === 0}
+              className="ml-auto inline-flex items-center gap-2 rounded-[10px] border border-ink bg-ink px-5 py-3 text-sm font-medium text-white transition hover:bg-black active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {submitting ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle size={18} />}
+              ยืนยันการเบิกจ่าย {cart.length} รายการ
+            </button>
+          </div>
+        </section>
       </div>
 
       {scanMode && (
-        <QRScanner 
-          onScan={handleScan} 
-          onClose={() => setScanMode(false)} 
+        <QRScanner
+          onScan={handleScan}
+          onClose={() => setScanMode(false)}
         />
       )}
     </div>
