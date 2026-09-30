@@ -114,6 +114,7 @@ export default function CountPage() {
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState<string[]>(["ALL"]);
   const [filterJob, setFilterJob] = useState<string[]>(["ALL"]);
+  const [filterVendor, setFilterVendor] = useState<string[]>(["ALL"]);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; msg: string } | null>(null);
   const [preview, setPreview] = useState<RefillPreview | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -174,6 +175,7 @@ export default function CountPage() {
   const categories = useMemo(() => ({
     types: Array.from(new Set(reagents.map((item) => item.reagentType).filter(Boolean))).sort(),
     jobs: Array.from(new Set(reagents.map((item) => item.jobType).filter(Boolean))).sort(),
+    vendors: Array.from(new Set(reagents.map((item) => item.vendor).filter((vendor): vendor is string => Boolean(vendor)))).sort(),
   }), [reagents]);
 
   const filteredItems = useMemo(() => reagents.filter((item) => {
@@ -181,8 +183,9 @@ export default function CountPage() {
     const searchText = `${item.itemId} ${item.name} ${item.qrCode || ""}`.toLowerCase();
     return (terms.length === 0 || terms.every((term) => searchText.includes(term)))
       && (filterType.includes("ALL") || filterType.includes(item.reagentType))
-      && (filterJob.includes("ALL") || filterJob.includes(item.jobType));
-  }), [filterJob, filterType, reagents, search]);
+      && (filterJob.includes("ALL") || filterJob.includes(item.jobType))
+      && (filterVendor.includes("ALL") || filterVendor.includes(item.vendor ?? ""));
+  }), [filterJob, filterType, filterVendor, reagents, search]);
 
   const countedCount = reagents.filter((item) => item.actual !== "").length;
   const progress = reagents.length ? (countedCount / reagents.length) * 100 : 0;
@@ -280,10 +283,11 @@ export default function CountPage() {
           </div>
           <div className="mb-2 h-1.5 overflow-hidden rounded-full bg-gray-100"><div className="h-full rounded-full bg-ink transition-all" style={{ width: `${progress}%` }} /></div>
 
-          <div className="mt-4 grid gap-4 md:grid-cols-[1.4fr_1fr_1fr] md:items-end">
-            <div className="relative self-end"><Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-muted" size={16} strokeWidth={1.5} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="พิมพ์รหัส ชื่อ หรือสแกนเพื่อค้นหา..." className="min-h-[38px] w-full rounded-[10px] border border-line bg-white py-[7px] pl-10 pr-10 text-sm outline-none focus:border-gray-400 focus:ring-4 focus:ring-gray-400/10" />{search && <button onClick={() => setSearch("")} className="absolute right-4 top-1/2 -translate-y-1/2 text-ink-muted" aria-label="ล้างคำค้น"><XCircle size={16} /></button>}</div>
+          <div className="mt-4 grid gap-4 md:grid-cols-[1.2fr_1fr_1fr_1fr] md:items-end">
+            <div className="relative self-end"><Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-muted" size={16} strokeWidth={1.5} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหารหัส ชื่อ หรือสแกน..." className="min-h-[38px] w-full rounded-[10px] border border-line bg-white py-[7px] pl-10 pr-10 text-sm outline-none focus:border-gray-400 focus:ring-4 focus:ring-gray-400/10" />{search && <button onClick={() => setSearch("")} className="absolute right-4 top-1/2 -translate-y-1/2 text-ink-muted" aria-label="ล้างคำค้น"><XCircle size={16} /></button>}</div>
             <MultiSelect label="ประเภทน้ำยา" options={categories.types} selected={filterType} onChange={setFilterType} />
             <MultiSelect label="ประเภทงาน" options={categories.jobs} selected={filterJob} onChange={setFilterJob} />
+            <MultiSelect label="บริษัท (Vendor)" options={categories.vendors} selected={filterVendor} onChange={setFilterVendor} />
           </div>
 
           <div className="mt-5 overflow-x-auto">
