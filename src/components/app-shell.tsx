@@ -1,8 +1,8 @@
 'use client';
 
 import { usePathname, useRouter } from 'next/navigation';
-import { PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { Search } from 'lucide-react';
+import { useState } from 'react';
 import Sidebar from '@/components/sidebar';
 import { useAuth } from '@/components/auth-provider';
 import { NAVIGATION_GROUPS } from '@/lib/menu-config';
@@ -30,11 +30,12 @@ export default function AppShell({ children }: AppShellProps) {
   const isMobileSurface = pathname.startsWith('/mobile');
   const isPublicSurface = pathname === '/' || pathname === '/login';
   const router = useRouter();
-  const [sidebarHidden, setSidebarHidden] = useState(false);
+  // The sidebar is an icon rail that widens on hover; the page moves over with it instead of being covered.
+  const [sidebarWide, setSidebarWide] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const { user } = useAuth();
   const crumb = findCrumb(pathname);
-  // The header (breadcrumb + sidebar toggle) only makes sense with a signed-in user. LIFF and
+  // The header (breadcrumb + search) only makes sense with a signed-in user. LIFF and
   // sign-up pages keep the original spacing so their layout does not change.
   const showHeader = Boolean(user);
   const canSearch = Boolean(user) && user?.role !== 'Vendor';
@@ -49,31 +50,6 @@ export default function AppShell({ children }: AppShellProps) {
       router.push(term ? `/dashboard?q=${encodeURIComponent(term)}` : '/dashboard');
     }
   };
-
-  useEffect(() => {
-    const handleSidebarShortcut = (event: KeyboardEvent) => {
-      const target = event.target;
-      const isTyping = target instanceof HTMLElement && (
-        target.isContentEditable ||
-        ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
-      );
-
-      if (
-        isTyping ||
-        !window.matchMedia('(min-width: 64rem)').matches ||
-        !(event.ctrlKey || event.metaKey) ||
-        event.key.toLowerCase() !== 'b'
-      ) {
-        return;
-      }
-
-      event.preventDefault();
-      setSidebarHidden((current) => !current);
-    };
-
-    window.addEventListener('keydown', handleSidebarShortcut);
-    return () => window.removeEventListener('keydown', handleSidebarShortcut);
-  }, []);
 
   if (isMobileSurface) {
     return (
@@ -101,26 +77,14 @@ export default function AppShell({ children }: AppShellProps) {
       >
         ข้ามไปยังเนื้อหาหลัก
       </a>
-      <Sidebar desktopHidden={sidebarHidden} />
+      <Sidebar onExpandedChange={setSidebarWide} />
       <main
         id="app-main"
         tabIndex={-1}
-        className={`relative flex min-h-screen min-w-0 flex-1 flex-col transition-[margin] duration-300 ${showHeader && !sidebarHidden ? 'lg:ml-[68px]' : 'lg:ml-0'}`}
+        className={`relative flex min-h-screen min-w-0 flex-1 flex-col transition-[margin] duration-200 ease-in-out ${showHeader ? (sidebarWide ? 'lg:ml-[260px]' : 'lg:ml-[68px]') : 'lg:ml-0'}`}
       >
         {showHeader && (
         <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-line bg-white pl-16 pr-4 lg:gap-4 lg:px-8">
-          <button
-            type="button"
-            onClick={() => setSidebarHidden((current) => !current)}
-            aria-label={sidebarHidden ? 'แสดงเมนูด้านข้าง' : 'ซ่อนเมนูด้านข้าง'}
-            aria-controls="primary-navigation"
-            aria-expanded={!sidebarHidden}
-            aria-keyshortcuts="Control+B Meta+B"
-            title={sidebarHidden ? 'แสดงเมนูด้านข้าง (Ctrl+B)' : 'ซ่อนเมนูด้านข้าง (Ctrl+B)'}
-            className="hidden size-9 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-gray-100 hover:text-ink active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent lg:inline-flex"
-          >
-            {sidebarHidden ? <PanelLeftOpen size={19} strokeWidth={1.5} /> : <PanelLeftClose size={19} strokeWidth={1.5} />}
-          </button>
           {crumb && (
             <nav aria-label="ตำแหน่งหน้าปัจจุบัน" className="flex min-w-0 items-center gap-2 text-sm">
               <span className="hidden text-gray-600 sm:inline">{crumb.group}</span>

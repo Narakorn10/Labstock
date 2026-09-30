@@ -20,10 +20,10 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 interface SidebarProps {
-  desktopHidden?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
 }
 
-export default function Sidebar({ desktopHidden = false }: SidebarProps) {
+export default function Sidebar({ onExpandedChange }: SidebarProps) {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
   const [allowedMenus, setAllowedMenus] = useState<string[]>([]);
@@ -34,6 +34,10 @@ export default function Sidebar({ desktopHidden = false }: SidebarProps) {
   // Desktop: a narrow icon rail that widens while hovered or focused. The drawer on small screens is always wide.
   const [expanded, setExpanded] = useState(false);
   const wide = isOpen || expanded;
+
+  useEffect(() => {
+    onExpandedChange?.(expanded);
+  }, [expanded, onExpandedChange]);
 
   useEffect(() => {
     if (!user) return;
@@ -149,7 +153,6 @@ export default function Sidebar({ desktopHidden = false }: SidebarProps) {
         ref={sidebarRef}
         id="primary-navigation"
         aria-label="เมนูหลัก"
-        aria-hidden={desktopHidden && !isOpen ? true : undefined}
         onMouseEnter={() => setExpanded(true)}
         onMouseLeave={() => setExpanded(false)}
         onFocus={() => setExpanded(true)}
@@ -158,11 +161,10 @@ export default function Sidebar({ desktopHidden = false }: SidebarProps) {
         }}
         className={`
         fixed top-0 left-0 z-40 h-full w-[260px] overflow-hidden border-r border-line bg-[#fafafa]
-        transition-[opacity,transform,visibility,width,box-shadow] duration-200 ease-in-out
+        transition-[opacity,transform,visibility,width] duration-200 ease-in-out
         ${wide ? 'lg:w-[260px]' : 'lg:w-[68px]'}
-        ${expanded ? 'lg:shadow-[0_0_40px_-12px_rgba(0,0,0,0.25)]' : ''}
         ${isOpen ? 'visible translate-x-0 opacity-100' : 'invisible pointer-events-none -translate-x-full opacity-0'}
-        ${desktopHidden ? 'lg:invisible lg:pointer-events-none lg:-translate-x-full lg:opacity-0' : 'lg:visible lg:pointer-events-auto lg:translate-x-0 lg:opacity-100'}
+        lg:visible lg:pointer-events-auto lg:translate-x-0 lg:opacity-100
       `}>
         <div className="flex flex-col h-full">
           <div className={`flex h-16 shrink-0 items-center justify-between gap-3 border-b border-line ${wide ? 'px-5' : 'px-[15px]'}`}>
