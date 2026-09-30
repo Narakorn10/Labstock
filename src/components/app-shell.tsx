@@ -108,7 +108,7 @@ export default function AppShell({ children }: AppShellProps) {
         className={`relative flex min-h-screen min-w-0 flex-1 flex-col transition-[margin] duration-300 ${showHeader && !sidebarHidden ? 'lg:ml-[260px]' : 'lg:ml-0'}`}
       >
         {showHeader && (
-        <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-line bg-white/90 pl-16 pr-4 backdrop-blur lg:px-6">
+        <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-line bg-white pl-16 pr-4 lg:gap-4 lg:px-8">
           <button
             type="button"
             onClick={() => setSidebarHidden((current) => !current)}
@@ -123,13 +123,13 @@ export default function AppShell({ children }: AppShellProps) {
           </button>
           {crumb && (
             <nav aria-label="ตำแหน่งหน้าปัจจุบัน" className="flex min-w-0 items-center gap-2 text-sm">
-              <span className="hidden text-ink-muted sm:inline">{crumb.group}</span>
-              <span className="hidden text-gray-300 sm:inline" aria-hidden="true">/</span>
-              <span className="truncate font-medium text-ink" aria-current="page">{crumb.label}</span>
+              <span className="hidden text-gray-600 sm:inline">{crumb.group}</span>
+              <span className="hidden text-gray-400 sm:inline" aria-hidden="true">/</span>
+              <span className="truncate text-[15px] font-medium text-ink" aria-current="page">{crumb.label}</span>
             </nav>
           )}
           {canSearch && (
-            <form role="search" onSubmit={handleSearch} className="relative ml-auto w-full max-w-sm">
+            <form role="search" onSubmit={handleSearch} className="relative ml-auto w-full max-w-[300px]">
               <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-muted" size={16} strokeWidth={1.5} aria-hidden="true" />
               <input
                 type="search"
@@ -137,13 +137,13 @@ export default function AppShell({ children }: AppShellProps) {
                 onChange={(event) => setSearchTerm(event.target.value)}
                 placeholder="ค้นหารหัส หรือชื่อน้ำยา..."
                 aria-label="ค้นหารหัส หรือชื่อน้ำยา"
-                className="h-10 w-full rounded-full border border-line bg-white pl-10 pr-4 text-sm text-ink outline-none placeholder:text-ink-muted focus:border-gray-400"
+                className="h-[38px] w-full rounded-full border border-line bg-white pl-10 pr-4 text-sm text-ink outline-none placeholder:text-ink-muted focus:border-gray-400"
               />
             </form>
           )}
         </header>
         )}
-        <div className={`mx-auto w-full max-w-[1600px] flex-1 px-4 pb-10 sm:px-6 sm:pb-12 lg:px-10 xl:px-12 ${showHeader ? 'pt-6' : 'pt-20 lg:pt-8'}`}>
+        <div className={`mx-auto w-full max-w-[1440px] flex-1 px-4 pb-12 sm:px-6 lg:px-10 lg:pb-[72px] ${showHeader ? 'pt-6 lg:pt-8' : 'pt-20 lg:pt-8'}`}>
           {children}
         </div>
         <footer className="border-t border-line bg-white/80 px-6 py-5 text-center text-xs text-ink-muted backdrop-blur-sm">

@@ -11,6 +11,14 @@ import { NAVIGATION_GROUPS, getRoleFallbackMenus, mergeMenus } from '@/lib/menu-
 
 const PERMISSION_CACHE_VERSION = 'v3';
 
+const ROLE_LABELS: Record<string, string> = {
+  Admin: 'ผู้ดูแลระบบ',
+  Manager: 'หัวหน้างาน',
+  Operator: 'นักเทคนิคการแพทย์',
+  User: 'ผู้ช่วยห้องปฏิบัติการ',
+  Vendor: 'บริษัทคู่ค้า',
+};
+
 interface SidebarProps {
   desktopHidden?: boolean;
 }
@@ -146,11 +154,11 @@ export default function Sidebar({ desktopHidden = false }: SidebarProps) {
         ${desktopHidden ? 'lg:invisible lg:pointer-events-none lg:-translate-x-full lg:opacity-0' : 'lg:visible lg:pointer-events-auto lg:translate-x-0 lg:opacity-100'}
       `}>
         <div className="flex flex-col h-full">
-          <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3.5">
-            <div className="flex min-w-0 items-center gap-3">
-              <Image src="/images/logo-spr-lab.png" alt="" width={40} height={40} className="size-10 shrink-0 rounded-xl" />
-              <div className="min-w-0">
-                <h1 className="text-[17px] font-semibold leading-tight tracking-tight text-ink">LabStock</h1>
+          <div className="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-line px-5">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <Image src="/images/logo-spr-lab.png" alt="" width={38} height={38} className="size-[38px] shrink-0 rounded-[9px]" />
+              <div className="min-w-0 leading-[1.15]">
+                <h1 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">LabStock</h1>
                 <p className="truncate text-[11px] text-ink-muted">SPR LAB · รพ.สวรรค์ประชารักษ์</p>
               </div>
             </div>
@@ -165,7 +173,7 @@ export default function Sidebar({ desktopHidden = false }: SidebarProps) {
             </button>
           </div>
 
-          <nav aria-label="เมนูนำทางหลัก" aria-busy={isLoadingPerms} className="flex-1 space-y-6 overflow-y-auto p-3 no-scrollbar">
+          <nav aria-label="เมนูนำทางหลัก" aria-busy={isLoadingPerms} className="flex-1 overflow-y-auto px-3 pb-4 pt-2 no-scrollbar">
             {isLoadingPerms && allowedMenus.length === 0 ? (
               <div className="space-y-4 p-4">
                 {[1, 2, 3, 4, 5].map((i) => (
@@ -179,13 +187,12 @@ export default function Sidebar({ desktopHidden = false }: SidebarProps) {
                 if (filteredItems.length === 0) return null;
 
                 return (
-                  <div key={group.title} className="space-y-1.5">
-                    <div className="flex items-center px-3 mb-1.5">
-                      <span className="text-[11px] font-medium tracking-[0.06em] text-ink-muted">
-                        {group.title}
-                      </span>
+                  <div key={group.title} className="pt-3.5">
+                    <div className="flex items-center gap-2 px-2.5 pb-1.5 text-[13px] text-gray-600">
+                      <span className="size-3 shrink-0 rounded-full border-[1.5px] border-dashed border-gray-400" aria-hidden="true" />
+                      {group.title}
                     </div>
-                    <div className="space-y-0.5">
+                    <div>
                       {filteredItems.map((item) => {
                         const isActive = pathname === item.href;
                         const Icon = item.icon;
@@ -197,18 +204,18 @@ export default function Sidebar({ desktopHidden = false }: SidebarProps) {
                             onClick={() => setIsOpen(false)}
                             aria-current={isActive ? 'page' : undefined}
                             className={`
-                              group/item relative flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent
+                              group/item relative flex items-center gap-2 rounded-[10px] px-3 py-[9px] text-sm transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent
                               ${isActive
-                                ? 'bg-gray-200/70 font-semibold text-ink'
-                                : 'text-gray-700 hover:bg-gray-100 hover:text-ink'}
+                                ? 'bg-gray-200 font-semibold text-ink!'
+                                : 'text-gray-800! hover:bg-gray-200'}
                             `}
                           >
                             <Icon
                                 size={18}
                                 strokeWidth={1.5}
-                                className={`transition-colors ${isActive ? 'text-ink' : 'text-ink-muted group-hover/item:text-ink'}`}
+                                className="shrink-0"
                             />
-                            <span className="text-sm tracking-tight">{item.name}</span>
+                            <span className="min-w-0 flex-1">{item.name}</span>
                           </Link>
                         );
                       })}
@@ -219,22 +226,20 @@ export default function Sidebar({ desktopHidden = false }: SidebarProps) {
             )}
           </nav>
 
-          <div className="space-y-2 border-t border-line p-3">
-            <div className="rounded-2xl border border-line bg-white p-3">
-              <div className="flex items-center gap-3">
-                <div className="flex size-9 items-center justify-center rounded-full bg-gray-200/70 text-sm font-semibold text-ink">
-                  {user.name.charAt(0).toUpperCase()}
-                </div>
-                <div className="min-w-0">
-                  <p className="truncate text-xs font-semibold tracking-tight text-ink">{user.name}</p>
-                  <p className="text-[11px] text-ink-muted">{user.role}</p>
-                </div>
+          <div className="m-3 flex shrink-0 flex-col gap-2.5 rounded-2xl border border-line bg-white p-3.5">
+            <div className="flex items-center gap-2.5">
+              <div className="grid size-[34px] shrink-0 place-items-center rounded-full bg-gray-200 font-semibold text-ink">
+                {user.name.charAt(0).toUpperCase()}
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-ink">{user.name}</p>
+                <p className="truncate text-xs text-gray-600">{ROLE_LABELS[user.role] ?? user.role}</p>
               </div>
             </div>
             <button
               type="button"
               onClick={logout}
-              className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-semibold text-crit transition-colors hover:bg-crit-bg active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              className="flex w-fit items-center gap-1.5 text-[13px] text-crit focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
               <LogOut size={16} strokeWidth={1.5} />
               ออกจากระบบ
