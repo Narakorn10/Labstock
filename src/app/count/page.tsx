@@ -266,22 +266,22 @@ export default function CountPage() {
   return (
     <div className="space-y-6 pb-24">
       <div>
-        <h1 className="text-[32px] font-medium leading-tight tracking-tight text-ink">นับสต็อกหน้างาน</h1>
-        <p className="mt-1 text-sm text-ink-muted">นับยอดจริง แล้วคำนวณการเบิกเติมจากเป้าหมายรายสัปดาห์</p>
+        <h1 className="text-[32px] font-medium leading-tight text-ink">นับสต็อกหน้างาน</h1>
+        <p className="mt-1.5 text-[15px] text-gray-600">นับยอดจริง แล้วคำนวณการเบิกเติมจากเป้าหมายรายสัปดาห์</p>
       </div>
 
       {feedback && <div className={`flex items-center gap-3 rounded-2xl border p-4 ${feedback.type === "success" ? "border-ok/20 bg-ok-bg text-ok" : "border-crit/20 bg-crit-bg text-crit"}`}><>{feedback.type === "success" ? <CheckCircle size={20} /> : <AlertCircle size={20} />}</><p className="flex-1 text-sm font-medium">{feedback.msg}</p><button onClick={() => setFeedback(null)} className="text-xs font-medium underline">ปิด</button></div>}
 
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <section className="rounded-[20px] border border-line bg-white p-5">
+        <section className="rounded-2xl border border-line bg-white p-5">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-lg font-medium text-ink">รอบนับ {new Intl.DateTimeFormat("th-TH", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date())}</h2>
+            <h2 className="text-xl font-medium text-ink">รอบนับ {new Intl.DateTimeFormat("th-TH", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date())}</h2>
             <p className="text-sm text-ink-muted">นับแล้ว {countedCount} / {reagents.length} รายการ</p>
           </div>
           <div className="mb-2 h-1.5 overflow-hidden rounded-full bg-gray-100"><div className="h-full rounded-full bg-ink transition-all" style={{ width: `${progress}%` }} /></div>
 
-          <div className="mt-4 grid gap-4 md:grid-cols-[1.4fr_1fr_1fr]">
-            <div className="relative self-end"><Search className="absolute left-4 top-1/2 -translate-y-1/2 text-ink-muted" size={16} strokeWidth={1.5} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="พิมพ์รหัส ชื่อ หรือสแกนเพื่อค้นหา..." className="h-12 w-full rounded-xl border border-line bg-white pl-11 pr-10 text-sm outline-none focus:border-gray-400" />{search && <button onClick={() => setSearch("")} className="absolute right-4 top-1/2 -translate-y-1/2 text-ink-muted" aria-label="ล้างคำค้น"><XCircle size={16} /></button>}</div>
+          <div className="mt-4 grid gap-4 md:grid-cols-[1.4fr_1fr_1fr] md:items-end">
+            <div className="relative self-end"><Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-muted" size={16} strokeWidth={1.5} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="พิมพ์รหัส ชื่อ หรือสแกนเพื่อค้นหา..." className="min-h-[38px] w-full rounded-[10px] border border-line bg-white py-[7px] pl-10 pr-10 text-sm outline-none focus:border-gray-400 focus:ring-4 focus:ring-gray-400/10" />{search && <button onClick={() => setSearch("")} className="absolute right-4 top-1/2 -translate-y-1/2 text-ink-muted" aria-label="ล้างคำค้น"><XCircle size={16} /></button>}</div>
             <MultiSelect label="ประเภทน้ำยา" options={categories.types} selected={filterType} onChange={setFilterType} />
             <MultiSelect label="ประเภทงาน" options={categories.jobs} selected={filterJob} onChange={setFilterJob} />
           </div>
@@ -289,12 +289,12 @@ export default function CountPage() {
           <div className="mt-5 overflow-x-auto">
             <table className="w-full min-w-[720px] border-separate border-spacing-0 text-left">
               <thead>
-                <tr className="bg-gray-100 text-xs font-medium text-ink-muted">
-                  <th className="rounded-l-xl px-4 py-3">น้ำยา</th>
-                  <th className="px-4 py-3 text-right">คงเหลือคลังกลาง</th>
-                  <th className="px-4 py-3 text-right">เป้าหมาย</th>
-                  <th className="px-4 py-3">นับได้จริง</th>
-                  <th className="rounded-r-xl px-4 py-3">ส่วนต่าง</th>
+                <tr className="text-[13px] font-medium text-gray-600">
+                  <th className="rounded-l-[10px] bg-ground px-3.5 py-2.5">น้ำยา</th>
+                  <th className="bg-ground px-3.5 py-2.5 text-right">คงเหลือคลังกลาง</th>
+                  <th className="bg-ground px-3.5 py-2.5 text-right">เป้าหมาย</th>
+                  <th className="bg-ground px-3.5 py-2.5">นับได้จริง</th>
+                  <th className="rounded-r-[10px] bg-ground px-3.5 py-2.5">ส่วนต่าง</th>
                 </tr>
               </thead>
               <tbody>
@@ -303,11 +303,11 @@ export default function CountPage() {
                   const diff = item.actual !== "" && item.actual < target ? target - item.actual : 0;
                   return (
                     <tr key={item.itemId} className="border-b border-line">
-                      <td className="border-b border-line px-4 py-3.5"><p className="text-sm font-medium text-ink">{item.name}</p><p className="mt-0.5 text-xs text-ink-muted">{item.itemId}{item.reagentType ? ` · ${item.reagentType}` : ""}{item.jobType ? ` · ${item.jobType}` : ""}</p></td>
-                      <td className="border-b border-line px-4 py-3.5 text-right text-sm text-ink">{item.quantity} <span className="text-xs text-ink-muted">{item.unit}</span></td>
-                      <td className="border-b border-line px-4 py-3.5 text-right text-sm text-ink">{target} <span className="text-xs text-ink-muted">{item.unit}</span></td>
-                      <td className="border-b border-line px-4 py-3.5"><input type="number" min="0" value={item.actual} onChange={(event) => handleInput(item.itemId, event.target.value)} aria-label={`นับได้จริง ${item.name}`} placeholder="ระบุจำนวน" className="h-11 w-28 rounded-xl border border-line bg-white px-3 text-center text-base font-medium text-ink outline-none focus:border-gray-400" /></td>
-                      <td className="border-b border-line px-4 py-3.5">{item.refilled ? <span className="inline-flex items-center gap-1.5 rounded-full bg-ok-bg px-3 py-1.5 text-xs font-medium text-ok"><CheckCircle size={14} />เติมสต็อกแล้ว</span> : diff > 0 ? <button onClick={() => openPreview([item])} disabled={submitting} className="inline-flex items-center gap-1.5 rounded-xl bg-ink px-3.5 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-50"><ShoppingCart size={15} />เบิกเติม {diff} {item.unit}</button> : item.actual !== "" ? <span className="inline-flex items-center gap-1.5 rounded-full bg-ok-bg px-3 py-1.5 text-xs font-medium text-ok"><Smile size={14} />สต็อกหน้างานพอใช้</span> : <span className="text-xs text-ink-muted">รอนับรายการนี้</span>}</td>
+                      <td className="border-b border-line px-3.5 py-3"><p className="text-sm font-medium text-ink">{item.name}</p><p className="mt-0.5 text-xs text-ink-muted">{item.itemId}{item.reagentType ? ` · ${item.reagentType}` : ""}{item.jobType ? ` · ${item.jobType}` : ""}</p></td>
+                      <td className="border-b border-line px-3.5 py-3 text-right text-sm text-ink">{item.quantity} <span className="text-xs text-ink-muted">{item.unit}</span></td>
+                      <td className="border-b border-line px-3.5 py-3 text-right text-sm text-ink">{target} <span className="text-xs text-ink-muted">{item.unit}</span></td>
+                      <td className="border-b border-line px-3.5 py-3"><input type="number" min="0" value={item.actual} onChange={(event) => handleInput(item.itemId, event.target.value)} aria-label={`นับได้จริง ${item.name}`} placeholder="ระบุจำนวน" className="min-h-[38px] w-28 rounded-[10px] border border-line bg-white px-3 text-center text-sm font-semibold text-ink outline-none focus:border-gray-400" /></td>
+                      <td className="border-b border-line px-3.5 py-3">{item.refilled ? <span className="inline-flex items-center gap-1.5 rounded-full bg-ok-bg px-3 py-1.5 text-xs font-medium text-ok"><CheckCircle size={14} />เติมสต็อกแล้ว</span> : diff > 0 ? <button onClick={() => openPreview([item])} disabled={submitting} className="inline-flex items-center gap-1.5 rounded-[10px] bg-ink px-3.5 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-50"><ShoppingCart size={15} />เบิกเติม {diff} {item.unit}</button> : item.actual !== "" ? <span className="inline-flex items-center gap-1.5 rounded-full bg-ok-bg px-3 py-1.5 text-xs font-medium text-ok"><Smile size={14} />สต็อกหน้างานพอใช้</span> : <span className="text-xs text-ink-muted">รอนับรายการนี้</span>}</td>
                     </tr>
                   );
                 })}
@@ -316,34 +316,34 @@ export default function CountPage() {
             {!filteredItems.length && !loading && <div className="py-16 text-center text-ink-muted"><ClipboardList className="mx-auto mb-3 opacity-40" size={48} strokeWidth={1.5} /><p className="text-sm">ไม่พบรายการที่ตรงกับเงื่อนไข</p></div>}
           </div>
 
-          <div className="sticky bottom-4 z-10 mt-5 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-line bg-gray-50 p-4 shadow-lg">
+          <div className="sticky bottom-4 z-10 mt-5 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-line bg-[#fafafa] px-4 py-3.5">
             <div className="flex gap-8">
-              <div><p className="text-xs text-ink-muted">นับแล้ว</p><p className="text-xl font-medium text-ink">{countedCount} / {reagents.length} <span className="text-sm text-ink-muted">รายการ</span></p></div>
-              <div><p className="text-xs text-ink-muted">ต้องเบิกเติม</p><p className={`text-xl font-medium ${refillItems.length ? "text-crit" : "text-ink"}`}>{refillItems.length} <span className="text-sm text-ink-muted">รายการ</span></p></div>
+              <div><p className="text-xs text-ink-muted">นับแล้ว</p><p className="text-2xl font-medium text-ink">{countedCount} / {reagents.length} <span className="text-sm text-ink-muted">รายการ</span></p></div>
+              <div><p className="text-xs text-ink-muted">ต้องเบิกเติม</p><p className={`text-2xl font-medium ${refillItems.length ? "text-crit" : "text-ink"}`}>{refillItems.length} <span className="text-sm text-ink-muted">รายการ</span></p></div>
             </div>
             <div className="flex flex-wrap gap-2">
-              {countedCount > 0 && <button onClick={handleClearAll} className="inline-flex items-center gap-2 rounded-xl border border-line bg-white px-4 py-2.5 text-sm font-medium text-ink hover:bg-gray-50"><Trash2 size={15} />ล้างยอดนับค้าง</button>}
-              {countedCount > 0 && <button onClick={handleSaveForLater} disabled={savingWorkOrder} className="rounded-xl border border-line bg-white px-4 py-2.5 text-sm font-medium text-ink hover:bg-gray-50 disabled:opacity-50">{savingWorkOrder ? "กำลังบันทึก..." : "บันทึกใบงานไว้ก่อน"}</button>}
-              <button onClick={() => openPreview(refillItems)} disabled={submitting || refillItems.length === 0} className="inline-flex items-center gap-2 rounded-xl bg-ink px-4 py-2.5 text-sm font-medium text-white hover:bg-black disabled:opacity-40"><ArrowRightLeft size={15} />ดูสรุปก่อนเบิก</button>
+              {countedCount > 0 && <button onClick={handleClearAll} className="inline-flex items-center gap-2 rounded-[10px] border border-line bg-white px-4 py-[9px] text-sm font-medium text-ink hover:bg-gray-50"><Trash2 size={15} />ล้างยอดนับค้าง</button>}
+              {countedCount > 0 && <button onClick={handleSaveForLater} disabled={savingWorkOrder} className="rounded-[10px] border border-line bg-white px-4 py-[9px] text-sm font-medium text-ink hover:bg-gray-50 disabled:opacity-50">{savingWorkOrder ? "กำลังบันทึก..." : "บันทึกใบงานไว้ก่อน"}</button>}
+              <button onClick={() => openPreview(refillItems)} disabled={submitting || refillItems.length === 0} className="inline-flex items-center gap-2 rounded-[10px] bg-ink px-5 py-3 text-sm font-medium text-white hover:bg-black disabled:opacity-40"><ArrowRightLeft size={15} />ดูสรุปก่อนเบิก</button>
             </div>
           </div>
         </section>
 
-        <aside className="rounded-[20px] border border-line bg-white p-5">
+        <aside className="rounded-2xl border border-line bg-white p-5">
           <div className="flex items-baseline justify-between gap-3">
             <h2 className="text-lg font-medium text-ink">ใบงานนับสต็อกของฉัน</h2>
             <Link href="/count/work-orders" className="text-sm font-medium text-ink underline underline-offset-4">ดูทั้งหมด</Link>
           </div>
-          <p className="mt-1 text-xs text-ink-muted">เปิดใบงานเพื่อแก้ยอด เลือก Lot หรือยืนยันเบิก</p>
+          <p className="mt-1 text-[13px] text-gray-600">เปิดใบงานเพื่อแก้ยอด เลือก Lot หรือยืนยันเบิก</p>
           <div className="mt-4 space-y-3">
             {workOrders.length === 0 && <p className="rounded-2xl border border-dashed border-line px-4 py-6 text-center text-xs text-ink-muted">ยังไม่มีใบงาน</p>}
             {workOrders.slice(0, 5).map((order) => {
               const state = WORK_ORDER_STATE[order.status];
               return (
-                <Link key={order.id} href={`/count/work-orders/${order.id}`} className="block rounded-2xl border border-line p-4 hover:border-gray-400">
+                <Link key={order.id} href={`/count/work-orders/${order.id}`} className="block rounded-xl border border-line p-3.5 hover:border-gray-400">
                   <div className="flex items-start justify-between gap-2">
                     <p className="text-sm font-medium text-ink">ใบงาน: {order.jobType || "ทุกหน่วยงาน"}</p>
-                    <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${state.className}`}>{state.label}</span>
+                    <span className={`shrink-0 rounded-full px-2.5 py-[3px] text-xs font-medium ${state.className}`}>{state.label}</span>
                   </div>
                   <p className="mt-1 text-xs text-ink-muted">{order.itemCount} รายการ · อัปเดต {formatShortDate(order.updatedAt)}</p>
                 </Link>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Search, ChevronDown, Check, X, CheckCircle2 } from 'lucide-react';
+import { Search, ChevronDown, Check, X } from 'lucide-react';
 
 interface MultiSelectProps {
   label: string;
@@ -11,12 +11,12 @@ interface MultiSelectProps {
   placeholder?: string;
 }
 
-export default function MultiSelect({ 
-  label, 
-  options, 
-  selected, 
-  onChange, 
-  placeholder = "เลือกรายการ..." 
+export default function MultiSelect({
+  label,
+  options,
+  selected,
+  onChange,
+  placeholder = "เลือกรายการ..."
 }: MultiSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -40,129 +40,125 @@ export default function MultiSelect({
       let newSel = selected.includes(val)
         ? selected.filter(v => v !== val)
         : [...selected.filter(v => v !== 'ALL'), val];
-      
+
       if (newSel.length === 0) newSel = ['ALL'];
       onChange(newSel);
     }
   };
 
-  const filteredOptions = options.filter(o => 
+  const filteredOptions = options.filter(o =>
     o && o.toLowerCase().includes(searchTerm.toLowerCase())
   );
-  
+
   const isAllSelected = selected.includes('ALL');
 
   return (
     <div className="relative w-full" ref={wrapperRef}>
-      <label className="block text-[11px] font-black text-gray-400 mb-2 uppercase tracking-widest ml-1">
+      <label className="mb-1.5 block text-[13px] font-medium text-gray-600">
         {label}
       </label>
-      
-      <div 
+      <div
         onClick={() => setIsOpen(!isOpen)}
         className={`
-          min-h-[56px] px-4 py-2 bg-white border rounded-[1.2rem] cursor-pointer transition-all duration-300 flex flex-wrap items-center gap-2 shadow-sm
-          ${isOpen ? 'border-blue-500 ring-4 ring-blue-50' : 'border-gray-100 hover:border-gray-200'}
+          flex min-h-[38px] cursor-pointer flex-wrap items-center gap-1.5 rounded-[10px] border bg-white px-3 py-1 transition-colors
+          ${isOpen ? 'border-gray-400 ring-4 ring-gray-400/10' : 'border-line hover:border-gray-400'}
         `}
       >
         {isAllSelected ? (
-          <span className="px-3 py-1 bg-ink text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 shadow-md shadow-gray-900/10">
-            <CheckCircle2 size={12} /> ทั้งหมด
-          </span>
+          <span className="text-sm text-ink">ทั้งหมด</span>
         ) : (
           selected.map(s => (
-            <span 
-              key={s} 
-              className="px-3 py-1 bg-gray-50 text-gray-700 rounded-xl text-[10px] font-black uppercase tracking-widest border border-gray-100 flex items-center gap-1.5 hover:bg-gray-100 transition-colors"
+            <span
+              key={s}
+              className="flex items-center gap-1.5 rounded-full border border-line bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-800"
             >
               {s}
-              <X 
-                size={12} 
-                className="text-gray-400 hover:text-red-500 transition-colors cursor-pointer" 
+              <X
+                size={12}
+                className="cursor-pointer text-gray-600 transition-colors hover:text-crit"
                 onClick={(e) => { e.stopPropagation(); toggleOption(s); }}
               />
             </span>
           ))
         )}
-        
+
         {selected.length === 0 && !isOpen && (
-          <span className="text-gray-400 text-sm ml-1 font-bold">{placeholder}</span>
+          <span className="text-sm text-gray-500">{placeholder}</span>
         )}
-        
-        <div className="ml-auto pl-2 text-gray-300">
-          <ChevronDown 
-            size={18} 
-            className={`transition-transform duration-300 ${isOpen ? 'rotate-180 text-blue-500' : ''}`} 
+
+        <div className="ml-auto pl-2 text-gray-600">
+          <ChevronDown
+            size={16}
+            className={`transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
           />
         </div>
       </div>
 
       {isOpen && (
-        <div className="absolute z-[60] w-full mt-3 bg-white border border-gray-100 rounded-[20px] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 slide-in-from-top-2 duration-300 origin-top">
+        <div className="absolute z-[60] mt-2 w-full origin-top overflow-hidden rounded-xl border border-line bg-white shadow-lg animate-in fade-in zoom-in-95 duration-150">
           {/* Search Area */}
-          <div className="p-4 border-b border-gray-50 bg-gray-50/50">
+          <div className="border-b border-line p-2.5">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-              <input 
-                autoFocus 
-                type="text" 
-                className="w-full bg-white border border-gray-100 rounded-xl pl-10 pr-4 py-3 text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all" 
-                placeholder="ค้นหา..." 
-                value={searchTerm} 
-                onChange={e => setSearchTerm(e.target.value)} 
-                onClick={e => e.stopPropagation()} 
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
+              <input
+                autoFocus
+                type="text"
+                className="min-h-[38px] w-full rounded-[10px] border border-line bg-white py-[7px] pl-9 pr-3 text-sm outline-none focus:border-gray-400"
+                placeholder="ค้นหา..."
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                onClick={e => e.stopPropagation()}
               />
             </div>
           </div>
 
           {/* Options List */}
-          <div className="max-h-72 overflow-y-auto no-scrollbar p-2 space-y-1">
-            <div 
-              onClick={() => toggleOption('ALL')} 
+          <div className="no-scrollbar max-h-72 overflow-y-auto p-1.5">
+            <div
+              onClick={() => toggleOption('ALL')}
               className={`
-                px-4 py-4 text-sm rounded-2xl cursor-pointer transition-all flex items-center justify-between
-                ${isAllSelected ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}
+                flex cursor-pointer items-center justify-between rounded-[10px] px-3 py-2.5 text-sm transition-colors
+                ${isAllSelected ? 'bg-gray-200 font-semibold text-ink' : 'text-gray-800 hover:bg-[#fafafa]'}
               `}
             >
               <div className="flex items-center gap-3">
                 <div className={`
-                  w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-all
-                  ${isAllSelected ? 'bg-ink border-blue-600' : 'bg-white border-gray-200'}
+                  flex size-[18px] items-center justify-center rounded-md border transition-colors
+                  ${isAllSelected ? 'border-ink bg-ink' : 'border-gray-400 bg-white'}
                 `}>
-                  {isAllSelected && <Check size={14} className="text-white stroke-[3px]" />}
+                  {isAllSelected && <Check size={12} className="stroke-[3px] text-white" />}
                 </div>
-                <span className={`font-black uppercase tracking-tight ${isAllSelected ? 'text-blue-700' : 'text-gray-600'}`}>ทั้งหมด (ทุกประเภท)</span>
+                <span>ทั้งหมด (ทุกประเภท)</span>
               </div>
             </div>
 
             {filteredOptions.map(o => {
               const isSelected = selected.includes(o);
               return (
-                <div 
-                  key={o} 
-                  onClick={() => toggleOption(o)} 
+                <div
+                  key={o}
+                  onClick={() => toggleOption(o)}
                   className={`
-                    px-4 py-4 text-sm rounded-2xl cursor-pointer transition-all flex items-center justify-between
-                    ${isSelected ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}
+                    flex cursor-pointer items-center justify-between rounded-[10px] px-3 py-2.5 text-sm transition-colors
+                    ${isSelected ? 'bg-gray-200 font-semibold text-ink' : 'text-gray-800 hover:bg-[#fafafa]'}
                   `}
                 >
                   <div className="flex items-center gap-3">
                     <div className={`
-                      w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-all
-                      ${isSelected ? 'bg-ink border-blue-600' : 'bg-white border-gray-200'}
+                      flex size-[18px] items-center justify-center rounded-md border transition-colors
+                      ${isSelected ? 'border-ink bg-ink' : 'border-gray-400 bg-white'}
                     `}>
-                      {isSelected && <Check size={14} className="text-white stroke-[3px]" />}
+                      {isSelected && <Check size={12} className="stroke-[3px] text-white" />}
                     </div>
-                    <span className={`font-bold ${isSelected ? 'text-blue-700' : 'text-gray-600'}`}>{o}</span>
+                    <span>{o}</span>
                   </div>
                 </div>
               );
             })}
 
             {filteredOptions.length === 0 && (
-              <div className="py-12 text-center text-gray-300">
-                <Search size={32} className="mx-auto mb-2 opacity-20" />
-                <p className="text-xs font-black uppercase tracking-widest">ไม่พบข้อมูล</p>
+              <div className="py-8 text-center text-gray-600">
+                <p className="text-sm">ไม่พบข้อมูล</p>
               </div>
             )}
           </div>
