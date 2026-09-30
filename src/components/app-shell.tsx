@@ -105,7 +105,7 @@ export default function AppShell({ children }: AppShellProps) {
       <main
         id="app-main"
         tabIndex={-1}
-        className={`relative flex min-h-screen min-w-0 flex-1 flex-col transition-[margin] duration-300 ${showHeader && !sidebarHidden ? 'lg:ml-[260px]' : 'lg:ml-0'}`}
+        className={`relative flex min-h-screen min-w-0 flex-1 flex-col transition-[margin] duration-300 ${showHeader && !sidebarHidden ? 'lg:ml-[68px]' : 'lg:ml-0'}`}
       >
         {showHeader && (
         <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-line bg-white pl-16 pr-4 lg:gap-4 lg:px-8">
