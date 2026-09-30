@@ -110,6 +110,7 @@ export default function InventoryOverview() {
   }, []);
   const [selectedJobType, setSelectedJobType] = useState<string>('ทั้งหมด');
   const [selectedReagentType, setSelectedReagentType] = useState<string>('ทั้งหมด');
+  const [selectedVendor, setSelectedVendor] = useState<string>('ทั้งหมด');
   const [selectedReagent, setSelectedReagent] = useState<Reagent | null>(null);
   const [statusFilter, setStatusFilter] = useState<InventoryFilter>('all');
   const [shipments, setShipments] = useState<Shipment[]>([]);
@@ -240,6 +241,11 @@ export default function InventoryOverview() {
     return ['ทั้งหมด', ...types];
   }, [reagents]);
 
+  const vendorOptions = useMemo(() => {
+    const vendors = Array.from(new Set(reagents.map((r) => r.vendor).filter((vendor): vendor is string => Boolean(vendor)))).sort();
+    return ['ทั้งหมด', ...vendors];
+  }, [reagents]);
+
   const filteredItems = useMemo(() => {
     const normalizedSearch = searchTerm.toLowerCase().trim();
 
@@ -261,9 +267,11 @@ export default function InventoryOverview() {
         })) ||
         (statusFilter === 'expired' && item.lots.some((lot) => new Date(lot.expDate) < now));
 
-      return matchSearch && matchJob && matchType && matchStatus;
+      const matchVendor = selectedVendor === 'ทั้งหมด' || item.vendor === selectedVendor;
+
+      return matchSearch && matchJob && matchType && matchVendor && matchStatus;
     });
-  }, [reagents, searchTerm, selectedJobType, selectedReagentType, statusFilter]);
+  }, [reagents, searchTerm, selectedJobType, selectedReagentType, selectedVendor, statusFilter]);
 
   const isPowerUser = user?.role === 'Admin' || user?.role === 'Manager';
   const procurementSnapshot = useMemo(() => {
@@ -540,6 +548,16 @@ export default function InventoryOverview() {
               <option key={type} value={type}>{type}</option>
             ))}
           </select>
+          <select
+            aria-label="บริษัท (Vendor)"
+            value={selectedVendor}
+            onChange={(event) => setSelectedVendor(event.target.value)}
+            className="min-h-[38px] min-w-[150px] cursor-pointer rounded-[10px] border border-line bg-white px-3 py-[7px] text-sm text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400"
+          >
+            {vendorOptions.map((vendor) => (
+              <option key={vendor} value={vendor}>{vendor === 'ทั้งหมด' ? 'ทุกบริษัท' : vendor}</option>
+            ))}
+          </select>
         </div>
 
         <div role="region" aria-label="ตารางรายการคงคลัง" tabIndex={0} className="overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400">
@@ -616,6 +634,7 @@ export default function InventoryOverview() {
                 setSearchTerm('');
                 setSelectedJobType('ทั้งหมด');
                 setSelectedReagentType('ทั้งหมด');
+                setSelectedVendor('ทั้งหมด');
                 setStatusFilter('all');
               }}
               className="inline-flex items-center gap-2 rounded-[10px] border border-line bg-white px-4 py-[9px] text-sm font-medium text-ink hover:bg-gray-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400"

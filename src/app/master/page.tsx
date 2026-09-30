@@ -41,6 +41,7 @@ export default function MasterDataPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [search, setSearch] = useState('');
+  const [vendorFilter, setVendorFilter] = useState('ALL');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingReagent, setEditingReagent] = useState<Partial<Reagent> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -223,10 +224,12 @@ export default function MasterDataPage() {
     }
   };
 
-  const filteredReagents = reagents.filter(r => 
-    r.name.toLowerCase().includes(search.toLowerCase()) ||
+  const vendorOptions = Array.from(new Set(reagents.map(r => r.vendor).filter((vendor): vendor is string => Boolean(vendor)))).sort();
+  const filteredReagents = reagents.filter(r =>
+    (r.name.toLowerCase().includes(search.toLowerCase()) ||
     r.itemId.toLowerCase().includes(search.toLowerCase()) ||
-    (r.qrCode || '').toLowerCase().includes(search.toLowerCase())
+    (r.qrCode || '').toLowerCase().includes(search.toLowerCase())) &&
+    (vendorFilter === 'ALL' || r.vendor === vendorFilter)
   );
 
   const stats = {
@@ -320,6 +323,15 @@ export default function MasterDataPage() {
               </button>
             )}
           </div>
+          <select
+            aria-label="กรองตามบริษัท (Vendor)"
+            value={vendorFilter}
+            onChange={(e) => setVendorFilter(e.target.value)}
+            className="min-h-[38px] w-full cursor-pointer rounded-[10px] border border-line bg-white px-3 py-[7px] text-sm text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 md:w-64"
+          >
+            <option value="ALL">ทุกบริษัท (Vendor)</option>
+            {vendorOptions.map((vendor) => <option key={vendor} value={vendor}>{vendor}</option>)}
+          </select>
         </div>
 
         <div className="overflow-x-auto">

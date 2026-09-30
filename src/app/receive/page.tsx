@@ -33,6 +33,7 @@ export default function ReceivePage() {
   const [submitting, setSubmitting] = useState(false);
   const [scanMode, setScanMode] = useState(false);
   const [search, setSearch] = useState('');
+  const [vendorFilter, setVendorFilter] = useState('ALL');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error', msg: string } | null>(null);
   const [showResults, setShowResults] = useState(false);
@@ -156,12 +157,19 @@ export default function ReceivePage() {
 
   const filteredResults = useMemo(() => {
     if (!search.trim()) return [];
-    return reagents.filter(r => 
-      r.name.toLowerCase().includes(search.toLowerCase()) || 
-      r.itemId.toLowerCase().includes(search.toLowerCase()) ||
-      (r.qrCode || '').toLowerCase().includes(search.toLowerCase())
+    return reagents.filter(r =>
+      (vendorFilter === 'ALL' || r.vendor === vendorFilter) && (
+        r.name.toLowerCase().includes(search.toLowerCase()) ||
+        r.itemId.toLowerCase().includes(search.toLowerCase()) ||
+        (r.qrCode || '').toLowerCase().includes(search.toLowerCase())
+      )
     ).slice(0, 5);
-  }, [search, reagents]);
+  }, [search, reagents, vendorFilter]);
+
+  const vendorOptions = useMemo(
+    () => Array.from(new Set(reagents.map(r => r.vendor).filter((vendor): vendor is string => Boolean(vendor)))).sort(),
+    [reagents],
+  );
 
   const handleManualAdd = (e: React.FormEvent) => {
     e.preventDefault();
@@ -262,6 +270,16 @@ export default function ReceivePage() {
             หรือพิมพ์รหัส
             <span className="h-px flex-1 bg-line" />
           </div>
+
+          <select
+            aria-label="กรองตามบริษัท (Vendor)"
+            value={vendorFilter}
+            onChange={(e) => setVendorFilter(e.target.value)}
+            className="min-h-[38px] w-full cursor-pointer rounded-[10px] border border-line bg-white px-3 py-[7px] text-sm text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400"
+          >
+            <option value="ALL">ทุกบริษัท (Vendor)</option>
+            {vendorOptions.map((vendor) => <option key={vendor} value={vendor}>{vendor}</option>)}
+          </select>
 
           <form onSubmit={handleManualAdd} className="flex gap-2">
             <div className="relative flex-1">
