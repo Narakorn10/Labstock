@@ -1,6 +1,27 @@
-# WIP — 2026-09-07 19:11
+# WIP — 2026-09-30 20:58
 
-## Forward Handoff — 2026-09-07 23:33
+## Git Status
+
+```text
+branch: update/desktop-shell (ตรงกับ origin, push ถึง 3f6a150, PR #27 เปิดอยู่)
+?? "ψ/memory/retrospectives/2026-09/30/"   (รอ commit)
+ M "ψ/WIP.md"                              (รอ commit)
+```
+
+## งานค้าง
+- [ ] ผู้ใช้ preview PR #27 แล้วแจ้งจุดที่ต้องแก้ (preview ใช้ฐานข้อมูล production ดูอย่างเดียว ห้ามกดธุรกรรม)
+- [ ] ตรวจตัวกรอง Vendor ใน Inventory/Master/Dispense/Receive ด้วยตาจริง (ยังไม่ได้ดูภาพ)
+- [ ] ทำหน้าที่เหลือตามต้นแบบ: Borrow/Lend, Users, Permissions (RBAC), Settings, Notifications, Vendor (แนะนำ Borrow/Lend ก่อน)
+- [ ] ตัดสินใจ: ชื่อหน่วยงานใน hero ต้องส่ง department เข้า session (แตะระบบ login); badge ข้างเมนู; เครื่องหมาย +/- ใน Logs ตรวจกับข้อมูลจริง
+- [ ] งานค้างเดิม 09-29: ตรวจ `/activity`, ใบงาน #31/#1, แจ้งเตือน Vendor + log cron outbox, ใบสั่งซื้อค้าง 5 ใบ, สรุปรายสัปดาห์ 2026-10-05, ขยาย `trackRoute`
+
+## Context
+- ต้นแบบอยู่ที่ `Desktop/design_handoff_labstock` (Prototype v4); ตัวจับภาพเทียบ (Edge + CDP จำลอง `/api/**`) อยู่ใน scratchpad ที่หายแล้ว ต้องสร้างใหม่ถ้าจะเทียบภาพอีก
+- หน้า Stock Count ต่างจากต้นแบบที่ระดับการทำงาน (นับทีละรายการ vs ทีละ lot) ตั้งใจปรับแค่หน้าตา อย่าเปลี่ยน logic
+
+---
+
+## (history) Forward Handoff — 2026-09-07 23:33
 
 ### Current Git Status
 
