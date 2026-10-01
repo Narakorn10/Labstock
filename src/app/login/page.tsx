@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { signIn } from 'next-auth/react';
@@ -15,6 +15,33 @@ export default function LoginPage() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState('');
   const { login } = useAuth();
+  const [phase, setPhase] = useState<'splash' | 'login'>('splash');
+  const [animate, setAnimate] = useState(false);
+  const [filling, setFilling] = useState(false);
+
+  // Mobile intro (design 4d): splash once per session, then the login sheet.
+  useEffect(() => {
+    let skip = !window.matchMedia('(max-width: 767px)').matches || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    try {
+      if (sessionStorage.getItem('labstock-login-intro') === '1') skip = true;
+    } catch {}
+    if (skip) {
+      const skipFrame = requestAnimationFrame(() => setPhase('login'));
+      return () => cancelAnimationFrame(skipFrame);
+    }
+    try {
+      sessionStorage.setItem('labstock-login-intro', '1');
+    } catch {}
+    const frame = requestAnimationFrame(() => {
+      setAnimate(true);
+      setFilling(true);
+    });
+    const timer = setTimeout(() => setPhase('login'), 1600);
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(timer);
+    };
+  }, []);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -40,9 +67,23 @@ export default function LoginPage() {
   const isBusy = loading || googleLoading;
 
   return (
-    <main className="min-h-screen bg-ground pb-6 text-ink lg:p-3 lg:pb-3">
+    <main className="min-h-screen bg-ground pb-6 text-ink max-md:overflow-hidden max-md:bg-gray-950 lg:p-3 lg:pb-3">
+      <div aria-hidden className="fixed inset-0 md:hidden">
+        <Image src="/images/labstock-clinical-inventory-hero.png" alt="" fill sizes="100vw" priority className="object-cover object-right" />
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(10,22,34,0.5),rgba(10,22,34,0.92))]" />
+      </div>
+      <div
+        className={`fixed inset-x-0 z-10 flex origin-top flex-col items-center px-6 text-center text-white md:hidden ${animate ? 'transition-[top,transform] duration-700 ease-[cubic-bezier(.2,.8,.2,1)]' : ''} ${phase === 'splash' ? 'top-1/2 -translate-y-1/2 scale-100' : 'top-[72px] translate-y-0 scale-[0.78]'}`}
+      >
+        <Image src="/images/logo-spr-lab.png" alt="โลโก้ SPR LAB" width={96} height={96} priority className="size-24 rounded-[22px] ring-1 ring-white/25" />
+        <p className="mt-4 text-2xl font-semibold tracking-[-0.01em]">LabStock · SPR LAB</p>
+        <p className="mt-1.5 text-xs text-[#c9d2db]">กลุ่มงานเทคนิคการแพทย์และพยาธิวิทยาคลินิก</p>
+        <div className={`mt-6 h-[3px] w-[120px] overflow-hidden rounded-full bg-white/20 ${animate ? 'transition-opacity duration-500' : ''} ${phase === 'splash' ? 'opacity-100' : 'opacity-0'}`}>
+          <div className={`h-full rounded-full bg-white transition-[width] duration-[1400ms] ease-linear ${filling ? 'w-full' : 'w-0'}`} />
+        </div>
+      </div>
       <div className="mx-auto grid max-w-[480px] gap-0 px-[18px] pt-3 lg:min-h-[calc(100vh-24px)] lg:max-w-none lg:grid-cols-[1.065fr_1fr] lg:gap-3 lg:p-0">
-        <section aria-label="LabStock · SPR LAB" className="relative flex min-h-[170px] flex-col items-center justify-center gap-2.5 overflow-hidden rounded-[20px] bg-gray-950 px-[22px] py-5 text-center text-white lg:hidden">
+        <section aria-label="LabStock · SPR LAB" className="relative hidden min-h-[170px] flex-col items-center justify-center gap-2.5 overflow-hidden rounded-[20px] bg-gray-950 px-[22px] py-5 text-center text-white md:flex lg:hidden">
           <Image src="/images/labstock-clinical-inventory-hero.png" alt="" fill sizes="480px" priority className="object-cover object-right" />
           <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(10,22,34,0.7),rgba(10,22,34,0.94))]" />
           <div className="relative flex flex-col items-center gap-2.5"><Image src="/images/logo-spr-lab.png" alt="โลโก้ SPR LAB" width={72} height={72} priority className="size-[72px] rounded-2xl ring-1 ring-white/25" /><h1 className="text-xl font-semibold tracking-[-0.01em]">LabStock · SPR LAB</h1><p className="mt-1 text-xs text-[#c9d2db]">กลุ่มงานเทคนิคการแพทย์และพยาธิวิทยาคลินิก</p></div>
@@ -58,7 +99,11 @@ export default function LoginPage() {
           </div>
         </section>
 
-        <section className="relative -mt-2.5 flex flex-col rounded-[20px] border border-line bg-white px-5 py-[22px] lg:mt-0 lg:min-h-[560px] lg:rounded-3xl lg:px-8 lg:py-7">
+        <section
+          inert={phase === 'splash'}
+          className={`relative -mt-2.5 flex flex-col rounded-[20px] border border-line bg-white px-5 py-[22px] max-md:fixed max-md:inset-x-0 max-md:bottom-0 max-md:z-20 max-md:mt-0 max-md:h-[540px] max-md:overflow-y-auto max-md:rounded-b-none max-md:rounded-t-[28px] max-md:border-0 ${animate ? 'max-md:transition-transform max-md:duration-[650ms] max-md:ease-[cubic-bezier(.2,.8,.2,1)]' : ''} ${phase === 'splash' ? 'max-md:translate-y-[105%]' : 'max-md:translate-y-0'} lg:mt-0 lg:min-h-[560px] lg:rounded-3xl lg:px-8 lg:py-7`}
+        >
+          <div aria-hidden className="mx-auto -mt-2 mb-3 h-1 w-10 rounded-full bg-gray-300 md:hidden" />
           <div className="hidden items-center text-sm text-gray-600 lg:flex"><Link href="/" className="inline-flex items-center gap-1.5 text-gray-600! transition hover:text-ink! focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-gray-400"><ArrowLeft size={16} />กลับหน้าแรก</Link></div>
           <div className="w-full max-w-md lg:m-auto lg:max-w-[420px] lg:py-8">
             <p className="text-center text-[11px] font-semibold tracking-[0.14em] text-[#3f5f80] lg:text-left lg:text-xs lg:font-normal lg:tracking-[0.16em]">WELCOME BACK</p><h2 className="mt-1.5 text-center text-[26px] font-medium tracking-[-0.01em] text-ink lg:mt-2 lg:text-left lg:text-4xl lg:tracking-normal">เข้าสู่ระบบ</h2><p className="mt-1.5 hidden text-[15px] text-gray-600 lg:block">ใช้บัญชีของคุณเพื่อดูสถานะน้ำยาและงานที่ต้องดำเนินการ</p>
