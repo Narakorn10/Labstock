@@ -2,25 +2,29 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { Settings, Plus, Trash2, Cpu, TestTube, Briefcase } from 'lucide-react';
+import { Settings, Plus, Trash2, Cpu, TestTube, Briefcase, Building2 } from 'lucide-react';
 
 interface SettingData {
   reagentTypes: string[];
   jobTypes: string[];
   machineTypes: string[];
+  departments: string[];
 }
+
+type SettingType = 'reagent' | 'job' | 'machine' | 'department';
+type NewValues = Record<SettingType, string>;
 
 interface SectionProps {
   title: string;
   icon: React.ElementType;
-  type: 'reagent' | 'job' | 'machine';
+  type: SettingType;
   items: string[];
   placeholder: string;
   loading: boolean;
-  newValue: { reagent: string; job: string; machine: string };
-  setNewValue: React.Dispatch<React.SetStateAction<{ reagent: string; job: string; machine: string }>>;
-  onAdd: (type: 'reagent' | 'job' | 'machine') => void;
-  onDelete: (type: 'reagent' | 'job' | 'machine', value: string) => void;
+  newValue: NewValues;
+  setNewValue: React.Dispatch<React.SetStateAction<NewValues>>;
+  onAdd: (type: SettingType) => void;
+  onDelete: (type: SettingType, value: string) => void;
 }
 
 const Section = ({ title, icon: Icon, type, items, placeholder, loading, newValue, setNewValue, onAdd, onDelete }: SectionProps) => (
@@ -73,15 +77,16 @@ export default function SettingsPage() {
   const [data, setData] = useState<SettingData>({
     reagentTypes: [],
     jobTypes: [],
-    machineTypes: []
+    machineTypes: [],
+    departments: []
   });
   const [loading, setLoading] = useState(true);
-  const [newValue, setNewValue] = useState({ reagent: '', job: '', machine: '' });
+  const [newValue, setNewValue] = useState<NewValues>({ reagent: '', job: '', machine: '', department: '' });
 
   const fetchSettings = useCallback(async () => {
     try {
       const settings = await apiClient.getSettings();
-      setData(settings);
+      setData({ ...settings, departments: settings.departments ?? [] });
     } catch (error) {
       console.error('Fetch settings error:', error);
     } finally {
@@ -100,7 +105,7 @@ export default function SettingsPage() {
     return () => { isMounted = false; };
   }, [fetchSettings]);
 
-  const handleAdd = async (type: 'reagent' | 'job' | 'machine') => {
+  const handleAdd = async (type: SettingType) => {
     const value = newValue[type].trim();
     if (!value) return;
 
@@ -115,7 +120,7 @@ export default function SettingsPage() {
     }
   };
 
-  const handleDelete = async (type: 'reagent' | 'job' | 'machine', value: string) => {
+  const handleDelete = async (type: SettingType, value: string) => {
     if (!confirm(`คุณต้องการลบ "${value}" ใช่หรือไม่?`)) return;
 
     try {
@@ -137,10 +142,10 @@ export default function SettingsPage() {
           </div>
           <h1 className="text-[32px] leading-tight font-medium tracking-tight text-ink">ตั้งค่าระบบ (System Settings)</h1>
         </div>
-        <p className="text-gray-500 text-sm ml-12">จัดการข้อมูลตัวเลือกใน Dropdown เช่น ประเภทน้ำยา, ประเภทงาน และชื่อเครื่องมือ</p>
+        <p className="text-gray-500 text-sm ml-12">จัดการข้อมูลตัวเลือกใน Dropdown เช่น ประเภทน้ำยา, ประเภทงาน, ชื่อเครื่องมือ และหน่วยงาน</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-8">
         <Section 
           title="ประเภทน้ำยา" 
           icon={TestTube} 
@@ -171,6 +176,18 @@ export default function SettingsPage() {
           type="machine" 
           items={data.machineTypes} 
           placeholder="เพิ่มชื่อเครื่อง (เช่น Architect...)"
+          loading={loading}
+          newValue={newValue}
+          setNewValue={setNewValue}
+          onAdd={handleAdd}
+          onDelete={handleDelete}
+        />
+        <Section
+          title="หน่วยงาน"
+          icon={Building2}
+          type="department"
+          items={data.departments}
+          placeholder="เพิ่มหน่วยงาน (เช่น ห้องปฏิบัติการเคมีคลินิก...)"
           loading={loading}
           newValue={newValue}
           setNewValue={setNewValue}
