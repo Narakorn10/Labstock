@@ -1,23 +1,26 @@
-# WIP — 2026-09-30 20:58
+# WIP — 2026-10-01 13:44
 
 ## Git Status
 
 ```text
-branch: update/desktop-shell (ตรงกับ origin, push ถึง 3f6a150, PR #27 เปิดอยู่)
-?? "ψ/memory/retrospectives/2026-09/30/"   (รอ commit)
- M "ψ/WIP.md"                              (รอ commit)
+branch: update/desktop-shell (ล่วงหน้า origin 13 commit ยังไม่ push, PR #27 เปิดอยู่)
+commit ล่าสุด: 3ac7a52 Update: Vendor portal shows ordered / received / outstanding per line
+?? "ψ/memory/retrospectives/2026-10/"   (รอ commit)
+ M "ψ/WIP.md"                          (รอ commit)
 ```
 
 ## งานค้าง
-- [ ] ผู้ใช้ preview PR #27 แล้วแจ้งจุดที่ต้องแก้ (preview ใช้ฐานข้อมูล production ดูอย่างเดียว ห้ามกดธุรกรรม)
-- [ ] ตรวจตัวกรอง Vendor ใน Inventory/Master/Dispense/Receive ด้วยตาจริง (ยังไม่ได้ดูภาพ)
-- [ ] ทำหน้าที่เหลือตามต้นแบบ: Borrow/Lend, Users, Permissions (RBAC), Settings, Notifications, Vendor (แนะนำ Borrow/Lend ก่อน)
-- [ ] ตัดสินใจ: ชื่อหน่วยงานใน hero ต้องส่ง department เข้า session (แตะระบบ login); badge ข้างเมนู; เครื่องหมาย +/- ใน Logs ตรวจกับข้อมูลจริง
-- [ ] งานค้างเดิม 09-29: ตรวจ `/activity`, ใบงาน #31/#1, แจ้งเตือน Vendor + log cron outbox, ใบสั่งซื้อค้าง 5 ใบ, สรุปรายสัปดาห์ 2026-10-05, ขยาย `trackRoute`
+- [ ] ตัดสินใจ 3 ข้อจาก /scrutinize งานรับของ: (1) หมายเหตุตอนยืนยันรับบริษัทมองเห็น → ใส่ข้อความเตือน หรือซ่อน (2) ผู้ดูแลฐานข้อมูลรัน `SELECT id, po_id, quantity, received_qty, accepted_qty FROM purchase_order_items WHERE COALESCE(received_qty,0) <> COALESCE(accepted_qty,0);` ถ้ามีแถว ให้หน้าจอ/สูตรอิง `accepted_qty` (3) เตือนแล็บเรื่อง PO ค้างเลยกำหนดโดยไม่ผูก `SHIPMENTS_ENABLED` (ส่งแจ้งเตือน ต้องขออนุมัติ)
+- [ ] ผู้ใช้ตรวจหน้าจริงที่ยังไม่ได้ดู: Settings, Notifications, Vendor Orders, ปุ่ม "ยืนยันรับของ" ใน `/orders/[id]` (ห้ามกดธุรกรรมที่ไม่ตั้งใจ)
+- [ ] ถามผู้ใช้ก่อน push 13 commit เข้า PR #27 (ยังไม่ได้รับอนุญาต)
+- [ ] ปรับหน้านโยบายสั่งซื้อน้ำยา `/settings/reagent-orders` ตามต้นแบบ (หน้าสุดท้าย)
+- [ ] ตั้ง `hookTimeout` ใน `vitest.config.ts` (เทสต์ฐานข้อมูลจำลอง timeout เป็นบางรอบ)
+- [ ] เก็บกวาด: `.env.local.bak-before-authsecret` (gitignore) และ dev server พอร์ต 3100 ที่อาจยังรันอยู่
+- [ ] งานค้างเดิม: ตรวจ `/activity`, ใบงาน #31/#1, แจ้งเตือน Vendor + log cron outbox, ใบสั่งซื้อค้าง 5 ใบ, สรุปรายสัปดาห์ 2026-10-05, ขยาย `trackRoute`, ชื่อหน่วยงานใน hero, badge ข้างเมนู, เครื่องหมาย +/- ใน Logs
 
 ## Context
-- ต้นแบบอยู่ที่ `Desktop/design_handoff_labstock` (Prototype v4); ตัวจับภาพเทียบ (Edge + CDP จำลอง `/api/**`) อยู่ใน scratchpad ที่หายแล้ว ต้องสร้างใหม่ถ้าจะเทียบภาพอีก
-- หน้า Stock Count ต่างจากต้นแบบที่ระดับการทำงาน (นับทีละรายการ vs ทีละ lot) ตั้งใจปรับแค่หน้าตา อย่าเปลี่ยน logic
+- `SHIPMENTS_ENABLED = false` (`src/lib/feature-flags.ts`) ซ่อนเมนู Receive from Vendor / Vendor Shipments โดยตั้งใจ; flow ใหม่ให้แล็บกด "ยืนยันรับของ" ที่ `/orders/[id]` (ไม่มี migration, ไม่แตะสต๊อก ไม่แจ้งเตือน) และ v29 (ตาราง `departments`) ผู้ใช้รันแล้ว
+- ต้นแบบ `Desktop/design_handoff_labstock`; ตัวจับภาพเทียบหายแล้ว ต้องสร้างใหม่ถ้าจะเทียบภาพ; ไฟล์ส่วนใหญ่เป็น CRLF (แก้ด้วยสคริปต์ที่คงปลายบรรทัดเดิม)
 
 ---
 
