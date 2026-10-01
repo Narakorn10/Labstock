@@ -9,6 +9,7 @@ interface User {
   name: string;
   role: string;
   vendor?: string;
+  department?: string | null;
   password?: string;
 }
 
@@ -31,13 +32,15 @@ function AuthStateProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const isPublicPath = pathname === '/' || pathname === '/login' || pathname === '/register' || pathname.startsWith('/mobile') || pathname.startsWith('/liff');
+  const [department, setDepartment] = React.useState<string | null>(null);
   const user = useMemo(() => {
     const sessionUser = session?.user as (User & { username?: string; role?: string; vendor?: string }) | undefined;
     return sessionUser?.username && sessionUser.role
-      ? { username: sessionUser.username, name: sessionUser.name || sessionUser.username, role: sessionUser.role, vendor: sessionUser.vendor }
+      ? { username: sessionUser.username, name: sessionUser.name || sessionUser.username, role: sessionUser.role, vendor: sessionUser.vendor, department }
       : null;
-  }, [session?.user]);
+  }, [session?.user, department]);
   const loading = status === 'loading';
+  const username = user?.username;
 
   const clearStoredAuth = React.useCallback(() => {
     localStorage.removeItem('labstock_user');
@@ -57,7 +60,7 @@ function AuthStateProvider({ children }: { children: React.ReactNode }) {
   }, [user, loading, isPublicPath, router]);
 
   useEffect(() => {
-    if (loading || !user) return;
+    if (loading || !username) return;
     let cancelled = false;
 
     const verifyCurrentSession = async () => {
@@ -67,6 +70,11 @@ function AuthStateProvider({ children }: { children: React.ReactNode }) {
           clearStoredAuth();
           await signOut({ redirect: false });
           router.replace('/login');
+          return;
+        }
+        if (response.ok && !cancelled) {
+          const data = await response.json() as { user?: { department?: string | null } };
+          setDepartment(data.user?.department ?? null);
         }
       } catch {
         // Keep an already-established session during a transient network failure.
@@ -75,7 +83,7 @@ function AuthStateProvider({ children }: { children: React.ReactNode }) {
 
     void verifyCurrentSession();
     return () => { cancelled = true; };
-  }, [clearStoredAuth, loading, router, user]);
+  }, [clearStoredAuth, loading, router, username]);
 
   const login = async (credentials: Partial<User>) => {
     const result = await signIn('credentials', {

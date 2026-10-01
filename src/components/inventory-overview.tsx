@@ -434,7 +434,7 @@ export default function InventoryOverview() {
     );
   }
 
-  const workName = user?.role === 'Vendor' && user.vendor ? user.vendor : 'กลุ่มงานเทคนิคการแพทย์และพยาธิวิทยาคลินิก';
+  const workName = user?.role === 'Vendor' && user.vendor ? user.vendor : user?.department || 'กลุ่มงานเทคนิคการแพทย์และพยาธิวิทยาคลินิก';
   const todayLabel = new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' });
 
   return (
