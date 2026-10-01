@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import sql from '@/lib/db';
 import { getAuthenticatedUser, isAdmin } from '@/lib/auth-utils';
+import { findMissingLockedMenus } from '@/lib/admin-locked-menus';
 
 export async function GET(request: Request) {
   try {
@@ -39,6 +40,15 @@ export async function POST(request: Request) {
     
     if (!role) {
       return NextResponse.json({ error: 'Role is required' }, { status: 400 });
+    }
+
+    // An Admin must keep access to the landing page and to this screen, or they could lock themselves out.
+    const missingLocked = findMissingLockedMenus(role, allowed_menus);
+    if (missingLocked.length > 0) {
+      return NextResponse.json(
+        { error: `Admin must keep these menus: ${missingLocked.join(', ')}` },
+        { status: 400 },
+      );
     }
 
     await sql`

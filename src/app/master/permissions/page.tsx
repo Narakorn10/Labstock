@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { apiClient, RolePermission } from '@/lib/api-client';
 import { useAuth } from '@/components/auth-provider';
+import { ADMIN_LOCKED_MENUS, isLockedMenu } from '@/lib/admin-locked-menus';
 
 const ALL_MENUS = [
   { id: 'dashboard', label: 'Dashboard', icon: Activity },
@@ -138,6 +139,7 @@ export default function PermissionsPage() {
   }
 
   const togglePermission = (role: string, menuId: string) => {
+    if (isLockedMenu(role, menuId)) return;
     setPermissions((prev) => {
       const source = prev.length > 0 ? prev : normalizePermissions([]);
 
@@ -162,11 +164,15 @@ export default function PermissionsPage() {
       role,
       allowed_menus: []
     };
+    // Locked menus are always saved for Admin (also repairs a role that already lost them).
+    const menusToSave = role === 'Admin'
+      ? Array.from(new Set([...roleData.allowed_menus, ...ADMIN_LOCKED_MENUS]))
+      : roleData.allowed_menus;
 
     setSaving(role);
     setError(null);
     try {
-      await apiClient.updatePermissions(role, roleData.allowed_menus);
+      await apiClient.updatePermissions(role, menusToSave);
       setTimeout(() => setSaving(null), 500);
     } catch (err) {
       console.error(`Failed to save permissions for ${role}:`, err);
@@ -186,47 +192,51 @@ export default function PermissionsPage() {
     );
   }
 
+  const headClass = 'bg-ground px-3.5 py-2.5 text-left text-[13px] font-medium text-gray-600';
+  const cellClass = 'border-b border-line px-3.5 py-3 align-middle text-sm';
+
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-3 duration-500 pb-20">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div>
-          <h1 className="text-[32px] leading-tight font-medium text-ink tracking-tight flex items-center gap-3">
-            Permissions <span className="text-gray-400 font-normal">/</span>{' '}
-            <span className="bg-[#e7f0ff] text-[#166ee1] px-3 py-1 rounded-lg text-xl font-bold">RBAC Management</span>
-          </h1>
-          <p className="mt-1 text-sm text-ink-muted">Control which menus each user role can see and access.</p>
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-3 duration-500 pb-20">
+      <div className="flex flex-wrap items-end gap-4">
+        <div className="mr-auto">
+          <h1 className="text-[32px] leading-tight font-medium text-ink">Permissions (RBAC)</h1>
+          <p className="mt-1.5 text-[15px] text-gray-600">ติ๊กเมนูที่แต่ละบทบาทเข้าถึงได้ แล้วกดบันทึกที่หัวคอลัมน์ของบทบาทนั้น</p>
         </div>
         <button
+          type="button"
           onClick={fetchPermissions}
-          className="flex items-center gap-2 px-4 py-2.5 bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 transition-all font-bold text-xs uppercase tracking-wider rounded-xl shadow-sm"
+          className="inline-flex items-center gap-2 rounded-[10px] border border-line bg-white px-4 py-[9px] text-sm font-medium text-ink transition hover:bg-gray-50"
         >
           <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-          Refresh Matrix
+          โหลดข้อมูลใหม่
         </button>
       </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-100 p-4 rounded-2xl flex items-center gap-3 text-red-600">
-          <X size={20} />
-          <p className="text-xs font-bold">{error}</p>
+        <div role="alert" className="flex items-center gap-2.5 rounded-xl bg-crit-bg px-3.5 py-3 text-sm font-medium text-crit">
+          <X size={16} />
+          <p>{error}</p>
         </div>
       )}
 
-      <div className="bg-white border border-gray-100 rounded-[20px] shadow-sm overflow-hidden">
+      <section aria-label="ตารางสิทธิ์เมนูตามบทบาท" className="rounded-2xl border border-line bg-white p-5">
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+          <table className="w-full min-w-[760px] border-separate border-spacing-0 text-left">
+            <caption className="sr-only">สิทธิ์การเข้าถึงเมนูของแต่ละบทบาท</caption>
             <thead>
-              <tr className="bg-gray-50/50 border-b border-gray-100">
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest min-w-[250px]">Menu Section</th>
-                {ROLES.map((role) => (
-                  <th key={role} className="px-6 py-5 text-center min-w-[120px]">
-                    <div className="flex flex-col items-center gap-1">
-                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{role}</span>
+              <tr>
+                <th scope="col" className={`${headClass} min-w-[250px] rounded-l-[10px]`}>Menu Section</th>
+                {ROLES.map((role, index) => (
+                  <th key={role} scope="col" className={`${headClass} text-center ${index === ROLES.length - 1 ? 'rounded-r-[10px]' : ''}`}>
+                    <div className="flex items-center justify-center gap-2">
+                      <span>{role}</span>
                       <button
+                        type="button"
                         onClick={() => savePermissions(role)}
                         disabled={saving === role}
-                        className={`mt-1 p-1.5 rounded-lg transition-all ${saving === role ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-500 hover:bg-black hover:text-white'}`}
-                        title="Save role permissions"
+                        className={`inline-flex items-center rounded-[8px] border p-1.5 transition disabled:cursor-wait ${saving === role ? 'border-line bg-gray-200 text-ink' : 'border-line bg-white text-gray-700 hover:border-ink hover:bg-ink hover:text-white'}`}
+                        title="บันทึกสิทธิ์ของบทบาทนี้"
+                        aria-label={`บันทึกสิทธิ์ของ ${role}`}
                       >
                         {saving === role ? <RefreshCw size={12} className="animate-spin" /> : <Save size={12} />}
                       </button>
@@ -235,36 +245,38 @@ export default function PermissionsPage() {
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
+            <tbody>
               {ALL_MENUS.map((menu) => (
-                <tr key={menu.id} className="hover:bg-gray-50/50 transition-colors">
-                  <td className="px-8 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500">
-                        <menu.icon size={16} />
-                      </div>
-                      <div>
-                        <p className="text-sm font-bold text-gray-900">{menu.label}</p>
-                        <p className="text-[10px] text-gray-400 font-medium uppercase tracking-tighter">ID: {menu.id}</p>
-                      </div>
-                    </div>
-                  </td>
+                <tr key={menu.id}>
+                  <th scope="row" className={`${cellClass} font-normal`}>
+                    <span className="flex items-center gap-2">
+                      <menu.icon size={16} aria-hidden="true" className="shrink-0 text-gray-700" />
+                      <span>
+                        <span className="block font-medium">{menu.label}</span>
+                        <span className="block text-xs text-gray-600">ID: {menu.id}</span>
+                      </span>
+                    </span>
+                  </th>
                   {ROLES.map((role) => {
                     const rolePerms = permissions.find((permission) => permission.role === role);
-                    const isAllowed = rolePerms?.allowed_menus.includes(menu.id);
+                    const locked = isLockedMenu(role, menu.id);
+                    const isAllowed = locked || !!rolePerms?.allowed_menus.includes(menu.id);
 
                     return (
-                      <td key={role} className="px-6 py-4 text-center">
+                      <td key={role} className={`${cellClass} text-center`}>
                         <button
+                          type="button"
+                          role="checkbox"
+                          aria-checked={isAllowed}
+                          aria-label={`${role} เข้าถึง ${menu.label}${locked ? ' (ล็อก)' : ''}`}
+                          aria-disabled={locked}
+                          title={locked ? 'ล็อกไว้เพื่อป้องกันการล็อกตัวเองออกจากระบบ' : undefined}
                           onClick={() => togglePermission(role, menu.id)}
-                          className={`
-                            w-6 h-6 rounded-md border-2 transition-all flex items-center justify-center mx-auto
-                            ${isAllowed
-                              ? 'bg-ink border-blue-600 text-white shadow-sm shadow-gray-900/10'
-                              : 'bg-white border-gray-200 text-transparent hover:border-blue-300'}
-                          `}
+                          className={`mx-auto inline-grid size-[22px] place-items-center rounded-md transition ${isAllowed
+                            ? 'bg-ink text-white'
+                            : 'border-[1.5px] border-gray-400 text-transparent hover:border-ink'} ${locked ? 'cursor-not-allowed opacity-45' : ''}`}
                         >
-                          <Check size={14} strokeWidth={4} />
+                          <Check size={14} strokeWidth={3} />
                         </button>
                       </td>
                     );
@@ -274,7 +286,8 @@ export default function PermissionsPage() {
             </tbody>
           </table>
         </div>
-      </div>
+        <p className="mt-3 text-xs text-gray-600">การเปลี่ยนแปลงจะมีผลเมื่อกดปุ่มบันทึกของบทบาทนั้น · Inventory Overview และ Permissions ของ Admin ล็อกไว้เพื่อป้องกันการล็อกตัวเองออกจากระบบ</p>
+      </section>
     </div>
   );
 }
