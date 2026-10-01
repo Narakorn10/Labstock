@@ -1,16 +1,9 @@
 import type sqlClient from "./db";
 import { PO_HAS_IN_TRANSIT, runGuardedPurchaseOrderUpdate } from "./purchase-order-review";
+import { LAB_RECEIPT_STATUSES } from "./purchase-order-workflow";
 import { recomputePurchaseOrderStatusQuery } from "./purchase-order-status";
 
 type Sql = typeof sqlClient;
-
-/**
- * Statuses in which the Lab can confirm that ordered items arrived. Includes orders the
- * Vendor never acknowledged, because Vendors often do not use the portal at all.
- */
-export const LAB_RECEIPT_STATUSES: readonly string[] = [
-  "SUBMITTED", "ACKNOWLEDGED", "CONFIRMED", "PARTIALLY_SHIPPED", "SHIPPED", "PARTIALLY_RECEIVED",
-];
 
 export const PO_RECEIPT_ITEMS_CHANGED = "PO_RECEIPT_ITEMS_CHANGED";
 

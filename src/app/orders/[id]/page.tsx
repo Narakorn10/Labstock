@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth-provider";
 import { exportPurchaseOrderCsv, printPurchaseOrderPdf } from "@/lib/purchase-order-export";
-import { CANCELLABLE_STATUSES, CLOSE_SHORT_STATUSES } from "@/lib/purchase-order-workflow";
+import { CANCELLABLE_STATUSES, CLOSE_SHORT_STATUSES, LAB_RECEIPT_STATUSES } from "@/lib/purchase-order-workflow";
 
 interface PurchaseOrderDetailItem {
   id: number;
@@ -75,6 +75,10 @@ interface PurchaseOrderEvent {
   created_at: string;
 }
 
+const eventLabels: Record<string, string> = {
+  PO_LAB_RECEIPT_CONFIRMED: "แล็บยืนยันรับของ",
+};
+
 const reviewReasonLabels: Record<string, string> = {
   FUTURE_DISPENSE_LOGS_EXCLUDED: "ตัดรายการเบิกวันที่ในอนาคตออกจากการคำนวณ",
   OPEN_PURCHASE_ORDER_WITHOUT_ETA: "มี PO ค้างที่ยังไม่ระบุวันส่ง",
@@ -100,6 +104,8 @@ export default function PODetailPage() {
   const [loading, setLoading] = useState(true);
   const [reviewNote, setReviewNote] = useState("");
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [receiptNote, setReceiptNote] = useState("");
+  const [receiptSkipped, setReceiptSkipped] = useState<number[]>([]);
   const showInternalColumns = user?.role !== "Vendor";
 
   const groupedItems = useMemo(() => {
@@ -241,6 +247,38 @@ export default function PODetailPage() {
       }
       setPo(data as PurchaseOrderDetail);
       setReviewNote("");
+    } finally {
+      setReviewSubmitting(false);
+    }
+  };
+
+  const pendingReceiptItems = (po?.items ?? []).filter((item) => Number(item.received_qty ?? 0) < Number(item.quantity));
+  const receiptItemIds = pendingReceiptItems.map((item) => item.id).filter((itemId) => !receiptSkipped.includes(itemId));
+
+  const confirmReceipt = async () => {
+    if (!po || receiptItemIds.length === 0) return;
+    const allArrived = receiptItemIds.length === pendingReceiptItems.length;
+    const question = allArrived
+      ? "ยืนยันว่าได้รับของครบทุกรายการที่ค้างแล้วหรือไม่? ระบบจะปิดยอดรายการเหล่านี้ (ไม่มีการเพิ่มสต๊อก ต้องรับเข้าที่หน้า Receive)"
+      : `ยืนยันว่าได้รับของ ${receiptItemIds.length} จาก ${pendingReceiptItems.length} รายการที่ค้างหรือไม่? ระบบจะปิดยอดเฉพาะรายการที่ติ๊ก (ไม่มีการเพิ่มสต๊อก ต้องรับเข้าที่หน้า Receive)`;
+    if (!confirm(question)) return;
+    setReviewSubmitting(true);
+    try {
+      const res = await fetch(`/api/purchase-orders/${po.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ action: "CONFIRM_LAB_RECEIPT", item_ids: receiptItemIds, note: receiptNote.trim() || undefined }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        alert(data?.error ?? "ไม่สามารถยืนยันรับของได้");
+        return;
+      }
+      setPo(data as PurchaseOrderDetail);
+      setReceiptNote("");
+      setReceiptSkipped([]);
+      const eventRes = await fetch(`/api/purchase-orders/${po.id}/events`, { headers: getAuthHeaders() });
+      if (eventRes.ok) setEvents(((await eventRes.json()) as { items?: PurchaseOrderEvent[] }).items ?? []);
     } finally {
       setReviewSubmitting(false);
     }
@@ -438,6 +476,37 @@ export default function PODetailPage() {
           </div>
         )}
 
+        {canManageLabOrders && LAB_RECEIPT_STATUSES.includes(po.status) && pendingReceiptItems.length > 0 && (
+          <div className="no-print border-t pt-5">
+            <h2 className="text-lg font-bold text-slate-900">ยืนยันรับของ</h2>
+            <p className="mt-1 text-sm text-slate-600">ติ๊กรายการที่ได้รับแล้ว ระบบจะปิดยอดรายการนั้นตามจำนวนที่ค้างทั้งหมด หากรายการใดยังมาไม่ครบให้เอาติ๊กออก ส่วนการเพิ่มสต๊อกให้รับเข้าที่หน้า Receive ตามปกติ บริษัทจะไม่ได้รับแจ้งเตือน</p>
+            <ul className="mt-3 divide-y divide-slate-100 rounded-lg border border-slate-200">
+              {pendingReceiptItems.map((item) => (
+                <li key={item.id}>
+                  <label className="flex cursor-pointer items-center gap-3 px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={!receiptSkipped.includes(item.id)}
+                      onChange={(event) => setReceiptSkipped((current) => event.target.checked ? current.filter((itemId) => itemId !== item.id) : [...current, item.id])}
+                      className="size-4 accent-black"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-semibold text-slate-900">{item.item_name}</span>
+                      <span className="block font-mono text-xs text-slate-500">{item.item_id}</span>
+                    </span>
+                    <span className="text-sm text-slate-700">ค้าง {Number(item.quantity) - Number(item.received_qty ?? 0)} จาก {item.quantity} {item.unit}</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+            <label className="mt-3 block text-sm font-medium text-slate-700" htmlFor="receipt-note">หมายเหตุ (ไม่บังคับ เช่น ได้ไม่ครบจำนวน หรือได้เกิน)</label>
+            <textarea id="receipt-note" value={receiptNote} onChange={(event) => setReceiptNote(event.target.value)} className="mt-2 w-full rounded-lg border border-slate-300 p-3" rows={2} maxLength={500} />
+            <div className="mt-3">
+              <button type="button" disabled={reviewSubmitting || receiptItemIds.length === 0} onClick={() => void confirmReceipt()} className="rounded-lg bg-ink px-4 py-2 font-semibold text-white hover:bg-black disabled:opacity-60">ยืนยันรับของ {receiptItemIds.length} รายการ</button>
+            </div>
+          </div>
+        )}
+
         {canManageLabOrders && (CANCELLABLE_STATUSES.includes(po.status) || CLOSE_SHORT_STATUSES.includes(po.status)) && (
           <div className="no-print border-t pt-5">
             <label className="block text-sm font-medium text-slate-700" htmlFor="close-order-reason">เหตุผลในการปิดใบสั่ง (บังคับ แจ้งบริษัทด้วย)</label>
@@ -489,7 +558,7 @@ export default function PODetailPage() {
       <section className="no-print mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-bold text-slate-900">ประวัติการสื่อสารและสถานะ</h2>
         <div className="mt-4 space-y-3">
-          {events.map((event) => <div key={event.id} className="border-l-2 border-indigo-300 pl-4"><p className="text-sm font-semibold text-slate-900">{event.event_type} {event.to_status ? `→ ${event.to_status}` : ""}</p><p className="text-xs text-slate-500">{new Date(event.created_at).toLocaleString("th-TH")} · {event.actor_role || "ระบบ"} · {event.source || "WEB"}</p>{event.note && <p className="mt-1 text-sm text-slate-700">{event.note}</p>}</div>)}
+          {events.map((event) => <div key={event.id} className="border-l-2 border-indigo-300 pl-4"><p className="text-sm font-semibold text-slate-900">{eventLabels[event.event_type] ?? event.event_type} {event.to_status ? `→ ${event.to_status}` : ""}</p><p className="text-xs text-slate-500">{new Date(event.created_at).toLocaleString("th-TH")} · {event.actor_role || "ระบบ"} · {event.source || "WEB"}</p>{event.note && <p className="mt-1 text-sm text-slate-700">{event.note}</p>}</div>)}
           {events.length === 0 && <p className="text-sm text-slate-500">ยังไม่มีประวัติการสื่อสาร</p>}
         </div>
       </section>
