@@ -5,6 +5,7 @@ import { useAuth } from "@/components/auth-provider";
 import { exportPurchaseOrderCsv, openPurchaseOrderPrintWindow, printPurchaseOrderPdf } from "@/lib/purchase-order-export";
 
 type OrderItem = { item_id: string; item_name: string; quantity: number; unit: string };
+type OrderLine = OrderItem & { received_qty?: number | null };
 type SuggestedItem = OrderItem & { current_qty: number; min_threshold: number; suggested_order_qty: number };
 type PurchaseOrder = {
   id: number;
@@ -15,7 +16,7 @@ type PurchaseOrder = {
   vendor_note?: string;
   expected_date?: string;
   created_at: string;
-  items: OrderItem[];
+  items: OrderLine[];
 };
 
 const statusLabel: Record<string, string> = {
@@ -114,7 +115,7 @@ export default function VendorOrdersPage() {
 
   const openRevision = (order: PurchaseOrder) => {
     setEditingOrder(order);
-    setDraftItems(order.items.map((item) => ({ ...item, quantity: Number(item.quantity) })));
+    setDraftItems(order.items.map(({ item_id, item_name, quantity, unit }) => ({ item_id, item_name, quantity: Number(quantity), unit })));
     setDraftNote(order.vendor_note ?? "");
   };
 
@@ -264,6 +265,36 @@ export default function VendorOrdersPage() {
                 {order.proposal_origin === "VENDOR" ? "Vendor เสนอรายการ" : "Lab สร้างใบสั่งน้ำยา"} · {order.items.length} รายการ
               </p>
               {order.vendor_note && <p className="mb-2.5 text-[13px] text-warn">หมายเหตุ: {order.vendor_note}</p>}
+              {order.items.length > 0 && (
+                <div className="mb-2.5 overflow-x-auto">
+                  <table className="w-full min-w-[360px] border-separate border-spacing-0 text-left text-[13px]">
+                    <caption className="sr-only">สั่ง ได้รับ และค้างของ {order.po_number}</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col" className="py-1.5 pr-3 font-medium text-gray-600">น้ำยา</th>
+                        <th scope="col" className="px-3 py-1.5 text-right font-medium text-gray-600">สั่ง</th>
+                        <th scope="col" className="px-3 py-1.5 text-right font-medium text-gray-600">ได้รับ</th>
+                        <th scope="col" className="py-1.5 pl-3 text-right font-medium text-gray-600">ค้าง</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {order.items.map((item) => {
+                        const ordered = Number(item.quantity);
+                        const received = Math.min(Number(item.received_qty ?? 0), ordered);
+                        const outstanding = ordered - received;
+                        return (
+                          <tr key={item.item_id}>
+                            <td className="border-t border-line py-1.5 pr-3">{item.item_name}</td>
+                            <td className="border-t border-line px-3 py-1.5 text-right">{ordered} {item.unit}</td>
+                            <td className="border-t border-line px-3 py-1.5 text-right text-ok">{received} {item.unit}</td>
+                            <td className={`border-t border-line py-1.5 pl-3 text-right ${outstanding > 0 ? "font-semibold" : "text-gray-600"}`}>{outstanding} {item.unit}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
               <div className="flex flex-wrap justify-end gap-2">
                 <button type="button" onClick={() => exportPurchaseOrderCsv(order)} className={btnClass}>Excel (CSV)</button>
                 <button type="button" onClick={() => void printOrder(order)} className={btnClass}>บันทึก PDF</button>
