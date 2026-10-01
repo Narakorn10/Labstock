@@ -266,6 +266,15 @@ export default function CountPage() {
   }
   if (!user) return null;
 
+  const refillDiff = (item: CountItem) => {
+    const target = item.weeklyTarget || 0;
+    return item.actual !== "" && item.actual < target ? target - item.actual : 0;
+  };
+
+  const renderRefillStatus = (item: CountItem, diff: number, buttonClassName = "") => (
+    item.refilled ? <span className="inline-flex items-center gap-1.5 rounded-full bg-ok-bg px-3 py-1.5 text-xs font-medium text-ok"><CheckCircle size={14} />เติมสต็อกแล้ว</span> : diff > 0 ? <button onClick={() => openPreview([item])} disabled={submitting} className={`inline-flex items-center gap-1.5 rounded-[10px] bg-ink px-3.5 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-50 ${buttonClassName}`}><ShoppingCart size={15} />เบิกเติม {diff} {item.unit}</button> : item.actual !== "" ? <span className="inline-flex items-center gap-1.5 rounded-full bg-ok-bg px-3 py-1.5 text-xs font-medium text-ok"><Smile size={14} />สต็อกหน้างานพอใช้</span> : <span className="text-xs text-ink-muted">รอนับรายการนี้</span>
+  );
+
   return (
     <div className="space-y-6 pb-24">
       <div>
@@ -290,7 +299,7 @@ export default function CountPage() {
             <MultiSelect label="บริษัท (Vendor)" options={categories.vendors} selected={filterVendor} onChange={setFilterVendor} />
           </div>
 
-          <div className="mt-5 overflow-x-auto">
+          <div className="mt-5 hidden overflow-x-auto md:block">
             <table className="w-full min-w-[720px] border-separate border-spacing-0 text-left">
               <thead>
                 <tr className="text-[13px] font-medium text-gray-600">
@@ -304,31 +313,51 @@ export default function CountPage() {
               <tbody>
                 {filteredItems.map((item) => {
                   const target = item.weeklyTarget || 0;
-                  const diff = item.actual !== "" && item.actual < target ? target - item.actual : 0;
+                  const diff = refillDiff(item);
                   return (
                     <tr key={item.itemId} className="border-b border-line">
                       <td className="border-b border-line px-3.5 py-3"><p className="text-sm font-medium text-ink">{item.name}</p><p className="mt-0.5 text-xs text-ink-muted">{item.itemId}{item.reagentType ? ` · ${item.reagentType}` : ""}{item.jobType ? ` · ${item.jobType}` : ""}</p></td>
                       <td className="border-b border-line px-3.5 py-3 text-right text-sm text-ink">{item.quantity} <span className="text-xs text-ink-muted">{item.unit}</span></td>
                       <td className="border-b border-line px-3.5 py-3 text-right text-sm text-ink">{target} <span className="text-xs text-ink-muted">{item.unit}</span></td>
                       <td className="border-b border-line px-3.5 py-3"><input type="number" min="0" value={item.actual} onChange={(event) => handleInput(item.itemId, event.target.value)} aria-label={`นับได้จริง ${item.name}`} placeholder="ระบุจำนวน" className="min-h-[38px] w-28 rounded-[10px] border border-line bg-white px-3 text-center text-sm font-semibold text-ink outline-none focus:border-gray-400" /></td>
-                      <td className="border-b border-line px-3.5 py-3">{item.refilled ? <span className="inline-flex items-center gap-1.5 rounded-full bg-ok-bg px-3 py-1.5 text-xs font-medium text-ok"><CheckCircle size={14} />เติมสต็อกแล้ว</span> : diff > 0 ? <button onClick={() => openPreview([item])} disabled={submitting} className="inline-flex items-center gap-1.5 rounded-[10px] bg-ink px-3.5 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-50"><ShoppingCart size={15} />เบิกเติม {diff} {item.unit}</button> : item.actual !== "" ? <span className="inline-flex items-center gap-1.5 rounded-full bg-ok-bg px-3 py-1.5 text-xs font-medium text-ok"><Smile size={14} />สต็อกหน้างานพอใช้</span> : <span className="text-xs text-ink-muted">รอนับรายการนี้</span>}</td>
+                      <td className="border-b border-line px-3.5 py-3">{renderRefillStatus(item, diff)}</td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
-            {!filteredItems.length && !loading && <div className="py-16 text-center text-ink-muted"><ClipboardList className="mx-auto mb-3 opacity-40" size={48} strokeWidth={1.5} /><p className="text-sm">ไม่พบรายการที่ตรงกับเงื่อนไข</p></div>}
           </div>
 
-          <div className="sticky bottom-4 z-10 mt-5 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-line bg-[#fafafa] px-4 py-3.5">
-            <div className="flex gap-8">
-              <div><p className="text-xs text-ink-muted">นับแล้ว</p><p className="text-2xl font-medium text-ink">{countedCount} / {reagents.length} <span className="text-sm text-ink-muted">รายการ</span></p></div>
-              <div><p className="text-xs text-ink-muted">ต้องเบิกเติม</p><p className={`text-2xl font-medium ${refillItems.length ? "text-crit" : "text-ink"}`}>{refillItems.length} <span className="text-sm text-ink-muted">รายการ</span></p></div>
+          <div className="mt-5 space-y-3 md:hidden">
+            {filteredItems.map((item) => {
+              const diff = refillDiff(item);
+              return (
+                <article key={item.itemId} className="rounded-xl border border-line p-4">
+                  <p className="text-[15px] font-medium text-ink">{item.name}</p>
+                  <p className="mt-0.5 text-xs text-ink-muted">{item.itemId}{item.reagentType ? ` · ${item.reagentType}` : ""}{item.jobType ? ` · ${item.jobType}` : ""}</p>
+                  <dl className="mt-3 grid grid-cols-2 gap-2">
+                    <div className="rounded-[10px] bg-ground px-3 py-2"><dt className="text-xs text-ink-muted">คงเหลือคลังกลาง</dt><dd className="text-sm font-medium text-ink">{item.quantity} <span className="text-xs font-normal text-ink-muted">{item.unit}</span></dd></div>
+                    <div className="rounded-[10px] bg-ground px-3 py-2"><dt className="text-xs text-ink-muted">เป้าหมาย</dt><dd className="text-sm font-medium text-ink">{item.weeklyTarget || 0} <span className="text-xs font-normal text-ink-muted">{item.unit}</span></dd></div>
+                  </dl>
+                  <div className="mt-3 grid grid-cols-2 items-center gap-3">
+                    <input type="number" inputMode="numeric" min="0" value={item.actual} onChange={(event) => handleInput(item.itemId, event.target.value)} aria-label={`นับได้จริง ${item.name}`} placeholder="นับได้จริง" className="min-h-11 w-full rounded-[10px] border border-line bg-white px-3 text-center text-base font-semibold text-ink outline-none focus:border-gray-400" />
+                    <div className="flex justify-end">{renderRefillStatus(item, diff, "min-h-11 w-full justify-center")}</div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+          {!filteredItems.length && !loading && <div className="py-16 text-center text-ink-muted"><ClipboardList className="mx-auto mb-3 opacity-40" size={48} strokeWidth={1.5} /><p className="text-sm">ไม่พบรายการที่ตรงกับเงื่อนไข</p></div>}
+
+          <div className="sticky bottom-4 z-10 mt-5 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-line bg-[#fafafa] px-4 py-3.5 pb-[calc(0.875rem+env(safe-area-inset-bottom))] sm:pb-3.5">
+            <div className="flex gap-6 sm:gap-8">
+              <div><p className="text-xs text-ink-muted">นับแล้ว</p><p className="text-xl font-medium text-ink sm:text-2xl">{countedCount} / {reagents.length} <span className="text-sm text-ink-muted">รายการ</span></p></div>
+              <div><p className="text-xs text-ink-muted">ต้องเบิกเติม</p><p className={`text-xl font-medium sm:text-2xl ${refillItems.length ? "text-crit" : "text-ink"}`}>{refillItems.length} <span className="text-sm text-ink-muted">รายการ</span></p></div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {countedCount > 0 && <button onClick={handleClearAll} className="inline-flex items-center gap-2 rounded-[10px] border border-line bg-white px-4 py-[9px] text-sm font-medium text-ink hover:bg-gray-50"><Trash2 size={15} />ล้างยอดนับค้าง</button>}
+            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
+              {countedCount > 0 && <button onClick={handleClearAll} className="inline-flex items-center justify-center gap-2 rounded-[10px] border border-line bg-white px-4 py-[9px] text-sm font-medium text-ink hover:bg-gray-50"><Trash2 size={15} />ล้างยอดนับค้าง</button>}
               {countedCount > 0 && <button onClick={handleSaveForLater} disabled={savingWorkOrder} className="rounded-[10px] border border-line bg-white px-4 py-[9px] text-sm font-medium text-ink hover:bg-gray-50 disabled:opacity-50">{savingWorkOrder ? "กำลังบันทึก..." : "บันทึกใบงานไว้ก่อน"}</button>}
-              <button onClick={() => openPreview(refillItems)} disabled={submitting || refillItems.length === 0} className="inline-flex items-center gap-2 rounded-[10px] bg-ink px-5 py-3 text-sm font-medium text-white hover:bg-black disabled:opacity-40"><ArrowRightLeft size={15} />ดูสรุปก่อนเบิก</button>
+              <button onClick={() => openPreview(refillItems)} disabled={submitting || refillItems.length === 0} className="col-span-2 inline-flex items-center justify-center gap-2 rounded-[10px] bg-ink px-5 py-3 text-sm font-medium text-white hover:bg-black disabled:opacity-40"><ArrowRightLeft size={15} />ดูสรุปก่อนเบิก</button>
             </div>
           </div>
         </section>
