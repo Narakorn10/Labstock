@@ -11,7 +11,6 @@ import {
   LineChart,
   Pie,
   PieChart,
-  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -177,7 +176,6 @@ export default function AnalysisPage() {
     );
   }
 
-  const riskChart = riskItems.slice(0, 10).map((item) => ({ ...item, days: item.daysUntilMin ?? 0 }));
   const peakUsage = dailyTrend.reduce((max, row) => Math.max(max, row.used), 0);
   const cardClass = 'rounded-2xl border border-line bg-white p-5';
   const axisTick = { fontSize: 12, fill: '#6b6e72' };
@@ -224,38 +222,10 @@ export default function AnalysisPage() {
           ))}
         </div>
 
-        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.9fr)_minmax(0,1fr)]">
-          <section aria-labelledby="days-left-heading" className={cardClass}>
-            <div className="mb-4 flex items-start gap-2.5">
-              <ShoppingCart className="mt-0.5 text-crit" size={20} strokeWidth={1.5} aria-hidden="true" />
-              <div>
-                <h2 id="days-left-heading" className="text-xl font-medium">วันคงเหลือเทียบเวลารอของ</h2>
-                <p className="mt-0.5 text-[13px] text-gray-600">เส้นแดง = 7 วัน กดแท่งเพื่อดูแนวโน้มรายน้ำยา</p>
-              </div>
-            </div>
-            {riskChart.length === 0 ? (
-              <p className="py-6 text-sm text-gray-600">ไม่มีน้ำยาที่ควรสั่งหรือวิกฤตในตอนนี้</p>
-            ) : (
-              <div className="h-[22rem]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={riskChart} layout="vertical" margin={{ left: 8, right: 64, bottom: 16 }} onClick={selectChartItem}>
-                    <XAxis type="number" hide domain={[0, (max: number) => Math.max(max, 8)]} />
-                    <YAxis type="category" dataKey="name" width={205} tick={nameTick} tickLine={false} axisLine={false} />
-                    <Tooltip formatter={(value) => [`${formatNumber(Number(value) || 0)} วัน`, 'เหลือก่อนถึง Min']} />
-                    <ReferenceLine x={7} stroke="#c9302c" strokeDasharray="3 3" label={{ value: '7 วัน', fill: '#c9302c', fontSize: 12, position: 'bottom' }} />
-                    <Bar dataKey="days" name="วันคงเหลือ" barSize={18} minPointSize={3} radius={[0, 4, 4, 0]}>
-                      {riskChart.map((item) => <Cell key={item.itemId} fill={statusMeta[item.status].color} cursor="pointer" />)}
-                      <LabelList dataKey="days" position="right" formatter={(value) => `${formatNumber(Number(value) || 0)} วัน`} style={{ fontSize: 12, fill: '#6b6e72' }} />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </section>
-
-          <section aria-labelledby="status-heading" className={cardClass}>
-            <h2 id="status-heading" className="text-xl font-medium">สถานะน้ำยา</h2>
-            <p className="mt-0.5 text-[13px] text-gray-600">กดสีเพื่อกรองรายการด้านล่าง</p>
+        <section aria-labelledby="status-heading" className={cardClass}>
+          <h2 id="status-heading" className="text-xl font-medium">สถานะน้ำยา</h2>
+          <p className="mt-0.5 text-[13px] text-gray-600">กดสีเพื่อกรองรายการด้านล่าง</p>
+          <div className="md:grid md:grid-cols-[280px_minmax(0,1fr)] md:items-center md:gap-8">
             <div className="relative mt-3 h-[210px]">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -270,7 +240,7 @@ export default function AnalysisPage() {
                 <span className="text-[32px] font-medium leading-none">{insights.length}</span>
               </div>
             </div>
-            <div className="mt-4">
+            <div className="mt-4 md:mt-0">
               {statusPie.map((entry) => (
                 <button
                   key={entry.status}
@@ -285,8 +255,8 @@ export default function AnalysisPage() {
                 </button>
               ))}
             </div>
-          </section>
-        </div>
+          </div>
+        </section>
 
         <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
           <section aria-labelledby="trend-heading" className={cardClass}>

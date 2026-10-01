@@ -1,26 +1,29 @@
-# WIP — 2026-10-01 13:44
+# WIP — 2026-10-01 14:35
 
 ## Git Status
 
 ```text
-branch: update/desktop-shell (ล่วงหน้า origin 13 commit ยังไม่ push, PR #27 เปิดอยู่)
-commit ล่าสุด: 3ac7a52 Update: Vendor portal shows ordered / received / outstanding per line
-?? "ψ/memory/retrospectives/2026-10/"   (รอ commit)
- M "ψ/WIP.md"                          (รอ commit)
+branch: update/analysis-remove-days-left (สะอาด)
+push แล้ว ยังไม่เปิด PR (base ควรเป็น update/desktop-shell หรือรอ PR #27 merge):
+  update/mobile-login-4d, update/header-department-name, update/analysis-remove-days-left
+update/desktop-shell push แล้ว ถึง 4222426 (PR #27 เปิดอยู่)
+?? "ψ/memory/retrospectives/2026-10/01/14.33_mobile-login-header-analysis.md"   (รอ commit)
+ M "ψ/WIP.md"                                                                  (รอ commit)
 ```
 
 ## งานค้าง
+- [ ] ผู้ใช้ตรวจหน้าจริงของ 3 branch ใหม่: login มือถือที่ 390px, หัวข้อ Dashboard (ต้องมี `users.department` ในฐานข้อมูลและ user มีค่า; ยังไม่ได้ลองกับข้อมูลจริง), Analysis การ์ดสถานะเต็มแถว (ต้อง login Admin/Manager)
+- [ ] เปิด PR ของทั้ง 3 branch (ยังไม่ได้ขออนุญาตเปิด)
 - [ ] ตัดสินใจ 3 ข้อจาก /scrutinize งานรับของ: (1) หมายเหตุตอนยืนยันรับบริษัทมองเห็น → ใส่ข้อความเตือน หรือซ่อน (2) ผู้ดูแลฐานข้อมูลรัน `SELECT id, po_id, quantity, received_qty, accepted_qty FROM purchase_order_items WHERE COALESCE(received_qty,0) <> COALESCE(accepted_qty,0);` ถ้ามีแถว ให้หน้าจอ/สูตรอิง `accepted_qty` (3) เตือนแล็บเรื่อง PO ค้างเลยกำหนดโดยไม่ผูก `SHIPMENTS_ENABLED` (ส่งแจ้งเตือน ต้องขออนุมัติ)
 - [ ] ผู้ใช้ตรวจหน้าจริงที่ยังไม่ได้ดู: Settings, Notifications, Vendor Orders, ปุ่ม "ยืนยันรับของ" ใน `/orders/[id]` (ห้ามกดธุรกรรมที่ไม่ตั้งใจ)
-- [ ] ถามผู้ใช้ก่อน push 13 commit เข้า PR #27 (ยังไม่ได้รับอนุญาต)
 - [ ] ปรับหน้านโยบายสั่งซื้อน้ำยา `/settings/reagent-orders` ตามต้นแบบ (หน้าสุดท้าย)
-- [ ] ตั้ง `hookTimeout` ใน `vitest.config.ts` (เทสต์ฐานข้อมูลจำลอง timeout เป็นบางรอบ)
+- [ ] ตั้ง `hookTimeout` ใน `vitest.config.ts` (เทสต์ฐานข้อมูลจำลอง timeout สลับไฟล์เมื่อรันทั้งชุด แต่ผ่านเมื่อรันแยก)
 - [ ] เก็บกวาด: `.env.local.bak-before-authsecret` (gitignore) และ dev server พอร์ต 3100 ที่อาจยังรันอยู่
-- [ ] งานค้างเดิม: ตรวจ `/activity`, ใบงาน #31/#1, แจ้งเตือน Vendor + log cron outbox, ใบสั่งซื้อค้าง 5 ใบ, สรุปรายสัปดาห์ 2026-10-05, ขยาย `trackRoute`, ชื่อหน่วยงานใน hero, badge ข้างเมนู, เครื่องหมาย +/- ใน Logs
+- [ ] งานค้างเดิม: ตรวจ `/activity`, ใบงาน #31/#1, แจ้งเตือน Vendor + log cron outbox, ใบสั่งซื้อค้าง 5 ใบ, สรุปรายสัปดาห์ 2026-10-05, ขยาย `trackRoute`, badge ข้างเมนู, เครื่องหมาย +/- ใน Logs
 
 ## Context
-- `SHIPMENTS_ENABLED = false` (`src/lib/feature-flags.ts`) ซ่อนเมนู Receive from Vendor / Vendor Shipments โดยตั้งใจ; flow ใหม่ให้แล็บกด "ยืนยันรับของ" ที่ `/orders/[id]` (ไม่มี migration, ไม่แตะสต๊อก ไม่แจ้งเตือน) และ v29 (ตาราง `departments`) ผู้ใช้รันแล้ว
-- ต้นแบบ `Desktop/design_handoff_labstock`; ตัวจับภาพเทียบหายแล้ว ต้องสร้างใหม่ถ้าจะเทียบภาพ; ไฟล์ส่วนใหญ่เป็น CRLF (แก้ด้วยสคริปต์ที่คงปลายบรรทัดเดิม)
+- ชื่อหน่วยงานใน hero แก้แล้วที่ `update/header-department-name` โดยอ่านจาก `/api/auth/me` ไม่แตะ login/session/JWT; `SHIPMENTS_ENABLED = false` (`src/lib/feature-flags.ts`) ซ่อนเมนู Vendor Shipments โดยตั้งใจ
+- ต้นแบบ `Desktop/LabStock inventory management UI 4D/design_handoff_labstock`; ไฟล์ส่วนใหญ่เป็น CRLF (แก้ด้วยสคริปต์ที่คงปลายบรรทัดเดิม)
 
 ---
 
