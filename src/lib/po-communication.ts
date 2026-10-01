@@ -10,6 +10,7 @@ export type PurchaseOrderCommunicationEvent =
   | "PO_SHIPPED"
   | "PO_RECEIVED"
   | "PO_CANCELLED"
+  | "PO_LAB_RECEIPT_CONFIRMED"
   | "SHIPMENT_REPLACEMENT_REQUIRED"
   | "VENDOR_RESPONSE_OVERDUE"
   | "DELIVERY_OVERDUE";
@@ -33,9 +34,11 @@ function eventVisibility(actorRole?: string, recipientRole?: string) {
   return "BOTH";
 }
 
-function shouldNotifyRecipient(event: PurchaseOrderCommunicationEvent, actorRole: string | undefined, recipientRole: string) {
+export function shouldNotifyRecipient(event: PurchaseOrderCommunicationEvent, actorRole: string | undefined, recipientRole: string) {
   const labRecipient = recipientRole === "Admin" || recipientRole === "Manager";
   const vendorRecipient = recipientRole === "Vendor";
+  // Lab confirming receipt is recorded in the timeline only; nobody is notified.
+  if (event === "PO_LAB_RECEIPT_CONFIRMED") return false;
   // Late-Vendor reminders go to the Lab only; the Lab decides whether to chase or cancel.
   if (event === "VENDOR_RESPONSE_OVERDUE" || event === "DELIVERY_OVERDUE") return labRecipient;
   if (event === "PO_REVIEW_REQUIRED" || event === "SHIPMENT_REPLACEMENT_REQUIRED") return labRecipient || (event === "SHIPMENT_REPLACEMENT_REQUIRED" && vendorRecipient);
