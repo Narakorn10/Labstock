@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth-provider";
+import { usePopup } from "@/components/popup/popup-provider";
 
 type PurchaseOrderStatus = "PENDING_MANAGER_REVIEW" | "PENDING_LAB_REVIEW" | "SUBMITTED" | "ACKNOWLEDGED" | "REVISION_REQUESTED" | "CONFIRMED" | "PARTIALLY_SHIPPED" | "SHIPPED" | "PARTIALLY_RECEIVED" | "RECEIVED" | "REJECTED" | "CANCELLED" | "CLOSED_SHORT";
 
@@ -166,6 +167,7 @@ const ORDER_COLUMNS: Array<{
 ];
 
 export default function PurchaseOrdersPage() {
+  const { confirm, notify } = usePopup();
   const router = useRouter();
   const { user } = useAuth();
   const canManageLabOrders = user?.role === "Admin" || user?.role === "Manager";
@@ -264,7 +266,7 @@ export default function PurchaseOrdersPage() {
 
   const loadSuggestions = async () => {
     if (!vendor.trim()) {
-      alert("กรุณาเลือกบริษัทก่อน");
+      void notify({ title: "ข้อมูลไม่ครบ", description: "กรุณาเลือกบริษัทก่อน", severity: "warning" });
       return;
     }
     setSuggestLoading(true);
@@ -362,7 +364,7 @@ export default function PurchaseOrdersPage() {
   const handleSave = async () => {
     const missingOverrideReason = items.find((item) => item.selected_basis === "MANUAL" && !item.override_reason?.trim());
     if (missingOverrideReason) {
-      alert(`กรุณาระบุเหตุผลที่แก้จำนวนของ ${missingOverrideReason.item_name || missingOverrideReason.item_id}`);
+      void notify({ title: "ข้อมูลไม่ครบ", description: `กรุณาระบุเหตุผลที่แก้จำนวนของ ${missingOverrideReason.item_name || missingOverrideReason.item_id}`, severity: "warning" });
       return;
     }
     setLoading(true);
@@ -388,11 +390,11 @@ export default function PurchaseOrdersPage() {
         await fetchOrders();
       } else {
         const data = await res.json().catch(() => null);
-        alert(data?.error ?? (editingOrder ? "ไม่สามารถแก้ไขใบสั่งน้ำยาได้" : "ไม่สามารถสร้างใบสั่งน้ำยาได้"));
+        void notify({ title: "เกิดข้อผิดพลาด", description: data?.error ?? (editingOrder ? "ไม่สามารถแก้ไขใบสั่งน้ำยาได้" : "ไม่สามารถสร้างใบสั่งน้ำยาได้"), severity: "danger" });
       }
     } catch (e) {
       console.error(e);
-      alert(editingOrder ? "เกิดข้อผิดพลาดขณะแก้ไขใบสั่งน้ำยา" : "เกิดข้อผิดพลาดขณะสร้างใบสั่งน้ำยา");
+      void notify({ title: "เกิดข้อผิดพลาด", description: editingOrder ? "เกิดข้อผิดพลาดขณะแก้ไขใบสั่งน้ำยา" : "เกิดข้อผิดพลาดขณะสร้างใบสั่งน้ำยา", severity: "danger" });
     } finally {
       setLoading(false);
     }
@@ -488,7 +490,13 @@ export default function PurchaseOrdersPage() {
 
   const reviewOrder = async (id: number, status: "CONFIRMED" | "REJECTED") => {
     const action = status === "CONFIRMED" ? "ยืนยันรายการ" : "ปฏิเสธรายการ";
-    if (!confirm(`ต้องการ${action}นี้หรือไม่?`)) return;
+    const confirmed = await confirm({
+      title: action,
+      description: `ต้องการ${action}นี้หรือไม่?`,
+      confirmLabel: action,
+      destructive: status === "REJECTED",
+    });
+    if (!confirmed) return;
 
     const res = await fetch(`/api/purchase-orders/${id}`, {
       method: "PATCH",
@@ -497,7 +505,7 @@ export default function PurchaseOrdersPage() {
     });
     if (!res.ok) {
       const data = await res.json().catch(() => null);
-      alert(data?.error ?? "อัปเดตรายการไม่สำเร็จ");
+      void notify({ title: "เกิดข้อผิดพลาด", description: data?.error ?? "อัปเดตรายการไม่สำเร็จ", severity: "danger" });
       return;
     }
     await fetchOrders();

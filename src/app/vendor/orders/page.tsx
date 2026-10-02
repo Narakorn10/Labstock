@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
+import { usePopup } from "@/components/popup/popup-provider";
 import { exportPurchaseOrderCsv, openPurchaseOrderPrintWindow, printPurchaseOrderPdf } from "@/lib/purchase-order-export";
 
 type OrderItem = { item_id: string; item_name: string; quantity: number; unit: string };
@@ -52,6 +53,7 @@ const primaryBtnClass = "inline-flex items-center rounded-[10px] border border-i
 const dangerBtnClass = "inline-flex items-center rounded-[10px] border border-line bg-white px-3.5 py-2 text-sm font-medium text-crit transition hover:bg-crit-bg";
 
 export default function VendorOrdersPage() {
+  const { confirm, notify } = usePopup();
   const { user } = useAuth();
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [suggestions, setSuggestions] = useState<SuggestedItem[]>([]);
@@ -91,12 +93,12 @@ export default function VendorOrdersPage() {
         })));
       } else {
         const error = (await suggestionsResponse.json().catch(() => null)) as { error?: string } | null;
-        alert(error?.error ?? "ไม่สามารถคำนวณรายการแนะนำได้ กรุณาลองใหม่อีกครั้ง");
+        void notify({ title: "เกิดข้อผิดพลาด", description: error?.error ?? "ไม่สามารถคำนวณรายการแนะนำได้ กรุณาลองใหม่อีกครั้ง", severity: "danger" });
       }
     } finally {
       setLoading(false);
     }
-  }, [user?.vendor]);
+  }, [user?.vendor, notify]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadData(), 0);
@@ -105,7 +107,7 @@ export default function VendorOrdersPage() {
 
   const openNewProposal = () => {
     if (suggestions.length === 0) {
-      alert("ยังไม่มีน้ำยาที่ถึงจุดสั่งซื้อ");
+      void notify({ title: "ไม่มีรายการ", description: "ยังไม่มีน้ำยาที่ถึงจุดสั่งซื้อ", severity: "info" });
       return;
     }
     setEditingOrder(null);
@@ -121,11 +123,11 @@ export default function VendorOrdersPage() {
 
   const saveDraft = async () => {
     if (!user?.vendor || draftItems.length === 0 || draftItems.some((item) => !Number.isInteger(item.quantity) || item.quantity <= 0)) {
-      alert("กรุณาระบุจำนวนที่ถูกต้องทุกรายการ");
+      void notify({ title: "ข้อมูลไม่ครบ", description: "กรุณาระบุจำนวนที่ถูกต้องทุกรายการ", severity: "warning" });
       return;
     }
     if (editingOrder && !draftNote.trim()) {
-      alert("กรุณาระบุเหตุผลที่แก้ไขรายการเพื่อให้ Lab ตรวจสอบ");
+      void notify({ title: "ข้อมูลไม่ครบ", description: "กรุณาระบุเหตุผลที่แก้ไขรายการเพื่อให้ Lab ตรวจสอบ", severity: "warning" });
       return;
     }
 
@@ -141,7 +143,7 @@ export default function VendorOrdersPage() {
       });
       if (!response.ok) {
         const data = await response.json().catch(() => null);
-        alert(data?.error ?? "ส่งรายการไม่สำเร็จ");
+        void notify({ title: "เกิดข้อผิดพลาด", description: data?.error ?? "ส่งรายการไม่สำเร็จ", severity: "danger" });
         return;
       }
       setDraftItems([]);
@@ -158,14 +160,19 @@ export default function VendorOrdersPage() {
     const prompt = action === "ACKNOWLEDGE"
       ? "รับทราบใบสั่งซื้อและเริ่มตรวจสอบการจัดหาใช่หรือไม่?"
       : "ยืนยันว่า Vendor สามารถจัดรายการนี้ได้ตามเดิมหรือไม่?";
-    if (!confirm(prompt)) return;
+    const confirmed = await confirm({
+      title: action === "ACKNOWLEDGE" ? "รับทราบใบสั่งซื้อ" : "ยืนยันการจัดหา",
+      description: prompt,
+      confirmLabel: action === "ACKNOWLEDGE" ? "รับทราบ" : "ยืนยัน",
+    });
+    if (!confirmed) return;
     const response = await fetch(`/api/purchase-orders/${order.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", ...getAuthHeaders() },
       body: JSON.stringify({ action }),
     });
     if (!response.ok) {
-      alert("ยืนยันรายการไม่สำเร็จ");
+      void notify({ title: "เกิดข้อผิดพลาด", description: "ยืนยันรายการไม่สำเร็จ", severity: "danger" });
       return;
     }
     await loadData();
@@ -174,7 +181,13 @@ export default function VendorOrdersPage() {
   const rejectLabOrder = async (order: PurchaseOrder) => {
     const reason = prompt("โปรดระบุเหตุผลที่ปฏิเสธใบสั่งน้ำยา");
     if (!reason?.trim()) return;
-    if (!confirm("ยืนยันการปฏิเสธใบสั่งน้ำยานี้หรือไม่?")) return;
+    const confirmed = await confirm({
+      title: "ปฏิเสธใบสั่งน้ำยา",
+      description: "ยืนยันการปฏิเสธใบสั่งน้ำยานี้หรือไม่?",
+      confirmLabel: "ปฏิเสธ",
+      destructive: true,
+    });
+    if (!confirmed) return;
 
     const response = await fetch(`/api/purchase-orders/${order.id}`, {
       method: "PATCH",
@@ -183,7 +196,7 @@ export default function VendorOrdersPage() {
     });
     if (!response.ok) {
       const data = await response.json().catch(() => null);
-      alert(data?.error ?? "ปฏิเสธรายการไม่สำเร็จ");
+      void notify({ title: "เกิดข้อผิดพลาด", description: data?.error ?? "ปฏิเสธรายการไม่สำเร็จ", severity: "danger" });
       return;
     }
     await loadData();
@@ -200,7 +213,7 @@ export default function VendorOrdersPage() {
       printPurchaseOrderPdf(detail, { printWindow });
     } catch (error) {
       printWindow?.close();
-      alert(error instanceof Error ? error.message : "ไม่สามารถเปิดหน้าพิมพ์ได้");
+      void notify({ title: "เกิดข้อผิดพลาด", description: error instanceof Error ? error.message : "ไม่สามารถเปิดหน้าพิมพ์ได้", severity: "danger" });
     }
   };
 

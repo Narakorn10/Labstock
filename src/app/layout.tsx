@@ -4,6 +4,7 @@ import Script from "next/script";
 import "./globals.css";
 import { AuthProvider } from "@/components/auth-provider";
 import AppShell from "@/components/app-shell";
+import { PopupProvider } from "@/components/popup/popup-provider";
 
 const barlow = Barlow({
   subsets: ["latin", "latin-ext"],
@@ -37,7 +38,9 @@ export default function RootLayout({
           <Script src="https://mcp.figma.com/mcp/html-to-design/capture.js" strategy="afterInteractive" />
         )}
         <AuthProvider>
-          <AppShell>{children}</AppShell>
+          <PopupProvider>
+            <AppShell>{children}</AppShell>
+          </PopupProvider>
         </AuthProvider>
       </body>
     </html>
