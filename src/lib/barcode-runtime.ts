@@ -1,14 +1,6 @@
 import sql from '@/lib/db';
 import type { BarcodePattern, BarcodePatternV2Runtime, BarcodeRuntimeResponse } from '@/lib/api-client';
 
-export function isBarcodeLearningV2ManagementEnabled() {
-  return process.env.BARCODE_LEARNING_V2_MANAGEMENT_ENABLED === 'true';
-}
-
-export function isBarcodeLearningV2RuntimeEnabled() {
-  return process.env.BARCODE_LEARNING_V2_RUNTIME_ENABLED === 'true';
-}
-
 async function loadLegacyPatterns(): Promise<BarcodePattern[]> {
   const rows = await sql`
     SELECT id, name, regex_pattern, item_id_group, lot_no_group, exp_date_group
@@ -31,14 +23,11 @@ async function loadActiveV2Patterns(): Promise<BarcodePatternV2Runtime[]> {
 
 /**
  * The single runtime loader used by web, mobile and station catalog endpoints.
- * When V2 is unavailable or disabled it returns the exact legacy pattern list.
+ * V2 is always on, but only ACTIVE patterns are served and V1 still wins first;
+ * when V2 cannot be loaded it returns the exact legacy pattern list.
  */
 export async function loadRuntimeBarcodePatterns(): Promise<BarcodeRuntimeResponse> {
   const patterns = await loadLegacyPatterns();
-  if (!isBarcodeLearningV2RuntimeEnabled()) {
-    return { patterns, v2Patterns: [], engineVersion: 1, v2Available: false };
-  }
-
   try {
     const v2Patterns = await loadActiveV2Patterns();
     return { patterns, v2Patterns, engineVersion: v2Patterns.length > 0 ? 2 : 1, v2Available: true };
