@@ -17,7 +17,7 @@ type OutboxRow = {
 function poFromPayload(payload: Record<string, unknown>) {
   const value = payload.po;
   if (!value || typeof value !== "object") return null;
-  return value as { po_number: string; vendor: string; status: string; expected_date?: string | null; items?: Array<{ item_name: string; quantity: number; unit: string }> };
+  return value as { id?: number; po_number: string; vendor: string; status: string; expected_date?: string | null; items?: Array<{ item_name: string; quantity: number; unit: string }> };
 }
 
 function emailFor(row: OutboxRow) {
@@ -35,15 +35,32 @@ const REMINDER_HEADINGS: Record<string, string> = {
   DELIVERY_OVERDUE: "⏰ เลยกำหนดส่งของ",
 };
 
-async function deliver(row: OutboxRow) {
+// A retried reminder can arrive hours late; only send it while the order is still in the late state.
+const REMINDER_STATUSES: Record<string, string[]> = {
+  VENDOR_RESPONSE_OVERDUE: ["SUBMITTED", "ACKNOWLEDGED"],
+  DELIVERY_OVERDUE: ["CONFIRMED", "PARTIALLY_SHIPPED", "PARTIALLY_RECEIVED"],
+};
+
+async function isStaleReminder(row: OutboxRow) {
+  const statuses = REMINDER_STATUSES[row.event_type];
+  if (!statuses) return false;
+  const poId = Number(poFromPayload(row.payload)?.id);
+  if (!Number.isFinite(poId)) return false;
+  const rows = await sql`SELECT status FROM purchase_orders WHERE id = ${poId} LIMIT 1`;
+  return !rows.length || !statuses.includes(String(rows[0].status));
+}
+
+async function deliver(row: OutboxRow): Promise<"DELIVERED" | "SKIPPED"> {
+  if (await isStaleReminder(row)) return "SKIPPED";
   if (row.channel === "LINE") {
     const po = poFromPayload(row.payload);
     if (!po) throw new Error("Outbox payload has no purchase order");
     await sendLinePushStrict(row.recipient_address, [generatePOStatusTemplate(po, REMINDER_HEADINGS[row.event_type]) as messagingApi.Message]);
-    return;
+    return "DELIVERED";
   }
   const email = emailFor(row);
   await sendEmailStrict(row.recipient_address, email.subject, email.html);
+  return "DELIVERED";
 }
 
 export async function drainNotificationOutbox(limit = 50) {
@@ -69,10 +86,10 @@ export async function drainNotificationOutbox(limit = 50) {
   let failed = 0;
   for (const row of claimRows) {
     try {
-      await deliver(row);
+      const outcome = await deliver(row);
       await sql`
         UPDATE notification_outbox
-        SET status = 'DELIVERED', delivered_at = NOW(), locked_at = NULL, locked_by = NULL, last_error = NULL, updated_at = NOW()
+        SET status = ${outcome}, delivered_at = ${outcome === "DELIVERED" ? new Date() : null}, locked_at = NULL, locked_by = NULL, last_error = NULL, updated_at = NOW()
         WHERE id = ${row.id} AND status = 'PROCESSING' AND locked_by = ${workerId}
       `;
       delivered += 1;

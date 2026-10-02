@@ -49,6 +49,14 @@ export function shouldNotifyRecipient(event: PurchaseOrderCommunicationEvent, ac
   return labRecipient || vendorRecipient;
 }
 
+/**
+ * LINE is reserved for one message: the Vendor receiving a new Lab order. Every other event
+ * (status changes, overdue reminders, edits to an unacknowledged order) is followed on the web.
+ */
+export function shouldSendLine(event: PurchaseOrderCommunicationEvent, recipientRole: string, action?: unknown) {
+  return event === "PO_CREATED" && recipientRole === "Vendor" && action !== "UPDATE_UNACKNOWLEDGED_LAB_ORDER";
+}
+
 export async function recordPurchaseOrderCommunication(input: {
   poId: number;
   eventType: PurchaseOrderCommunicationEvent;
@@ -101,6 +109,8 @@ export async function recordPurchaseOrderCommunication(input: {
   `;
 
   let queued = 0;
+  // One person may link the same LINE account/email to several usernames; send each address once per event.
+  const seenAddresses = new Set<string>();
   for (const recipient of recipients as Row[]) {
     const role = asString(recipient.role);
     if (!shouldNotifyRecipient(input.eventType, input.actor?.role, role)) continue;
@@ -114,12 +124,16 @@ export async function recordPurchaseOrderCommunication(input: {
       eventType: input.eventType,
       note: input.note ?? null,
     });
+    const lineAllowed = shouldSendLine(input.eventType, role, input.metadata?.action);
     const channels: Array<{ channel: "LINE" | "EMAIL"; address: string | null }> = [
-      { channel: "LINE", address: recipient.line_user_id ? asString(recipient.line_user_id) : null },
+      { channel: "LINE", address: lineAllowed && recipient.line_user_id ? asString(recipient.line_user_id) : null },
       { channel: "EMAIL", address: recipient.email ? asString(recipient.email) : null },
     ];
     for (const channel of channels) {
       if (!channel.address) continue;
+      const addressKey = `${channel.channel}:${channel.address}`;
+      if (seenAddresses.has(addressKey)) continue;
+      seenAddresses.add(addressKey);
       const key = `${eventId}:${asString(recipient.username)}:${channel.channel}`;
       const result = await sql`
         INSERT INTO notification_outbox
