@@ -192,6 +192,7 @@ export interface SettingsResponse {
   machineTypes: string[];
   units: string[];
   vendors: string[];
+  departments?: string[];
 }
 
 export interface Shipment {

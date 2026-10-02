@@ -1,48 +1,59 @@
 'use client';
 
-import { usePathname } from 'next/navigation';
-import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
+import { Search } from 'lucide-react';
+import { useState } from 'react';
 import Sidebar from '@/components/sidebar';
+import { useAuth } from '@/components/auth-provider';
+import { NAVIGATION_GROUPS } from '@/lib/menu-config';
 
 interface AppShellProps {
   children: React.ReactNode;
+}
+
+/** Finds the menu entry (most specific href) that the current path belongs to. */
+function findCrumb(pathname: string) {
+  let best: { group: string; label: string; length: number } | null = null;
+  for (const group of NAVIGATION_GROUPS) {
+    for (const item of group.items) {
+      const matches = pathname === item.href || pathname.startsWith(item.href + '/');
+      if (matches && (!best || item.href.length > best.length)) {
+        best = { group: group.title, label: item.label, length: item.href.length };
+      }
+    }
+  }
+  return best;
 }
 
 export default function AppShell({ children }: AppShellProps) {
   const pathname = usePathname();
   const isMobileSurface = pathname.startsWith('/mobile');
   const isPublicSurface = pathname === '/' || pathname === '/login';
-  const [sidebarHidden, setSidebarHidden] = useState(false);
+  const router = useRouter();
+  // The sidebar is an icon rail that widens on hover; the page moves over with it instead of being covered.
+  const [sidebarWide, setSidebarWide] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const { user } = useAuth();
+  const crumb = findCrumb(pathname);
+  // The header (breadcrumb + search) only makes sense with a signed-in user. LIFF and
+  // sign-up pages keep the original spacing so their layout does not change.
+  const showHeader = Boolean(user);
+  const canSearch = Boolean(user) && user?.role !== 'Vendor';
 
-  useEffect(() => {
-    const handleSidebarShortcut = (event: KeyboardEvent) => {
-      const target = event.target;
-      const isTyping = target instanceof HTMLElement && (
-        target.isContentEditable ||
-        ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
-      );
-
-      if (
-        isTyping ||
-        !window.matchMedia('(min-width: 64rem)').matches ||
-        !(event.ctrlKey || event.metaKey) ||
-        event.key.toLowerCase() !== 'b'
-      ) {
-        return;
-      }
-
-      event.preventDefault();
-      setSidebarHidden((current) => !current);
-    };
-
-    window.addEventListener('keydown', handleSidebarShortcut);
-    return () => window.removeEventListener('keydown', handleSidebarShortcut);
-  }, []);
+  // The inventory overview owns the search box; the header hands the term over to it.
+  const handleSearch = (event: React.FormEvent) => {
+    event.preventDefault();
+    const term = searchTerm.trim();
+    if (pathname === '/dashboard') {
+      window.dispatchEvent(new CustomEvent('labstock:search', { detail: term }));
+    } else {
+      router.push(term ? `/dashboard?q=${encodeURIComponent(term)}` : '/dashboard');
+    }
+  };
 
   if (isMobileSurface) {
     return (
-      <div className="min-h-screen bg-[#f6f8f7]">
+      <div className="min-h-screen bg-gray-50">
         <a
           href="#app-main"
           className="sr-only z-[60] rounded-lg bg-clinical-900 px-4 py-2 text-sm font-semibold text-white focus:not-sr-only focus:fixed focus:left-4 focus:top-4"
@@ -66,30 +77,42 @@ export default function AppShell({ children }: AppShellProps) {
       >
         ข้ามไปยังเนื้อหาหลัก
       </a>
-      <Sidebar desktopHidden={sidebarHidden} />
-      <button
-        type="button"
-        onClick={() => setSidebarHidden((current) => !current)}
-        aria-label={sidebarHidden ? 'แสดงเมนูด้านข้าง' : 'ซ่อนเมนูด้านข้าง'}
-        aria-controls="primary-navigation"
-        aria-expanded={!sidebarHidden}
-        aria-keyshortcuts="Control+B Meta+B"
-        title={sidebarHidden ? 'แสดงเมนูด้านข้าง (Ctrl+B)' : 'ซ่อนเมนูด้านข้าง (Ctrl+B)'}
-        className={`hidden lg:inline-flex fixed top-5 z-30 size-10 items-center justify-center rounded-lg border border-clinical-border bg-white text-clinical-700 shadow-sm transition-all hover:bg-[#eff6f3] active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-clinical-700 ${sidebarHidden ? 'left-5' : 'left-[18.5rem]'}`}
-      >
-        {sidebarHidden ? <PanelLeftOpen size={19} /> : <PanelLeftClose size={19} />}
-      </button>
+      <Sidebar onExpandedChange={setSidebarWide} />
       <main
         id="app-main"
         tabIndex={-1}
-        className={`relative flex min-h-screen min-w-0 flex-1 flex-col transition-[margin] duration-300 ${sidebarHidden ? 'lg:ml-0' : 'lg:ml-72'}`}
+        className={`relative flex min-h-screen min-w-0 flex-1 flex-col transition-[margin] duration-200 ease-in-out ${showHeader ? (sidebarWide ? 'lg:ml-[260px]' : 'lg:ml-[68px]') : 'lg:ml-0'}`}
       >
-        <div className="mx-auto w-full max-w-[1600px] flex-1 px-4 pb-10 pt-20 sm:px-6 sm:pb-12 sm:pt-20 lg:px-10 lg:pt-8 xl:px-12">
+        {showHeader && (
+        <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-line bg-white pl-16 pr-4 lg:gap-4 lg:px-8">
+          {crumb && (
+            <nav aria-label="ตำแหน่งหน้าปัจจุบัน" className="flex min-w-0 items-center gap-2 text-sm">
+              <span className="hidden text-gray-600 sm:inline">{crumb.group}</span>
+              <span className="hidden text-gray-400 sm:inline" aria-hidden="true">/</span>
+              <span className="truncate text-[15px] font-medium text-ink" aria-current="page">{crumb.label}</span>
+            </nav>
+          )}
+          {canSearch && (
+            <form role="search" onSubmit={handleSearch} className="relative ml-auto w-full max-w-[300px]">
+              <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-muted" size={16} strokeWidth={1.5} aria-hidden="true" />
+              <input
+                type="search"
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="ค้นหารหัส หรือชื่อน้ำยา..."
+                aria-label="ค้นหารหัส หรือชื่อน้ำยา"
+                className="h-[38px] w-full rounded-full border border-line bg-white pl-10 pr-4 text-sm text-ink outline-none placeholder:text-ink-muted focus:border-gray-400"
+              />
+            </form>
+          )}
+        </header>
+        )}
+        <div className={`mx-auto w-full max-w-[1440px] flex-1 px-4 pb-12 sm:px-6 lg:px-10 lg:pb-[72px] ${showHeader ? 'pt-6 lg:pt-8' : 'pt-20 lg:pt-8'}`}>
           {children}
         </div>
-        <footer className="border-t border-clinical-border bg-white/80 px-6 py-5 text-center text-xs text-[var(--clinical-muted)] backdrop-blur-sm">
+        <footer className="border-t border-line bg-white/80 px-6 py-5 text-center text-xs text-ink-muted backdrop-blur-sm">
           <div className="flex items-center justify-center gap-2.5">
-            <div className="size-2 rounded-full bg-clinical-700" aria-hidden="true" />
+            <div className="size-2 rounded-full bg-gray-400" aria-hidden="true" />
             <p className="font-medium tracking-wide">LabStock · ระบบบริหารคลังน้ำยา</p>
           </div>
         </footer>

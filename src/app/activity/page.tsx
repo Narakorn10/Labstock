@@ -113,8 +113,8 @@ export default function ActivityPage() {
     <div className="space-y-6 pb-24">
       <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
         <div>
-          <h1 className="text-3xl font-black tracking-tight text-gray-900">กิจกรรมผู้ใช้</h1>
-          <p className="text-sm font-bold text-gray-500">ดูว่าใครทำอะไร และทำไมไม่สำเร็จ (เก็บย้อนหลัง 90 วัน)</p>
+          <h1 className="text-[32px] leading-tight font-medium tracking-tight text-ink">กิจกรรมผู้ใช้</h1>
+          <p className="mt-1 text-sm text-ink-muted">ดูว่าใครทำอะไร และทำไมไม่สำเร็จ (เก็บย้อนหลัง 90 วัน)</p>
         </div>
         <button onClick={load} className="flex items-center gap-2 self-start rounded-xl bg-gray-100 px-4 py-3 text-xs font-black uppercase tracking-widest text-gray-600 hover:bg-gray-200">
           <RefreshCw size={16} className={loading ? "animate-spin" : ""} />รีเฟรช
@@ -122,7 +122,7 @@ export default function ActivityPage() {
       </div>
 
       {repeated.length > 0 && (
-        <section className="space-y-3 rounded-[2rem] border border-amber-100 bg-amber-50 p-5">
+        <section className="space-y-3 rounded-[20px] border border-amber-100 bg-amber-50 p-5">
           <p className="flex items-center gap-2 text-sm font-black text-amber-900"><AlertTriangle size={18} />ปัญหาที่เกิดซ้ำใน 7 วันล่าสุด (หลายคนเจอเหมือนกัน อาจเป็นบั๊ก)</p>
           <div className="grid gap-2 md:grid-cols-2">
             {repeated.map((entry) => (
@@ -161,11 +161,11 @@ export default function ActivityPage() {
       {loading && events.length === 0 ? (
         <div className="flex justify-center py-20"><Loader2 className="animate-spin text-blue-600" size={40} /></div>
       ) : events.length === 0 ? (
-        <div className="rounded-[2rem] border border-gray-100 bg-white py-16 text-center font-bold text-gray-400">ไม่พบกิจกรรมตามเงื่อนไข</div>
+        <div className="rounded-[20px] border border-gray-100 bg-white py-16 text-center font-bold text-gray-400">ไม่พบกิจกรรมตามเงื่อนไข</div>
       ) : (
         <div className="space-y-3">
           {events.map((event) => (
-            <article key={event.id} className="rounded-[1.5rem] border border-gray-100 bg-white p-4 shadow-sm">
+            <article key={event.id} className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
               <button className="flex w-full items-start justify-between gap-3 text-left" onClick={() => setExpanded(expanded === event.id ? null : event.id)}>
                 <div className="min-w-0 space-y-1">
                   <div className="flex flex-wrap items-center gap-2">

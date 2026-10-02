@@ -3,6 +3,7 @@ import sql from "@/lib/db";
 import { getAuthenticatedUser } from "@/lib/auth-utils";
 import { recordPurchaseOrderCommunication } from "@/lib/po-communication";
 import { applyLabReviewDecision, closePurchaseOrder, runGuardedPurchaseOrderUpdate } from "@/lib/purchase-order-review";
+import { confirmLabReceipt } from "@/lib/purchase-order-receipt";
 import { isLabPurchasingRole, validatePurchaseOrderItems } from "@/lib/purchase-order-workflow";
 
 async function findPurchaseOrder(id: string) {
@@ -138,6 +139,31 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     }
     if (!action && isVendor && status === "REJECTED") {
       action = "REJECT";
+    }
+
+    // Lab says the ticked lines arrived. Stock is received separately on the Receive page.
+    if (isLab && action === "CONFIRM_LAB_RECEIPT") {
+      const receipt = await confirmLabReceipt(sql, {
+        po: { id: Number(po.id), po_number: po.po_number, status: po.status },
+        poItemIds: body.item_ids,
+      });
+      if (!receipt.ok) return NextResponse.json({ error: receipt.error }, { status: receipt.httpStatus });
+
+      await recordPurchaseOrderCommunication({
+        poId: Number(po.id),
+        eventType: "PO_LAB_RECEIPT_CONFIRMED",
+        actor: user,
+        source: "WEB",
+        note,
+        metadata: {
+          fromStatus: po.status,
+          action,
+          items: receipt.items.map(({ item_id, item_name, qty }) => ({ item_id, item_name, qty })),
+        },
+      });
+      const updatedRows = await sql`SELECT * FROM purchase_orders WHERE id = ${po.id}`;
+      const items = await sql`SELECT * FROM purchase_order_items WHERE po_id = ${po.id} ORDER BY id`;
+      return NextResponse.json({ ...updatedRows[0], items });
     }
 
     if (isLab && (action === "CANCEL" || action === "CLOSE_SHORT")) {

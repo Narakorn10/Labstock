@@ -1,8 +1,9 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ClipboardPlus, LogOut, Menu, X } from 'lucide-react';
+import { LogOut, Menu, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from './auth-provider';
 import { apiClient } from '@/lib/api-client';
@@ -10,11 +11,19 @@ import { NAVIGATION_GROUPS, getRoleFallbackMenus, mergeMenus } from '@/lib/menu-
 
 const PERMISSION_CACHE_VERSION = 'v3';
 
+const ROLE_LABELS: Record<string, string> = {
+  Admin: 'ผู้ดูแลระบบ',
+  Manager: 'หัวหน้างาน',
+  Operator: 'นักเทคนิคการแพทย์',
+  User: 'ผู้ช่วยห้องปฏิบัติการ',
+  Vendor: 'บริษัทคู่ค้า',
+};
+
 interface SidebarProps {
-  desktopHidden?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
 }
 
-export default function Sidebar({ desktopHidden = false }: SidebarProps) {
+export default function Sidebar({ onExpandedChange }: SidebarProps) {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
   const [allowedMenus, setAllowedMenus] = useState<string[]>([]);
@@ -22,6 +31,13 @@ export default function Sidebar({ desktopHidden = false }: SidebarProps) {
   const sidebarRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const { user, logout } = useAuth();
+  // Desktop: a narrow icon rail that widens while hovered or focused. The drawer on small screens is always wide.
+  const [expanded, setExpanded] = useState(false);
+  const wide = isOpen || expanded;
+
+  useEffect(() => {
+    onExpandedChange?.(expanded);
+  }, [expanded, onExpandedChange]);
 
   useEffect(() => {
     if (!user) return;
@@ -118,9 +134,9 @@ export default function Sidebar({ desktopHidden = false }: SidebarProps) {
           aria-label={isOpen ? 'ปิดเมนู' : 'เปิดเมนู'}
           aria-controls="primary-navigation"
           aria-expanded={isOpen}
-          className="flex size-11 items-center justify-center rounded-lg border border-[#0d302f] bg-clinical-900 text-white shadow-lg shadow-[#123b3a]/20 transition-all active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-clinical-700"
+          className="flex size-11 items-center justify-center rounded-xl border border-line bg-white text-ink shadow-sm transition-all active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         >
-          {isOpen ? <X size={22} /> : <Menu size={22} />}
+          {isOpen ? <X size={22} strokeWidth={1.5} /> : <Menu size={22} strokeWidth={1.5} />}
         </button>
       </div>
 
@@ -128,7 +144,7 @@ export default function Sidebar({ desktopHidden = false }: SidebarProps) {
         <button
           type="button"
           aria-label="ปิดเมนูหลัก"
-          className="fixed inset-0 bg-black/60 z-40 lg:hidden"
+          className="fixed inset-0 bg-black/40 z-40 lg:hidden"
           onClick={() => setIsOpen(false)}
         />
       )}
@@ -137,40 +153,46 @@ export default function Sidebar({ desktopHidden = false }: SidebarProps) {
         ref={sidebarRef}
         id="primary-navigation"
         aria-label="เมนูหลัก"
-        aria-hidden={desktopHidden && !isOpen ? true : undefined}
+        onMouseEnter={() => setExpanded(true)}
+        onMouseLeave={() => setExpanded(false)}
+        onFocus={() => setExpanded(true)}
+        onBlur={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget)) setExpanded(false);
+        }}
         className={`
-        fixed top-0 left-0 z-40 h-full w-72 border-r border-[#0b3034] bg-[#083f46]
-        transition-[opacity,transform,visibility] duration-300 ease-in-out
+        fixed top-0 left-0 z-40 h-full w-[260px] overflow-hidden border-r border-line bg-[#fafafa]
+        transition-[opacity,transform,visibility,width] duration-200 ease-in-out
+        ${wide ? 'lg:w-[260px]' : 'lg:w-[68px]'}
         ${isOpen ? 'visible translate-x-0 opacity-100' : 'invisible pointer-events-none -translate-x-full opacity-0'}
-        ${desktopHidden ? 'lg:invisible lg:pointer-events-none lg:-translate-x-full lg:opacity-0' : 'lg:visible lg:pointer-events-auto lg:translate-x-0 lg:opacity-100'}
+        lg:visible lg:pointer-events-auto lg:translate-x-0 lg:opacity-100
       `}>
         <div className="flex flex-col h-full">
-          <div className="flex items-start justify-between gap-3 border-b border-white/10 p-5">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-white/10 rounded-lg flex items-center justify-center text-[#dcece7] border border-white/15">
-                <ClipboardPlus size={22} strokeWidth={1.8} />
-              </div>
-              <div>
-                <h1 className="text-lg font-semibold text-white tracking-tight">LabStock</h1>
-                <p className="text-[10px] font-medium text-[#b9d6ce] tracking-[0.12em]">CLINICAL INVENTORY</p>
-              </div>
+          <div className={`flex h-16 shrink-0 items-center justify-between gap-3 border-b border-line ${wide ? 'px-5' : 'px-[15px]'}`}>
+            <div className="flex min-w-0 items-center gap-2.5">
+              <Image src="/images/logo-spr-lab.png" alt="" width={38} height={38} className="size-[38px] shrink-0 rounded-[9px]" />
+              {wide && (
+                <div className="min-w-0 whitespace-nowrap leading-[1.15]">
+                  <h1 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">LabStock</h1>
+                  <p className="truncate text-[11px] text-ink-muted">SPR LAB · รพ.สวรรค์ประชารักษ์</p>
+                </div>
+              )}
             </div>
             <button
               ref={closeButtonRef}
               type="button"
               onClick={() => setIsOpen(false)}
               aria-label="ปิดเมนู"
-              className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-white/15 text-[#dcece7] transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#dcece7] lg:hidden"
+              className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-line text-ink-muted transition-colors hover:bg-gray-100 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent lg:hidden"
             >
-              <X size={18} />
+              <X size={18} strokeWidth={1.5} />
             </button>
           </div>
 
-          <nav aria-label="เมนูนำทางหลัก" aria-busy={isLoadingPerms} className="flex-1 space-y-7 overflow-y-auto p-4 no-scrollbar">
+          <nav aria-label="เมนูนำทางหลัก" aria-busy={isLoadingPerms} className="flex-1 overflow-y-auto px-3 pb-4 pt-2 no-scrollbar">
             {isLoadingPerms && allowedMenus.length === 0 ? (
               <div className="space-y-4 p-4">
                 {[1, 2, 3, 4, 5].map((i) => (
-                  <div key={i} className="h-10 bg-white/10 rounded-lg animate-pulse" />
+                  <div key={i} className="h-10 rounded-xl bg-gray-200/70 animate-pulse" />
                 ))}
               </div>
             ) : (
@@ -180,14 +202,16 @@ export default function Sidebar({ desktopHidden = false }: SidebarProps) {
                 if (filteredItems.length === 0) return null;
 
                 return (
-                  <div key={group.title} className="space-y-2">
-                    <div className="flex items-center px-4 mb-2">
-                      <span className="text-[10px] font-semibold text-[#e0f0ec] tracking-[0.14em]">
+                  <div key={group.title} className="pt-3.5">
+                    {wide ? (
+                      <div className="flex items-center gap-2 whitespace-nowrap px-2.5 pb-1.5 text-[13px] text-gray-600">
+                        <span className="size-3 shrink-0 rounded-full border-[1.5px] border-dashed border-gray-400" aria-hidden="true" />
                         {group.title}
-                      </span>
-                      <div className="ml-3 flex-1 h-px bg-white/10" />
-                    </div>
-                    <div className="space-y-1">
+                      </div>
+                    ) : (
+                      <div className="mx-2.5 mb-2 h-px bg-line" aria-hidden="true" />
+                    )}
+                    <div>
                       {filteredItems.map((item) => {
                         const isActive = pathname === item.href;
                         const Icon = item.icon;
@@ -198,19 +222,21 @@ export default function Sidebar({ desktopHidden = false }: SidebarProps) {
                             href={item.href}
                             onClick={() => setIsOpen(false)}
                             aria-current={isActive ? 'page' : undefined}
+                            aria-label={item.name}
+                            title={wide ? undefined : item.name}
                             className={`
-                              group/item relative flex items-center gap-3 rounded-lg px-3.5 py-2.5 transition-all duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#dcece7]
+                              group/item relative flex items-center gap-2 whitespace-nowrap rounded-[10px] px-3 py-[9px] text-sm transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent
                               ${isActive
-                                ? 'bg-white font-semibold text-clinical-900 shadow-sm ring-1 ring-white/80'
-                                : '!text-[#d5e5e2] hover:bg-white/10 hover:!text-white'}
+                                ? 'bg-gray-200 font-semibold text-ink!'
+                                : 'text-gray-800! hover:bg-gray-200'}
                             `}
                           >
                             <Icon
                                 size={18}
-                                className={`transition-colors ${isActive ? 'text-[#2f6f67]' : 'text-[#d5ebe5] group-hover/item:text-white'}`}
+                                strokeWidth={1.5}
+                                className="shrink-0"
                             />
-                            <span className="text-sm font-semibold tracking-tight">{item.name}</span>
-                            {isActive && <div className="ml-auto size-1.5 rounded-full bg-[#4aa7b5]" aria-hidden="true" />}
+                            {wide && <span className="min-w-0 flex-1">{item.name}</span>}
                           </Link>
                         );
                       })}
@@ -221,26 +247,28 @@ export default function Sidebar({ desktopHidden = false }: SidebarProps) {
             )}
           </nav>
 
-          <div className="p-4 border-t border-white/10 space-y-3">
-            <div className="p-3 bg-white/8 rounded-lg border border-white/10">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg bg-white/10 text-white flex items-center justify-center font-semibold text-sm">
-                  {user.name.charAt(0).toUpperCase()}
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold text-white truncate tracking-tight">{user.name}</p>
-                  <p className="text-[10px] font-medium text-[#a9c9c1] tracking-wide">{user.role}</p>
-                </div>
+          <div className={`m-3 flex shrink-0 flex-col gap-2.5 rounded-2xl border border-line bg-white ${wide ? 'p-3.5' : 'p-1'}`}>
+            <div className="flex items-center gap-2.5">
+              <div className="grid size-[34px] shrink-0 place-items-center rounded-full bg-gray-200 font-semibold text-ink" title={wide ? undefined : user.name}>
+                {user.name.charAt(0).toUpperCase()}
               </div>
+              {wide && (
+                <div className="min-w-0 whitespace-nowrap">
+                  <p className="truncate text-sm font-semibold text-ink">{user.name}</p>
+                  <p className="truncate text-xs text-gray-600">{ROLE_LABELS[user.role] ?? user.role}</p>
+                </div>
+              )}
             </div>
-            <button
-              type="button"
-              onClick={logout}
-              className="flex w-full items-center gap-3 rounded-lg px-3.5 py-3 text-xs font-semibold tracking-wide text-[#f1c2bd] transition-all hover:bg-white/10 hover:text-white active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#dcece7]"
-            >
-              <LogOut size={16} />
-              ออกจากระบบ
-            </button>
+            {wide && (
+              <button
+                type="button"
+                onClick={logout}
+                className="flex w-fit items-center gap-1.5 whitespace-nowrap text-[13px] text-crit focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              >
+                <LogOut size={16} strokeWidth={1.5} />
+                ออกจากระบบ
+              </button>
+            )}
           </div>
         </div>
       </aside>

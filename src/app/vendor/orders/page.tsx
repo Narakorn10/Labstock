@@ -5,6 +5,7 @@ import { useAuth } from "@/components/auth-provider";
 import { exportPurchaseOrderCsv, openPurchaseOrderPrintWindow, printPurchaseOrderPdf } from "@/lib/purchase-order-export";
 
 type OrderItem = { item_id: string; item_name: string; quantity: number; unit: string };
+type OrderLine = OrderItem & { received_qty?: number | null };
 type SuggestedItem = OrderItem & { current_qty: number; min_threshold: number; suggested_order_qty: number };
 type PurchaseOrder = {
   id: number;
@@ -15,7 +16,7 @@ type PurchaseOrder = {
   vendor_note?: string;
   expected_date?: string;
   created_at: string;
-  items: OrderItem[];
+  items: OrderLine[];
 };
 
 const statusLabel: Record<string, string> = {
@@ -32,6 +33,23 @@ const statusLabel: Record<string, string> = {
   CANCELLED: "Lab ยกเลิกแล้ว",
   CLOSED_SHORT: "Lab ปิดใบ (ไม่รับส่วนที่เหลือ)",
 };
+
+const okTag = "bg-ok-bg text-ok";
+const warnTag = "bg-warn-bg text-warn";
+const critTag = "bg-crit-bg text-crit";
+const statusTone: Record<string, string> = {
+  CONFIRMED: okTag, SHIPPED: okTag, RECEIVED: okTag,
+  PENDING_LAB_REVIEW: warnTag, SUBMITTED: warnTag, ACKNOWLEDGED: warnTag, REVISION_REQUESTED: warnTag,
+  PARTIALLY_SHIPPED: warnTag, PARTIALLY_RECEIVED: warnTag,
+  REJECTED: critTag, CANCELLED: critTag, CLOSED_SHORT: critTag,
+};
+
+const fieldClass = "min-h-[38px] w-full rounded-[10px] border border-line bg-white px-3 py-[7px] text-sm text-ink outline-none focus:border-gray-400 focus:ring-4 focus:ring-gray-400/10";
+const headClass = "bg-ground px-3.5 py-2.5 text-left text-[13px] font-medium text-gray-600";
+const cellClass = "border-b border-line px-3.5 py-3 align-middle text-sm";
+const btnClass = "inline-flex items-center rounded-[10px] border border-line bg-white px-3.5 py-2 text-sm font-medium text-ink transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50";
+const primaryBtnClass = "inline-flex items-center rounded-[10px] border border-ink bg-ink px-3.5 py-2 text-sm font-medium text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-50";
+const dangerBtnClass = "inline-flex items-center rounded-[10px] border border-line bg-white px-3.5 py-2 text-sm font-medium text-crit transition hover:bg-crit-bg";
 
 export default function VendorOrdersPage() {
   const { user } = useAuth();
@@ -97,7 +115,7 @@ export default function VendorOrdersPage() {
 
   const openRevision = (order: PurchaseOrder) => {
     setEditingOrder(order);
-    setDraftItems(order.items.map((item) => ({ ...item, quantity: Number(item.quantity) })));
+    setDraftItems(order.items.map(({ item_id, item_name, quantity, unit }) => ({ item_id, item_name, quantity: Number(quantity), unit })));
     setDraftNote(order.vendor_note ?? "");
   };
 
@@ -186,51 +204,148 @@ export default function VendorOrdersPage() {
     }
   };
 
-  if (!user || user.role !== "Vendor") return <div className="p-8 text-center">สิทธิ์การเข้าถึงเฉพาะ Vendor</div>;
+  if (!user || user.role !== "Vendor") return <div className="p-8 text-center text-gray-600">สิทธิ์การเข้าถึงเฉพาะ Vendor</div>;
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 p-6">
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">สั่งน้ำยาและรับใบสั่งน้ำยา</h1>
-          <p className="text-sm text-gray-500">{user.vendor} · ตรวจปริมาณคงเหลือก่อนส่งรายการให้ Lab ยืนยัน</p>
+    <div className="space-y-6 pb-20">
+      <div className="flex flex-wrap items-end gap-4">
+        <div className="mr-auto">
+          <h1 className="text-[32px] leading-tight font-medium text-ink">สั่งน้ำยาและรับใบสั่งน้ำยา</h1>
+          <p className="mt-1.5 text-[15px] text-gray-600">มุมมองบริษัทคู่ค้า · {user.vendor} · ตรวจปริมาณคงเหลือก่อนส่งรายการให้ Lab ยืนยัน</p>
         </div>
-        <button onClick={() => void loadData()} className="rounded-lg border px-4 py-2 text-sm font-medium hover:bg-gray-50">รีเฟรช</button>
+        <button type="button" onClick={() => void loadData()} className={btnClass}>รีเฟรช</button>
       </div>
 
-      <section className="overflow-hidden rounded-xl border bg-white">
-        <div className="flex flex-col justify-between gap-3 border-b p-4 sm:flex-row sm:items-center">
-          <div><h2 className="font-bold">น้ำยาที่ต้องพิจารณาสั่ง</h2><p className="text-sm text-gray-500">ข้อมูลคงเหลือจากคลัง Lab</p></div>
-          <button onClick={openNewProposal} disabled={suggestions.length === 0} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">ส่งรายการเสนอให้ Lab ตรวจสอบ</button>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm"><thead className="bg-gray-50 text-left text-gray-500"><tr><th className="px-4 py-3">น้ำยา</th><th className="px-4 py-3 text-right">คงเหลือ</th><th className="px-4 py-3 text-right">Min</th><th className="px-4 py-3 text-right">แนะนำสั่ง</th></tr></thead>
-            <tbody>{suggestions.map((item) => <tr key={item.item_id} className="border-t"><td className="px-4 py-3"><div className="font-medium">{item.item_name}</div><div className="text-xs text-gray-500">{item.item_id}</div></td><td className="px-4 py-3 text-right">{item.current_qty} {item.unit}</td><td className="px-4 py-3 text-right">{item.min_threshold}</td><td className="px-4 py-3 text-right font-semibold text-indigo-700">{item.suggested_order_qty} {item.unit}</td></tr>)}</tbody>
-          </table>
-          {!loading && suggestions.length === 0 && <p className="p-6 text-center text-sm text-gray-500">ไม่มีรายการที่ถึงจุดสั่งซื้อ</p>}
-        </div>
-      </section>
-
-      <section className="space-y-3"><h2 className="font-bold">รายการสั่งซื้อ</h2>
-        {loading ? <p className="text-sm text-gray-500">กำลังโหลด...</p> : orders.map((order) => (
-          <article key={order.id} className="rounded-xl border bg-white p-4">
-            <div className="flex flex-col justify-between gap-3 sm:flex-row"><div><div className="flex items-center gap-2"><h3 className="font-semibold">{order.po_number}</h3><span className="rounded bg-gray-100 px-2 py-1 text-xs">{statusLabel[order.status] ?? order.status}</span></div><p className="mt-1 text-sm text-gray-500">{order.proposal_origin === "VENDOR" ? "Vendor เสนอรายการ" : "Lab สร้างใบสั่งน้ำยา"} · {order.items.length} รายการ</p>{order.vendor_note && <p className="mt-2 text-sm text-amber-700">หมายเหตุ: {order.vendor_note}</p>}</div>
-              <div className="flex flex-wrap gap-2">
-                <button onClick={() => exportPurchaseOrderCsv(order)} className="rounded-lg border border-emerald-300 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50">Excel (CSV)</button>
-                <button onClick={() => void printOrder(order)} className="rounded-lg border border-indigo-300 px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-50">บันทึก PDF</button>
-                {(order.status === "SUBMITTED" || order.status === "ACKNOWLEDGED") && order.proposal_origin === "LAB" && <><button onClick={() => confirmLabOrder(order)} className="rounded-lg bg-green-600 px-3 py-2 text-sm font-medium text-white">{order.status === "SUBMITTED" ? "รับทราบรายการ" : "ยืนยันจัดได้"}</button><button onClick={() => openRevision(order)} className="rounded-lg border border-amber-300 px-3 py-2 text-sm font-medium text-amber-700">แก้ไขแล้วส่ง Lab</button><button onClick={() => void rejectLabOrder(order)} className="rounded-lg border border-red-300 px-3 py-2 text-sm font-medium text-red-700">ปฏิเสธ</button></>}
-              </div>
+      <div className="grid items-start gap-5 lg:grid-cols-[minmax(380px,1fr)_minmax(0,1.5fr)]">
+        <section aria-labelledby="vendor-need-heading" className="min-w-0 rounded-2xl border border-line bg-white p-5">
+          <div className="mb-3 flex flex-wrap items-start gap-3">
+            <div className="mr-auto">
+              <h2 id="vendor-need-heading" className="text-lg font-medium">น้ำยาที่ต้องพิจารณาสั่ง</h2>
+              <p className="text-[13px] text-gray-600">ข้อมูลคงเหลือจากคลัง Lab</p>
             </div>
-          </article>
-        ))}
-        {!loading && orders.length === 0 && <p className="text-sm text-gray-500">ยังไม่มีรายการสั่งซื้อ</p>}
-      </section>
+            <button type="button" onClick={openNewProposal} disabled={suggestions.length === 0} className={primaryBtnClass}>ส่งรายการเสนอให้ Lab ตรวจสอบ</button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[420px] border-separate border-spacing-0 text-left">
+              <caption className="sr-only">น้ำยาที่ถึงจุดสั่งซื้อ</caption>
+              <thead>
+                <tr>
+                  <th scope="col" className={`${headClass} rounded-l-[10px]`}>น้ำยา</th>
+                  <th scope="col" className={`${headClass} text-right`}>คงเหลือ</th>
+                  <th scope="col" className={`${headClass} text-right`}>Min</th>
+                  <th scope="col" className={`${headClass} rounded-r-[10px] text-right`}>แนะนำสั่ง</th>
+                </tr>
+              </thead>
+              <tbody>
+                {suggestions.map((item) => (
+                  <tr key={item.item_id}>
+                    <td className={cellClass}><div className="font-medium">{item.item_name}</div><div className="text-xs text-gray-600">{item.item_id}</div></td>
+                    <td className={`${cellClass} text-right text-crit`}>{item.current_qty} {item.unit}</td>
+                    <td className={`${cellClass} text-right`}>{item.min_threshold}</td>
+                    <td className={`${cellClass} text-right font-semibold`}>{item.suggested_order_qty} {item.unit}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {!loading && suggestions.length === 0 && (
+            <div className="mt-3 rounded-xl border-[1.5px] border-dashed border-line px-3.5 py-10 text-sm text-gray-600">ไม่มีรายการที่ถึงจุดสั่งซื้อ</div>
+          )}
+        </section>
 
-      {draftItems.length > 0 && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"><div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-6"><h2 className="text-xl font-bold">{editingOrder ? "แก้ไขรายการเพื่อส่ง Lab ตรวจสอบ" : "เสนอรายการสั่งน้ำยาให้ Lab"}</h2><p className="mt-1 text-sm text-gray-500">Lab ต้องยืนยันก่อนรายการนี้จะเป็นคำสั่งซื้อที่ตกลงแล้ว</p>
-        <div className="mt-4 space-y-2">{draftItems.map((item, index) => <div key={item.item_id} className="flex items-center gap-3 rounded border p-3"><div className="flex-1"><div className="font-medium">{item.item_name}</div><div className="text-xs text-gray-500">{item.item_id}</div></div><input aria-label={`จำนวน ${item.item_name}`} type="number" min="1" value={item.quantity} onChange={(event) => setDraftItems((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, quantity: Number(event.target.value) } : row))} className="w-24 rounded border p-2 text-right"/><span className="w-12 text-sm text-gray-500">{item.unit}</span></div>)}</div>
-        <label className="mt-4 block text-sm font-medium">หมายเหตุ{editingOrder ? " (จำเป็น)" : ""}</label><textarea value={draftNote} onChange={(event) => setDraftNote(event.target.value)} className="mt-1 w-full rounded border p-2" rows={3}/>
-        <div className="mt-5 flex justify-end gap-2"><button onClick={() => { setDraftItems([]); setEditingOrder(null); }} className="rounded border px-4 py-2">ยกเลิก</button><button onClick={() => void saveDraft()} disabled={saving} className="rounded bg-indigo-600 px-4 py-2 text-white disabled:opacity-50">{saving ? "กำลังส่ง..." : "ส่งให้ Lab ตรวจสอบ"}</button></div>
-      </div></div>}
+        <section aria-labelledby="vendor-orders-heading" className="min-w-0">
+          <h2 id="vendor-orders-heading" className="mb-3 text-lg font-medium">รายการสั่งซื้อ</h2>
+          {loading ? <p className="text-sm text-gray-600">กำลังโหลด...</p> : orders.map((order) => (
+            <article key={order.id} className="mb-2.5 rounded-2xl border border-line bg-white px-[18px] py-4">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <h3 className="flex-1 font-semibold">{order.po_number}</h3>
+                <span className={`inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-[3px] text-xs font-medium ${statusTone[order.status] ?? "bg-gray-200 text-ink"}`}>{statusLabel[order.status] ?? order.status}</span>
+              </div>
+              <p className="mb-2.5 mt-1 text-[13px] text-gray-600">
+                {order.proposal_origin === "VENDOR" ? "Vendor เสนอรายการ" : "Lab สร้างใบสั่งน้ำยา"} · {order.items.length} รายการ
+              </p>
+              {order.vendor_note && <p className="mb-2.5 text-[13px] text-warn">หมายเหตุ: {order.vendor_note}</p>}
+              {order.items.length > 0 && (
+                <div className="mb-2.5 overflow-x-auto">
+                  <table className="w-full min-w-[360px] border-separate border-spacing-0 text-left text-[13px]">
+                    <caption className="sr-only">สั่ง ได้รับ และค้างของ {order.po_number}</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col" className="py-1.5 pr-3 font-medium text-gray-600">น้ำยา</th>
+                        <th scope="col" className="px-3 py-1.5 text-right font-medium text-gray-600">สั่ง</th>
+                        <th scope="col" className="px-3 py-1.5 text-right font-medium text-gray-600">ได้รับ</th>
+                        <th scope="col" className="py-1.5 pl-3 text-right font-medium text-gray-600">ค้าง</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {order.items.map((item) => {
+                        const ordered = Number(item.quantity);
+                        const received = Math.min(Number(item.received_qty ?? 0), ordered);
+                        const outstanding = ordered - received;
+                        return (
+                          <tr key={item.item_id}>
+                            <td className="border-t border-line py-1.5 pr-3">{item.item_name}</td>
+                            <td className="border-t border-line px-3 py-1.5 text-right">{ordered} {item.unit}</td>
+                            <td className="border-t border-line px-3 py-1.5 text-right text-ok">{received} {item.unit}</td>
+                            <td className={`border-t border-line py-1.5 pl-3 text-right ${outstanding > 0 ? "font-semibold" : "text-gray-600"}`}>{outstanding} {item.unit}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <div className="flex flex-wrap justify-end gap-2">
+                <button type="button" onClick={() => exportPurchaseOrderCsv(order)} className={btnClass}>Excel (CSV)</button>
+                <button type="button" onClick={() => void printOrder(order)} className={btnClass}>บันทึก PDF</button>
+                {(order.status === "SUBMITTED" || order.status === "ACKNOWLEDGED") && order.proposal_origin === "LAB" && (
+                  <>
+                    <button type="button" onClick={() => confirmLabOrder(order)} className={primaryBtnClass}>{order.status === "SUBMITTED" ? "รับทราบรายการ" : "ยืนยันจัดได้"}</button>
+                    <button type="button" onClick={() => openRevision(order)} className={btnClass}>แก้ไขแล้วส่ง Lab</button>
+                    <button type="button" onClick={() => void rejectLabOrder(order)} className={dangerBtnClass}>ปฏิเสธ</button>
+                  </>
+                )}
+              </div>
+            </article>
+          ))}
+          {!loading && orders.length === 0 && (
+            <div className="rounded-2xl border border-line bg-white p-7 text-sm text-gray-600">ยังไม่มีใบสั่งสำหรับบริษัทนี้</div>
+          )}
+        </section>
+      </div>
+
+      {draftItems.length > 0 && (
+        <div role="dialog" aria-modal="true" aria-labelledby="vendor-draft-title" className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-6">
+            <h2 id="vendor-draft-title" className="text-[22px] font-medium">{editingOrder ? "แก้ไขรายการเพื่อส่ง Lab ตรวจสอบ" : "เสนอรายการสั่งน้ำยาให้ Lab"}</h2>
+            <p className="mt-1 text-sm text-gray-600">Lab ต้องยืนยันก่อนรายการนี้จะเป็นคำสั่งซื้อที่ตกลงแล้ว</p>
+            <div className="mt-4 space-y-2">
+              {draftItems.map((item, index) => (
+                <div key={item.item_id} className="flex items-center gap-3 rounded-xl border border-line p-3">
+                  <div className="flex-1"><div className="font-medium">{item.item_name}</div><div className="text-xs text-gray-600">{item.item_id}</div></div>
+                  <input
+                    aria-label={`จำนวน ${item.item_name}`}
+                    type="number"
+                    min="1"
+                    value={item.quantity}
+                    onChange={(event) => setDraftItems((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, quantity: Number(event.target.value) } : row))}
+                    className={`${fieldClass} !w-24 text-right`}
+                  />
+                  <span className="w-12 text-sm text-gray-600">{item.unit}</span>
+                </div>
+              ))}
+            </div>
+            <label className="mt-4 flex flex-col gap-1.5 text-[13px] text-gray-600">
+              หมายเหตุ{editingOrder ? " (จำเป็น)" : ""}
+              <textarea value={draftNote} onChange={(event) => setDraftNote(event.target.value)} className={fieldClass} rows={3} />
+            </label>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => { setDraftItems([]); setEditingOrder(null); }} className={btnClass}>ยกเลิก</button>
+              <button type="button" onClick={() => void saveDraft()} disabled={saving} className={primaryBtnClass}>{saving ? "กำลังส่ง..." : "ส่งให้ Lab ตรวจสอบ"}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiClient, type ShipmentItem } from "@/lib/api-client";
-import { CheckCircle2, FileText, FileUp, Loader2, Plus, Trash2, Truck, AlertTriangle } from "lucide-react";
+import { CheckCircle2, FileText, FileUp, Loader2, Plus, Trash2, AlertTriangle } from "lucide-react";
 
 type OrderItem = { itemId: string; itemName: string; unit: string; orderedQty: number; remainingQty: number };
 type Order = { po_number: string; expected_date?: string; items: OrderItem[] };
@@ -145,20 +145,130 @@ export default function VendorShipmentsPage() {
     setNotice("");
   };
 
-  if (loading) return <div className="p-10 flex justify-center"><Loader2 className="animate-spin text-blue-600" /></div>;
+  if (loading) return <div className="flex justify-center p-10"><Loader2 className="animate-spin text-gray-600" /></div>;
 
-  return <div className="max-w-6xl mx-auto space-y-6 pb-24">
-    <div className="flex items-start justify-between gap-4"><div><h1 className="text-3xl font-black text-gray-900">แจ้งส่งสินค้า</h1><p className="text-sm text-gray-500 mt-1">เลือก PO ที่ยืนยันแล้ว เพิ่ม lot ได้หลายรายการ และตรวจทานก่อนส่งเข้าระบบ</p></div><Truck className="text-blue-600" size={36} /></div>
-    {notice && <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 flex gap-2"><AlertTriangle size={18} />{notice}</div>}
-    <section className="bg-white border rounded-2xl p-6 space-y-4 shadow-sm">
-      <div className="grid md:grid-cols-3 gap-4"><label className="text-sm font-bold">Confirmed PO<select value={poNumber} onChange={(event) => selectPurchaseOrder(event.target.value)} className="mt-1 w-full border rounded-lg p-2"><option value="">Select PO</option>{orders.map((order) => <option key={order.po_number} value={order.po_number}>{order.po_number}</option>)}</select></label><label className="text-sm font-bold">Delivery reference<input value={referenceNo} onChange={(event) => setReferenceNo(event.target.value)} className="mt-1 w-full border rounded-lg p-2" placeholder="Delivery note / invoice" /></label><label className="text-sm font-bold">Tracking no. (optional)<input value={trackingNo} onChange={(event) => setTrackingNo(event.target.value)} className="mt-1 w-full border rounded-lg p-2" /></label></div>
-      {selectedOrder && <div className="text-sm rounded-lg border border-blue-100 bg-blue-50 p-3 text-blue-950">รายการจาก PO ถูกนำมาใส่ในตารางด้านล่างแล้ว กรุณากรอกเฉพาะจำนวนที่บริษัทจัดส่งได้ พร้อม Lot และวันหมดอายุ</div>}
-      <input ref={fileInputRef} type="file" accept="application/pdf" className="hidden" onChange={handlePdf} />
-      <button disabled={!poNumber || processingPdf} onClick={() => fileInputRef.current?.click()} className="inline-flex items-center gap-2 rounded-lg border border-blue-200 px-4 py-2 text-sm font-bold text-blue-700 disabled:opacity-50">{processingPdf ? <Loader2 size={17} className="animate-spin" /> : <FileUp size={17} />}Read delivery PDF (review required)</button>
-      <p className="text-xs text-gray-500"><FileText className="inline mr-1" size={14} />PDF/text is not retained. Scanned pages use Azure only when text extraction fails.</p>
+  const fieldClass = "min-h-[38px] w-full min-w-0 rounded-[10px] border border-line bg-white px-3 py-[7px] text-sm text-ink outline-none focus:border-gray-400 focus:ring-4 focus:ring-gray-400/10";
+  const labelClass = "flex flex-col gap-1.5 text-[13px] text-gray-600";
+  const headClass = "bg-ground px-3.5 py-2.5 text-left text-[13px] font-medium text-gray-600";
+  const cellClass = "border-b border-line px-3.5 py-3 align-middle text-sm";
+  const btnClass = "inline-flex items-center gap-2 rounded-[10px] border border-line bg-white px-4 py-[9px] text-sm font-medium text-ink transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50";
+
+  return <div className="space-y-6 pb-24">
+    <div>
+      <h1 className="text-[32px] leading-tight font-medium text-ink">แจ้งส่งสินค้า</h1>
+      <p className="mt-1.5 text-[15px] text-gray-600">เลือก PO ที่ยืนยันแล้ว เพิ่ม lot ได้หลายรายการ และตรวจทานก่อนส่งเข้าระบบ</p>
+    </div>
+
+    {notice && <div role="status" className="flex items-center gap-2.5 rounded-xl bg-warn-bg px-3.5 py-3 text-sm font-medium text-warn"><AlertTriangle size={18} className="shrink-0" /><span>{notice}</span></div>}
+
+    <section aria-labelledby="shipment-po-heading" className="rounded-2xl border border-line bg-white p-5">
+      <h2 id="shipment-po-heading" className="mb-1 text-lg font-medium">รายการจัดส่งตาม PO</h2>
+      <p className="mb-3.5 text-[13px] text-gray-600">Lab สั่งและคงเหลือเป็นข้อมูลอ้างอิง บริษัทกรอกจำนวนที่จัดส่งได้, Lot และวันหมดอายุ</p>
+
+      <div className="grid gap-3 md:grid-cols-3">
+        <label className={labelClass}>Confirmed PO
+          <select value={poNumber} onChange={(event) => selectPurchaseOrder(event.target.value)} className={`${fieldClass} cursor-pointer`}>
+            <option value="">Select PO</option>
+            {orders.map((order) => <option key={order.po_number} value={order.po_number}>{order.po_number}</option>)}
+          </select>
+        </label>
+        <label className={labelClass}>Delivery reference
+          <input value={referenceNo} onChange={(event) => setReferenceNo(event.target.value)} className={fieldClass} placeholder="Delivery note / invoice" />
+        </label>
+        <label className={labelClass}>Tracking no. (optional)
+          <input value={trackingNo} onChange={(event) => setTrackingNo(event.target.value)} className={fieldClass} />
+        </label>
+      </div>
+
+      {selectedOrder && <p className="mt-3 rounded-xl bg-[#fafafa] px-3.5 py-3 text-[13px] text-gray-700">รายการจาก PO ถูกนำมาใส่ในตารางด้านล่างแล้ว กรุณากรอกเฉพาะจำนวนที่บริษัทจัดส่งได้ พร้อม Lot และวันหมดอายุ</p>}
+
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <input ref={fileInputRef} type="file" accept="application/pdf" className="hidden" onChange={handlePdf} />
+        <button type="button" disabled={!poNumber || processingPdf} onClick={() => fileInputRef.current?.click()} className={btnClass}>
+          {processingPdf ? <Loader2 size={16} className="animate-spin" /> : <FileUp size={16} />}Read delivery PDF (review required)
+        </button>
+        <p className="text-xs text-gray-600"><FileText className="mr-1 inline" size={14} />PDF/text is not retained. Scanned pages use Azure only when text extraction fails.</p>
+      </div>
+
+      <div className="mt-5 overflow-x-auto">
+        <table className="w-full min-w-[760px] border-separate border-spacing-0 text-left">
+          <caption className="sr-only">รายการจัดส่งตาม PO</caption>
+          <thead>
+            <tr>
+              <th scope="col" className={`${headClass} rounded-l-[10px]`}>น้ำยาที่ Lab สั่ง</th>
+              <th scope="col" className={`${headClass} text-right`}>Lab สั่ง</th>
+              <th scope="col" className={`${headClass} text-right`}>คงเหลือให้จัดส่ง</th>
+              <th scope="col" className={`${headClass} w-[130px]`}>จำนวนที่จัดส่งได้</th>
+              <th scope="col" className={`${headClass} w-[150px]`}>Lot</th>
+              <th scope="col" className={`${headClass} w-[170px]`}>วันหมดอายุ</th>
+              <th scope="col" className={`${headClass} w-11 rounded-r-[10px]`}><span className="sr-only">ลบ</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item, index) => {
+              const orderItem = selectedOrder?.items.find((option) => option.itemId === item.itemId);
+              return <tr key={index}>
+                <td className={cellClass}>
+                  {item.poLine && orderItem
+                    ? <><p className="font-medium">{orderItem.itemName}</p><p className="text-xs text-gray-600">{orderItem.itemId}</p></>
+                    : <select aria-label="เลือกรายการเดิม" value={item.itemId} onChange={(event) => updateItem(index, { itemId: event.target.value })} className={`${fieldClass} min-w-48 cursor-pointer`}>
+                        <option value="">เลือกรายการเดิม</option>
+                        {selectedOrder?.items.filter((option) => option.remainingQty > 0).map((option) => <option key={option.itemId} value={option.itemId}>{option.itemName}</option>)}
+                      </select>}
+                </td>
+                <td className={`${cellClass} text-right`}>{orderItem ? `${orderItem.orderedQty} ${orderItem.unit}` : "-"}</td>
+                <td className={`${cellClass} text-right font-semibold`}>{orderItem ? `${orderItem.remainingQty} ${orderItem.unit}` : "-"}</td>
+                <td className={cellClass}><input aria-label="จำนวนที่จัดส่งได้" type="number" min="0" step="0.01" value={item.qty || ""} onChange={(event) => updateItem(index, { qty: Number(event.target.value) })} className={fieldClass} placeholder="0" /></td>
+                <td className={cellClass}><input aria-label="Lot" value={item.lotNo} onChange={(event) => updateItem(index, { lotNo: event.target.value })} className={fieldClass} placeholder="Lot" /></td>
+                <td className={cellClass}><input aria-label="วันหมดอายุ" type="date" value={item.expDate} onChange={(event) => updateItem(index, { expDate: event.target.value })} className={fieldClass} /></td>
+                <td className={cellClass}>{!item.poLine && <button type="button" aria-label="Remove lot" onClick={() => setItems((current) => current.length === 1 ? [blankRow()] : current.filter((_, rowIndex) => rowIndex !== index))} className="inline-flex rounded-[10px] px-2 py-1.5 text-gray-700 hover:bg-crit-bg hover:text-crit"><Trash2 size={16} /></button>}</td>
+              </tr>;
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {!selectedOrder && <div className="mt-3 rounded-xl border-[1.5px] border-dashed border-line px-3.5 py-7 text-sm text-gray-600">เลือก PO ที่ยืนยันแล้วเพื่อเริ่มกรอกรายการจัดส่ง ยืนยันใบสั่งได้ที่หน้า Vendor Orders</div>}
+
+      <div className="mt-3.5 flex flex-wrap items-center justify-between gap-3">
+        <button type="button" disabled={!selectedOrder} onClick={() => setItems((current) => [...current, blankRow()])} className={btnClass}><Plus size={16} />เพิ่ม Lot เดิม</button>
+        <button type="button" disabled={submitting || !poNumber} onClick={submit} className="inline-flex items-center gap-2 rounded-[10px] border border-ink bg-ink px-5 py-3 text-sm font-medium text-white transition hover:bg-black active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50">
+          {submitting ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle2 size={18} />}Submit reviewed shipment
+        </button>
+      </div>
     </section>
-    <section className="bg-white border rounded-2xl overflow-hidden shadow-sm"><div className="p-5 flex justify-between items-center border-b"><div><h2 className="font-black">รายการจัดส่งตาม PO</h2><p className="mt-1 text-xs text-slate-500">Lab สั่งและคงเหลือเป็นข้อมูลอ้างอิง บริษัทกรอกจำนวนที่จัดส่งได้, Lot และวันหมดอายุ</p></div><button disabled={!selectedOrder} onClick={() => setItems((current) => [...current, blankRow()])} className="inline-flex items-center gap-1 text-sm font-bold text-blue-700 disabled:opacity-40"><Plus size={16} />เพิ่ม Lot เดิม</button></div><div className="overflow-x-auto"><table className="w-full text-sm"><thead className="bg-slate-50 text-left"><tr><th className="p-3">น้ำยาที่ Lab สั่ง</th><th className="p-3 text-right">Lab สั่ง</th><th className="p-3 text-right">คงเหลือให้จัดส่ง</th><th className="p-3">จำนวนที่จัดส่งได้</th><th className="p-3">Lot</th><th className="p-3">วันหมดอายุ</th><th /></tr></thead><tbody>{items.map((item, index) => { const orderItem = selectedOrder?.items.find((option) => option.itemId === item.itemId); return <tr key={index} className="border-t align-top"><td className="p-3">{item.poLine && orderItem ? <><p className="font-semibold text-slate-900">{orderItem.itemName}</p><p className="text-xs text-slate-500">{orderItem.itemId}</p></> : <select value={item.itemId} onChange={(event) => updateItem(index, { itemId: event.target.value })} className="border rounded p-2 min-w-48"><option value="">เลือกรายการเดิม</option>{selectedOrder?.items.filter((option) => option.remainingQty > 0).map((option) => <option key={option.itemId} value={option.itemId}>{option.itemName}</option>)}</select>}</td><td className="p-3 text-right text-slate-700">{orderItem ? `${orderItem.orderedQty} ${orderItem.unit}` : "-"}</td><td className="p-3 text-right font-semibold text-slate-900">{orderItem ? `${orderItem.remainingQty} ${orderItem.unit}` : "-"}</td><td className="p-3"><input aria-label="จำนวนที่จัดส่งได้" type="number" min="0" step="0.01" value={item.qty || ""} onChange={(event) => updateItem(index, { qty: Number(event.target.value) })} className="border rounded p-2 w-28" placeholder="0" /></td><td className="p-3"><input aria-label="Lot" value={item.lotNo} onChange={(event) => updateItem(index, { lotNo: event.target.value })} className="border rounded p-2 w-36" /></td><td className="p-3"><input aria-label="วันหมดอายุ" type="date" value={item.expDate} onChange={(event) => updateItem(index, { expDate: event.target.value })} className="border rounded p-2" /></td><td className="p-3">{!item.poLine && <button aria-label="Remove lot" onClick={() => setItems((current) => current.length === 1 ? [blankRow()] : current.filter((_, rowIndex) => rowIndex !== index))} className="text-gray-400 hover:text-red-600"><Trash2 size={17} /></button>}</td></tr>; })}</tbody></table></div></section>
-    <button disabled={submitting || !poNumber} onClick={submit} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-3 font-black text-white disabled:bg-blue-300">{submitting ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle2 size={18} />}Submit reviewed shipment</button>
-    <section className="bg-white border rounded-2xl overflow-hidden shadow-sm"><div className="p-5 border-b"><h2 className="font-black">ประวัติการจัดส่ง</h2><p className="text-xs text-slate-500 mt-1">ของที่ถูกปฏิเสธจะไม่ปิดยอด PO และต้องส่งทดแทน</p></div><div className="overflow-x-auto"><table className="w-full text-sm"><thead className="bg-slate-50 text-left"><tr><th className="p-3">PO</th><th className="p-3">น้ำยา</th><th className="p-3 text-right">ส่ง</th><th className="p-3 text-right">รับผ่าน</th><th className="p-3 text-right">ไม่ผ่าน</th><th className="p-3">สถานะ</th><th className="p-3">หมายเหตุ</th></tr></thead><tbody>{history.map((row) => <tr key={row.id} className="border-t"><td className="p-3">{row.po_number || "-"}</td><td className="p-3">{row.reagent_name || "-"}</td><td className="p-3 text-right">{row.quantity}</td><td className="p-3 text-right text-emerald-700">{row.accepted_qty ?? "-"}</td><td className="p-3 text-right text-red-700">{row.rejected_qty ?? "-"}</td><td className="p-3">{row.status}</td><td className="p-3 text-red-700">{row.rejection_reason || "-"}</td></tr>)}{history.length === 0 && <tr><td colSpan={7} className="p-6 text-center text-slate-500">ยังไม่มีประวัติ</td></tr>}</tbody></table></div></section>
+
+    <section aria-labelledby="shipment-history-heading" className="rounded-2xl border border-line bg-white p-5">
+      <h2 id="shipment-history-heading" className="text-lg font-medium">ประวัติการจัดส่ง</h2>
+      <p className="mb-3 text-[13px] text-gray-600">ของที่ถูกปฏิเสธจะไม่ปิดยอด PO และต้องส่งทดแทน</p>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[720px] border-separate border-spacing-0 text-left">
+          <caption className="sr-only">ประวัติการจัดส่ง</caption>
+          <thead>
+            <tr>
+              <th scope="col" className={`${headClass} rounded-l-[10px]`}>PO</th>
+              <th scope="col" className={headClass}>น้ำยา</th>
+              <th scope="col" className={`${headClass} text-right`}>ส่ง</th>
+              <th scope="col" className={`${headClass} text-right`}>รับผ่าน</th>
+              <th scope="col" className={`${headClass} text-right`}>ไม่ผ่าน</th>
+              <th scope="col" className={headClass}>สถานะ</th>
+              <th scope="col" className={`${headClass} rounded-r-[10px]`}>หมายเหตุ</th>
+            </tr>
+          </thead>
+          <tbody>
+            {history.map((row) => <tr key={row.id}>
+              <td className={`${cellClass} font-medium`}>{row.po_number || "-"}</td>
+              <td className={cellClass}>{row.reagent_name || "-"}</td>
+              <td className={`${cellClass} text-right`}>{row.quantity}</td>
+              <td className={`${cellClass} text-right text-ok`}>{row.accepted_qty ?? "-"}</td>
+              <td className={`${cellClass} text-right text-crit`}>{row.rejected_qty ?? "-"}</td>
+              <td className={cellClass}><span className="inline-flex items-center whitespace-nowrap rounded-full bg-gray-200 px-2.5 py-[3px] text-xs font-medium">{row.status}</span></td>
+              <td className={`${cellClass} text-crit`}>{row.rejection_reason || "-"}</td>
+            </tr>)}
+          </tbody>
+        </table>
+      </div>
+      {history.length === 0 && <div className="mt-3 rounded-xl border-[1.5px] border-dashed border-line px-3.5 py-7 text-sm text-gray-600">ยังไม่มีประวัติ</div>}
+    </section>
   </div>;
 }
