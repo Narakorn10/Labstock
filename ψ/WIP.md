@@ -1,4 +1,28 @@
-# WIP — 2026-10-02 14:48
+# WIP — 2026-10-02 15:50
+
+## Git Status
+
+```text
+lab-stock-nextjs: branch main ค้าง (b5a267e, ก.ค.) แยกทางกับ origin/main (4112c97 = PR #33) — working tree สะอาด
+local main มี 5 commit ที่ไม่อยู่บน GitHub: 3 อันมีอยู่แล้วในชื่อ hash อื่น ส่วน 35aa4f5, b5a267e หาคู่ไม่เจอ
+stash@{0} po-line-fix (ใช้แล้ว ลบได้), stash@{1} WIP.md + retros เดิม (ของเหล่านี้อยู่บน main แล้ว)
+retro/WIP นี้อยู่ใน worktree ../lab-stock-retro-1002b, branch docs/session-2026-10-02-po-line-qr
+```
+
+## งานค้าง
+- [ ] ถามผู้ใช้เรื่อง local main: สำรองไว้ใน `backup/old-local-main` แล้ว reset ตาม origin/main หรือตรวจ 35aa4f5/b5a267e ก่อน (ห้าม reset เอง)
+- [ ] ลองสอน QR V2 ด้วย QR จริง 2 ชิ้นต่าง Lot แล้วกด "บันทึกและเปิดใช้" จากนั้นสแกนที่หน้ารับหรือเบิก
+- [ ] ลบ env `BARCODE_LEARNING_V2_MANAGEMENT_ENABLED` บน Vercel (ไม่มีโค้ดใช้แล้ว)
+- [ ] ตรวจ LINE จริงหลัง PR #32: Vendor ได้ LINE ครั้งเดียวต่อใบใหม่ และ Lab ไม่ได้ LINE
+- [ ] ข้อเสนอ: badge "เกินกำหนด" ในหน้า `/orders`
+
+## Context
+- PR #32 (LINE ส่งเฉพาะใบใหม่ถึง Vendor) และ PR #33 (QR V2 เปิดถาวร, Wizard 3 ขั้น) merge แล้ว; production มี V2 pattern 0 รายการ
+- งานใหม่ให้แตก branch จาก `origin/main` เท่านั้น ห้ามจาก local main ที่ค้าง
+
+---
+
+## (history) WIP 2026-10-02 14:48
 
 ## Git Status
 
