@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth-provider";
+import { usePopup } from "@/components/popup/popup-provider";
 import { exportPurchaseOrderCsv, printPurchaseOrderPdf } from "@/lib/purchase-order-export";
 import { CANCELLABLE_STATUSES, CLOSE_SHORT_STATUSES } from "@/lib/purchase-order-workflow";
 
@@ -86,6 +87,7 @@ const reviewReasonLabels: Record<string, string> = {
 };
 
 export default function PODetailPage() {
+  const { confirm, notify } = usePopup();
   const params = useParams<{ id: string | string[] }>();
   const router = useRouter();
   const { user } = useAuth();
@@ -194,10 +196,17 @@ export default function PODetailPage() {
   const reviewManagerOrder = async (action: "APPROVE_MANAGER_REVIEW" | "REJECT_MANAGER_REVIEW") => {
     if (!po) return;
     if (action === "REJECT_MANAGER_REVIEW" && !reviewNote.trim()) {
-      alert("โปรดระบุเหตุผลเมื่อไม่อนุมัติใบ PO");
+      void notify({ title: "ข้อมูลไม่ครบ", description: "โปรดระบุเหตุผลเมื่อไม่อนุมัติใบ PO", severity: "warning" });
       return;
     }
-    if (!confirm(action === "APPROVE_MANAGER_REVIEW" ? "ยืนยันส่งใบ PO นี้ให้บริษัทหรือไม่?" : "ยืนยันไม่อนุมัติใบ PO นี้หรือไม่?")) return;
+    const approving = action === "APPROVE_MANAGER_REVIEW";
+    const confirmed = await confirm({
+      title: approving ? "ส่งใบ PO ให้บริษัท" : "ไม่อนุมัติใบ PO",
+      description: approving ? "ยืนยันส่งใบ PO นี้ให้บริษัทหรือไม่?" : "ยืนยันไม่อนุมัติใบ PO นี้หรือไม่?",
+      confirmLabel: approving ? "ส่งให้บริษัท" : "ไม่อนุมัติ",
+      destructive: !approving,
+    });
+    if (!confirmed) return;
     setReviewSubmitting(true);
     try {
       const res = await fetch(`/api/purchase-orders/${po.id}`, {
@@ -207,7 +216,7 @@ export default function PODetailPage() {
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
-        alert(data?.error ?? "ไม่สามารถบันทึกการตรวจสอบได้");
+        void notify({ title: "เกิดข้อผิดพลาด", description: data?.error ?? "ไม่สามารถบันทึกการตรวจสอบได้", severity: "danger" });
         return;
       }
       setPo(data as PurchaseOrderDetail);
@@ -220,13 +229,19 @@ export default function PODetailPage() {
   const closeOrder = async (action: "CANCEL" | "CLOSE_SHORT") => {
     if (!po) return;
     if (!reviewNote.trim()) {
-      alert("โปรดระบุเหตุผลก่อนปิดใบสั่ง");
+      void notify({ title: "ข้อมูลไม่ครบ", description: "โปรดระบุเหตุผลก่อนปิดใบสั่ง", severity: "warning" });
       return;
     }
     const question = action === "CANCEL"
       ? "ยืนยันยกเลิกใบสั่งนี้? บริษัทจะได้รับแจ้ง และจะไม่สามารถจัดส่งตามใบนี้ได้อีก"
       : "ยืนยันปิดใบสั่งนี้? จำนวนที่ยังไม่ได้รับจะไม่ถูกนับเป็นของที่สั่งไว้อีก";
-    if (!confirm(question)) return;
+    const confirmed = await confirm({
+      title: action === "CANCEL" ? "ยกเลิกใบสั่ง" : "ปิดใบสั่ง",
+      description: question,
+      confirmLabel: action === "CANCEL" ? "ยกเลิกใบสั่ง" : "ปิดใบสั่ง",
+      destructive: true,
+    });
+    if (!confirmed) return;
     setReviewSubmitting(true);
     try {
       const res = await fetch(`/api/purchase-orders/${po.id}`, {
@@ -236,7 +251,7 @@ export default function PODetailPage() {
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
-        alert(data?.error ?? "ไม่สามารถปิดใบสั่งได้");
+        void notify({ title: "เกิดข้อผิดพลาด", description: data?.error ?? "ไม่สามารถปิดใบสั่งได้", severity: "danger" });
         return;
       }
       setPo(data as PurchaseOrderDetail);
@@ -317,7 +332,7 @@ export default function PODetailPage() {
                   try {
                     printPurchaseOrderPdf(po, { includeLabNote: showInternalColumns });
                   } catch (error) {
-                    alert(error instanceof Error ? error.message : "ไม่สามารถเปิดหน้าพิมพ์ได้");
+                    void notify({ title: "เกิดข้อผิดพลาด", description: error instanceof Error ? error.message : "ไม่สามารถเปิดหน้าพิมพ์ได้", severity: "danger" });
                   }
                 }}
                 className="rounded-lg border border-indigo-300 px-3 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50"

@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { apiClient, User as ApiUser } from '@/lib/api-client';
 import Modal from '@/components/modal';
 import { useAuth } from '@/components/auth-provider';
+import { usePopup } from '@/components/popup/popup-provider';
 import { 
   UserPlus, 
   User, 
@@ -18,6 +19,7 @@ import {
 } from 'lucide-react';
 
 export default function UsersPage() {
+  const { confirm } = usePopup();
   const { user, loading: authLoading } = useAuth();
   const [users, setUsers] = useState<ApiUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -128,7 +130,13 @@ export default function UsersPage() {
 
   const handleDeleteUser = async (username: string) => {
     if (username === 'admin') return;
-    if (!confirm(`ยืนยันการลบผู้ใช้ "${username}"?`)) return;
+    const confirmed = await confirm({
+      title: 'ลบผู้ใช้',
+      description: `ยืนยันการลบผู้ใช้ "${username}"?`,
+      confirmLabel: 'ลบผู้ใช้',
+      destructive: true,
+    });
+    if (!confirmed) return;
 
     try {
       await apiClient.deleteUser(username);
@@ -141,7 +149,13 @@ export default function UsersPage() {
 
   const handleAccountStatus = async (user: ApiUser, accountStatus: 'active' | 'suspended') => {
     const action = accountStatus === 'active' ? 'อนุมัติ' : 'ระงับ';
-    if (!confirm(`ยืนยันการ${action}บัญชี "${user.username}"?`)) return;
+    const confirmed = await confirm({
+      title: `${action}บัญชี`,
+      description: `ยืนยันการ${action}บัญชี "${user.username}"?`,
+      confirmLabel: action,
+      destructive: accountStatus === 'suspended',
+    });
+    if (!confirmed) return;
 
     setSubmitting(true);
     try {
