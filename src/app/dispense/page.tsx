@@ -141,7 +141,9 @@ export default function DispensePage() {
     }
 
     const sortedLots = [...match.lots].sort((a, b) => new Date(a.expDate).getTime() - new Date(b.expDate).getTime());
-    let selectedLot = sortedLots[0];
+    // Adding the same reagent again (typed by name) offers the next lot not yet in the cart.
+    const lotsInCart = new Set(cart.filter(i => i.itemId === match.itemId).map(i => i.lotNo.toLowerCase()));
+    let selectedLot = sortedLots.find(l => !lotsInCart.has(l.lotNo.toLowerCase())) ?? sortedLots[0];
 
     if (lotOverride) {
       const exactLot = sortedLots.find(l => l.lotNo.toLowerCase() === lotOverride.toLowerCase());

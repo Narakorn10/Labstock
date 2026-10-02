@@ -193,7 +193,9 @@ export default function LiffDispenseWorkflow() {
     const sortedLots = [...match.lots].sort(
       (a, b) => new Date(a.expDate).getTime() - new Date(b.expDate).getTime()
     );
-    let selectedLot = sortedLots[0];
+    // Adding the same reagent again (typed by name) offers the next lot not yet in the cart.
+    const lotsInCart = new Set(cart.filter((item) => item.itemId === match.itemId).map((item) => item.lotNo.toLowerCase()));
+    let selectedLot = sortedLots.find((lot) => !lotsInCart.has(lot.lotNo.toLowerCase())) ?? sortedLots[0];
 
     if (lotOverride) {
       const exactLot = sortedLots.find((lot) => lot.lotNo.toLowerCase() === lotOverride.toLowerCase());
