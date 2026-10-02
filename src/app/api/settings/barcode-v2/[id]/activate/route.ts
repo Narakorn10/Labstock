@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import sql from '@/lib/db';
 import { requireBarcodeLearningV2Access } from '@/lib/barcode-learning-auth';
-import { isBarcodeLearningV2RuntimeEnabled } from '@/lib/barcode-runtime';
 import {
   barcodeV2PayloadFromStoredRow,
   mapBarcodeV2Row,
@@ -32,9 +31,6 @@ function isUniqueActiveRegexConflict(error: unknown) {
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const access = await requireBarcodeLearningV2Access(request);
   if (access.response || !access.user) return access.response || NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  if (!isBarcodeLearningV2RuntimeEnabled()) {
-    return NextResponse.json({ error: 'Runtime is disabled. เปิด BARCODE_LEARNING_V2_RUNTIME_ENABLED หลังผ่าน regression gate ก่อน Activate' }, { status: 409 });
-  }
 
   const { id } = await params;
   try {
