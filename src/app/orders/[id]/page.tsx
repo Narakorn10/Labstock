@@ -78,6 +78,16 @@ interface PurchaseOrderEvent {
 
 const eventLabels: Record<string, string> = {
   PO_LAB_RECEIPT_CONFIRMED: "แล็บยืนยันรับของ",
+  PO_CREATED: "ส่งใบสั่งซื้อให้บริษัท",
+  PO_REVIEW_REQUIRED: "รอตรวจรายการ",
+  PO_CONFIRMED: "ยืนยันรายการ",
+  PO_STATUS_UPDATED: "เปลี่ยนสถานะ",
+  PO_SHIPPED: "บริษัทส่งของ",
+  PO_RECEIVED: "รับของเข้าสต็อก",
+  PO_CANCELLED: "ยกเลิกใบสั่งซื้อ",
+  SHIPMENT_REPLACEMENT_REQUIRED: "ขอให้ส่งของทดแทน",
+  VENDOR_RESPONSE_OVERDUE: "⏰ บริษัทยังไม่ยืนยันเกินกำหนด",
+  DELIVERY_OVERDUE: "⏰ เลยกำหนดส่งของ",
 };
 
 const reviewReasonLabels: Record<string, string> = {
