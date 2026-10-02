@@ -162,9 +162,10 @@ export default function MobileStockWorkflow({ mode, lineApprover, lineIdToken }:
     const sortedLots = [...match.lots].sort(
       (a, b) => new Date(a.expDate).getTime() - new Date(b.expDate).getTime()
     );
-    // Adding the same reagent again (typed by name) offers the next lot not yet in the cart.
-    const lotsInCart = new Set(cartRef.current.filter((item) => item.itemId === match.itemId).map((item) => item.lotNo.toLowerCase()));
-    let selectedLot = sortedLots.find((lot) => !lotsInCart.has(lot.lotNo.toLowerCase())) ?? sortedLots[0];
+    // Adding the same reagent again (typed by name) fills the earliest-expiring lot first;
+    // only when that cart row has reached the lot's stock does the next lot get a new row.
+    const qtyInCart = (inventoryId: number) => cartRef.current.find((item) => item.inventoryId === inventoryId)?.qty ?? 0;
+    let selectedLot = sortedLots.find((lot) => qtyInCart(lot.inventoryId) < lot.qty) ?? sortedLots[0];
 
     if (lotOverride) {
       const exactLot = sortedLots.find((lot) => lot.lotNo.toLowerCase() === lotOverride.toLowerCase());

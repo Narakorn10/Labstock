@@ -141,9 +141,10 @@ export default function DispensePage() {
     }
 
     const sortedLots = [...match.lots].sort((a, b) => new Date(a.expDate).getTime() - new Date(b.expDate).getTime());
-    // Adding the same reagent again (typed by name) offers the next lot not yet in the cart.
-    const lotsInCart = new Set(cart.filter(i => i.itemId === match.itemId).map(i => i.lotNo.toLowerCase()));
-    let selectedLot = sortedLots.find(l => !lotsInCart.has(l.lotNo.toLowerCase())) ?? sortedLots[0];
+    // Adding the same reagent again (typed by name) fills the earliest-expiring lot first;
+    // only when that cart row has reached the lot's stock does the next lot get a new row.
+    const qtyInCart = (inventoryId: number) => cart.find((item) => item.inventoryId === inventoryId)?.qty ?? 0;
+    let selectedLot = sortedLots.find((lot) => qtyInCart(lot.inventoryId) < lot.qty) ?? sortedLots[0];
 
     if (lotOverride) {
       const exactLot = sortedLots.find(l => l.lotNo.toLowerCase() === lotOverride.toLowerCase());
