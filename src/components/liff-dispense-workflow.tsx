@@ -193,7 +193,10 @@ export default function LiffDispenseWorkflow() {
     const sortedLots = [...match.lots].sort(
       (a, b) => new Date(a.expDate).getTime() - new Date(b.expDate).getTime()
     );
-    let selectedLot = sortedLots[0];
+    // Adding the same reagent again (typed by name) fills the earliest-expiring lot first;
+    // only when that cart row has reached the lot's stock does the next lot get a new row.
+    const qtyInCart = (inventoryId: number) => cart.find((item) => item.inventoryId === inventoryId)?.qty ?? 0;
+    let selectedLot = sortedLots.find((lot) => qtyInCart(lot.inventoryId) < lot.qty) ?? sortedLots[0];
 
     if (lotOverride) {
       const exactLot = sortedLots.find((lot) => lot.lotNo.toLowerCase() === lotOverride.toLowerCase());

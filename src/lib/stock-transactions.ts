@@ -168,9 +168,13 @@ export async function runDispenseBatch(
     activeMap[row.item_id.toLowerCase()] = row.is_active !== false;
   });
 
-  const preparedItems: Array<StockBatchItem & { targetItemId: string; targetLotNo: string; qtyToSubtract: number; inventoryId: number }> = [];
+  // One lot can sit in several inventory rows (one per receive day). The chosen row is used first;
+  // if it cannot cover the quantity the rest comes from the other rounds of the same lot, oldest expiry first.
+  const preparedItems: Array<StockBatchItem & { targetItemId: string; targetLotNo: string; qtyToSubtract: number; allocations: Array<{ inventoryId: number; qty: number }> }> = [];
+  const reservedInBatch = new Map<number, number>();
   for (const item of batchItems) {
-    let inventoryId = Number(item.inventoryId);
+    const chosenInventoryId = Number(item.inventoryId);
+    const preferredId = Number.isInteger(chosenInventoryId) && chosenInventoryId > 0 ? chosenInventoryId : 0;
     const targetItemId = item.itemId.toString();
     const targetLotNo = item.lotNo.toString();
     const qtyToSubtract = parseFloat(String(item.qty));
@@ -180,24 +184,38 @@ export async function runDispenseBatch(
       throw new Error(`REAGENT_INACTIVE: ${targetItemId}`);
     }
 
-    if (!Number.isInteger(inventoryId) || inventoryId <= 0) {
-      const candidateRows = await sql`
-        SELECT id
-        FROM inventory
-        WHERE LOWER(item_id) = LOWER(${targetItemId})
-          AND lot_no = ${targetLotNo}
-          AND quantity > 0
-        ORDER BY exp_date ASC NULLS LAST, received_on ASC, id ASC
-        LIMIT 1
-      `;
+    const candidateRows = await sql`
+      SELECT id, quantity
+      FROM inventory
+      WHERE LOWER(item_id) = LOWER(${targetItemId})
+        AND quantity > 0
+        AND lot_no = COALESCE(
+          (SELECT lot_no FROM inventory WHERE id = ${preferredId} AND LOWER(item_id) = LOWER(${targetItemId})),
+          ${targetLotNo}
+        )
+      ORDER BY (id = ${preferredId}) DESC, exp_date ASC NULLS LAST, received_on ASC, id ASC
+    `;
 
-      if (candidateRows.length === 0) {
-        throw new Error(`เบิกไม่สำเร็จ: ${item.name || targetItemId} (Lot: ${item.lotNo}) ไม่พบรอบรับเข้าที่พร้อมใช้งาน`);
-      }
-
-      inventoryId = Number(candidateRows[0].id);
+    if (candidateRows.length === 0) {
+      throw new Error(`เบิกไม่สำเร็จ: ${item.name || targetItemId} (Lot: ${item.lotNo}) ไม่พบรอบรับเข้าที่พร้อมใช้งาน`);
     }
-    preparedItems.push({ ...item, targetItemId, targetLotNo, qtyToSubtract, inventoryId });
+
+    const allocations: Array<{ inventoryId: number; qty: number }> = [];
+    let remaining = qtyToSubtract;
+    for (const row of candidateRows) {
+      if (remaining <= 1e-9) break;
+      const rowId = Number(row.id);
+      const available = Number(row.quantity) - (reservedInBatch.get(rowId) || 0);
+      if (available <= 0) continue;
+      const take = Math.min(available, remaining);
+      allocations.push({ inventoryId: rowId, qty: take });
+      reservedInBatch.set(rowId, (reservedInBatch.get(rowId) || 0) + take);
+      remaining -= take;
+    }
+    if (remaining > 1e-9) {
+      throw new Error(`REAGENT_STOCK_INSUFFICIENT: ${targetItemId}`);
+    }
+    preparedItems.push({ ...item, targetItemId, targetLotNo, qtyToSubtract, allocations });
   }
 
   if (preparedItems.length === 0) {
@@ -213,28 +231,30 @@ export async function runDispenseBatch(
         FOR UPDATE
       ), 'REAGENT_INACTIVE: ' || ${item.targetItemId}) AS ok
     `,
-    transaction`
-      SELECT labstock_assert(EXISTS (
-        SELECT 1 FROM inventory
-        WHERE id = ${item.inventoryId}
-          AND LOWER(item_id) = LOWER(${item.targetItemId})
-          AND quantity >= ${item.qtyToSubtract}
-        FOR UPDATE
-      ), 'REAGENT_STOCK_INSUFFICIENT: ' || ${item.targetItemId}) AS ok
-    `,
-    transaction`
-      WITH updated AS (
-        UPDATE inventory
-        SET quantity = quantity - ${item.qtyToSubtract}
-        WHERE id = ${item.inventoryId}
-          AND LOWER(item_id) = LOWER(${item.targetItemId})
-          AND quantity >= ${item.qtyToSubtract}
-        RETURNING item_id, lot_no
-      )
-      INSERT INTO logs (item_id, name, lot_no, action, quantity, username, user_agent, ip_address)
-      SELECT item_id, ${masterMap[item.targetItemId.toLowerCase()] || 'Unknown'}, lot_no, 'เบิกไปหน้างาน', ${item.qtyToSubtract}, ${actor}, ${audit.userAgent}, ${audit.ipAddress}
-      FROM updated
-    `,
+    ...item.allocations.flatMap((allocation) => [
+      transaction`
+        SELECT labstock_assert(EXISTS (
+          SELECT 1 FROM inventory
+          WHERE id = ${allocation.inventoryId}
+            AND LOWER(item_id) = LOWER(${item.targetItemId})
+            AND quantity >= ${allocation.qty}
+          FOR UPDATE
+        ), 'REAGENT_STOCK_INSUFFICIENT: ' || ${item.targetItemId}) AS ok
+      `,
+      transaction`
+        WITH updated AS (
+          UPDATE inventory
+          SET quantity = quantity - ${allocation.qty}
+          WHERE id = ${allocation.inventoryId}
+            AND LOWER(item_id) = LOWER(${item.targetItemId})
+            AND quantity >= ${allocation.qty}
+          RETURNING item_id, lot_no
+        )
+        INSERT INTO logs (item_id, name, lot_no, action, quantity, username, user_agent, ip_address)
+        SELECT item_id, ${masterMap[item.targetItemId.toLowerCase()] || 'Unknown'}, lot_no, 'เบิกไปหน้างาน', ${allocation.qty}, ${actor}, ${audit.userAgent}, ${audit.ipAddress}
+        FROM updated
+      `,
+    ]),
   ]));
   preparedItems.forEach((item) => affectedItemIds.push(item.targetItemId));
 
