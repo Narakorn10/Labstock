@@ -1,4 +1,54 @@
-# WIP — 2026-10-01 15:05
+# WIP — 2026-10-02 14:48
+
+## Git Status
+
+```text
+checkout นี้: branch feat/frosted-popup-kit (local ตามหลัง origin 44 commit เพราะ ψ/WIP.md ที่ยังไม่ commit ขวาง; งานของสาขานี้ merge แล้ว)
+ M "ψ/WIP.md"                                   (รอ commit)
+?? "ψ/memory/retrospectives/2026-10/"           (รอ commit — มีของ 13.03 และ 14.48)
+main บน GitHub: e67f6b5 (PR #27 desktop redesign), b847f65 (PR #30 popup 1d), 089a83e (PR #28 เบิกข้าม lot), 07c2ebb (PR #29 login)
+```
+
+## งานค้าง
+- [ ] เช็ก Vercel production (`stocklabspr`) ขึ้น `main` ล่าสุด แล้วลองหน้าหลักด้วยหลาย role (PR #27 ยังไม่เคยตรวจกับข้อมูลจริง)
+- [ ] popup แบบมีช่องกรอกเหตุผล → เปลี่ยน `prompt()` ใน `vendor/orders`
+- [ ] เปลี่ยน `alert()`/`confirm()` หน้าที่เหลือ (`master`, `settings/*`, `count`, `reagent-detail-modal`) ทีละ PR
+- [ ] ถามผู้ใช้ก่อนทำ: ปุ่มกระดิ่ง, ยืนยันออกจากระบบ, แจ้ง lot หมดอายุ/จำนวนเกิน; เพดานจำนวนเบิกต่อรอบ; สแกน lot ที่ไม่มีในสต็อก
+- [ ] เช็ก Neon (อ่านอย่างเดียว) `users.department` (v27) และ v29 ยังไม่ได้ตรวจ
+- [ ] เก็บกวาดเมื่อผู้ใช้อนุมัติ: ลบโฟลเดอร์ `C:\Users\HP Probook 440 G9\lab-stock-pr27`, `lab-stock-popup`; ลบสาขาบน GitHub ที่ merge แล้ว
+
+## Context
+- ห้าม merge/push เข้า `main` เองโดยไม่ถาม (ผู้ใช้สั่ง merge ชัดเจนทุกครั้ง); Preview ใช้ฐานข้อมูล production ดูอย่างเดียว
+- working tree ไม่สะอาด ให้ทำงานใน git worktree แยก ห้าม stash ไฟล์ผู้ใช้ และต้อง `npm ci` ใน worktree (junction node_modules ทำ Turbopack ล้ม)
+
+---
+
+## (history) WIP 2026-10-02 13:03 (ก่อน merge PR #27/#28/#29/#30)
+
+## Git Status
+
+```text
+branch: fix/dispense-across-receive-rounds (push แล้ว, PR #28 เปิดอยู่ base=main, commit ed4e429)
+PR #27 update/desktop-shell (push แล้ว ถึง b08a002, MERGEABLE, รวม 4 branch UI แล้ว)
+?? "ψ/memory/retrospectives/2026-10/02/13.03_pr27-merge-prep-and-dispense-multi-round-fix.md"   (รอ commit)
+ M "ψ/WIP.md"                                                                                    (รอ commit)
+```
+
+## งานค้าง
+- [ ] ผู้ใช้ตรวจ Preview PR #27 แล้ว merge เอง จากนั้นเช็กว่า Production (Vercel `stocklabspr`) ขึ้น commit ใหม่
+- [ ] เช็กใน Neon (อ่านอย่างเดียว) ว่ามี `users.department` (v27) และ v29 ตรงกับโค้ด
+- [ ] PR #28: ลองบน Preview กับน้ำยา lot เดียวกัน 2 รอบ เทียบยอดก่อน/หลัง; ตรวจ `mobile-stock-workflow.tsx`, `liff-dispense-workflow.tsx` ว่าจำกัดช่องกรอกจำนวนไว้ที่ยอดรอบเดียวหรือไม่
+- [ ] หลัง merge ทั้งสอง PR ระวัง `ψ/WIP.md` ชนกันอีก (ไฟล์นี้ในแต่ละ branch ไม่เหมือนกัน)
+
+## Context
+- ห้าม merge/push เข้า `main` เองโดยไม่ถาม; Preview ใช้ฐานข้อมูล production ให้ดูอย่างเดียว
+- ฉบับ WIP ก่อนหน้านี้ (จาก main, 2026-09-29) เก็บไว้ท้ายไฟล์ด้านล่าง
+
+---
+
+---
+
+## (history) WIP 2026-10-01 15:05 (จาก main)
 
 ## Git Status
 
