@@ -2,86 +2,96 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { Settings, Plus, Trash2, Cpu, TestTube, Briefcase } from 'lucide-react';
+import { X } from 'lucide-react';
 
 interface SettingData {
   reagentTypes: string[];
   jobTypes: string[];
   machineTypes: string[];
+  departments: string[];
 }
+
+type SettingType = 'reagent' | 'job' | 'machine' | 'department';
+type NewValues = Record<SettingType, string>;
 
 interface SectionProps {
   title: string;
-  icon: React.ElementType;
-  type: 'reagent' | 'job' | 'machine';
+  type: SettingType;
   items: string[];
   placeholder: string;
   loading: boolean;
-  newValue: { reagent: string; job: string; machine: string };
-  setNewValue: React.Dispatch<React.SetStateAction<{ reagent: string; job: string; machine: string }>>;
-  onAdd: (type: 'reagent' | 'job' | 'machine') => void;
-  onDelete: (type: 'reagent' | 'job' | 'machine', value: string) => void;
+  newValue: NewValues;
+  setNewValue: React.Dispatch<React.SetStateAction<NewValues>>;
+  onAdd: (type: SettingType) => void;
+  onDelete: (type: SettingType, value: string) => void;
 }
 
-const Section = ({ title, icon: Icon, type, items, placeholder, loading, newValue, setNewValue, onAdd, onDelete }: SectionProps) => (
-  <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm flex flex-col h-full">
-    <div className="flex items-center gap-3 mb-6">
-      <div className="bg-gray-50 p-2.5 rounded-xl text-gray-600">
-        <Icon size={22} />
-      </div>
-      <h3 className="font-bold text-gray-900 text-lg">{title}</h3>
+const Section = ({ title, type, items, placeholder, loading, newValue, setNewValue, onAdd, onDelete }: SectionProps) => (
+  <section aria-label={title} className="flex min-w-0 flex-col rounded-2xl border border-line bg-white p-5">
+    <h3 className="mb-3 text-[17px] font-medium">
+      {title} <span className="font-normal text-gray-600">{loading ? '' : items.length}</span>
+    </h3>
+
+    <div className="mb-3 h-72 overflow-y-auto rounded-xl border border-line">
+      {loading ? (
+        <p className="px-3.5 py-4 text-sm text-gray-600">กำลังโหลด...</p>
+      ) : items.length === 0 ? (
+        <p className="px-3.5 py-4 text-sm text-gray-600">ยังไม่มีข้อมูล</p>
+      ) : (
+        <ul className="divide-y divide-line">
+          {items.map((item) => (
+            <li key={item} className="flex items-center gap-2 px-3.5 py-2 text-sm hover:bg-[#fafafa]">
+              <span className="min-w-0 flex-1 break-words">{item}</span>
+              <button
+                type="button"
+                onClick={() => onDelete(type, item)}
+                aria-label={`ลบ ${item}`}
+                className="inline-flex shrink-0 rounded-[8px] p-1.5 text-gray-600 hover:bg-crit-bg hover:text-crit"
+              >
+                <X size={14} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
 
-    <div className="flex gap-2 mb-4">
-      <input 
-        type="text" 
+    <form
+      className="mt-auto flex gap-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onAdd(type);
+      }}
+    >
+      <input
+        type="text"
         placeholder={placeholder}
+        aria-label={`เพิ่ม${title}`}
         value={newValue[type]}
         onChange={(e) => setNewValue({ ...newValue, [type]: e.target.value })}
-        onKeyDown={(e) => e.key === 'Enter' && onAdd(type)}
-        className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all text-sm"
+        className="min-h-[38px] w-full min-w-0 rounded-[10px] border border-line bg-white px-3 py-[7px] text-sm text-ink outline-none focus:border-gray-400 focus:ring-4 focus:ring-gray-400/10"
       />
-      <button 
-        onClick={() => onAdd(type)}
-        className="p-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all shadow-sm"
-      >
-        <Plus size={20} />
+      <button type="submit" className="inline-flex items-center rounded-[10px] border border-line bg-white px-4 py-[9px] text-sm font-medium text-ink transition hover:bg-gray-50">
+        เพิ่ม
       </button>
-    </div>
-
-    <div className="flex-1 overflow-y-auto max-h-[300px] space-y-2 custom-scrollbar pr-2">
-      {loading ? (
-        <div className="text-center py-10 text-gray-400 text-sm italic">กำลังโหลด...</div>
-      ) : items.length === 0 ? (
-        <div className="text-center py-10 text-gray-400 text-sm italic">ยังไม่มีข้อมูล</div>
-      ) : items.map((item, idx) => (
-        <div key={idx} className="flex items-center justify-between p-3 bg-gray-50/50 hover:bg-gray-50 rounded-xl border border-transparent hover:border-gray-200 transition-all group">
-          <span className="text-gray-700 text-sm font-medium">{item}</span>
-          <button 
-            onClick={() => onDelete(type, item)}
-            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
-          >
-            <Trash2 size={16} />
-          </button>
-        </div>
-      ))}
-    </div>
-  </div>
+    </form>
+  </section>
 );
 
 export default function SettingsPage() {
   const [data, setData] = useState<SettingData>({
     reagentTypes: [],
     jobTypes: [],
-    machineTypes: []
+    machineTypes: [],
+    departments: []
   });
   const [loading, setLoading] = useState(true);
-  const [newValue, setNewValue] = useState({ reagent: '', job: '', machine: '' });
+  const [newValue, setNewValue] = useState<NewValues>({ reagent: '', job: '', machine: '', department: '' });
 
   const fetchSettings = useCallback(async () => {
     try {
       const settings = await apiClient.getSettings();
-      setData(settings);
+      setData({ ...settings, departments: settings.departments ?? [] });
     } catch (error) {
       console.error('Fetch settings error:', error);
     } finally {
@@ -100,7 +110,7 @@ export default function SettingsPage() {
     return () => { isMounted = false; };
   }, [fetchSettings]);
 
-  const handleAdd = async (type: 'reagent' | 'job' | 'machine') => {
+  const handleAdd = async (type: SettingType) => {
     const value = newValue[type].trim();
     if (!value) return;
 
@@ -115,7 +125,7 @@ export default function SettingsPage() {
     }
   };
 
-  const handleDelete = async (type: 'reagent' | 'job' | 'machine', value: string) => {
+  const handleDelete = async (type: SettingType, value: string) => {
     if (!confirm(`คุณต้องการลบ "${value}" ใช่หรือไม่?`)) return;
 
     try {
@@ -129,23 +139,17 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center gap-3">
-          <div className="bg-blue-600 p-2 rounded-xl text-white shadow-lg shadow-blue-200">
-            <Settings size={24} />
-          </div>
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900">ตั้งค่าระบบ (System Settings)</h1>
-        </div>
-        <p className="text-gray-500 text-sm ml-12">จัดการข้อมูลตัวเลือกใน Dropdown เช่น ประเภทน้ำยา, ประเภทงาน และชื่อเครื่องมือ</p>
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+      <div>
+        <h1 className="text-[32px] leading-tight font-medium text-ink">ตั้งค่าระบบ (System Settings)</h1>
+        <p className="mt-1.5 text-[15px] text-gray-600">รายการพื้นฐานที่ใช้เป็นตัวเลือกใน Master Data, หน้ารับน้ำยา และหน้าจัดการผู้ใช้</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <Section 
-          title="ประเภทน้ำยา" 
-          icon={TestTube} 
-          type="reagent" 
-          items={data.reagentTypes} 
+      <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+        <Section
+          title="ประเภทน้ำยา"
+          type="reagent"
+          items={data.reagentTypes}
           placeholder="เพิ่มประเภทน้ำยา (เช่น Serology...)"
           loading={loading}
           newValue={newValue}
@@ -153,11 +157,10 @@ export default function SettingsPage() {
           onAdd={handleAdd}
           onDelete={handleDelete}
         />
-        <Section 
-          title="ประเภทงาน" 
-          icon={Briefcase} 
-          type="job" 
-          items={data.jobTypes} 
+        <Section
+          title="ประเภทงาน"
+          type="job"
+          items={data.jobTypes}
           placeholder="เพิ่มประเภทงาน (เช่น Routine...)"
           loading={loading}
           newValue={newValue}
@@ -165,12 +168,22 @@ export default function SettingsPage() {
           onAdd={handleAdd}
           onDelete={handleDelete}
         />
-        <Section 
-          title="ประเภทเครื่อง" 
-          icon={Cpu} 
-          type="machine" 
-          items={data.machineTypes} 
+        <Section
+          title="ประเภทเครื่อง"
+          type="machine"
+          items={data.machineTypes}
           placeholder="เพิ่มชื่อเครื่อง (เช่น Architect...)"
+          loading={loading}
+          newValue={newValue}
+          setNewValue={setNewValue}
+          onAdd={handleAdd}
+          onDelete={handleDelete}
+        />
+        <Section
+          title="หน่วยงาน"
+          type="department"
+          items={data.departments}
+          placeholder="เพิ่มหน่วยงาน (เช่น ห้องปฏิบัติการเคมีคลินิก...)"
           loading={loading}
           newValue={newValue}
           setNewValue={setNewValue}
@@ -179,17 +192,9 @@ export default function SettingsPage() {
         />
       </div>
 
-      <div className="bg-amber-50 border border-amber-200 p-6 rounded-2xl flex gap-4">
-        <div className="bg-amber-100 p-2.5 h-fit rounded-xl text-amber-600">
-          <Plus size={24} />
-        </div>
-        <div>
-          <h4 className="font-bold text-amber-900 mb-1">คำแนะนำการใช้งาน</h4>
-          <p className="text-amber-800 text-sm leading-relaxed">
-            ข้อมูลที่ตั้งค่าในหน้านี้จะไปปรากฏเป็นตัวเลือกให้เลือกในหน้า &quot;จัดการข้อมูลพื้นฐาน (Master Data)&quot; และหน้า &quot;รับน้ำยาเข้าสต๊อก&quot; การลบข้อมูลที่นี่จะไม่ส่งผลกระทบต่อข้อมูลเดิมที่เคยบันทึกไว้แล้ว แต่จะไม่มีชื่อนั้นให้เลือกในครั้งต่อไป
-          </p>
-        </div>
-      </div>
+      <p className="text-xs text-gray-600">
+        การลบรายการที่นี่ไม่กระทบข้อมูลเดิมที่เคยบันทึกไว้แล้ว แต่จะไม่มีชื่อนั้นให้เลือกในครั้งต่อไป
+      </p>
     </div>
   );
 }

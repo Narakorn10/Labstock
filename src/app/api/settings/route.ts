@@ -3,6 +3,17 @@ import sql from "@/lib/db";
 import { getAuthenticatedUser } from "@/lib/auth-utils";
 import { getRequestId, withRequestId } from "@/lib/request-observability";
 
+async function loadDepartments(): Promise<string[]> {
+  try {
+    const rows = await sql`SELECT name FROM departments ORDER BY name ASC`;
+    return rows.map((row) => row.name as string);
+  } catch (error: unknown) {
+    // Table is created by upgrade_v29_departments.sql; until then Settings keeps working without it.
+    console.warn("[Settings GET] departments unavailable", error instanceof Error ? error.message : error);
+    return [];
+  }
+}
+
 export async function GET(request: Request) {
   const requestId = getRequestId(request);
 
@@ -18,7 +29,7 @@ export async function GET(request: Request) {
       );
     }
 
-    const [reagentRows, jobRows, machineRows, unitRows, vendorRows] = await Promise.all([
+    const [reagentRows, jobRows, machineRows, unitRows, vendorRows, departments] = await Promise.all([
       sql`SELECT name FROM reagent_types ORDER BY name ASC`,
       sql`SELECT name FROM job_types ORDER BY name ASC`,
       sql`SELECT name FROM machine_types ORDER BY name ASC`,
@@ -41,6 +52,7 @@ export async function GET(request: Request) {
             WHERE COALESCE(vendor, '') <> ''
             ORDER BY vendor ASC
           `,
+      loadDepartments(),
     ]);
 
     return withRequestId(
@@ -50,6 +62,7 @@ export async function GET(request: Request) {
         machineTypes: machineRows.map((row) => row.name),
         units: unitRows.map((row) => row.name),
         vendors: vendorRows.map((row) => row.name),
+        departments,
       }),
       requestId,
     );
@@ -87,13 +100,16 @@ export async function POST(request: Request) {
       reagent: "reagent_types",
       job: "job_types",
       machine: "machine_types",
+      department: "departments",
     }[type];
     if (!tableName) {
       return withRequestId(NextResponse.json({ error: "Invalid type" }, { status: 400 }), requestId);
     }
 
     if (action === "add") {
-      if (tableName === "reagent_types") {
+      if (tableName === "departments") {
+        await sql`INSERT INTO departments (name) VALUES (${value}) ON CONFLICT (name) DO NOTHING`;
+      } else if (tableName === "reagent_types") {
         await sql`INSERT INTO reagent_types (name) VALUES (${value}) ON CONFLICT (name) DO NOTHING`;
       } else if (tableName === "job_types") {
         await sql`INSERT INTO job_types (name) VALUES (${value}) ON CONFLICT (name) DO NOTHING`;
@@ -105,7 +121,9 @@ export async function POST(request: Request) {
     }
 
     if (action === "delete") {
-      if (tableName === "reagent_types") {
+      if (tableName === "departments") {
+        await sql`DELETE FROM departments WHERE name = ${value}`;
+      } else if (tableName === "reagent_types") {
         await sql`DELETE FROM reagent_types WHERE name = ${value}`;
       } else if (tableName === "job_types") {
         await sql`DELETE FROM job_types WHERE name = ${value}`;

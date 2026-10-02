@@ -132,6 +132,40 @@ const statusLabels: Record<PurchaseOrderStatus, string> = {
   CLOSED_SHORT: "ปิดใบ (ได้รับไม่ครบ)",
 };
 
+const ORDER_COLUMNS: Array<{
+  key: string;
+  title: string;
+  hint: string;
+  dot: string;
+  statuses: PurchaseOrderStatus[];
+  pill: (status: PurchaseOrderStatus) => string;
+}> = [
+  {
+    key: "waiting",
+    title: "รอดำเนินการ",
+    hint: "ต้องมีคนในแล็บตัดสินใจ",
+    dot: "bg-crit",
+    statuses: ["PENDING_MANAGER_REVIEW", "PENDING_LAB_REVIEW", "REVISION_REQUESTED"],
+    pill: () => "bg-crit-bg text-crit",
+  },
+  {
+    key: "active",
+    title: "กำลังดำเนินการ",
+    hint: "อยู่ระหว่างบริษัทและการจัดส่ง",
+    dot: "bg-warn",
+    statuses: ["SUBMITTED", "ACKNOWLEDGED", "CONFIRMED", "PARTIALLY_SHIPPED", "SHIPPED", "PARTIALLY_RECEIVED"],
+    pill: () => "bg-warn-bg text-warn",
+  },
+  {
+    key: "closed",
+    title: "ปิดแล้ว",
+    hint: "รับเข้าครบ หรือปิดใบ",
+    dot: "bg-ok",
+    statuses: ["RECEIVED", "CLOSED_SHORT", "REJECTED", "CANCELLED"],
+    pill: (status) => (status === "RECEIVED" ? "bg-ok-bg text-ok" : "bg-gray-100 text-gray-700"),
+  },
+];
+
 export default function PurchaseOrdersPage() {
   const { confirm, notify } = usePopup();
   const router = useRouter();
@@ -478,13 +512,16 @@ export default function PurchaseOrdersPage() {
   };
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">ใบสั่งน้ำยา</h1>
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-[32px] font-medium leading-tight tracking-tight text-ink">ใบสั่งน้ำยา</h1>
+          <p className="mt-1.5 text-[15px] text-gray-600">เรียงตามขั้นตอน เลือกใบเพื่อดูรายละเอียดและดำเนินการ</p>
+        </div>
         <div className="flex gap-2">
           <button
             onClick={() => router.push("/orders/tracking")}
-            className="px-4 py-2 bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+            className="rounded-[10px] border border-line bg-white px-4 py-[9px] text-sm font-medium text-ink hover:bg-gray-50"
           >
             🚚 ติดตามพัสดุ
           </button>
@@ -493,79 +530,109 @@ export default function PurchaseOrdersPage() {
               resetOrderForm();
               setShowCreateModal(true);
             }}
-            className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"
+            className="rounded-[10px] bg-ink px-4 py-[9px] text-sm font-medium text-white hover:bg-black"
           >
             + สร้างใบสั่งน้ำยา
           </button>
         </div>
       </div>
 
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">เลขที่ใบสั่งน้ำยา</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">บริษัท</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">สถานะ</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">รายการ</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">วันที่สร้าง</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ดำเนินการ</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {orders.map((po) => (
-              <tr key={po.id} className="hover:bg-gray-50">
-                <td className="px-6 py-4 font-medium">{po.po_number}</td>
-                <td className="px-6 py-4">{po.vendor}</td>
-                <td className="px-6 py-4">
-                  <span
-                    className={`px-2 py-1 rounded text-xs font-bold ${
-                      po.status === "PENDING_MANAGER_REVIEW" || po.status === "PENDING_LAB_REVIEW" || po.status === "REVISION_REQUESTED"
-                        ? "bg-orange-100 text-orange-800"
-                        : po.status === "SUBMITTED"
-                        ? "bg-yellow-100 text-yellow-800"
-                        : po.status === "CONFIRMED"
-                          ? "bg-blue-100 text-blue-800"
-                          : po.status === "SHIPPED"
-                            ? "bg-purple-100 text-purple-800"
-                            : po.status === "RECEIVED"
-                              ? "bg-green-100 text-green-800"
-                              : "bg-gray-100 text-gray-800"
-                    }`}
-                  >
-                    {statusLabels[po.status] ?? po.status}
-                  </span>
-                </td>
-                <td className="px-6 py-4 text-sm text-gray-500">{po.items?.length || 0} รายการ</td>
-                <td className="px-6 py-4 text-sm text-gray-500">{new Date(po.created_at).toLocaleDateString("th-TH")}</td>
-                <td className="px-6 py-4 text-sm font-medium">
-                  {po.status === "PENDING_MANAGER_REVIEW" && canManageLabOrders && (
-                    <div className="mb-2">
-                      <button onClick={() => router.push(`/orders/${po.id}`)} className="text-teal-700 hover:text-teal-900">ตรวจสอบก่อนส่งบริษัท</button>
-                    </div>
-                  )}
-                  {canManageLabOrders && (po.status === "PENDING_MANAGER_REVIEW" || po.status === "SUBMITTED") && po.proposal_origin === "LAB" && (
-                    <div className="mb-2">
-                      <button onClick={() => openEditOrder(po)} className="text-amber-700 hover:text-amber-900">แก้ไขก่อนบริษัทรับทราบ</button>
-                    </div>
-                  )}
-                  {canManageLabOrders && (po.status === "PENDING_LAB_REVIEW" || po.status === "REVISION_REQUESTED") && (
-                    <div className="mb-2 flex gap-2">
-                      <button onClick={() => reviewOrder(po.id, "CONFIRMED")} className="text-green-700 hover:text-green-900">ยืนยัน</button>
-                      <button onClick={() => reviewOrder(po.id, "REJECTED")} className="text-red-600 hover:text-red-800">ปฏิเสธ</button>
-                    </div>
-                  )}
-                  <button
-                    onClick={() => router.push(`/orders/${po.id}`)}
-                    className="text-indigo-600 hover:text-indigo-900"
-                  >
-                    ดูรายละเอียด
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(290px,1fr))] items-start gap-5">
+        {ORDER_COLUMNS.map((column) => {
+          const columnOrders = orders.filter((po) => column.statuses.includes(po.status));
+          return (
+            <section key={column.key} aria-label={column.title} className="rounded-[18px] border border-line bg-[#fafafa] p-3.5">
+              <div className="flex items-center gap-2 px-1 py-0.5">
+                <span className={`size-2 rounded-full ${column.dot}`} aria-hidden="true" />
+                <h2 className="text-base font-medium text-ink">{column.title}</h2>
+                <span className="ml-auto inline-flex items-center rounded-full border border-line bg-white px-2.5 py-[3px] text-xs font-medium text-ink">{columnOrders.length}</span>
+              </div>
+              <p className="px-1 pb-3 pt-0.5 text-[13px] text-gray-600">{column.hint}</p>
+              <div className="flex flex-col gap-2.5">
+                {columnOrders.map((po) => {
+                  const needsReview = po.status === "PENDING_MANAGER_REVIEW" && canManageLabOrders;
+                  const canEdit = canManageLabOrders && (po.status === "PENDING_MANAGER_REVIEW" || po.status === "SUBMITTED") && po.proposal_origin === "LAB";
+                  const canConfirm = canManageLabOrders && (po.status === "PENDING_LAB_REVIEW" || po.status === "REVISION_REQUESTED");
+
+                  return (
+                    <article
+                      key={po.id}
+                      onClick={() => router.push(`/orders/${po.id}`)}
+                      className="flex cursor-pointer flex-col gap-1.5 rounded-xl border border-line bg-white p-3.5 transition-colors hover:border-gray-400"
+                    >
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            router.push(`/orders/${po.id}`);
+                          }}
+                          className="flex-1 text-left text-sm font-semibold! text-ink"
+                        >
+                          {po.po_number}
+                        </button>
+                        <span className="text-xs text-gray-600">{new Date(po.created_at).toLocaleDateString("th-TH", { day: "2-digit", month: "2-digit", year: "numeric" })}</span>
+                      </div>
+                      <div className="text-sm">{po.vendor}</div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-[3px] text-xs font-medium ${column.pill(po.status)}`}>
+                          {statusLabels[po.status] ?? po.status}
+                        </span>
+                        <span className="text-xs text-gray-600">{po.items?.length || 0} รายการ</span>
+                      </div>
+                      {needsReview && (
+                        <div className="text-[13px] font-medium text-crit">ต้องตรวจสอบ →</div>
+                      )}
+                      {(canEdit || canConfirm) && (
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] font-medium">
+                          {canEdit && (
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                openEditOrder(po);
+                              }}
+                              className="text-warn hover:underline"
+                            >
+                              แก้ไขก่อนบริษัทรับทราบ
+                            </button>
+                          )}
+                          {canConfirm && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  reviewOrder(po.id, "CONFIRMED");
+                                }}
+                                className="text-ok hover:underline"
+                              >
+                                ยืนยัน
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  reviewOrder(po.id, "REJECTED");
+                                }}
+                                className="text-crit hover:underline"
+                              >
+                                ปฏิเสธ
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </article>
+                  );
+                })}
+                {columnOrders.length === 0 && (
+                  <div className="px-1.5 py-[18px] text-[13px] text-gray-600">ไม่มีใบสั่งในขั้นนี้</div>
+                )}
+              </div>
+            </section>
+          );
+        })}
       </div>
 
       {showCreateModal && (
@@ -816,7 +883,7 @@ export default function PurchaseOrdersPage() {
               <button
                 onClick={handleSave}
                 disabled={loading || items.length === 0 || !vendor || items.some((item) => !item.item_id)}
-                className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50"
+                className="px-4 py-2 bg-ink text-white rounded hover:bg-black disabled:opacity-50"
               >
                 {loading ? "กำลังบันทึก..." : editingOrder ? "บันทึกการแก้ไข" : "บันทึกและส่งใบสั่งน้ำยาให้บริษัท"}
               </button>

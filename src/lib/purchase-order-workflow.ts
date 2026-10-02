@@ -41,6 +41,13 @@ export type PurchaseOrderItemInput = {
 
 /** Sent to the Vendor but nothing shipped or accepted yet. Before that, use REJECT_MANAGER_REVIEW. */
 export const CANCELLABLE_STATUSES: readonly string[] = ["SUBMITTED", "ACKNOWLEDGED", "REVISION_REQUESTED", "CONFIRMED"];
+/**
+ * Statuses in which the Lab can confirm that ordered lines arrived. Includes orders the Vendor
+ * never acknowledged, because Vendors often do not use the portal at all.
+ */
+export const LAB_RECEIPT_STATUSES: readonly string[] = [
+  "SUBMITTED", "ACKNOWLEDGED", "CONFIRMED", "PARTIALLY_SHIPPED", "SHIPPED", "PARTIALLY_RECEIVED",
+];
 /** Part of the order was accepted and the Lab will not wait for the rest. */
 export const CLOSE_SHORT_STATUSES: readonly string[] = ["PARTIALLY_RECEIVED"];
 

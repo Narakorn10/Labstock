@@ -122,7 +122,7 @@ export default function RegisterPage() {
     <main className="min-h-screen bg-gray-50 p-4 py-10 sm:py-16">
       <div className="mx-auto w-full max-w-xl space-y-7">
         <header className="text-center">
-          <div className="mb-5 inline-flex size-16 items-center justify-center rounded-[1.5rem] bg-blue-600 text-white shadow-xl">
+          <div className="mb-5 inline-flex size-16 items-center justify-center rounded-2xl bg-ink text-white shadow-xl">
             <Database size={32} aria-hidden="true" />
           </div>
           <h1 className="text-3xl font-black tracking-tight text-gray-900">ลงทะเบียน LabStock</h1>
@@ -131,7 +131,7 @@ export default function RegisterPage() {
           </p>
         </header>
 
-        <section aria-labelledby="register-heading" className="rounded-[2rem] border border-gray-100 bg-white p-6 shadow-xl sm:p-8">
+        <section aria-labelledby="register-heading" className="rounded-[20px] border border-gray-100 bg-white p-6 shadow-xl sm:p-8">
           <h2 id="register-heading" className="sr-only">แบบฟอร์มลงทะเบียน</h2>
 
           {error && (

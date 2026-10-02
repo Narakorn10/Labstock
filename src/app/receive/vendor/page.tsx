@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { Truck, CheckCircle2, XCircle, Loader2, Package, Search } from 'lucide-react';
+import { Truck, CheckCircle2, XCircle, Loader2, Search } from 'lucide-react';
 
 interface Shipment {
   id: number;
@@ -109,76 +109,74 @@ export default function LabVendorReceiptPage() {
   );
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-24">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-24">
       <div>
-        <h1 className="text-3xl font-black text-gray-900 tracking-tight">รับสินค้าจากบริษัท (Vendor Receipt)</h1>
-        <p className="text-gray-500 text-sm font-bold mt-1">ยืนยันรายการน้ำยาที่บริษัทแจ้งส่งมอบล่วงหน้า เพื่อเข้าสต๊อกจริง</p>
+        <h1 className="text-[32px] leading-tight font-medium text-ink">รับสินค้าจากบริษัท (Vendor Receipt)</h1>
+        <p className="mt-1.5 text-[15px] text-gray-600">ตรวจ Lot วันหมดอายุ และจำนวนที่บริษัทแจ้งส่ง ก่อนรับเข้าคลัง</p>
       </div>
 
-      <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-4">
-        <div className="relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-          <input
-            type="text"
-            placeholder="ค้นหาตามชื่อบริษัท, เลขใบส่งของ หรือชื่อน้ำยา..."
-            className="w-full pl-12 pr-4 py-4 bg-gray-50 rounded-2xl border-none outline-none font-bold text-sm"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-      </div>
+      <label className="relative block">
+        <span className="sr-only">ค้นหารายการจัดส่ง</span>
+        <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
+        <input
+          type="text"
+          placeholder="ค้นหาตามชื่อบริษัท, เลขใบส่งของ หรือชื่อน้ำยา..."
+          className="min-h-[38px] w-full rounded-[10px] border border-line bg-white py-[7px] pl-9 pr-3 text-sm text-ink outline-none focus:border-gray-400 focus:ring-4 focus:ring-gray-400/10"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </label>
 
-      <div className="grid grid-cols-1 gap-6">
+      <div className="flex flex-col gap-3.5">
         {loading ? (
-          <div className="py-20 flex flex-col items-center justify-center gap-4">
-            <Loader2 className="animate-spin text-blue-600" size={40} />
-            <p className="text-gray-400 font-bold text-xs uppercase tracking-widest">กำลังตรวจสอบรายการจัดส่ง...</p>
+          <div className="flex flex-col items-center justify-center gap-3 py-20">
+            <Loader2 className="animate-spin text-gray-600" size={32} />
+            <p className="text-sm text-gray-600">กำลังตรวจสอบรายการจัดส่ง...</p>
           </div>
         ) : filtered.length === 0 ? (
-          <div className="py-20 text-center flex flex-col items-center gap-4 bg-white rounded-[2.5rem] border border-dashed border-gray-200">
-             <Package className="text-gray-200" size={64} />
-             <p className="text-gray-400 font-bold italic">ไม่พบรายการสินค้าที่กำลังจัดส่งในขณะนี้</p>
-          </div>
+          <div className="rounded-2xl border border-line bg-white p-8 text-gray-600">ไม่พบรายการสินค้าที่กำลังจัดส่งในขณะนี้</div>
         ) : (
           filtered.map((ship, idx) => (
-            <div key={idx} className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row items-center justify-between gap-6 group">
-              <div className="flex items-center gap-6 w-full">
-                <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center shrink-0 group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                  <Truck size={32} />
+            <section key={ship.id ?? idx} className="rounded-2xl border border-line bg-white px-5 py-[18px]">
+              <div className="flex flex-wrap items-center gap-3">
+                <span aria-hidden="true" className="grid size-[38px] shrink-0 place-items-center rounded-[10px] bg-gray-200 text-ink">
+                  <Truck size={18} />
+                </span>
+                <div className="min-w-0 flex-[1_1_260px]">
+                  <div className="font-semibold">{ship.reagent_name}</div>
+                  <div className="text-xs text-gray-600">{ship.vendor} · Ref: {ship.reference_no}</div>
                 </div>
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-black px-2 py-0.5 bg-blue-100 text-blue-600 rounded uppercase">{ship.vendor}</span>
-                    <span className="text-[10px] font-black px-2 py-0.5 bg-gray-100 text-gray-500 rounded uppercase">Ref: {ship.reference_no}</span>
-                  </div>
-                  <h3 className="text-lg font-black text-gray-900 leading-tight">{ship.reagent_name}</h3>
-                  <div className="flex flex-wrap gap-x-4 gap-y-1">
-                    <p className="text-xs font-bold text-gray-500 uppercase tracking-tighter">Lot: <span className="text-gray-900">{ship.lot_no}</span></p>
-                    <p className="text-xs font-bold text-gray-500 uppercase tracking-tighter">Exp: <span className="text-gray-900">{ship.exp_date}</span></p>
-                    <p className="text-xs font-bold text-gray-500 uppercase tracking-tighter">จำนวน: <span className="text-blue-600 font-black">{ship.quantity} {ship.unit}</span></p>
-                  </div>
-                </div>
+                <span className="inline-flex items-center whitespace-nowrap rounded-full bg-warn-bg px-2.5 py-[3px] text-xs font-medium text-warn">กำลังจัดส่ง</span>
               </div>
 
-              <div className="flex items-center gap-3 w-full md:w-auto shrink-0 border-t md:border-t-0 pt-4 md:pt-0">
+              <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 rounded-xl bg-[#fafafa] px-4 py-3 text-sm sm:grid-cols-3">
+                <div><dt className="text-xs text-gray-600">Lot</dt><dd className="font-medium">{ship.lot_no || '-'}</dd></div>
+                <div><dt className="text-xs text-gray-600">EXP</dt><dd className="font-medium">{ship.exp_date || '-'}</dd></div>
+                <div><dt className="text-xs text-gray-600">จำนวน</dt><dd className="font-semibold">{ship.quantity} {ship.unit}</dd></div>
+              </dl>
+
+              <div className="mt-3 flex flex-wrap justify-end gap-2">
                 <button
+                  type="button"
                   onClick={() => handleAction(ship, 'cancel')}
                   disabled={processingId === ship.id}
-                  className="flex-1 md:flex-none p-4 text-red-400 hover:bg-red-50 rounded-2xl transition-colors"
+                  className="inline-flex items-center gap-2 rounded-[10px] border border-line bg-white px-4 py-[9px] text-sm font-medium text-crit transition hover:bg-crit-bg disabled:cursor-not-allowed disabled:opacity-50"
                   title="ยกเลิกรายการ"
                 >
-                  <XCircle size={24} />
+                  <XCircle size={16} />
+                  ยกเลิกรายการ
                 </button>
                 <button
+                  type="button"
                   onClick={() => handleAction(ship, 'receive')}
                   disabled={processingId === ship.id}
-                  className="flex-1 md:flex-none flex items-center justify-center gap-2 px-8 py-4 bg-green-600 text-white rounded-2xl shadow-lg shadow-green-100 hover:bg-green-700 transition-all font-black text-sm uppercase tracking-widest"
+                  className="inline-flex items-center gap-2 rounded-[10px] border border-ink bg-ink px-4 py-[9px] text-sm font-medium text-white transition hover:bg-black active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {processingId === ship.id ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle2 size={20} />}
+                  {processingId === ship.id ? <Loader2 className="animate-spin" size={16} /> : <CheckCircle2 size={16} />}
                   ยืนยันการรับของ
                 </button>
               </div>
-            </div>
+            </section>
           ))
         )}
       </div>

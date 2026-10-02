@@ -41,6 +41,7 @@ export default function MasterDataPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [search, setSearch] = useState('');
+  const [vendorFilter, setVendorFilter] = useState('ALL');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingReagent, setEditingReagent] = useState<Partial<Reagent> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -223,10 +224,12 @@ export default function MasterDataPage() {
     }
   };
 
-  const filteredReagents = reagents.filter(r => 
-    r.name.toLowerCase().includes(search.toLowerCase()) ||
+  const vendorOptions = Array.from(new Set(reagents.map(r => r.vendor).filter((vendor): vendor is string => Boolean(vendor)))).sort();
+  const filteredReagents = reagents.filter(r =>
+    (r.name.toLowerCase().includes(search.toLowerCase()) ||
     r.itemId.toLowerCase().includes(search.toLowerCase()) ||
-    (r.qrCode || '').toLowerCase().includes(search.toLowerCase())
+    (r.qrCode || '').toLowerCase().includes(search.toLowerCase())) &&
+    (vendorFilter === 'ALL' || r.vendor === vendorFilter)
   );
 
   const stats = {
@@ -242,8 +245,8 @@ export default function MasterDataPage() {
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex flex-col gap-2">
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900">จัดการข้อมูลพื้นฐาน (Master Data)</h1>
-          <p className="text-gray-500 text-sm">จัดการรายชื่อน้ำยา, รหัสบาร์โค้ด และจุดแจ้งเตือน (Min Stock)</p>
+          <h1 className="text-[32px] leading-tight font-medium tracking-tight text-ink">จัดการข้อมูลพื้นฐาน (Master Data)</h1>
+          <p className="mt-1 text-sm text-ink-muted">จัดการรายชื่อน้ำยา, รหัสบาร์โค้ด และจุดแจ้งเตือน (Min Stock)</p>
         </div>
         <div className="flex items-center gap-2">
           <input 
@@ -262,7 +265,7 @@ export default function MasterDataPage() {
           </button>
           <button 
             onClick={() => { setEditingReagent(null); setIsModalOpen(true); }}
-            className="flex items-center justify-center gap-2 bg-blue-600 text-white px-4 py-2.5 rounded-xl hover:bg-blue-700 transition-all shadow-sm font-medium"
+            className="flex items-center justify-center gap-2 bg-ink text-white px-4 py-2.5 rounded-xl hover:bg-black transition-all shadow-sm font-medium"
           >
             <Plus size={20} />
             <span className="hidden sm:inline">เพิ่มรายการใหม่</span>
@@ -320,6 +323,15 @@ export default function MasterDataPage() {
               </button>
             )}
           </div>
+          <select
+            aria-label="กรองตามบริษัท (Vendor)"
+            value={vendorFilter}
+            onChange={(e) => setVendorFilter(e.target.value)}
+            className="min-h-[38px] w-full cursor-pointer rounded-[10px] border border-line bg-white px-3 py-[7px] text-sm text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 md:w-64"
+          >
+            <option value="ALL">ทุกบริษัท (Vendor)</option>
+            {vendorOptions.map((vendor) => <option key={vendor} value={vendor}>{vendor}</option>)}
+          </select>
         </div>
 
         <div className="overflow-x-auto">
@@ -564,7 +576,7 @@ export default function MasterDataPage() {
             </button>
             <button 
               type="submit"
-              className="flex-1 px-4 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all shadow-sm font-bold"
+              className="flex-1 px-4 py-3 bg-ink text-white rounded-xl hover:bg-black transition-all shadow-sm font-bold"
             >
               บันทึกข้อมูลน้ำยา
             </button>
