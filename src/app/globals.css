@@ -238,3 +238,8 @@ textarea {
     transition-duration: 0.01ms !important;
   }
 }
+
+@keyframes login-progress {
+  from { width: 0; }
+  to { width: 100%; }
+}
