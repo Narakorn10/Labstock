@@ -5,6 +5,7 @@ import { useAuth } from '@/components/auth-provider';
 import { apiClient, BarcodePattern, Reagent } from '@/lib/api-client';
 import { findMatchingReagentWithV2 } from '@/lib/barcode-parser';
 import QRScanner from '@/components/lazy-qr-scanner';
+import Modal from '@/components/modal';
 import {
   Camera,
   Trash2,
@@ -37,6 +38,10 @@ export default function ReceivePage() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error', msg: string } | null>(null);
   const [showResults, setShowResults] = useState(false);
+  const [inactiveScan, setInactiveScan] = useState<{ reagent: Reagent; lot: string; exp: string } | null>(null);
+  const [activating, setActivating] = useState(false);
+  const [activateError, setActivateError] = useState('');
+  const canActivate = user?.role === 'Admin' || user?.role === 'Manager';
   const cartIdRef = useRef(0);
 
   const createCartId = (itemId: string) => {
@@ -113,6 +118,15 @@ export default function ReceivePage() {
   }, [authLoading, user]);
 
   const addToCart = (match: Reagent, lot: string = '', exp: string = '') => {
+    // A deactivated reagent cannot be received; ask first so Admin/Manager can turn it back on.
+    if (match.isActive === false) {
+      setActivateError('');
+      setInactiveScan({ reagent: match, lot, exp });
+      setSearch('');
+      setShowResults(false);
+      return;
+    }
+
     const newItem: CartItem = {
       cartId: createCartId(match.itemId),
       itemId: match.itemId,
@@ -134,6 +148,25 @@ export default function ReceivePage() {
     setSearch('');
     setShowResults(false);
     setFeedback({ type: 'success', msg: `เพิ่ม ${match.name} ลงตะกร้าแล้ว` });
+  };
+
+  const handleActivateScanned = async () => {
+    if (!inactiveScan) return;
+    setActivating(true);
+    setActivateError('');
+    try {
+      await apiClient.updateReagentStatus(inactiveScan.reagent.itemId, true, 'เปิดใช้งานจากหน้ารับเข้า (สแกนพบน้ำยาที่ปิดใช้งาน)');
+      const activated: Reagent = { ...inactiveScan.reagent, isActive: true, statusReason: null };
+      setReagents(prev => prev.map(r => r.itemId === activated.itemId ? activated : r));
+      setInactiveScan(null);
+      addToCart(activated, inactiveScan.lot, inactiveScan.exp);
+      setFeedback({ type: 'success', msg: `เปิดใช้งาน ${activated.name} แล้ว และเพิ่มลงตะกร้า` });
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { error?: string } }, message?: string };
+      setActivateError(error.response?.data?.error || error.message || 'เปิดใช้งานน้ำยาไม่สำเร็จ');
+    } finally {
+      setActivating(false);
+    }
   };
 
   const handleScan = (decodedText: string) => {
@@ -443,6 +476,34 @@ export default function ReceivePage() {
           </div>
         </section>
       </div>
+
+      <Modal isOpen={Boolean(inactiveScan)} onClose={() => !activating && setInactiveScan(null)} title="น้ำยานี้ถูกปิดใช้งาน">
+        {inactiveScan && (
+          <div className="space-y-4">
+            <div className="rounded-xl bg-warn-bg px-3.5 py-3 text-sm text-warn">
+              <p className="font-medium">{inactiveScan.reagent.name} ({inactiveScan.reagent.itemId})</p>
+              <p className="mt-1">เหตุผลที่ปิด: {inactiveScan.reagent.statusReason || '-'}</p>
+            </div>
+            <p className="text-sm text-gray-600">
+              {canActivate
+                ? 'ต้องเปิดใช้งานน้ำยานี้ก่อนจึงจะรับเข้าคลังได้ ต้องการเปิดใช้งานและเพิ่มลงตะกร้าหรือไม่?'
+                : 'ไม่สามารถรับเข้าน้ำยาที่ปิดใช้งานได้ กรุณาติดต่อ Admin หรือ Manager เพื่อเปิดใช้งานก่อน'}
+            </p>
+            {activateError && <p role="alert" className="rounded-xl bg-crit-bg px-3.5 py-3 text-sm font-medium text-crit">{activateError}</p>}
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setInactiveScan(null)} disabled={activating} className="rounded-[10px] border border-line bg-white px-4 py-[9px] text-sm font-medium text-ink hover:bg-gray-50 disabled:opacity-50">
+                {canActivate ? 'ยกเลิก' : 'ปิด'}
+              </button>
+              {canActivate && (
+                <button type="button" onClick={handleActivateScanned} disabled={activating} className="inline-flex items-center gap-2 rounded-[10px] bg-ink px-4 py-[9px] text-sm font-medium text-white hover:bg-black disabled:opacity-50">
+                  {activating && <Loader2 className="animate-spin" size={16} />}
+                  เปิดใช้งานและเพิ่มลงตะกร้า
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* Scanner Modal */}
       {scanMode && (

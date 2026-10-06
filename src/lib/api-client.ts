@@ -1,5 +1,6 @@
 import axios from 'axios';
 import type { AppEventsResponse } from '@/lib/app-events-types';
+import type { ConfirmResult } from '@/lib/count-work-orders';
 
 // Create axios instance
 const instance = axios.create();
@@ -363,9 +364,9 @@ export const apiClient = {
 
   listCountWorkOrders: async () => (await instance.get<CountWorkOrderSummary[]>('/api/count-work-orders')).data,
   saveCountWorkOrder: async (jobType: string, items: Array<{ itemId: string; countedQty: number }>) =>
-    (await instance.post<{ id: number; savedCount: number }>('/api/count-work-orders', { jobType, items })).data,
+    (await instance.post<{ id: number; savedCount: number; alreadyDispensed: string[] }>('/api/count-work-orders', { jobType, items })).data,
   confirmCountWorkOrder: async (id: number, allocations: Array<{ itemId: string; inventoryId: number; qty: number }>) =>
-    (await instance.post<ApiResponse>(`/api/count-work-orders/${id}/confirm`, { allocations })).data,
+    (await instance.post<ConfirmResult>(`/api/count-work-orders/${id}/confirm`, { allocations })).data,
   getCountWorkOrder: async (id: number) => (await instance.get(`/api/count-work-orders/${id}`)).data,
   updateCountWorkOrder: async (id: number, items: Array<{ itemId: string; countedQty: number }>) => (await instance.patch(`/api/count-work-orders/${id}`, { items })).data,
   getCountWorkOrderLots: async (id: number) => (await instance.get<Lot[]>(`/api/count-work-orders/${id}/lots`)).data,
