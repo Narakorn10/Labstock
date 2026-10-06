@@ -6,9 +6,10 @@
  */
 
 import type { BarcodePattern, BarcodePatternV2Runtime } from '@/lib/api-client';
+import { parseLotLabelPayload } from '@/lib/lot-label';
 
 export interface BarcodeData {
-    barcodeType: "GS1_COMPLIANT" | "STANDARD_1D" | "CUSTOM_PATTERN";
+    barcodeType: "GS1_COMPLIANT" | "STANDARD_1D" | "CUSTOM_PATTERN" | "INTERNAL_LOT";
     gtin: string;
     udi: string;
     ref: string;
@@ -111,6 +112,22 @@ const parseCustomPattern = (
 
 export const processAnyBarcode = (rawBarcode: string, patterns: BarcodePattern[] = []): BarcodeData | null => {
     if (!rawBarcode) return null;
+
+    // Our own per-lot sticker names the item and lot exactly, so nothing else should reinterpret it.
+    const lotLabel = parseLotLabelPayload(rawBarcode);
+    if (lotLabel) {
+        return {
+            barcodeType: "INTERNAL_LOT",
+            gtin: lotLabel.itemId,
+            udi: rawBarcode.trim(),
+            ref: "NEED_MANUAL_INPUT",
+            lot: lotLabel.lotNo,
+            expDate: lotLabel.expDate || "NEED_MANUAL_INPUT",
+            mfgDate: "NEED_MANUAL_INPUT",
+            serial: "NEED_MANUAL_INPUT",
+            rawString: rawBarcode.trim()
+        };
+    }
 
     // A valid GS1 UDI must take precedence over broad positional patterns.
     const gs1Data = parseGs1Udi(rawBarcode);
@@ -259,6 +276,16 @@ export const findMatchingReagent = <T extends ReagentLookupItem>(
         return { data: null, match: undefined, lookupValues: [] };
     }
 
+    // Our lot sticker carries the exact item ID: never let vendor patterns or loose matching pick another reagent.
+    if (data.barcodeType === "INTERNAL_LOT") {
+        const key = normalizeLookupValue(data.gtin);
+        return {
+            data,
+            match: reagents.find((reagent) => normalizeLookupValue(reagent.itemId) === key),
+            lookupValues: [key]
+        };
+    }
+
     const lookupValues = getLookupValues(rawBarcode, data, patterns);
     const lookupKeys = new Set(lookupValues);
 
@@ -349,7 +376,7 @@ export const findMatchingReagentWithV2 = <T extends ReagentLookupItem>(
 
     // Unknown GS1 remains the old manual-input path. V2 is only for the
     // non-GS1/non-master-data area explicitly reserved by the rollout plan.
-    if (legacyResult.data?.barcodeType === 'GS1_COMPLIANT') {
+    if (legacyResult.data?.barcodeType === 'GS1_COMPLIANT' || legacyResult.data?.barcodeType === 'INTERNAL_LOT') {
         return legacyResult;
     }
 
