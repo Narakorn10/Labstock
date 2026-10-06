@@ -13,6 +13,7 @@ import {
   LayoutDashboard,
   Package,
   PackagePlus,
+  QrCode,
   ScanLine,
   Settings,
   Shield,
@@ -52,6 +53,7 @@ const ALL_NAVIGATION_GROUPS: NavigationGroup[] = [
       { id: "dispense", name: "Dispense (เบิกจ่าย)", label: "Dispense", href: "/dispense", icon: HandHelping },
       { id: "receive", name: "Receive (รับเข้า)", label: "Receive Stock", href: "/receive", icon: PackagePlus },
       { id: "count", name: "Stock Count (นับ)", label: "Stock Count", href: "/count", icon: CheckCircle2 },
+      { id: "lot_labels", name: "ปริ้น QR Lot", label: "Print Lot QR Labels", href: "/labels", icon: QrCode },
       { id: "borrow", name: "ระบบยืม (Borrow)", label: "Borrow System", href: "/borrow", icon: ArrowDownToLine },
       { id: "lend", name: "ระบบให้ยืม (Lend)", label: "Lend System", href: "/lend", icon: ArrowUpFromLine },
     ],
@@ -99,7 +101,7 @@ export const ALL_MENUS = NAVIGATION_GROUPS.flatMap((group) => group.items);
 export const ROLES = ["Admin", "Manager", "Operator", "User", "Vendor"] as const;
 
 const ROLE_FALLBACK_MENUS: Record<string, string[]> = {
-  Admin: ["dashboard", "master_data", "user_management", "rbac", "reagent_order_policies", "activity"],
+  Admin: ["dashboard", "master_data", "user_management", "rbac", "reagent_order_policies", "activity", "lot_labels"],
   Manager: ["dashboard", "master_data"],
 };
 
