@@ -17,6 +17,7 @@ import {
   XCircle,
 } from "lucide-react";
 import Modal from "@/components/modal";
+import CountRefillResult, { problemsFromError, problemsFromFailures, type RefillOutcome } from "@/components/count-refill-result";
 import MultiSelect from "@/components/multi-select";
 import { apiClient, type BatchItem, type CountWorkOrderSummary, type Reagent } from "@/lib/api-client";
 
@@ -32,6 +33,7 @@ interface RefillPreviewItem {
   needed: number;
   dispensed: number;
   shortage: number;
+  status: "complete" | "partial" | "none";
   lots: BatchItem[];
 }
 
@@ -41,6 +43,7 @@ interface RefillPreview {
   totalNeeded: number;
   totalDispensed: number;
   totalShortage: number;
+  completeCount: number;
 }
 
 const COUNT_STORAGE_KEY = "labstock_counts";
@@ -58,6 +61,9 @@ const formatShortDate = (value?: string) => {
     ? value
     : new Intl.DateTimeFormat("th-TH", { day: "2-digit", month: "short", year: "2-digit" }).format(date);
 };
+
+// Deactivated reagents are not counted or refilled.
+const activeOnly = (items: Reagent[]) => items.filter((item) => item.isActive !== false);
 
 const sortLotsByFefo = (lots: Reagent["lots"]) => {
   return [...lots].sort((a, b) => {
@@ -95,15 +101,20 @@ const buildRefillPreview = (items: CountItem[]): RefillPreview => {
     }
 
     const dispensed = lots.reduce((sum, lot) => sum + lot.qty, 0);
-    return { item, actual, needed, dispensed, shortage: Math.max(needed - dispensed, 0), lots };
+    const shortage = Math.max(needed - dispensed, 0);
+    const status: RefillPreviewItem["status"] = shortage === 0 ? "complete" : dispensed > 0 ? "partial" : "none";
+    return { item, actual, needed, dispensed, shortage, status, lots };
   });
+  // Only items whose lots cover the whole refill are dispensed; short items wait in the work order.
+  const completeItems = previewItems.filter((item) => item.status === "complete");
 
   return {
     items: previewItems,
-    batchItems: previewItems.flatMap((item) => item.lots),
+    batchItems: completeItems.flatMap((item) => item.lots),
     totalNeeded: previewItems.reduce((sum, item) => sum + item.needed, 0),
-    totalDispensed: previewItems.reduce((sum, item) => sum + item.dispensed, 0),
+    totalDispensed: completeItems.reduce((sum, item) => sum + item.dispensed, 0),
     totalShortage: previewItems.reduce((sum, item) => sum + item.shortage, 0),
+    completeCount: completeItems.length,
   };
 };
 
@@ -117,6 +128,7 @@ export default function CountPage() {
   const [filterVendor, setFilterVendor] = useState<string[]>(["ALL"]);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; msg: string } | null>(null);
   const [preview, setPreview] = useState<RefillPreview | null>(null);
+  const [refillResult, setRefillResult] = useState<RefillOutcome[] | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [savingWorkOrder, setSavingWorkOrder] = useState(false);
   const [workOrders, setWorkOrders] = useState<CountWorkOrderSummary[]>([]);
@@ -134,7 +146,7 @@ export default function CountPage() {
   }, []);
 
   const refreshFromServer = useCallback(async (clearIds: string[] = [], refilledIds: string[] = []) => {
-    const dashboard = await apiClient.getDashboard();
+    const dashboard = activeOnly(await apiClient.getDashboard());
     setReagents((previous) => mergeDashboardState(dashboard, previous, clearIds, refilledIds));
   }, [mergeDashboardState]);
 
@@ -142,7 +154,7 @@ export default function CountPage() {
     if (authLoading || !user) return;
     apiClient.getDashboard().then((dashboard) => {
       const saved = JSON.parse(localStorage.getItem(COUNT_STORAGE_KEY) || "{}") as Record<string, number>;
-      setReagents(dashboard.map((item) => ({
+      setReagents(activeOnly(dashboard).map((item) => ({
         ...item,
         actual: saved[item.itemId] ?? "",
         refilled: false,
@@ -204,43 +216,61 @@ export default function CountPage() {
   };
 
   const openPreview = (items: CountItem[]) => {
-    const nextPreview = buildRefillPreview(items);
-    if (!nextPreview.batchItems.length) {
-      setFeedback({ type: "error", msg: "สต็อกคลังกลางไม่พอ ไม่มี Lot ที่สามารถเบิกเติมได้" });
-      return;
-    }
-    setPreview(nextPreview);
+    if (!items.length) return;
+    setPreview(buildRefillPreview(items));
   };
 
+  // Items whose lots fully cover the refill are dispensed; short items are saved to the work order and reported
+  // in the result popup with what to do next. Each job type is handled on its own so one failure does not stop the rest.
   const handleConfirmRefill = async () => {
-    if (!preview?.batchItems.length) return;
+    if (!preview?.items.length) return;
     setSubmitting(true);
-    try {
-      if (preview.totalShortage > 0) throw new Error("ต้องจัดสรร Lot ให้ครบตามยอดที่ต้องเบิกก่อนยืนยัน");
-      const byJob = new Map<string, RefillPreviewItem[]>();
-      preview.items.forEach((entry) => {
-        const job = entry.item.jobType || "";
-        byJob.set(job, [...(byJob.get(job) || []), entry]);
-      });
-      for (const [jobType, entries] of byJob) {
+    const byJob = new Map<string, RefillPreviewItem[]>();
+    preview.items.forEach((entry) => {
+      const job = entry.item.jobType || "";
+      byJob.set(job, [...(byJob.get(job) || []), entry]);
+    });
+    const outcomes: RefillOutcome[] = [];
+    for (const [jobType, entries] of byJob) {
+      const outcome: RefillOutcome = { workOrderId: null, jobType: jobType || undefined, dispensed: [], problems: [] };
+      outcomes.push(outcome);
+      try {
         const workOrder = await apiClient.saveCountWorkOrder(jobType, entries.map((entry) => ({ itemId: entry.item.itemId, countedQty: entry.actual })));
-        await apiClient.confirmCountWorkOrder(workOrder.id, entries.flatMap((entry) => entry.lots.map((lot) => ({ itemId: entry.item.itemId, inventoryId: Number(lot.inventoryId), qty: Number(lot.qty) }))));
+        outcome.workOrderId = workOrder.id;
+        const alreadyDispensed = new Set((workOrder.alreadyDispensed || []).map((itemId) => itemId.toLowerCase()));
+        const complete: RefillPreviewItem[] = [];
+        entries.forEach((entry) => {
+          const problem = { itemId: entry.item.itemId, name: entry.item.name, requiredQty: entry.needed, available: entry.dispensed };
+          if (alreadyDispensed.has(entry.item.itemId.toLowerCase())) outcome.problems.push({ ...problem, kind: "NOT_PENDING" });
+          else if (entry.status === "complete") complete.push(entry);
+          else outcome.problems.push({ ...problem, kind: entry.status === "partial" ? "PARTIAL_STOCK" : "NO_STOCK" });
+        });
+        if (!complete.length) continue;
+        try {
+          const result = await apiClient.confirmCountWorkOrder(workOrder.id, complete.flatMap((entry) => entry.lots.map((lot) => ({ itemId: entry.item.itemId, inventoryId: Number(lot.inventoryId), qty: Number(lot.qty) }))));
+          outcome.dispensed = result.dispensed;
+          outcome.problems.push(...problemsFromFailures(result.failed));
+        } catch (error: unknown) {
+          outcome.problems.push(...problemsFromError(error));
+        }
+      } catch (error: unknown) {
+        outcome.problems.push(...problemsFromError(error));
       }
-      const ids = preview.items.map((item) => item.item.itemId);
-      await refreshFromServer(ids, ids);
-      setPreview(null);
-      setFeedback({
-        type: "success",
-        msg: preview.totalShortage > 0
-          ? `เบิกเติมบางส่วนแล้ว สต็อกคลังกลางขาดอีก ${preview.totalShortage} หน่วย`
-          : `เบิกเติม ${preview.items.length} รายการเรียบร้อยแล้ว`,
-      });
-    } catch (error: unknown) {
-      const response = error as { response?: { data?: { error?: string } }; message?: string };
-      setFeedback({ type: "error", msg: `เบิกเติมไม่สำเร็จ: ${response.response?.data?.error || response.message || "ไม่ทราบสาเหตุ"}` });
-    } finally {
-      setSubmitting(false);
     }
+    const dispensedIds = outcomes.flatMap((outcome) => outcome.dispensed.map((item) => item.itemId));
+    try {
+      await refreshFromServer(dispensedIds, dispensedIds);
+    } catch (error) {
+      console.error(error);
+    }
+    apiClient.listCountWorkOrders().then(setWorkOrders).catch(() => undefined);
+    const problemCount = outcomes.reduce((sum, outcome) => sum + outcome.problems.length, 0);
+    setFeedback(problemCount
+      ? { type: "error", msg: `เบิกเติมสำเร็จ ${dispensedIds.length} รายการ ยังไม่ได้เบิก ${problemCount} รายการ (ดูรายละเอียดในใบงาน)` }
+      : { type: "success", msg: `เบิกเติม ${dispensedIds.length} รายการเรียบร้อยแล้ว` });
+    setPreview(null);
+    setRefillResult(outcomes);
+    setSubmitting(false);
   };
 
   const handleSaveForLater = async () => {
@@ -387,8 +417,9 @@ export default function CountPage() {
       </div>
 
       <Modal isOpen={Boolean(preview)} onClose={() => !submitting && setPreview(null)} title="สรุปรายการก่อนยืนยันเบิก" maxWidth="max-w-4xl">
-        {preview && <div className="space-y-5"><div className="grid gap-3 sm:grid-cols-3"><div className="rounded-2xl border border-blue-100 bg-blue-50 p-4"><p className="text-[10px] font-black uppercase text-blue-400">รายการที่จะเติม</p><p className="text-2xl font-black text-blue-800">{preview.items.length}</p></div><div className="rounded-2xl border border-gray-100 bg-gray-50 p-4"><p className="text-[10px] font-black uppercase text-gray-400">ต้องการรวม</p><p className="text-2xl font-black text-gray-800">{preview.totalNeeded}</p></div><div className="rounded-2xl border border-green-100 bg-green-50 p-4"><p className="text-[10px] font-black uppercase text-green-500">จะเบิกได้</p><p className="text-2xl font-black text-green-700">{preview.totalDispensed}</p></div></div>{preview.totalShortage > 0 && <div className="flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-800"><AlertTriangle size={20} /><p className="text-sm font-bold">สต็อกคลังกลางไม่พอ ขาดอีก {preview.totalShortage} หน่วย ระบบจะเบิกเท่าที่มี</p></div>}<div className="max-h-[46vh] space-y-3 overflow-y-auto">{preview.items.map((entry) => <div key={entry.item.itemId} className="rounded-2xl border border-gray-100 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-black text-gray-900">{entry.item.name}</p><p className="text-[11px] font-bold text-gray-400">นับได้ {entry.actual} / เป้าหมาย {entry.item.weeklyTarget} {entry.item.unit}</p></div><p className="rounded-xl bg-blue-50 px-3 py-2 text-sm font-black text-blue-800">เบิก {entry.dispensed} {entry.item.unit}</p></div><div className="mt-3 space-y-2">{entry.lots.map((lot) => <div key={lot.inventoryId} className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2"><p className="text-xs font-bold text-gray-600">Lot {lot.lotNo} · EXP {formatShortDate(lot.expDate)} · รับ {formatShortDate(lot.receivedOn)}</p><p className="text-sm font-black text-gray-900">{lot.qty} {lot.unit}</p></div>)}</div></div>)}</div><div className="flex flex-col gap-3 pt-2 sm:flex-row"><button onClick={() => setPreview(null)} disabled={submitting} className="rounded-2xl border border-gray-200 px-6 py-4 text-sm font-black text-gray-600 disabled:opacity-50">ยกเลิก</button><button onClick={handleConfirmRefill} disabled={submitting || !preview.batchItems.length} className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-gray-900 px-6 py-4 text-sm font-black text-white disabled:opacity-50">{submitting ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle size={18} />}ยืนยันเบิก {preview.totalDispensed} รายการ</button></div></div>}
+        {preview && <div className="space-y-5"><div className="grid gap-3 sm:grid-cols-3"><div className="rounded-2xl border border-blue-100 bg-blue-50 p-4"><p className="text-[10px] font-black uppercase text-blue-400">รายการที่จะเติม</p><p className="text-2xl font-black text-blue-800">{preview.items.length}</p></div><div className="rounded-2xl border border-gray-100 bg-gray-50 p-4"><p className="text-[10px] font-black uppercase text-gray-400">ต้องการรวม</p><p className="text-2xl font-black text-gray-800">{preview.totalNeeded}</p></div><div className="rounded-2xl border border-green-100 bg-green-50 p-4"><p className="text-[10px] font-black uppercase text-green-500">ครบ พร้อมเบิก</p><p className="text-2xl font-black text-green-700">{preview.completeCount} <span className="text-sm">รายการ</span></p></div></div>{preview.totalShortage > 0 && <div className="flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-800"><AlertTriangle size={20} /><p className="text-sm font-bold">สต็อกคลังกลางไม่พอ {preview.items.length - preview.completeCount} รายการ ระบบจะเบิกเฉพาะรายการที่ครบ รายการที่ไม่ครบจะค้างไว้ในใบงานเพื่อเบิกภายหลัง</p></div>}<div className="max-h-[46vh] space-y-3 overflow-y-auto">{preview.items.map((entry) => <div key={entry.item.itemId} className="rounded-2xl border border-gray-100 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-black text-gray-900">{entry.item.name}</p><p className="text-[11px] font-bold text-gray-400">นับได้ {entry.actual} / เป้าหมาย {entry.item.weeklyTarget} {entry.item.unit}</p></div>{entry.status === "complete" ? <p className="rounded-xl bg-blue-50 px-3 py-2 text-sm font-black text-blue-800">ครบ · เบิก {entry.dispensed} {entry.item.unit}</p> : <p className="rounded-xl bg-amber-50 px-3 py-2 text-sm font-black text-amber-800">{entry.status === "partial" ? `มี ${entry.dispensed} จาก ${entry.needed}` : "ไม่มีของในคลัง"} · ค้างไว้</p>}</div><div className="mt-3 space-y-2">{entry.lots.map((lot) => <div key={lot.inventoryId} className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2"><p className="text-xs font-bold text-gray-600">Lot {lot.lotNo} · EXP {formatShortDate(lot.expDate)} · รับ {formatShortDate(lot.receivedOn)}</p><p className="text-sm font-black text-gray-900">{lot.qty} {lot.unit}</p></div>)}</div></div>)}</div><div className="flex flex-col gap-3 pt-2 sm:flex-row"><button onClick={() => setPreview(null)} disabled={submitting} className="rounded-2xl border border-gray-200 px-6 py-4 text-sm font-black text-gray-600 disabled:opacity-50">ยกเลิก</button><button onClick={handleConfirmRefill} disabled={submitting} className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-gray-900 px-6 py-4 text-sm font-black text-white disabled:opacity-50">{submitting ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle size={18} />}{preview.completeCount ? `ยืนยันเบิก ${preview.completeCount} รายการที่ครบ` : "บันทึกรายการค้างไว้ในใบงาน"}</button></div></div>}
       </Modal>
+      <CountRefillResult outcomes={refillResult} onClose={() => setRefillResult(null)} />
 
     </div>
   );
