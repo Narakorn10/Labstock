@@ -53,13 +53,41 @@ function asNumber(value: string | number | null | undefined) {
   return Number(value) || 0;
 }
 
-function daysFromToday(dateValue: string) {
+export function daysFromToday(dateValue: string) {
   const date = new Date(`${dateValue.slice(0, 10)}T00:00:00Z`);
   if (Number.isNaN(date.getTime())) return null;
 
   const today = new Date();
   const startOfToday = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
   return Math.floor((date.getTime() - startOfToday) / 86_400_000);
+}
+
+/** Reorder math shared by the all-items dashboard and the single-item view. */
+export function computeReorderInsight(quantity: number, minThreshold: number, dispensedLast90Days: number) {
+  const averageDailyUsage = dispensedLast90Days / USAGE_LOOKBACK_DAYS;
+  const daysUntilMin = averageDailyUsage > 0
+    ? Math.max(0, (quantity - minThreshold) / averageDailyUsage)
+    : null;
+  const targetQuantity = Math.ceil(
+    (LEAD_TIME_DAYS + REVIEW_PERIOD_DAYS) * averageDailyUsage + minThreshold
+  );
+
+  let status: ReorderStatus = "normal";
+  if (quantity <= minThreshold || (daysUntilMin !== null && daysUntilMin <= LEAD_TIME_DAYS)) {
+    status = "critical";
+  } else if (daysUntilMin !== null && daysUntilMin <= LEAD_TIME_DAYS + REVIEW_PERIOD_DAYS) {
+    status = "reorder";
+  }
+
+  return {
+    quantity,
+    minThreshold,
+    dispensedLast90Days,
+    averageDailyUsage,
+    daysUntilMin,
+    status,
+    recommendedOrderQty: status === "normal" ? 0 : Math.max(0, targetQuantity - quantity)
+  };
 }
 
 export async function getReagentUsageInsights() {
@@ -105,38 +133,16 @@ export async function getReagentUsageInsights() {
     `
   ]);
 
-  const insights = (insightRows as unknown as InsightRow[]).map((row) => {
-    const quantity = asNumber(row.quantity);
-    const minThreshold = asNumber(row.minThreshold);
-    const dispensedLast90Days = asNumber(row.dispensedLast90Days);
-    const averageDailyUsage = dispensedLast90Days / USAGE_LOOKBACK_DAYS;
-    const daysUntilMin = averageDailyUsage > 0
-      ? Math.max(0, (quantity - minThreshold) / averageDailyUsage)
-      : null;
-    const targetQuantity = Math.ceil(
-      (LEAD_TIME_DAYS + REVIEW_PERIOD_DAYS) * averageDailyUsage + minThreshold
-    );
-
-    let status: ReorderStatus = "normal";
-    if (quantity <= minThreshold || (daysUntilMin !== null && daysUntilMin <= LEAD_TIME_DAYS)) {
-      status = "critical";
-    } else if (daysUntilMin !== null && daysUntilMin <= LEAD_TIME_DAYS + REVIEW_PERIOD_DAYS) {
-      status = "reorder";
-    }
-
-    return {
-      itemId: row.itemId,
-      name: row.name,
-      unit: row.unit || "หน่วย",
-      quantity,
-      minThreshold,
-      dispensedLast90Days,
-      averageDailyUsage,
-      daysUntilMin,
-      status,
-      recommendedOrderQty: status === "normal" ? 0 : Math.max(0, targetQuantity - quantity)
-    } satisfies ReagentUsageInsight;
-  });
+  const insights = (insightRows as unknown as InsightRow[]).map((row) => ({
+    itemId: row.itemId,
+    name: row.name,
+    unit: row.unit || "หน่วย",
+    ...computeReorderInsight(
+      asNumber(row.quantity),
+      asNumber(row.minThreshold),
+      asNumber(row.dispensedLast90Days)
+    )
+  } satisfies ReagentUsageInsight));
 
   const insightByItemId = new Map(insights.map((insight) => [insight.itemId, insight]));
   const cumulativeByItemId = new Map<string, number>();
