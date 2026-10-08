@@ -1,4 +1,52 @@
-# WIP — 2026-10-02 14:48
+# WIP — 2026-10-08 23.06
+
+## Git Status
+
+```text
+checkout นี้: feat/departments-auth (243ac81) ← feat/departments-migrations (35c5937) ← feat/user-facing-errors (eff6da1) ← feat/lot-qr-labels (6e22ee0, PR #37)
+ทั้ง 3 branch ใหม่ commit แล้ว ยังไม่ push / ไม่มี PR / ไม่ได้ deploy / migration ยังไม่รันบน production
+ M "ψ/WIP.md"                                                                     (รอ commit)
+?? "ψ/memory/retrospectives/2026-10/06/"                                          (รอ commit)
+?? "ψ/memory/retrospectives/2026-10/08/23.06_errors-multi-department-agent-team.md" (รอ commit)
+```
+
+## งานค้าง
+- [ ] ขั้น 6 หน้าจอสลับงาน (`/api/auth/me`, `department-switcher`, `auth-provider`, `api-client`) ตาม design `docs/departments-rollout.md` — ลองใช้ `/dev-team` (ทีม agent ชุดใหม่)
+- [ ] ย้าย route เข้า `scoped-db` ทีละกลุ่ม (เริ่ม dispense) จน `DEPARTMENT_SCOPE_PENDING` (51 ไฟล์) ว่าง; UPDATE/DELETE ต้องใช้ `andDeptWrite`/`deptWhereWrite`
+- [ ] ซ้อม v30–v34 ใหม่บน Neon branch ใหม่ (ขออนุมัติก่อน) — branch `dept-rehearsal-2026-10-08` (`br-quiet-hall-aohmgi8c`) ล้าสมัยเพราะ v30 เปลี่ยน ขอผู้ใช้อนุญาตลบ
+- [ ] ผู้ใช้ทดสอบ `scripts/apply-migration.mjs` เองด้วย `!` (connection string ของ branch ซ้อม แบบไม่ pooler)
+- [ ] ตัดสินใจลำดับ merge branch ซ้อน และเปิด PR เมื่อผู้ใช้สั่ง
+
+## Context
+- `.env.local` ชี้ Neon **production** (บันทึก 2026-09-26) → ห้ามบันทึกข้อมูลผ่าน `npm run dev`; งานเริ่มต้น = "ห้องปฏิบัติการเคมีคลินิก" รหัส `CC` (ห้ามใช้ `LAB`)
+- แผน: `~/.claude/plans/scalable-marinating-muffin.md`; retrospective: `ψ/memory/retrospectives/2026-10/08/23.06_errors-multi-department-agent-team.md`
+
+---
+
+## (history) WIP — 2026-10-06 19.30
+
+## Git Status
+
+```text
+checkout นี้: branch feat/lot-qr-labels (PR #37, commit 6e22ee0, push แล้ว)
+PR #36 feat/item-usage-analysis (commit 294f0ee, push แล้ว) — ทั้งสอง PR ยังไม่ merge, base=main
+?? "ψ/memory/retrospectives/2026-10/06/"   (รอ commit)
+ M "ψ/WIP.md"                              (รอ commit)
+```
+
+## งานค้าง
+- [ ] ผู้ใช้ขอ "ทดสอบ API ต่าง ๆ" แต่ยังไม่ได้ระบุขอบเขต: เทสอัตโนมัติ / ยิง dev server (GET อย่างเดียว) / เฉพาะ API ใหม่ และฐานข้อมูลที่ใช้ (ห้ามยิงของจริงโดยไม่ยืนยัน `.env.local` ชี้ไหน)
+- [ ] PR #37: ปริ้นป้าย 50x35 มม. จริง 1–2 ดวง + สแกนในหน้าเบิกจ่าย/รับเข้า
+- [ ] PR #36: เทียบแท็บ "รายน้ำยา" กับหน้า Logs ด้วยบัญชี Admin
+- [ ] merge PR #36/#37 เมื่อผู้ใช้สั่งชัดเจนเท่านั้น
+
+## Context
+- เมนูใหม่ `lot_labels` ให้ Admin เห็นอัตโนมัติ บทบาทอื่นต้องเปิดในหน้า Permissions; QR รูปแบบ `LS1|itemId|lot|exp`
+- ไม่ push/merge เข้า main เองโดยไม่ถาม
+
+---
+
+## (history) WIP — 2026-10-02 14:48
 
 ## Git Status
 
