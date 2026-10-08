@@ -1,5 +1,6 @@
 import sql from "@/lib/db";
 import type { AuthenticatedUser } from "@/lib/auth-utils";
+import { AppError } from "@/lib/errors";
 
 export type CountWorkOrderStatus = "OPEN" | "CONFIRMED" | "CANCELLED";
 export type CountInput = { itemId: string; countedQty: number };
@@ -16,7 +17,7 @@ export function normalizeAllocations(allocations: AllocationInput[]) {
     const inventoryId = Number(raw.inventoryId);
     const qty = Number(raw.qty);
     if (!itemId || !Number.isInteger(inventoryId) || inventoryId <= 0 || !Number.isFinite(qty) || qty <= 0) {
-      throw new Error("ข้อมูล Lot สำหรับการเบิกไม่ถูกต้อง");
+      throw new AppError("VALIDATION_FAILED", { message: "ข้อมูล Lot สำหรับการเบิกไม่ถูกต้อง", detail: "ข้อมูล Lot สำหรับการเบิกไม่ถูกต้อง" });
     }
     const key = `${itemId.toLowerCase()}:${inventoryId}`;
     const current = grouped.get(key);
@@ -26,7 +27,7 @@ export function normalizeAllocations(allocations: AllocationInput[]) {
 }
 
 function assertLabUser(user: AuthenticatedUser) {
-  if (user.role === "Vendor") throw new Error("Vendor ไม่มีสิทธิ์เข้าถึงใบงานนับสต็อก");
+  if (user.role === "Vendor") throw new AppError("FORBIDDEN", { message: "Vendor ไม่มีสิทธิ์เข้าถึงใบงานนับสต็อก", detail: "Vendor ไม่มีสิทธิ์เข้าถึงใบงานนับสต็อก" });
 }
 
 export async function listCountWorkOrders(user: AuthenticatedUser) {
@@ -48,11 +49,11 @@ export async function saveCountWorkOrder(user: AuthenticatedUser, jobType: strin
   assertLabUser(user);
   const normalized = inputs.map((entry) => ({ itemId: String(entry.itemId || "").trim(), countedQty: Number(entry.countedQty) }))
     .filter((entry) => entry.itemId && Number.isFinite(entry.countedQty) && entry.countedQty >= 0);
-  if (normalized.length === 0 || normalized.length !== inputs.length) throw new Error("กรุณาระบุยอดนับที่ถูกต้องอย่างน้อยหนึ่งรายการ");
+  if (normalized.length === 0 || normalized.length !== inputs.length) throw new AppError("VALIDATION_FAILED", { message: "กรุณาระบุยอดนับที่ถูกต้องอย่างน้อยหนึ่งรายการ", detail: "กรุณาระบุยอดนับที่ถูกต้องอย่างน้อยหนึ่งรายการ" });
   const duplicate = new Set<string>();
   for (const item of normalized) {
     const key = item.itemId.toLowerCase();
-    if (duplicate.has(key)) throw new Error("พบรายการนับซ้ำในใบงาน");
+    if (duplicate.has(key)) throw new AppError("VALIDATION_FAILED", { message: "พบรายการนับซ้ำในใบงาน", detail: "พบรายการนับซ้ำในใบงาน" });
     duplicate.add(key);
   }
   const safeJobType = String(jobType || "").trim();
@@ -62,7 +63,8 @@ export async function saveCountWorkOrder(user: AuthenticatedUser, jobType: strin
     WHERE is_active = FALSE AND LOWER(item_id) IN (SELECT LOWER(TRIM(entry->>'itemId')) FROM JSONB_ARRAY_ELEMENTS(${payload}::jsonb) entry)
   ` as Array<{ item_id: string }>;
   if (inactive.length) {
-    throw new Error(`REAGENT_INACTIVE: น้ำยาถูกปิดใช้งานแล้ว (${inactive.map((row) => row.item_id).join(", ")}) กรุณารีเฟรชหน้าแล้วนับใหม่`);
+    const text = `น้ำยาถูกปิดใช้งานแล้ว (${inactive.map((row) => row.item_id).join(", ")}) กรุณารีเฟรชหน้าแล้วนับใหม่`;
+    throw new AppError("REAGENT_INACTIVE", { message: text, detail: `REAGENT_INACTIVE: ${text}` });
   }
   const [resultRows] = await sql.transaction([sql`
     WITH order_row AS (
@@ -103,7 +105,7 @@ export async function saveCountWorkOrder(user: AuthenticatedUser, jobType: strin
   `]);
   const result = resultRows[0] as { id: number; savedCount: number; alreadyDispensed: string[] } | undefined;
   const alreadyDispensed = result?.alreadyDispensed || [];
-  if (Number(result?.savedCount || 0) + alreadyDispensed.length !== normalized.length) throw new Error("ไม่พบรายการหรือรายการไม่ตรงกับหน่วยงานของใบงาน");
+  if (Number(result?.savedCount || 0) + alreadyDispensed.length !== normalized.length) throw new AppError("VALIDATION_FAILED", { message: "ไม่พบรายการหรือรายการไม่ตรงกับหน่วยงานของใบงาน", detail: "ไม่พบรายการหรือรายการไม่ตรงกับหน่วยงานของใบงาน" });
   return { id: Number(result!.id), savedCount: Number(result!.savedCount), alreadyDispensed };
 }
 
@@ -131,7 +133,7 @@ export async function cancelCountWorkOrder(user: AuthenticatedUser, id: number) 
     UPDATE count_work_orders SET status = 'CANCELLED', cancelled_at = NOW(), cancelled_by = ${user.username}, updated_at = NOW()
     WHERE id = ${id} AND status = 'OPEN' AND LOWER(owner_username) = LOWER(${user.username}) RETURNING id
   `;
-  if (!updated[0]) throw new Error("ไม่พบใบงานที่เปิดอยู่หรือคุณไม่ใช่ผู้สร้าง");
+  if (!updated[0]) throw new AppError("COUNT_ORDER_NOT_FOUND", { message: "ไม่พบใบงานที่เปิดอยู่หรือคุณไม่ใช่ผู้สร้าง", detail: "ไม่พบใบงานที่เปิดอยู่หรือคุณไม่ใช่ผู้สร้าง" });
   await sql`INSERT INTO count_work_order_audit (work_order_id, action, actor_username) VALUES (${id}, 'CANCELLED', ${user.username})`;
 }
 
@@ -245,7 +247,7 @@ export async function confirmCountWorkOrder(user: AuthenticatedUser, id: number,
       (SELECT COALESCE(jsonb_agg(jsonb_build_object('itemId', item_id, 'name', name, 'requiredQty', required_qty)), '[]'::jsonb) FROM remaining) AS "remaining"
   `]);
   const result = resultRows[0] as { owned: number; closed: number; dispensed: ConfirmResult["dispensed"]; failed: ConfirmFailure[]; remaining: ConfirmRemaining[] } | undefined;
-  if (!result?.owned) throw new Error("ไม่พบใบงานที่เปิดอยู่หรือคุณไม่ใช่ผู้สร้าง");
+  if (!result?.owned) throw new AppError("COUNT_ORDER_NOT_FOUND", { message: "ไม่พบใบงานที่เปิดอยู่หรือคุณไม่ใช่ผู้สร้าง", detail: "ไม่พบใบงานที่เปิดอยู่หรือคุณไม่ใช่ผู้สร้าง" });
   const dispensed = result.dispensed.map((item) => ({ ...item, qty: Number(item.qty) }));
   const failed = result.failed.map((item) => ({
     ...item, requiredQty: item.requiredQty === null ? null : Number(item.requiredQty), requestedQty: Number(item.requestedQty), available: Number(item.available),

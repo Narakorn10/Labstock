@@ -1,4 +1,5 @@
 import sql from "./db";
+import { toApiError } from "./api-response";
 import { getRequestId } from "./request-observability";
 
 /**
@@ -102,22 +103,36 @@ export async function recordAppEvent(event: AppEvent): Promise<void> {
 export interface TrackContext {
   user?: { username: string; role: string } | null;
   details?: unknown;
+  /** Same id that is stored in the app_events row and returned in the x-request-id header. */
+  requestId: string;
+  /** Turns a caught error into a safe user-facing response; the real cause is kept for the log only. */
+  fail(err: unknown): Response;
 }
 
-async function readErrorMessage(response: Response): Promise<string | null> {
+async function readErrorInfo(response: Response): Promise<{ message: string | null; code: string | null }> {
   try {
-    const body = await response.clone().json() as { error?: unknown; message?: unknown };
+    const body = await response.clone().json() as { error?: unknown; message?: unknown; code?: unknown };
     const text = typeof body?.error === "string" ? body.error : typeof body?.message === "string" ? body.message : null;
-    return text ? text.slice(0, MAX_MESSAGE) : null;
+    return { message: text, code: typeof body?.code === "string" ? body.code : null };
   } catch {
-    return null;
+    return { message: null, code: null };
   }
 }
 
+function stamp(response: Response, requestId: string): Response {
+  try {
+    response.headers.set("x-request-id", requestId);
+  } catch {
+    // Immutable headers (e.g. a proxied response): the body-level requestId still identifies the request.
+  }
+  return response;
+}
+
 /**
- * Wraps a route handler and records one app_events row per request. The handler's
- * response is returned unchanged. The handler fills `ctx.user` once it knows who the
- * caller is (so there is no second session lookup) and `ctx.details` with the raw input.
+ * Wraps a route handler and records one app_events row per request. The handler fills
+ * `ctx.user` once it knows who the caller is (so there is no second session lookup) and
+ * `ctx.details` with the raw input. An uncaught throw is logged and answered with a safe
+ * error body; the raw exception text is only stored in app_events, never sent to the client.
  */
 export function trackRoute<C = unknown>(
   meta: { action: string },
@@ -125,32 +140,44 @@ export function trackRoute<C = unknown>(
 ) {
   return async (request: Request, routeContext?: C): Promise<Response> => {
     const startedAt = Date.now();
-    const ctx: TrackContext = {};
-    let response: Response | undefined;
-    let thrown: unknown;
+    const requestId = getRequestId(request);
+    let internalMessage: string | undefined;
+    const ctx: TrackContext = {
+      requestId,
+      fail(err: unknown) {
+        const mapped = toApiError(err, requestId);
+        internalMessage = mapped.internalMessage;
+        return mapped.response;
+      },
+    };
+    let response: Response;
     try {
       response = await handler(request, ctx, routeContext as C);
     } catch (error) {
-      thrown = error;
+      response = ctx.fail(error);
     }
+    stamp(response, requestId);
 
-    const status = response ? response.status : 500;
+    const status = response.status;
+    let message: string | null = null;
+    if (status >= 400) {
+      const info = await readErrorInfo(response);
+      const text = internalMessage ?? info.message;
+      message = text ? (info.code && !text.startsWith(info.code) ? `${info.code}: ${text}` : text).slice(0, MAX_MESSAGE) : info.code;
+    }
     await recordAppEvent({
-      requestId: getRequestId(request),
+      requestId,
       username: ctx.user?.username,
       role: ctx.user?.role,
       action: meta.action,
       route: new URL(request.url).pathname,
       method: request.method,
       status,
-      message: response
-        ? (status >= 400 ? await readErrorMessage(response) : null)
-        : (thrown instanceof Error ? thrown.message : String(thrown)),
+      message,
       details: ctx.details,
       durationMs: Date.now() - startedAt,
     });
 
-    if (thrown !== undefined) throw thrown;
-    return response as Response;
+    return response;
   };
 }

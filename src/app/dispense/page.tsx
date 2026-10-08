@@ -5,6 +5,8 @@ import { useAuth } from '@/components/auth-provider';
 import { apiClient, BarcodePattern, Lot, Reagent } from '@/lib/api-client';
 import { findMatchingReagentWithV2 } from '@/lib/barcode-parser';
 import QRScanner from '@/components/lazy-qr-scanner';
+import { ErrorNotice } from '@/components/error-notice';
+import { parseApiError, type ApiErrorInfo } from '@/lib/api-errors-client';
 import {
   Camera,
   Trash2,
@@ -33,7 +35,8 @@ export default function DispensePage() {
   const [patterns, setPatterns] = useState<BarcodePattern[]>([]);
   const [v2Patterns, setV2Patterns] = useState<import('@/lib/api-client').BarcodePatternV2Runtime[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
+  const [loadError, setLoadError] = useState<ApiErrorInfo | null>(null);
+  const [submitError, setSubmitError] = useState<ApiErrorInfo | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [scanMode, setScanMode] = useState(false);
   const [search, setSearch] = useState('');
@@ -65,7 +68,7 @@ export default function DispensePage() {
 
   const loadLookupData = async () => {
     setLoading(true);
-    setLoadError('');
+    setLoadError(null);
     try {
       const [reagentsData, runtimeData] = await Promise.all([
         apiClient.getDashboard(),
@@ -76,8 +79,7 @@ export default function DispensePage() {
       setV2Patterns(runtimeData.v2Patterns);
     } catch (err: unknown) {
       console.error(err);
-      const error = err as { response?: { data?: { error?: string } }, message?: string };
-      setLoadError(error.response?.data?.error || error.message || 'ไม่สามารถโหลดข้อมูลสำหรับค้นหาได้');
+      setLoadError(parseApiError(err, 'โหลดข้อมูลสำหรับค้นหาไม่สำเร็จ'));
     } finally {
       setLoading(false);
     }
@@ -115,8 +117,7 @@ export default function DispensePage() {
         }
 
         console.error(err);
-        const error = err as { response?: { data?: { error?: string } }, message?: string };
-        setLoadError(error.response?.data?.error || error.message || 'ไม่สามารถโหลดข้อมูลสำหรับค้นหาได้');
+        setLoadError(parseApiError(err, 'โหลดข้อมูลสำหรับค้นหาไม่สำเร็จ'));
       } finally {
         if (active) {
           setLoading(false);
@@ -286,14 +287,15 @@ export default function DispensePage() {
     }
 
     setSubmitting(true);
+    setSubmitError(null);
     try {
       await apiClient.dispenseBatch(validItems);
       setFeedback({ type: 'success', msg: 'บันทึกรายการเบิกจ่ายเรียบร้อยแล้ว' });
       setCart([]);
       await loadLookupData();
     } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } }, message: string };
-      setFeedback({ type: 'error', msg: 'เกิดข้อผิดพลาด: ' + (error.response?.data?.error || error.message) });
+      setFeedback(null);
+      setSubmitError(parseApiError(err, 'บันทึกรายการไม่สำเร็จ'));
     } finally {
       setSubmitting(false);
     }
@@ -332,11 +334,7 @@ export default function DispensePage() {
         <p className="mt-1.5 text-[15px] text-gray-600">ตัดสต๊อกด้วยระบบ FEFO (แนะนำ Lot ที่หมดอายุก่อนอัตโนมัติ)</p>
       </div>
 
-      {loadError && (
-        <div role="alert" className="rounded-xl bg-crit-bg px-3.5 py-3 text-sm font-medium text-crit">
-          โหลดข้อมูลไม่สำเร็จ: {loadError}
-        </div>
-      )}
+      <ErrorNotice error={loadError} onRetry={() => void loadLookupData()} />
 
       <div className="grid items-start gap-6 lg:grid-cols-[340px_minmax(0,1fr)]">
         {/* Action Area */}
@@ -416,6 +414,7 @@ export default function DispensePage() {
               <button type="button" onClick={() => setFeedback(null)} aria-label="ปิดข้อความ" className="opacity-70 hover:opacity-100"><X size={16} /></button>
             </div>
           )}
+          <ErrorNotice error={submitError} onDismiss={() => setSubmitError(null)} />
         </section>
 
         {/* Cart Area */}

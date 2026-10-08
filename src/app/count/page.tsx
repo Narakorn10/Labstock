@@ -19,6 +19,8 @@ import {
 import Modal from "@/components/modal";
 import CountRefillResult, { problemsFromError, problemsFromFailures, type RefillOutcome } from "@/components/count-refill-result";
 import MultiSelect from "@/components/multi-select";
+import { ErrorNotice } from "@/components/error-notice";
+import { parseApiError, type ApiErrorInfo } from "@/lib/api-errors-client";
 import { apiClient, type BatchItem, type CountWorkOrderSummary, type Reagent } from "@/lib/api-client";
 
 interface CountItem extends Reagent {
@@ -127,6 +129,7 @@ export default function CountPage() {
   const [filterJob, setFilterJob] = useState<string[]>(["ALL"]);
   const [filterVendor, setFilterVendor] = useState<string[]>(["ALL"]);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; msg: string } | null>(null);
+  const [apiError, setApiError] = useState<ApiErrorInfo | null>(null);
   const [preview, setPreview] = useState<RefillPreview | null>(null);
   const [refillResult, setRefillResult] = useState<RefillOutcome[] | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -162,7 +165,7 @@ export default function CountPage() {
       })));
     }).catch((error) => {
       console.error(error);
-      setFeedback({ type: "error", msg: "โหลดรายการน้ำยาไม่สำเร็จ" });
+      setApiError(parseApiError(error, "โหลดรายการน้ำยาไม่สำเร็จ"));
     }).finally(() => setLoading(false));
   }, [authLoading, user]);
 
@@ -180,7 +183,9 @@ export default function CountPage() {
     let cancelled = false;
     apiClient.listCountWorkOrders().then((orders) => {
       if (!cancelled) setWorkOrders(orders);
-    }).catch(() => undefined);
+    }).catch((error: unknown) => {
+      if (!cancelled) setApiError(parseApiError(error, "โหลดรายการใบงานไม่สำเร็จ"));
+    });
     return () => { cancelled = true; };
   }, [authLoading, user]);
 
@@ -262,8 +267,9 @@ export default function CountPage() {
       await refreshFromServer(dispensedIds, dispensedIds);
     } catch (error) {
       console.error(error);
+      setApiError(parseApiError(error, "เบิกเสร็จแล้ว แต่โหลดยอดคงเหลือล่าสุดไม่สำเร็จ"));
     }
-    apiClient.listCountWorkOrders().then(setWorkOrders).catch(() => undefined);
+    apiClient.listCountWorkOrders().then(setWorkOrders).catch((error: unknown) => setApiError(parseApiError(error, "โหลดรายการใบงานไม่สำเร็จ")));
     const problemCount = outcomes.reduce((sum, outcome) => sum + outcome.problems.length, 0);
     setFeedback(problemCount
       ? { type: "error", msg: `เบิกเติมสำเร็จ ${dispensedIds.length} รายการ ยังไม่ได้เบิก ${problemCount} รายการ (ดูรายละเอียดในใบงาน)` }
@@ -277,6 +283,7 @@ export default function CountPage() {
     const counted = reagents.filter((item) => item.actual !== "");
     if (!counted.length) return setFeedback({ type: "error", msg: "กรุณากรอกยอดนับอย่างน้อยหนึ่งรายการก่อนบันทึกใบงาน" });
     setSavingWorkOrder(true);
+    setApiError(null);
     try {
       const byJob = new Map<string, CountItem[]>();
       counted.forEach((item) => {
@@ -286,8 +293,7 @@ export default function CountPage() {
       await Promise.all([...byJob.entries()].map(([jobType, items]) => apiClient.saveCountWorkOrder(jobType, items.map((item) => ({ itemId: item.itemId, countedQty: Number(item.actual) })) )));
       setFeedback({ type: "success", msg: "บันทึกใบงานแล้ว สามารถกลับมาเลือก Lot และยืนยันเบิกภายหลังได้" });
     } catch (error: unknown) {
-      const response = error as { response?: { data?: { error?: string } }; message?: string };
-      setFeedback({ type: "error", msg: `บันทึกใบงานไม่สำเร็จ: ${response.response?.data?.error || response.message || "ไม่ทราบสาเหตุ"}` });
+      setApiError(parseApiError(error, "บันทึกใบงานไม่สำเร็จ"));
     } finally { setSavingWorkOrder(false); }
   };
 
@@ -312,6 +318,7 @@ export default function CountPage() {
         <p className="mt-1.5 text-[15px] text-gray-600">นับยอดจริง แล้วคำนวณการเบิกเติมจากเป้าหมายรายสัปดาห์</p>
       </div>
 
+      <ErrorNotice error={apiError} onDismiss={() => setApiError(null)} />
       {feedback && <div className={`flex items-center gap-3 rounded-2xl border p-4 ${feedback.type === "success" ? "border-ok/20 bg-ok-bg text-ok" : "border-crit/20 bg-crit-bg text-crit"}`}><>{feedback.type === "success" ? <CheckCircle size={20} /> : <AlertCircle size={20} />}</><p className="flex-1 text-sm font-medium">{feedback.msg}</p><button onClick={() => setFeedback(null)} className="text-xs font-medium underline">ปิด</button></div>}
 
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">

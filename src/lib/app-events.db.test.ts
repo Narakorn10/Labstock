@@ -118,11 +118,48 @@ describe("trackRoute", () => {
     expect(row).toMatchObject({ outcome: "success", status: 200, message: null, username: null });
   });
 
-  it("records a thrown error as an error and rethrows it", async () => {
-    const handler = trackRoute({ action: "receive" }, async () => { throw new Error("boom"); });
-    await expect(handler(request(), undefined)).rejects.toThrow("boom");
+  it("turns a thrown error into a safe response, with the real cause only in the log", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const handler = trackRoute({ action: "receive" }, async () => { throw new Error("boom password=secret"); });
+    const response = await handler(request(), undefined);
+    expect(response.status).toBe(500);
+    expect(response.headers.get("x-request-id")).toBe("req-1");
+    const body = await response.json();
+    expect(body).toMatchObject({ code: "INTERNAL_ERROR", requestId: "req-1" });
+    expect(JSON.stringify(body)).not.toContain("secret");
     const [row] = await rows();
-    expect(row).toMatchObject({ outcome: "error", status: 500, message: "boom" });
+    expect(row).toMatchObject({ outcome: "error", status: 500, message: "INTERNAL_ERROR: boom password=secret", request_id: "req-1" });
+    spy.mockRestore();
+  });
+
+  it("ctx.fail maps the error, exposes the request id and logs code plus real cause", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const handler = trackRoute({ action: "dispense" }, async (_request, ctx) => {
+      expect(ctx.requestId).toBe("req-1");
+      return ctx.fail(new Error("REAGENT_INACTIVE: R9"));
+    });
+    const response = await handler(request(), undefined);
+    expect(response.status).toBe(409);
+    expect((await response.json()).code).toBe("REAGENT_INACTIVE");
+    const [row] = await rows();
+    expect(row).toMatchObject({ outcome: "rejected", status: 409, message: "REAGENT_INACTIVE: R9", request_id: "req-1" });
+    spy.mockRestore();
+  });
+
+  it("uses one generated request id for the row, the context and the header", async () => {
+    let seen = "";
+    const handler = trackRoute({ action: "x" }, async (_request, ctx) => { seen = ctx.requestId; return Response.json({ ok: 1 }); });
+    const response = await handler(new Request("https://example.test/api/x", { method: "POST" }), undefined);
+    const [row] = await rows();
+    expect(seen).toMatch(/^[0-9a-f-]{36}$/);
+    expect(response.headers.get("x-request-id")).toBe(seen);
+    expect(row.request_id).toBe(seen);
+  });
+
+  it("prefixes the code when a returned error body carries one", async () => {
+    const handler = trackRoute({ action: "x" }, async () => Response.json({ error: "ข้อความ", code: "FORBIDDEN" }, { status: 403 }));
+    await handler(request(), undefined);
+    expect((await rows())[0].message).toBe("FORBIDDEN: ข้อความ");
   });
 
   it("still returns the response when recording fails", async () => {

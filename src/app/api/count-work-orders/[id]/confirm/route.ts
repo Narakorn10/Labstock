@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { trackRoute } from "@/lib/app-events";
+import { apiError } from "@/lib/api-response";
 import { getAuthenticatedUser } from "@/lib/auth-utils";
 import { confirmCountWorkOrder, CountConfirmError } from "@/lib/count-work-orders";
 
 export const POST = trackRoute<{ params: Promise<{ id: string }> }>({ action: "count.confirm" }, async (request: Request, ctx, { params }) => {
   try {
     const user = await getAuthenticatedUser(request);
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!user) return apiError("AUTH_REQUIRED", { requestId: ctx.requestId });
     ctx.user = user;
     const id = Number((await params).id);
     const body = await request.json() as { allocations?: Array<{ itemId: string; inventoryId: number; qty: number }> };
@@ -21,7 +22,7 @@ export const POST = trackRoute<{ params: Promise<{ id: string }> }>({ action: "c
     } catch (error) {
       if (!(error instanceof CountConfirmError)) throw error;
       ctx.details = { workOrderId: id, count: allocations.length, dispensedCount: 0, failed: error.failed, remainingCount: error.remaining.length };
-      return NextResponse.json({ error: error.message, failed: error.failed, remaining: error.remaining }, { status: 409 });
+      return ctx.fail(error);
     }
-  } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 400 }); }
+  } catch (error) { return ctx.fail(error); }
 });

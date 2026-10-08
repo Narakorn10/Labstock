@@ -1,5 +1,6 @@
 import sql from "@/lib/db";
 import { AuthenticatedUser } from "@/lib/auth-utils";
+import { AppError } from "@/lib/errors";
 import { notifyUsers, notifyUsersVendorScoped } from "@/lib/notifications";
 import type { LowStockItem } from "@/lib/line-flex-templates";
 
@@ -95,7 +96,11 @@ export async function runReceiveBatch(
     .filter((item) => !Number.isNaN(item.qty) && item.qty > 0);
 
   const inactive = validItems.find((item) => activeMap[item.itemId.toLowerCase()] === false);
-  if (inactive) throw new Error(`REAGENT_INACTIVE: ${inactive.itemId}`);
+  if (inactive) {
+    const name = itemNameMap[inactive.itemId.toLowerCase()];
+    const label = name ? `${name} (${inactive.itemId})` : inactive.itemId;
+    throw new AppError("REAGENT_INACTIVE", { message: `สารเคมีรายการนี้ถูกปิดใช้งานแล้ว (${label})`, detail: `REAGENT_INACTIVE: ${inactive.itemId}` });
+  }
   if (validItems.length === 0) {
     return { success: true, message: 'ไม่มีรายการที่ต้องรับเข้า' };
   }
@@ -181,7 +186,9 @@ export async function runDispenseBatch(
 
     if (Number.isNaN(qtyToSubtract) || qtyToSubtract <= 0) continue;
     if (activeMap[targetItemId.toLowerCase()] === false) {
-      throw new Error(`REAGENT_INACTIVE: ${targetItemId}`);
+      const name = masterMap[targetItemId.toLowerCase()];
+      const label = name ? `${name} (${targetItemId})` : targetItemId;
+      throw new AppError("REAGENT_INACTIVE", { message: `สารเคมีรายการนี้ถูกปิดใช้งานแล้ว (${label})`, detail: `REAGENT_INACTIVE: ${targetItemId}` });
     }
 
     const candidateRows = await sql`
@@ -197,7 +204,8 @@ export async function runDispenseBatch(
     `;
 
     if (candidateRows.length === 0) {
-      throw new Error(`เบิกไม่สำเร็จ: ${item.name || targetItemId} (Lot: ${item.lotNo}) ไม่พบรอบรับเข้าที่พร้อมใช้งาน`);
+      const text = `เบิกไม่สำเร็จ: ${item.name || targetItemId} (Lot: ${item.lotNo}) ไม่พบรอบรับเข้าที่พร้อมใช้งาน`;
+      throw new AppError("LOT_NOT_AVAILABLE", { message: text, detail: text });
     }
 
     const allocations: Array<{ inventoryId: number; qty: number }> = [];
@@ -213,7 +221,9 @@ export async function runDispenseBatch(
       remaining -= take;
     }
     if (remaining > 1e-9) {
-      throw new Error(`REAGENT_STOCK_INSUFFICIENT: ${targetItemId}`);
+      const name = masterMap[targetItemId.toLowerCase()];
+      const label = name ? `${name} (${targetItemId})` : targetItemId;
+      throw new AppError("REAGENT_STOCK_INSUFFICIENT", { message: `จำนวนคงเหลือไม่พอสำหรับรายการที่เบิก (${label})`, detail: `REAGENT_STOCK_INSUFFICIENT: ${targetItemId}` });
     }
     preparedItems.push({ ...item, targetItemId, targetLotNo, qtyToSubtract, allocations });
   }
