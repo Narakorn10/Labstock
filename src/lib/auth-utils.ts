@@ -1,14 +1,41 @@
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import sql from './db';
+import { resolveUserDepartment, type RequestedDepartment } from './department-context';
+import { departmentsReady, isMissingDepartmentSchemaError, markDepartmentsNotReady } from './departments-flag';
 
 const SALT_ROUNDS = 10;
 
 export interface AuthenticatedUser {
   username: string;
   name: string;
+  /** Effective role. Without departments this is users.role; with departments it is the role in the selected department. */
   role: string;
   vendor?: string;
+  /** users.role. Only set by the department-aware path. */
+  globalRole?: string;
+  /** Selected department. null for legacy (departments off / not ready) or for "ALL". */
+  departmentId?: number | null;
+  departmentCode?: string | null;
+  /** null = legacy, no department filtering. "ALL" = Admin viewing every department (read only). */
+  scope?: number | 'ALL' | null;
+  /** The caller asked (X-Department-Id) for a department the user is not in. Routes answer 404. */
+  departmentDenied?: true;
+}
+
+/** X-Department-Id: digits or "ALL". Anything else is invalid (and the request is denied). */
+function parseDepartmentHeader(value: string | null): { requested: RequestedDepartment; explicit: boolean; invalid: boolean } {
+  if (value === null) return { requested: null, explicit: false, invalid: false };
+  const trimmed = value.trim();
+  if (trimmed === 'ALL') return { requested: 'ALL', explicit: true, invalid: false };
+  if (/^\d{1,9}$/.test(trimmed)) return { requested: Number(trimmed), explicit: true, invalid: false };
+  return { requested: null, explicit: true, invalid: true };
+}
+
+/** The department stored in the Auth.js token by the (future) session switcher. Absent or malformed = default. */
+function parseSessionDepartment(value: unknown): RequestedDepartment {
+  if (value === 'ALL') return 'ALL';
+  return typeof value === 'number' && Number.isInteger(value) ? value : null;
 }
 
 export async function hashPassword(password: string) {
@@ -95,15 +122,30 @@ export async function hasUserAccountStatusColumn() {
   return Boolean(result[0]?.exists);
 }
 
-export async function getAuthenticatedUser(request: Request) {
+export async function getAuthenticatedUser(request: Request): Promise<AuthenticatedUser | null> {
   // Auth.js sessions are the primary web authentication path. Bearer tokens
   // remain below only so existing mobile/LIFF clients are not logged out during
   // the staged migration.
   try {
     const { auth } = await import('@/auth');
     const session = await auth();
-    const sessionUser = session?.user as (AuthenticatedUser & { username?: string; sessionVersion?: number }) | undefined;
+    const sessionUser = session?.user as (AuthenticatedUser & { username?: string; sessionVersion?: number; activeDepartmentId?: unknown }) | undefined;
     if (sessionUser?.username && sessionUser.role) {
+      if (await departmentsReady()) {
+        try {
+          // One query replaces the schema probe + session check. The X-Department-Id header is NOT honored here:
+          // a browser session only changes department through the signed Auth.js token.
+          return await resolveUserDepartment({
+            username: sessionUser.username,
+            sessionVersion: sessionUser.sessionVersion,
+            requested: parseSessionDepartment(sessionUser.activeDepartmentId),
+            explicit: false,
+          });
+        } catch (error) {
+          if (!isMissingDepartmentSchemaError(error)) throw error;
+          markDepartmentsNotReady(`session lookup failed (${(error as { code?: string }).code}); using legacy path`);
+        }
+      }
       const { isCurrentAuthSession } = await import('@/lib/auth-service');
       if (!await isCurrentAuthSession(sessionUser.username, sessionUser.sessionVersion)) {
         return null;
@@ -130,6 +172,24 @@ export async function getAuthenticatedUser(request: Request) {
   try {
     // Hash the token from request to compare with hashed token in DB
     const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+    if (await departmentsReady()) {
+      try {
+        const header = parseDepartmentHeader(request.headers.get('X-Department-Id'));
+        const resolved = await resolveUserDepartment({
+          token,
+          tokenHash: hashedToken,
+          requested: header.requested,
+          explicit: header.explicit,
+        });
+        if (resolved && header.invalid) resolved.departmentDenied = true;
+        return resolved;
+      } catch (error) {
+        if (!isMissingDepartmentSchemaError(error)) throw error;
+        markDepartmentsNotReady(`bearer lookup failed (${(error as { code?: string }).code}); using legacy path`);
+      }
+    }
+
     const hasAccountStatus = await hasUserAccountStatusColumn();
 
     const users = hasAccountStatus

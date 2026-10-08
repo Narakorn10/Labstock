@@ -9,9 +9,14 @@
 --     - Else if a row named 'ห้องปฏิบัติการเคมีคลินิก' exists: only its code is set to 'CC'.
 --     - Else (fresh / test database) that row is inserted with code 'CC'.
 --     Other rows (e.g. 'งานอณูชีววิทยา') keep code NULL and is_active = true.
---   * users.role is copied into user_departments.role for every existing user, all marked is_default = true.
---     Users created AFTER this file ran have no user_departments row: re-run this file (idempotent) before
---     enabling department-aware code to backfill them.
+--   * Every existing user gets a user_departments row in the default department, marked is_default = true, with
+--     role = NULL. user_departments.role is an explicit per-department OVERRIDE that only future membership
+--     management sets; NULL means "use users.role". users.role is NOT copied (a copy would go stale and could
+--     override later role changes, e.g. keep a demoted Admin as Admin).
+--     Users created AFTER this file ran have no user_departments row. Department-aware code REJECTS a (non-Admin)
+--     user without a membership row. Therefore re-running this file (idempotent) to backfill them is REQUIRED
+--     immediately before turning DEPARTMENTS_ENABLED on; otherwise every user created after the first run is
+--     locked out. (After that, user creation/registration code must itself write user_departments.)
 -- NOT run automatically. Apply with: node scripts/apply-migration.mjs upgrade_v30_departments_core.sql --confirm-host=<host>
 SET lock_timeout = '3s';
 
@@ -47,9 +52,9 @@ CREATE INDEX IF NOT EXISTS idx_user_departments_department ON user_departments (
 -- A user has at most one default department.
 CREATE UNIQUE INDEX IF NOT EXISTS user_departments_one_default_idx ON user_departments (username) WHERE is_default;
 
--- Backfill: every user belongs to the default department with their current role.
+-- Backfill: every user belongs to the default department. role stays NULL (= use users.role, see header).
 INSERT INTO user_departments (username, department_id, role, is_default)
-SELECT u.username, d.id, u.role, true
+SELECT u.username, d.id, NULL, true
 FROM users u
 CROSS JOIN (SELECT id FROM departments WHERE code = 'CC') d
 ON CONFLICT (username, department_id) DO NOTHING;

@@ -120,13 +120,13 @@ describe("departments migrations v30-v34", () => {
     expect(labId).toBe(1);
   });
 
-  it("backfills every user into the default department with their role and is_default", async () => {
-    const { rows } = await db.query<{ username: string; role: string; is_default: boolean; department_id: number }>("SELECT username, role, is_default, department_id FROM user_departments ORDER BY username");
+  it("backfills every user into the default department with is_default and a NULL role (use users.role)", async () => {
+    const { rows } = await db.query<{ username: string; role: string | null; is_default: boolean; department_id: number }>("SELECT username, role, is_default, department_id FROM user_departments ORDER BY username");
     expect(rows.every((row) => row.department_id === 1)).toBe(true);
     expect(rows).toEqual([
-      { username: "admin1", role: "Admin", is_default: true, department_id: labId },
-      { username: "user1", role: "User", is_default: true, department_id: labId },
-      { username: "vendor1", role: "Vendor", is_default: true, department_id: labId },
+      { username: "admin1", role: null, is_default: true, department_id: labId },
+      { username: "user1", role: null, is_default: true, department_id: labId },
+      { username: "vendor1", role: null, is_default: true, department_id: labId },
     ]);
   });
 
