@@ -1,4 +1,30 @@
-# WIP — 2026-10-08 23.06
+# WIP — 2026-10-10 12.41
+
+## Git Status
+
+```text
+branch feat/departments-auth (HEAD ce9d8e6) — ขั้น 6 ตัวสลับงาน เขียนเสร็จ ผู้ใช้ทดสอบบน Neon branch แล้ว **ยังไม่ commit**
+ M .gitignore                                  M src/components/auth-provider.tsx
+ M src/app/api/auth/me/route.ts                M src/components/inventory-overview.tsx
+ M src/lib/department-switch.ts                M src/components/sidebar.tsx
+ M src/lib/errors.ts                           ?? 13 ไฟล์ใหม่ (department-switcher*, department-session-client*, department-options.db.test, auth/me route.test + route.extra.test)
+ (+ .claude/settings.local.json ใหม่ — ถูก gitignore แล้ว; + ψ/memory/retrospectives/2026-10/10/ รอ commit)
+```
+
+## งานค้าง
+- [ ] ผู้ใช้สั่ง: commit ขั้น 6 (ห้ามรวม `ψ/` เว้นแต่สั่ง) / push / PR — ถามก่อนทุกครั้ง
+- [ ] เก็บกวาดหลังทดสอบ (ต้องผู้ใช้สั่ง): คืน `.env.local` เดิม (สำรองไว้ `.env.local.backup`) ปิด `DEPARTMENTS_ENABLED`; ลบกฎอนุญาต Neon ใน `.claude/settings.local.json`; ลบ Neon branch `dept-switcher-test-2026-10-10` (`br-solitary-queen-aoz4mxta`) และ `dept-rehearsal-2026-10-08` (`br-quiet-hall-aohmgi8c`); รีเซ็ตรหัสผ่าน role `neondb_owner` (หลุดเข้าแชท 10 ต.ค. ใช้ได้กับ production — ต้องอัปเดต Vercel + `.env.local` พร้อมกัน ทำช่วงไม่มีคนใช้)
+- [ ] `npm run build` (ปิด dev server ก่อน) แล้วรายงานผล
+- [ ] ย้ายการเบิก–รับเข้า (`src/lib/stock-transactions.ts` ← `api/dispense`, `api/mobile/confirm`) เข้า `scoped-db` ผ่าน `/dev-team` (เสี่ยงสูง ต้องวางแผน+ผู้ตรวจ Opus+ผู้ใช้อนุมัติ) แล้วทยอยจน `DEPARTMENT_SCOPE_PENDING` (51 ไฟล์) ว่าง
+- [ ] ก่อนเปิด flag production: ตัวกันหลายแท็บฝั่งเซิร์ฟเวอร์, เลือกห้องบน /mobile + LIFF + LINE (`X-Department-Id`), หน้าจัดการสมาชิกห้อง/admin ต่อแผนก, ซ้อม v30–v34 ตามไฟล์จริงด้วย `apply-migration.mjs`, อัปเดต `docs/departments-rollout.md`
+
+## Context
+- ⚠️ `.env.local` ตอนนี้ **อาจยังชี้ Neon branch ทดสอบ + `DEPARTMENTS_ENABLED=true`** (ผู้ใช้แก้เอง) — ตรวจกับผู้ใช้ก่อนทำอะไรที่ต่อฐาน; ห้ามเปิด flag บน production จนกว่างานย้ายเบิกเสร็จ
+- แผนเต็ม+เงื่อนไขผู้ตรวจ: scratchpad `step6-plan-v2.1.md`, `step6-conditions.md` (อาจหายเมื่อ session ใหม่); retrospective: `ψ/memory/retrospectives/2026-10/10/12.41_department-switcher-step6.md`; ผู้ใช้สั่ง "กลับไปใช้ตามแผนเดิม" (เบิกต้องจำกัดตามห้อง) ไอเดียสแกน QR เบิกข้ามห้องพักไว้
+
+---
+
+## (history) WIP — 2026-10-08 23.06
 
 ## Git Status
 
