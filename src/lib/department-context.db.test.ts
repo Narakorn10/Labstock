@@ -486,11 +486,15 @@ describe("resolveDepartmentForVerifiedUser (PIN / LINE approvers on /api/mobile/
   });
 
   it("without a default department the lowest-id active department the user belongs to is used", async () => {
-    await migrated.db.exec("UPDATE user_departments SET is_default = false WHERE username = 'user1'");
+    // First prove the default flag decides (default on department 2 wins over the lower id 1), then that with no
+    // default at all the lowest id wins; otherwise this test could not tell "default" and "lowest id" apart.
+    await migrated.db.exec("UPDATE user_departments SET is_default = (department_id = 2) WHERE username = 'user1'");
     try {
+      await expect(resolve("user1")).resolves.toMatchObject({ scope: 2 });
+      await migrated.db.exec("UPDATE user_departments SET is_default = false WHERE username = 'user1'");
       await expect(resolve("user1")).resolves.toMatchObject({ scope: 1 });
     } finally {
-      await migrated.db.exec("UPDATE user_departments SET is_default = true WHERE username = 'user1' AND department_id = 1");
+      await migrated.db.exec("UPDATE user_departments SET is_default = (department_id = 1) WHERE username = 'user1'");
     }
   });
 
