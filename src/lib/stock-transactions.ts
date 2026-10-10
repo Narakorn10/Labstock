@@ -24,10 +24,20 @@ const getActorName = (user: AuthenticatedUser) => {
   return user?.name ? `${user.name} (${user.role})` : "Staff";
 };
 
-async function notifyLowStockForAffectedItems(itemIds: string[]) {
+// Who may receive LOW_STOCK for an item of this department. Legacy: empty fragment, so the recipient SQL is unchanged.
+// One department: members of that department (user_departments) plus Vendors. A Vendor needs no membership row because
+// notifyUsersVendorScoped only gives each Vendor the items of their own vendor name (vendor-notification-scope.ts).
+function recipientDepartmentFilter(scope: DepartmentScope) {
+  if (scope.mode !== "one") return sql``;
+  return sql` AND (u.role = 'Vendor' OR EXISTS (SELECT 1 FROM user_departments ud WHERE ud.username = n.username AND ud.department_id = ${scope.departmentId}))`;
+}
+
+async function notifyLowStockForAffectedItems(itemIds: string[], scope: DepartmentScope) {
   const affectedIds = new Set(itemIds.map((id) => id.toLowerCase()));
   if (affectedIds.size === 0) return;
 
+  // Only "one" adds a filter (mode "all" never gets here: the callers throw before writing).
+  const inventoryWhere = scope.mode === "one" ? sql`WHERE ${deptWhere(scope)}` : sql``;
   try {
     const lowStockRows = await sql`
       WITH InventorySummary AS (
@@ -35,6 +45,7 @@ async function notifyLowStockForAffectedItems(itemIds: string[]) {
           item_id,
           SUM(quantity) as current_qty
         FROM inventory
+        ${inventoryWhere}
         GROUP BY item_id
       )
       SELECT
@@ -46,7 +57,7 @@ async function notifyLowStockForAffectedItems(itemIds: string[]) {
         COALESCE(i.current_qty, 0) as quantity
       FROM master_data m
       LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)
-      WHERE m.is_active = TRUE
+      WHERE m.is_active = TRUE${andDept(scope, "m")}
         AND COALESCE(i.current_qty, 0) <= m.min_threshold
       ORDER BY COALESCE(i.current_qty, 0) ASC, m.item_id ASC
     `;
@@ -61,7 +72,7 @@ async function notifyLowStockForAffectedItems(itemIds: string[]) {
       SELECT n.*, u.role, u.vendor
       FROM notification_settings n
       JOIN users u ON u.username = n.username
-      WHERE n.notify_low_stock = true
+      WHERE n.notify_low_stock = true${recipientDepartmentFilter(scope)}
     `;
 
     if (settingsRows.length > 0) {
@@ -173,7 +184,7 @@ export async function runReceiveBatch(
     );
   }
 
-  await notifyLowStockForAffectedItems(affectedItemIds);
+  await notifyLowStockForAffectedItems(affectedItemIds, scope);
 
   return {
     success: true,
@@ -318,7 +329,7 @@ export async function runDispenseBatch(
     );
   }
 
-  await notifyLowStockForAffectedItems(affectedItemIds);
+  await notifyLowStockForAffectedItems(affectedItemIds, scope);
 
   return {
     success: true,
