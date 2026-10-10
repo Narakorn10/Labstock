@@ -28,6 +28,7 @@ vi.mock("@/lib/stock-transactions", () => ({
   runDispenseBatch: mocks.runDispenseBatch,
 }));
 
+import { AppError } from "@/lib/errors";
 import { POST } from "./route";
 
 const item = [{ reagentId: "R1", quantity: 1 }];
@@ -84,5 +85,43 @@ describe("POST /api/mobile/confirm menu RBAC", () => {
 
     expect(response.status).toBe(403);
     expect(mocks.roleHasMenu).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/mobile/confirm batch error mapping", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.hasUserPinColumn.mockResolvedValue(true);
+    mocks.verifyUserPin.mockResolvedValue({ username: "mt", name: "MT", role: "Manager" });
+    mocks.roleHasMenu.mockResolvedValue(true);
+  });
+
+  const confirm = () => post({ mode: "dispense", username: "mt", pin: "1234", batchItems: item });
+
+  it("maps REAGENT_INACTIVE to 409 with the raw error message", async () => {
+    mocks.runDispenseBatch.mockRejectedValue(new AppError("REAGENT_INACTIVE", { detail: "REAGENT_INACTIVE: R1" }));
+
+    const response = await confirm();
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: "REAGENT_INACTIVE: R1" });
+  });
+
+  it("maps a plain Error to 400 with its message", async () => {
+    mocks.runDispenseBatch.mockRejectedValue(new Error("boom"));
+
+    const response = await confirm();
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "boom" });
+  });
+
+  it("maps REAGENT_STOCK_INSUFFICIENT to 400 with the raw message (not 409 as the catalogue status says)", async () => {
+    mocks.runDispenseBatch.mockRejectedValue(new AppError("REAGENT_STOCK_INSUFFICIENT", { detail: "REAGENT_STOCK_INSUFFICIENT: R1" }));
+
+    const response = await confirm();
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "REAGENT_STOCK_INSUFFICIENT: R1" });
   });
 });
