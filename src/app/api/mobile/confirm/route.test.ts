@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   sql: vi.fn().mockResolvedValue([]),
@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   verifyLineIdToken: vi.fn(),
   getLineLinkedUser: vi.fn(),
   hasUserLineIdColumn: vi.fn(),
+  departmentsReady: vi.fn(async () => false),
   runReceiveBatch: vi.fn(),
   runDispenseBatch: vi.fn(),
 }));
@@ -23,6 +24,7 @@ vi.mock("@/lib/line-liff-auth", () => ({
   getLineLinkedUser: mocks.getLineLinkedUser,
   hasUserLineIdColumn: mocks.hasUserLineIdColumn,
 }));
+vi.mock("@/lib/departments-flag", () => ({ departmentsReady: mocks.departmentsReady }));
 vi.mock("@/lib/stock-transactions", () => ({
   runReceiveBatch: mocks.runReceiveBatch,
   runDispenseBatch: mocks.runDispenseBatch,
@@ -247,5 +249,70 @@ describe("POST /api/mobile/confirm receive department scope", () => {
     mocks.verifyUserPin.mockResolvedValue({ username: "mt", name: "MT", role: "Manager", scope: 2, departmentDenied: true });
     expect((await confirm()).status).toBe(404);
     expect(mocks.runReceiveBatch).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/mobile/confirm flag off: successful response is unchanged", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.hasUserPinColumn.mockResolvedValue(true);
+    mocks.verifyUserPin.mockResolvedValue({ username: "mt", name: "MT", role: "Manager" });
+    mocks.roleHasMenu.mockResolvedValue(true);
+  });
+
+  it.each(["receive", "dispense"] as const)("%s returns the run result plus the approver", async (mode) => {
+    mocks.runReceiveBatch.mockResolvedValue({ success: true, message: "ok" });
+    mocks.runDispenseBatch.mockResolvedValue({ success: true, message: "ok" });
+
+    const response = await post({ mode, username: "mt", pin: "1234", batchItems: item });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ success: true, message: "ok", approver: { username: "mt", name: "MT", role: "Manager" } });
+    const run = mode === "receive" ? mocks.runReceiveBatch : mocks.runDispenseBatch;
+    expect(run).toHaveBeenCalledWith(item, expect.anything(), expect.any(Object), { mode: "legacy" });
+  });
+});
+
+// TEMPORARY: replaced by the resolveDepartmentForVerifiedUser tests when the feat/departments-mobile-auth PR (step 8b) merges.
+// Until then a verified PIN/LINE user never carries a department scope, so with departments ON the mobile path must refuse
+// (fail closed) instead of silently showing or writing every department.
+describe("POST /api/mobile/confirm fail-closed when departments are on but the approver has no scope", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    mocks.hasUserPinColumn.mockResolvedValue(true);
+    mocks.hasUserLineIdColumn.mockResolvedValue(true);
+    mocks.roleHasMenu.mockResolvedValue(true);
+    mocks.departmentsReady.mockResolvedValue(true);
+  });
+
+  afterEach(() => {
+    mocks.departmentsReady.mockResolvedValue(false);
+  });
+
+  it.each(["receive", "dispense"] as const)("PIN %s answers 500 INTERNAL_ERROR without the username and never runs", async (mode) => {
+    mocks.verifyUserPin.mockResolvedValue({ username: "secret.person", name: "Secret", role: "Manager" });
+
+    const response = await post({ mode, username: "secret.person", pin: "1234", batchItems: item });
+    const text = await response.text();
+
+    expect(response.status).toBe(500);
+    expect(JSON.parse(text).code).toBe("INTERNAL_ERROR");
+    expect(text).not.toContain("secret.person");
+    expect(mocks.runReceiveBatch).not.toHaveBeenCalled();
+    expect(mocks.runDispenseBatch).not.toHaveBeenCalled();
+  });
+
+  it("LINE dispense answers 500 INTERNAL_ERROR without the username and never runs", async () => {
+    mocks.verifyLineIdToken.mockResolvedValue({ sub: "U1" });
+    mocks.getLineLinkedUser.mockResolvedValue({ username: "secret.person", name: "Secret", role: "Manager" });
+
+    const response = await post({ mode: "dispense", lineIdToken: "token", batchItems: item });
+    const text = await response.text();
+
+    expect(response.status).toBe(500);
+    expect(JSON.parse(text).code).toBe("INTERNAL_ERROR");
+    expect(text).not.toContain("secret.person");
+    expect(mocks.runDispenseBatch).not.toHaveBeenCalled();
   });
 });
