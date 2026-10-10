@@ -1,3 +1,55 @@
+# WIP — 2026-10-10 21.40 (Handoff: ย้ายเบิก–รับเข้า–แจ้งเตือนเข้า scoped-db เสร็จขั้น 0-7 บน branch feat/departments-stock-scope)
+
+## อัปเดต 22.00 — ขั้น 8 เสร็จ + push + เปิด PR (ผู้ใช้สั่ง "ทำทั้งหมดให้เสร็จเลย")
+- push แล้ว (ไม่ force): `feat/departments-auth` ce9d8e6→3b4c389, `feat/departments-stock-scope`, `feat/departments-mobile-auth`
+- PR #38 `feat/departments-stock-scope` → base `feat/departments-auth` (เบิก/รับเข้า/แจ้งเตือน, 7 commit); PR #39 `feat/departments-mobile-auth` → base `feat/departments-stock-scope` (ล็อกอินมือถือ/LIFF ใช้งาน default, 4 commit: 1a7bf50 resolver, e56ca1e route, e459d58 สแกน+เอกสาร, 68abb8f เสริมเทสต์). ทั้งคู่ MERGEABLE; Vercel Preview กำลัง deploy (Preview ใช้ฐานข้อมูล production — ห้ามกดธุรกรรมจริง)
+- ตรวจแล้ว: tsc ผ่าน, vitest 732/732 (66 ไฟล์), lint 0 error, build ผ่าน (ที่ HEAD 68abb8f); plan-reviewer ผ่านแบบมีเงื่อนไข (6 ข้อแก้รวมแล้ว); bug-hunter 2 รอบ ไม่พบบั๊ก security ที่ยืนยันได้
+- ลำดับ merge: #38 ก่อน #39 (ลบ branch ของใบก่อนหน้าหลัง merge ไม่งั้นใบถัดไปไปรวมเข้า branch เดิม — ดูบทเรียน PR ซ้อนสาย); `feat/departments-auth` เองยังไม่มี PR เข้า `main` (local main/ origin/main เดินไปแล้ว: PR #36/#37 merged) — ต้องตัดสินใจลำดับ merge สายซ้อน departments-migrations/user-facing-errors/auth→main กับผู้ใช้
+- **ยังไม่ได้ทำ: ขั้น 9 ซ้อมบน Neon** (รออนุมัติรายละเอียดจากผู้ใช้): สร้าง branch จาก production → v30-v34 ด้วย `scripts/apply-migration.mjs --confirm-host` → เปิด flag บน build ทดสอบ → เบิก/รับเข้าเว็บ+มือถือ → query ความสอดคล้อง inventory vs master_data = 0 → ตรวจ trigger `trg_inventory_require_active_master_data`, `role_permissions` ของ role ประจำงาน, schema `notification_settings`/`user_departments` → ผู้ใช้ลบ branch ซ้อม
+- retrospective: `ψ/memory/retrospectives/2026-10/10/21.57_stock-scope-mobile-auth-prs.md`; แผนฉบับจริง `ψ/plans/2026-10-10_stock-scope-plan-v3.md`
+- งานแยกที่จดไว้: `/api/mobile/lookup` ไม่ล็อกอิน+คืนทุกงาน · rate limit เดา PIN + timing ของ verifyUserPin · stations ไม่แยกงาน (นอกขอบเขตตามผู้ใช้) · ตัวเขียนสต็อกที่เหลือ (count-work-orders, vendor shipments, reagent-loans, reconcile) · v35 ตัวกันใน DB (ทำทีหลัง)
+
+## สถานะล่าสุด (ขั้น 0-7) (ส่วนล่างคือ handoff 15.50 ที่ล้าสมัยแล้ว)
+- branch `feat/departments-stock-scope` ซ้อนบน `feat/departments-auth` (3b4c389) มี 7 commit ยังไม่ push / ไม่มี PR: c6daee7 characterization · a9f3e71 error ไทย `ITEM_NOT_IN_DEPARTMENT` + `departmentScopeErrorResponse` ตัวเดียว · bfbd531 เบิก · ae98c34 รับเข้า · aa1a2aa แจ้งเตือนของใกล้หมดแยกงาน · d6ab6de เทสต์ mobile/confirm (fail-closed ชั่วคราว) · c07b88b เอกสาร rollout หัวข้อ 6
+- ตรวจโดยผู้นำเอง: tsc ผ่าน, vitest 709/709 (65 ไฟล์), lint 0 error (1 warning เดิม `settings/barcodes/page.tsx:484`), `npm run build` ผ่าน; bug-hunter (Opus) ไม่พบบั๊กที่ยืนยันได้ (ข้อสังเกตต่ำ 1 ข้อ: assert ข้ามงานตอนรับเข้าไม่กัน race กับตัวเขียน inventory นอกขอบเขต vendor shipments/reagent-loans ที่ใช้ default CC — ปิดตอนย้ายตัวเขียนเหล่านั้น)
+- แผนฉบับจริง: `ψ/plans/2026-10-10_stock-scope-plan-v3.md` (ใช้คู่ v2); คำตัดสินผู้ใช้ 10 ต.ค.: มือถือ/LIFF ใช้งาน default ของผู้อนุมัติ · ข้อความผู้ใช้ใช้คำว่า "งาน" · แจ้งเตือนแยกงานตอนนี้ (Vendor ได้ทุกงานเฉพาะสินค้าตัวเอง, Admin ไม่มีแถวสมาชิกไม่ได้) · `process_station_withdrawal`/`stations/*` นอกขอบเขต · ไม่ใส่ v35 ตอนนี้ · ซ้อม Neon อนุญาตแต่ขออนุมัติทุกครั้ง
+- ⚠️ ห้ามเปิด `DEPARTMENTS_ENABLED` บน production: มือถือ/LIFF เบิก–รับเข้าจะได้ 500 (ตั้งใจ fail-closed) จน merge PR ขั้น 8; commit เบิก/รับเข้า/แจ้งเตือน (bfbd531, ae98c34, aa1a2aa) ต้อง merge พร้อมกัน ห้าม deploy ครึ่งทาง
+- `.env.local` ชี้ production — ไม่เคยรัน dev/ต่อ DB ในรอบนี้
+
+## ขั้นต่อไป
+- [ ] ขั้น 8 PR แยก `feat/departments-mobile-auth` (ซ้อนบน stock-scope; แตะ auth เสี่ยงสูง): `resolveDepartmentForVerifiedUser(user)` แยกจาก query ร่วม + `checkTokenExpiry` flag; mobile/confirm ใช้ username จาก verifyUserPin/getLineLinkedUser (ไม่ใช่ body); 42P01/42703 → legacy ผ่าน `isMissingDepartmentSchemaError`; error อื่น → `ctx.fail`; ลบเทสต์ fail-closed ชั่วคราวแทนด้วยชุดใน v3 ขั้น 8b — ควรผ่าน plan-reviewer ก่อนเขียนโค้ด
+- [ ] ขั้น 9 ซ้อมบน Neon branch (ขออนุมัติทุกครั้ง): v30-v34 ด้วย `scripts/apply-migration.mjs --confirm-host`, เบิก/รับเข้า flag ปิด/เปิด, query ความสอดคล้อง inventory vs master_data = 0, ยืนยัน trigger `trg_inventory_require_active_master_data` (PGlite ไม่มี), schema จริง `notification_settings`/`user_departments`
+- [ ] ผู้ใช้สั่ง push / เปิด PR เมื่อพร้อม (ยังไม่ได้ขอ)
+- [ ] fixture กลาง `vendor1` ไม่มีชื่อ vendor ทั้งที่คอมเมนต์ใน `department-fixtures.ts:54` บอก 'Vendor A' (เทสต์ dept ตั้งเองใน test) — แก้คอมเมนต์/fixture ภายหลัง
+- [ ] ตัวเขียน inventory ที่ยังไม่ย้าย (เขียนงาน CC): count-work-orders.ts:220-224, vendor/shipments/[id]/route.ts:78-84, reagent-loans/route.ts:90-126, inventory/reconcile/route.ts:58-67; ยังอยู่ใน PENDING 50 ไฟล์
+
+## (history) WIP — 2026-10-10 15.50 (Handoff: แผนย้ายเบิก–รับเข้าเข้า scoped-db — วางแผน+ตรวจแผนเสร็จ ยังไม่แก้โค้ด)
+
+## สถานะ
+- branch `feat/departments-auth` (HEAD `3b4c389`) ตรวจแล้ว: tsc/lint/vitest 630/build ผ่าน; ยังไม่ได้แก้โค้ดงานนี้เลย
+- วางแผนโดย planner (Opus) → ตรวจโดย plan-reviewer (Opus, scrutinize) = **ผ่านแบบมีเงื่อนไข**
+- ไฟล์แผน v1 + ผลตรวจ 12 ข้อ + คำถาม 9 ข้อ: `ψ/plans/2026-10-10_stock-scope-plan-v1.md` (ห้าม commit `ψ/`)
+- ผู้ใช้ยังไม่ได้อนุมัติให้เริ่มเขียนโค้ด และยังไม่ได้ตอบคำถาม 9 ข้อ — ผู้ใช้สั่งให้ **บันทึกคำถามไว้ก่อน แล้วมาตอบใน session หน้า** (คำถามครบอยู่ท้ายไฟล์แผน; ถ้าผู้ใช้ตอบ "ตามที่แนะนำ" ให้ใช้ค่าที่แนะนำไว้ในแต่ละข้อ)
+
+## ขั้นต่อไป (ตามลำดับ)
+- [ ] ผู้ใช้ตอบคำถาม 9 ข้อท้ายไฟล์แผน (สำคัญสุด: ข้อ 1 ห้องของมือถือ/LIFF, ข้อ 2 error code ใหม่, ข้อ 4 `process_station_withdrawal` ใช้ใน production ไหม, ข้อ 6 ชื่อ branch, ข้อ 7 ซ้อมบน Neon branch)
+- [ ] planner ออกแผน v2 ตอบ 12 ข้อของผู้ตรวจทีละข้อ (สูงสุด 2 รอบ) — **ต้องแก้ก่อนเริ่ม:** ข้อ 1 (arg ที่ 4 บังคับ vs เทสต์เดิม), 2 (error ใหม่ → classify/ตรวจใน JS เฉพาะโหมด one), 3-4 (ขั้น 3 ใช้ `user.username` หลังยืนยัน และแยกฟังก์ชัน ไม่เพิ่ม `verifiedUsername` ใน query ร่วม)
+- [ ] เริ่มขั้น 0-1 ได้ทันทีหลังผู้ใช้อนุมัติ (แตก branch ใหม่ซ้อน `feat/departments-auth`, baseline, เทสต์ characterization ของ `runReceiveBatch`); ขั้น 2 หลังแก้ข้อ 1,2,5,8; **ขั้น 3 (แตะ auth) แยก PR ต่างหาก** ต้อง merge ก่อนเปิด flag
+- [ ] ใช้ `/dev-team`: coder = Sonnet, code-tester = Sonnet, bug-hunter = Opus (งานเสี่ยงสูง) ผู้นำรัน tsc/lint/vitest/build เอง; ห้ามต่อ DB production
+
+## ข้อควรรู้จากแผน (หลักฐานจากผู้ตรวจ)
+- flag `DEPARTMENTS_ENABLED` ปิด ⇒ scope legacy ไม่เรียก SQL (`departments-flag.ts:121-123`, `scoped-db.ts:57-64`) พฤติกรรมเดิมเหมือนเดิมถ้าเติมเงื่อนไขห้องเฉพาะโหมด one
+- แผนนี้ลด `DEPARTMENT_SCOPE_PENDING` แค่ 51→50 (`department-scope-coverage.test.ts:80`); route dispense/receive/mobile-confirm ไม่อยู่ในรายการเพราะไม่มี SQL เอง
+- เปิด flag ก่อนทำขั้น 3 ⇒ เบิก/รับเข้าจากมือถือ/LIFF ได้ 500 (ปฏิเสธไว้ก่อน ปลอดภัย แต่ใช้ไม่ได้)
+- จุดที่ coverage test มองไม่เห็น: `process_station_withdrawal` (`upgrade_v8_reagent_scanner.sql:80,152-186`), `stations/sync-withdrawal`, ตัวเขียน inventory อื่น (`count-work-orders.ts:220-224`, `vendor/shipments/[id]/route.ts:78-84`, `reagent-loans/route.ts:90-126`, `inventory/reconcile/route.ts:58-67`), `mobile/lookup` ไม่ล็อกอิน
+- ไม่ต้อง migration/env ใหม่; ย้อนกลับ = ปิด flag หรือ `git revert` ทีละ commit
+
+## เก็บกวาดที่ยังค้าง
+- ลบ Neon branch `dept-rehearsal-2026-10-08` (`br-quiet-hall-aohmgi8c`, ผู้ใช้ลบเอง); ตัดสินใจ `test-count-partial-2026-10-06`; **คง `preview` ไว้** (ผู้ใช้สั่ง)
+- ส่วน "(ก่อนหน้า) ขั้น 6" ด้านล่างยังจริงอยู่ ยกเว้นข้อที่ระบุ ✅ แล้ว
+
+---
+
 # WIP — 2026-10-10 12.41
 
 ## Git Status
@@ -13,7 +65,11 @@ branch feat/departments-auth (HEAD ce9d8e6) — ขั้น 6 ตัวสล�
 
 ## งานค้าง
 - [ ] ผู้ใช้สั่ง: commit ขั้น 6 (ห้ามรวม `ψ/` เว้นแต่สั่ง) / push / PR — ถามก่อนทุกครั้ง
-- [ ] เก็บกวาดหลังทดสอบ (ต้องผู้ใช้สั่ง): คืน `.env.local` เดิม (สำรองไว้ `.env.local.backup`) ปิด `DEPARTMENTS_ENABLED`; ลบกฎอนุญาต Neon ใน `.claude/settings.local.json`; ลบ Neon branch `dept-switcher-test-2026-10-10` (`br-solitary-queen-aoz4mxta`) และ `dept-rehearsal-2026-10-08` (`br-quiet-hall-aohmgi8c`); รีเซ็ตรหัสผ่าน role `neondb_owner` (หลุดเข้าแชท 10 ต.ค. ใช้ได้กับ production — ต้องอัปเดต Vercel + `.env.local` พร้อมกัน ทำช่วงไม่มีคนใช้)
+- [ ] เก็บกวาดหลังทดสอบ — อัปเดต 2026-10-10 15.xx: ✅ ลบกฎอนุญาต Neon ใน `.claude/settings.local.json` แล้ว; ✅ ลบ Neon branch `dept-switcher-test-2026-10-10` แล้ว (ผู้ใช้ลบเอง); ✅ `.env.local` ไม่มี `DEPARTMENTS_ENABLED` และไม่มี `.env.local.backup` (ผู้ใช้ต้องยืนยันเองว่า `DATABASE_URL` เป็นของเดิม); ผู้ใช้สั่ง **คง branch `preview` (`br-shiny-dream-aoh0iljd`, archived) ไว้**
+  - ยังค้าง: ลบ `dept-rehearsal-2026-10-08` (`br-quiet-hall-aohmgi8c`, ล้าสมัย — ผู้ใช้ต้องลบเอง เพราะระบบสิทธิ์บล็อกการลบ branch); ตัดสินใจเรื่อง `test-count-partial-2026-10-06` (`br-polished-band-ao7nb0sh`, ไม่อยู่ในรายการเดิม)
+  - ✅ ผู้ใช้รีเซ็ตรหัสผ่าน `neondb_owner` เสร็จแล้ว (ผู้ใช้แจ้ง); ตรวจ `.env.local` เชื่อมต่อได้ (`select 1` อ่านอย่างเดียว, host แบบ pooler) — ผู้ใช้ยืนยันว่าเว็บ production แสดงข้อมูลได้ปกติหลัง redeploy (ปิดเรื่องรหัสผ่านแล้ว)
+  - (เดิม) รีเซ็ตรหัสผ่าน role `neondb_owner` (หลุดเข้าแชท 10 ต.ค. ใช้ได้กับ production) ลำดับ: เลือกช่วงไม่มีคนใช้ → รีเซ็ตใน Neon → อัปเดต `DATABASE_URL` ใน Vercel Production + redeploy → อัปเดต `.env.local` → ทดสอบล็อกอิน
+- [x] ตรวจ 2026-10-10: `tsc` ผ่าน, lint 0 error (1 warning เดิม `settings/barcodes/page.tsx:484`), vitest 630/630 (63 ไฟล์), `npm run build` ผ่าน
 - [ ] `npm run build` (ปิด dev server ก่อน) แล้วรายงานผล
 - [ ] ย้ายการเบิก–รับเข้า (`src/lib/stock-transactions.ts` ← `api/dispense`, `api/mobile/confirm`) เข้า `scoped-db` ผ่าน `/dev-team` (เสี่ยงสูง ต้องวางแผน+ผู้ตรวจ Opus+ผู้ใช้อนุมัติ) แล้วทยอยจน `DEPARTMENT_SCOPE_PENDING` (51 ไฟล์) ว่าง
 - [ ] ก่อนเปิด flag production: ตัวกันหลายแท็บฝั่งเซิร์ฟเวอร์, เลือกห้องบน /mobile + LIFF + LINE (`X-Department-Id`), หน้าจัดการสมาชิกห้อง/admin ต่อแผนก, ซ้อม v30–v34 ตามไฟล์จริงด้วย `apply-migration.mjs`, อัปเดต `docs/departments-rollout.md`
