@@ -197,3 +197,55 @@ describe("POST /api/mobile/confirm dispense department scope", () => {
     expect(mocks.runDispenseBatch).not.toHaveBeenCalled();
   });
 });
+
+describe("POST /api/mobile/confirm receive department scope", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    mocks.hasUserPinColumn.mockResolvedValue(true);
+    mocks.verifyUserPin.mockResolvedValue({ username: "mt", name: "MT", role: "Manager" });
+    mocks.roleHasMenu.mockResolvedValue(true);
+  });
+
+  const confirm = () => post({ mode: "receive", username: "mt", pin: "1234", batchItems: item });
+
+  it("passes { mode: \"legacy\" } as the 4th argument when the flag is off (user has no scope)", async () => {
+    mocks.runReceiveBatch.mockResolvedValue({ success: true });
+
+    const response = await confirm();
+
+    expect(response.status).toBe(200);
+    expect(mocks.runReceiveBatch).toHaveBeenCalledWith(item, expect.objectContaining({ username: "mt" }), expect.any(Object), { mode: "legacy" });
+  });
+
+  it("passes { mode: \"one\", departmentId } when the approver has a department scope", async () => {
+    mocks.verifyUserPin.mockResolvedValue({ username: "mt", name: "MT", role: "Manager", scope: 2 });
+    mocks.runReceiveBatch.mockResolvedValue({ success: true });
+
+    await confirm();
+
+    expect(mocks.runReceiveBatch).toHaveBeenCalledWith(item, expect.anything(), expect.any(Object), { mode: "one", departmentId: 2 });
+  });
+
+  it("maps AppError ITEM_NOT_IN_DEPARTMENT to 409 with a Thai message", async () => {
+    mocks.runReceiveBatch.mockRejectedValue(new AppError("ITEM_NOT_IN_DEPARTMENT", {
+      message: "รายการนี้ไม่อยู่ในงานของคุณ (R1)",
+      detail: "ITEM_NOT_IN_DEPARTMENT: R1",
+    }));
+
+    const response = await confirm();
+
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toContain("รายการนี้ไม่อยู่ในงานของคุณ");
+  });
+
+  it("maps DEPARTMENT_READ_ONLY to 409 and a denied department to 404 without receiving", async () => {
+    mocks.runReceiveBatch.mockRejectedValue(new DepartmentScopeError("DEPARTMENT_READ_ONLY"));
+    expect((await confirm()).status).toBe(409);
+
+    mocks.runReceiveBatch.mockClear();
+    mocks.verifyUserPin.mockResolvedValue({ username: "mt", name: "MT", role: "Manager", scope: 2, departmentDenied: true });
+    expect((await confirm()).status).toBe(404);
+    expect(mocks.runReceiveBatch).not.toHaveBeenCalled();
+  });
+});

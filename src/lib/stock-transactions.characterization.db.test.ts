@@ -62,23 +62,23 @@ describe("runReceiveBatch characterization", () => {
   beforeEach(seed);
 
   it("receiving the same lot twice on one day keeps one inventory row with the summed quantity", async () => {
-    await runReceiveBatch([{ itemId: "R1", lotNo: "L1", qty: 2, expDate: "2027-01-01" }], user, audit);
-    await runReceiveBatch([{ itemId: "R1", lotNo: "L1", qty: 3, expDate: "2027-01-01" }], user, audit);
+    await runReceiveBatch([{ itemId: "R1", lotNo: "L1", qty: 2, expDate: "2027-01-01" }], user, audit, { mode: "legacy" });
+    await runReceiveBatch([{ itemId: "R1", lotNo: "L1", qty: 3, expDate: "2027-01-01" }], user, audit, { mode: "legacy" });
     const inv = await inventory();
     expect(inv).toHaveLength(1);
     expect(Number(inv[0].quantity)).toBe(5);
   });
 
   it("a new lot creates a new inventory row", async () => {
-    await runReceiveBatch([{ itemId: "R1", lotNo: "L1", qty: 2 }], user, audit);
-    await runReceiveBatch([{ itemId: "R1", lotNo: "L2", qty: 4 }], user, audit);
+    await runReceiveBatch([{ itemId: "R1", lotNo: "L1", qty: 2 }], user, audit, { mode: "legacy" });
+    await runReceiveBatch([{ itemId: "R1", lotNo: "L2", qty: 4 }], user, audit, { mode: "legacy" });
     const inv = await inventory();
     expect(inv.map((r) => `${r.lot_no}=${Number(r.quantity)}`)).toEqual(["L1=2", "L2=4"]);
   });
 
   it("an empty expiry date does not overwrite the existing exp_date", async () => {
-    await runReceiveBatch([{ itemId: "R1", lotNo: "L1", qty: 2, expDate: "2027-01-01" }], user, audit);
-    await runReceiveBatch([{ itemId: "R1", lotNo: "L1", qty: 1, expDate: "" }], user, audit);
+    await runReceiveBatch([{ itemId: "R1", lotNo: "L1", qty: 2, expDate: "2027-01-01" }], user, audit, { mode: "legacy" });
+    await runReceiveBatch([{ itemId: "R1", lotNo: "L1", qty: 1, expDate: "" }], user, audit, { mode: "legacy" });
     const inv = await inventory();
     expect(inv).toHaveLength(1);
     expect(inv[0].exp_date).toBe("2027-01-01");
@@ -89,7 +89,7 @@ describe("runReceiveBatch characterization", () => {
     const error = await runReceiveBatch([
       { itemId: "R1", lotNo: "L1", qty: 2 },
       { itemId: "R2", lotNo: "L9", qty: 1 },
-    ], user, audit).catch((e: unknown) => e);
+    ], user, audit, { mode: "legacy" }).catch((e: unknown) => e);
     expect(error).toMatchObject({ code: "REAGENT_INACTIVE", message: "REAGENT_INACTIVE: R2" });
     expect(await inventory()).toEqual([]);
     expect(await logCount()).toBe(0);
@@ -101,7 +101,7 @@ describe("runReceiveBatch characterization", () => {
       { itemId: "R1", lotNo: "L1", qty: 0 },
       { itemId: "R1", lotNo: "L2", qty: -3 },
       { itemId: "R1", lotNo: "L3", qty: Number.NaN },
-    ], user, audit);
+    ], user, audit, { mode: "legacy" });
     expect(result).toMatchObject({ success: true });
     expect(await inventory()).toEqual([]);
     expect(await logCount()).toBe(0);
@@ -110,12 +110,12 @@ describe("runReceiveBatch characterization", () => {
     await runReceiveBatch([
       { itemId: "R1", lotNo: "L1", qty: 0 },
       { itemId: "R1", lotNo: "L2", qty: 2 },
-    ], user, audit);
+    ], user, audit, { mode: "legacy" });
     expect((await inventory()).map((r) => r.lot_no)).toEqual(["L2"]);
   });
 
   it("writes one log row per received line", async () => {
-    await runReceiveBatch([{ itemId: "R1", lotNo: "L1", qty: 2 }], user, audit);
+    await runReceiveBatch([{ itemId: "R1", lotNo: "L1", qty: 2 }], user, audit, { mode: "legacy" });
     const logs = await rows<{ item_id: string; lot_no: string; action: string; quantity: string; username: string }>(
       "SELECT item_id, lot_no, action, quantity, username FROM logs",
     );
@@ -125,7 +125,7 @@ describe("runReceiveBatch characterization", () => {
   });
 
   it("calls notifyUsers STOCK_RECEIVED with an empty recipient list", async () => {
-    await runReceiveBatch([{ itemId: "R1", lotNo: "L1", qty: 2 }], user, audit);
+    await runReceiveBatch([{ itemId: "R1", lotNo: "L1", qty: 2 }], user, audit, { mode: "legacy" });
     expect(notifyUsers).toHaveBeenCalledTimes(1);
     expect(notifyUsers).toHaveBeenCalledWith(
       "STOCK_RECEIVED",

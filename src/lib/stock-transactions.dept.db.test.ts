@@ -18,7 +18,7 @@ import { AppError } from "@/lib/errors";
 import { toApiError } from "@/lib/api-response";
 import { DepartmentScopeError, type DepartmentScope } from "@/lib/scoped-db";
 import { DEPT_A, DEPT_B, seedTwoDepartments } from "@/test/department-fixtures";
-import { runDispenseBatch } from "./stock-transactions";
+import { runDispenseBatch, runReceiveBatch } from "./stock-transactions";
 
 const sql = dbSql as unknown as PgliteSql;
 const userB = { username: "solo2", name: "Solo Two", role: "Technician" };
@@ -251,5 +251,161 @@ describe("runDispenseBatch with a department scope", () => {
     expect(error).toMatchObject({ code: "ITEM_NOT_IN_DEPARTMENT" });
     expect(await stock()).toEqual([`A-000002/LA1/d${DEPT_A}=9`, `MB-000001/LB1/d${DEPT_B}=10`, `MB-000002/LB2/d${DEPT_B}=4`]);
     expect((await dispenseLogs()).map((row) => row.department_id)).toEqual([DEPT_A]);
+  });
+});
+
+// PGlite has no trg_inventory_require_active_master_data (upgrade_v24 trigger), so the inactive-item case below is
+// covered by the JS check and labstock_assert only; the trigger itself is verified in the Neon rehearsal.
+const RECEIVE_ACTION = "รับเข้าสต๊อกหลัก";
+const receiveLogs = () => rows<{ item_id: string; lot_no: string; quantity: string; department_id: number }>(
+  `SELECT item_id, lot_no, quantity, department_id FROM logs WHERE action = '${RECEIVE_ACTION}' ORDER BY id`,
+);
+const lotRows = (lot: string) => rows<{ item_id: string; quantity: string; department_id: number; exp_date: string | null; today: boolean }>(
+  `SELECT item_id, quantity, department_id, to_char(exp_date, 'YYYY-MM-DD') AS exp_date, received_on = CURRENT_DATE AS today
+   FROM inventory WHERE lot_no = '${lot}' ORDER BY id`,
+);
+
+describe("runReceiveBatch with a department scope", () => {
+  it("r1) receiving the same lot twice on one day in department B keeps one row with the summed quantity", async () => {
+    await runReceiveBatch([{ itemId: "MB-000001", lotNo: "LN1", qty: 2 }], userB, audit, ONE_B);
+    await runReceiveBatch([{ itemId: "MB-000001", lotNo: "LN1", qty: 3 }], userB, audit, ONE_B);
+
+    const lot = await lotRows("LN1");
+    expect(lot).toHaveLength(1);
+    expect(lot[0]).toMatchObject({ item_id: "MB-000001", department_id: DEPT_B, today: true });
+    expect(Number(lot[0].quantity)).toBe(5);
+    const logs = await receiveLogs();
+    expect(logs.map((row) => [row.lot_no, Number(row.quantity), row.department_id])).toEqual([["LN1", 2, DEPT_B], ["LN1", 3, DEPT_B]]);
+  });
+
+  it("r2) an item of another department is refused with ITEM_NOT_IN_DEPARTMENT and nothing changes", async () => {
+    const before = await stock();
+    const error = await catchError(runReceiveBatch([{ itemId: "A-000002", lotNo: "LA1", qty: 2 }], userB, audit, ONE_B));
+
+    expect(error).toBeInstanceOf(AppError);
+    expect(error).toMatchObject({ code: "ITEM_NOT_IN_DEPARTMENT", userMessage: "รายการนี้ไม่อยู่ในงานของคุณ (A-000002)" });
+    expect(await stock()).toEqual(before);
+    expect(await receiveLogs()).toHaveLength(0);
+  });
+
+  it("r3) a same-day row of the same item/lot owned by another department is not added to or relabelled", async () => {
+    // Inconsistent data: a department B item whose row for today sits in department A.
+    await sql.db.exec(`
+      INSERT INTO inventory (item_id, lot_no, exp_date, quantity, received_on, department_id)
+      VALUES ('MB-000001', 'LX', NULL, 5, CURRENT_DATE, ${DEPT_A});
+    `);
+    const before = await stock();
+
+    const error = await catchError(runReceiveBatch([{ itemId: "MB-000001", lotNo: "LX", qty: 2 }], userB, audit, ONE_B));
+
+    expect((error as Error).message).toMatch(/^ITEM_NOT_IN_DEPARTMENT: MB-000001/);
+    expect(await stock()).toEqual(before);
+    expect(await receiveLogs()).toHaveLength(0);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { response } = toApiError(error, "req-r3");
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toBe("รายการนี้ไม่อยู่ในงานของคุณ (MB-000001)");
+  });
+
+  it("r4) an item id that does not exist gets ITEM_NOT_IN_DEPARTMENT", async () => {
+    const before = await stock();
+    const error = await catchError(runReceiveBatch([{ itemId: "NOPE-1", lotNo: "L1", qty: 1 }], userB, audit, ONE_B));
+
+    expect(error).toMatchObject({ code: "ITEM_NOT_IN_DEPARTMENT", userMessage: "รายการนี้ไม่อยู่ในงานของคุณ (NOPE-1)" });
+    expect(await stock()).toEqual(before);
+    expect(await receiveLogs()).toHaveLength(0);
+  });
+
+  it("r5) an inactive item of the user's department is REAGENT_INACTIVE and nothing is written", async () => {
+    await sql.db.exec("UPDATE master_data SET is_active = FALSE WHERE item_id = 'MB-000002'");
+    const before = await stock();
+
+    const error = await catchError(runReceiveBatch([{ itemId: "MB-000002", lotNo: "LN5", qty: 1 }], userB, audit, ONE_B));
+
+    expect(error).toMatchObject({ code: "REAGENT_INACTIVE" });
+    expect(await stock()).toEqual(before);
+    expect(await receiveLogs()).toHaveLength(0);
+  });
+
+  it("r6) mode all is read-only: DEPARTMENT_READ_ONLY before any SQL runs", async () => {
+    const before = await stock();
+    const query = vi.spyOn(sql.db, "query");
+    const exec = vi.spyOn(sql.db, "exec");
+    const transaction = vi.spyOn(sql.db, "transaction");
+
+    const error = await catchError(runReceiveBatch([{ itemId: "MB-000001", lotNo: "LN6", qty: 1 }], userB, audit, { mode: "all" }));
+
+    expect(error).toBeInstanceOf(DepartmentScopeError);
+    expect(error).toMatchObject({ code: "DEPARTMENT_READ_ONLY" });
+    expect(query).not.toHaveBeenCalled();
+    expect(exec).not.toHaveBeenCalled();
+    expect(transaction).not.toHaveBeenCalled();
+    query.mockRestore();
+    expect(await stock()).toEqual(before);
+    expect(await receiveLogs()).toHaveLength(0);
+  });
+
+  it("r7) legacy mode on a migrated schema receives as before; new rows get the column default (department CC)", async () => {
+    await runReceiveBatch([
+      { itemId: "A-000002", lotNo: "LN7", qty: 2 },
+      { itemId: "MB-000001", lotNo: "LN7", qty: 1 },
+    ], userB, audit, { mode: "legacy" });
+
+    // legacy writes no department_id, so even the department B item lands in the default department (known legacy behaviour).
+    const lot = await lotRows("LN7");
+    expect(lot.map((row) => [row.item_id, Number(row.quantity), row.department_id])).toEqual([["A-000002", 2, DEPT_A], ["MB-000001", 1, DEPT_A]]);
+    expect((await receiveLogs()).map((row) => row.department_id)).toEqual([DEPT_A, DEPT_A]);
+  });
+
+  it("r8) a cart with an item of each department fails as a whole and writes nothing", async () => {
+    const before = await stock();
+
+    const error = await catchError(runReceiveBatch([
+      { itemId: "MB-000001", lotNo: "LN8", qty: 1 },
+      { itemId: "A-000002", lotNo: "LN8", qty: 1 },
+    ], userB, audit, ONE_B));
+
+    expect(error).toMatchObject({ code: "ITEM_NOT_IN_DEPARTMENT" });
+    expect(await stock()).toEqual(before);
+    expect(await receiveLogs()).toHaveLength(0);
+  });
+
+  it("r8b) a failure inside the transaction rolls back the lines before it", async () => {
+    await sql.db.exec(`
+      INSERT INTO inventory (item_id, lot_no, exp_date, quantity, received_on, department_id)
+      VALUES ('MB-000002', 'LX', NULL, 5, CURRENT_DATE, ${DEPT_A});
+    `);
+    const before = await stock();
+
+    const error = await catchError(runReceiveBatch([
+      { itemId: "MB-000001", lotNo: "LN8B", qty: 1 },
+      { itemId: "MB-000002", lotNo: "LX", qty: 1 },
+    ], userB, audit, ONE_B));
+
+    expect((error as Error).message).toMatch(/^ITEM_NOT_IN_DEPARTMENT: MB-000002/);
+    expect(await stock()).toEqual(before);
+    expect(await receiveLogs()).toHaveLength(0);
+  });
+
+  it("r9) a receive without an expiry date does not overwrite the existing one", async () => {
+    await runReceiveBatch([{ itemId: "MB-000001", lotNo: "LN9", qty: 1, expDate: "2027-05-05" }], userB, audit, ONE_B);
+    await runReceiveBatch([{ itemId: "MB-000001", lotNo: "LN9", qty: 1 }], userB, audit, ONE_B);
+
+    const lot = await lotRows("LN9");
+    expect(lot).toHaveLength(1);
+    expect(lot[0].exp_date).toBe("2027-05-05");
+    expect(Number(lot[0].quantity)).toBe(2);
+  });
+
+  it("r10) lines with qty <= 0 are dropped before the department check, even for another department's item", async () => {
+    const result = await runReceiveBatch([
+      { itemId: "A-000002", lotNo: "LN10", qty: 0 },
+      { itemId: "NOPE-1", lotNo: "LN10", qty: Number.NaN },
+      { itemId: "MB-000001", lotNo: "LN10", qty: 2 },
+    ], userB, audit, ONE_B);
+
+    expect(result).toEqual({ success: true, message: "รับเข้าสำเร็จ 1 รายการ" });
+    expect((await lotRows("LN10")).map((row) => [row.item_id, row.department_id])).toEqual([["MB-000001", DEPT_B]]);
+    expect(await receiveLogs()).toHaveLength(1);
   });
 });

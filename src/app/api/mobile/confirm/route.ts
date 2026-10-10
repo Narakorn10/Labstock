@@ -75,7 +75,7 @@ export const POST = trackRoute({ action: "mobile.confirm" }, async (request: Req
     const ipAddress = request.headers.get("x-forwarded-for") || "Unknown";
 
     const result = mode === "receive"
-      ? await runReceiveBatch(batchItems, user, { userAgent, ipAddress })
+      ? await runReceiveBatch(batchItems, user, { userAgent, ipAddress }, await getDepartmentScope(user))
       : await runDispenseBatch(batchItems, user, { userAgent, ipAddress }, await getDepartmentScope(user));
 
     return NextResponse.json({

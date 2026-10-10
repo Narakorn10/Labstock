@@ -75,9 +75,13 @@ async function notifyLowStockForAffectedItems(itemIds: string[]) {
 export async function runReceiveBatch(
   batchItems: StockBatchItem[],
   user: AuthenticatedUser,
-  audit: AuditContext
+  audit: AuditContext,
+  scope: DepartmentScope
 ) {
-  const masterData = await sql`SELECT item_id, name, is_active FROM master_data`;
+  // Mode "all" (viewing every department) cannot write: throws DEPARTMENT_READ_ONLY before any SQL runs.
+  writeDepartmentId(scope);
+  const d = deptInsert(scope);
+  const masterData = await sql`SELECT item_id, name, is_active FROM master_data WHERE ${deptWhere(scope)}`;
   const itemNameMap: Record<string, string> = {};
   const activeMap: Record<string, boolean> = {};
   const affectedItemIds: string[] = [];
@@ -96,6 +100,14 @@ export async function runReceiveBatch(
     }))
     .filter((item) => !Number.isNaN(item.qty) && item.qty > 0);
 
+  // Departments on: an item outside the user's department (or one that does not exist) looks the same to them.
+  if (scope.mode === "one") {
+    const foreign = validItems.find((item) => !Object.prototype.hasOwnProperty.call(activeMap, item.itemId.toLowerCase()));
+    if (foreign) {
+      throw new AppError("ITEM_NOT_IN_DEPARTMENT", { message: `รายการนี้ไม่อยู่ในงานของคุณ (${foreign.itemId})`, detail: `ITEM_NOT_IN_DEPARTMENT: ${foreign.itemId}` });
+    }
+  }
+
   const inactive = validItems.find((item) => activeMap[item.itemId.toLowerCase()] === false);
   if (inactive) {
     const name = itemNameMap[inactive.itemId.toLowerCase()];
@@ -111,22 +123,31 @@ export async function runReceiveBatch(
     transaction`
       SELECT labstock_assert(EXISTS (
         SELECT 1 FROM master_data
-        WHERE LOWER(item_id) = LOWER(${item.itemId}) AND is_active = TRUE
+        WHERE LOWER(item_id) = LOWER(${item.itemId}) AND is_active = TRUE${andDeptWrite(scope)}
         FOR UPDATE
       ), 'REAGENT_INACTIVE: ' || ${item.itemId}) AS ok
     `,
+    // The upsert below conflicts on (item_id, lot_no, received_on). If that exact row belongs to another department
+    // (inconsistent data) it must not be added to or relabelled, so refuse before touching it.
+    ...(scope.mode === "one" ? [transaction`
+      SELECT labstock_assert(NOT EXISTS (
+        SELECT 1 FROM inventory
+        WHERE item_id = ${item.itemId} AND lot_no = ${item.lotNo} AND received_on = CURRENT_DATE
+          AND department_id <> ${scope.departmentId}
+      ), 'ITEM_NOT_IN_DEPARTMENT: ' || ${item.itemId}) AS ok
+    `] : []),
     transaction`
       WITH upserted AS (
-        INSERT INTO inventory (item_id, lot_no, exp_date, quantity, received_on)
-        VALUES (${item.itemId}, ${item.lotNo}, ${item.expDate}, ${item.qty}, CURRENT_DATE)
+        INSERT INTO inventory (item_id, lot_no, exp_date, quantity, received_on${d.column})
+        VALUES (${item.itemId}, ${item.lotNo}, ${item.expDate}, ${item.qty}, CURRENT_DATE${d.value})
         ON CONFLICT (item_id, lot_no, received_on)
         DO UPDATE SET
           quantity = inventory.quantity + ${item.qty},
           exp_date = COALESCE(EXCLUDED.exp_date, inventory.exp_date)
         RETURNING id, item_id, lot_no, received_on
       )
-      INSERT INTO logs (item_id, name, lot_no, action, quantity, username, user_agent, ip_address)
-      SELECT item_id, ${itemNameMap[item.itemId.toLowerCase()] || 'Unknown'}, lot_no, 'รับเข้าสต๊อกหลัก', ${item.qty}, ${actor}, ${audit.userAgent}, ${audit.ipAddress}
+      INSERT INTO logs (item_id, name, lot_no, action, quantity, username, user_agent, ip_address${d.column})
+      SELECT item_id, ${itemNameMap[item.itemId.toLowerCase()] || 'Unknown'}, lot_no, 'รับเข้าสต๊อกหลัก', ${item.qty}, ${actor}, ${audit.userAgent}, ${audit.ipAddress}${d.value}
       FROM upserted
     `,
   ]));

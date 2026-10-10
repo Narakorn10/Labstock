@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { apiError } from "@/lib/api-response";
 import { hasMenuPermission } from "@/lib/auth-utils";
 import { trackRoute } from "@/lib/app-events";
+import { getDepartmentScope } from "@/lib/scoped-db";
 import { runReceiveBatch } from "@/lib/stock-transactions";
 
 export const POST = trackRoute({ action: "receive" }, async (request: Request, ctx) => {
@@ -23,7 +24,8 @@ export const POST = trackRoute({ action: "receive" }, async (request: Request, c
     const userAgent = request.headers.get("user-agent") || "Unknown";
     const ipAddress = request.headers.get("x-forwarded-for") || "Unknown";
 
-    const result = await runReceiveBatch(batchItems, user, { userAgent, ipAddress });
+    const scope = await getDepartmentScope(user);
+    const result = await runReceiveBatch(batchItems, user, { userAgent, ipAddress }, scope);
     return NextResponse.json(result);
   } catch (error: unknown) {
     return ctx.fail(error);
