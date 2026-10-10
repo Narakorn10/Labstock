@@ -1,6 +1,7 @@
 import sql from "@/lib/db";
 import { AuthenticatedUser } from "@/lib/auth-utils";
 import { AppError } from "@/lib/errors";
+import { andDept, andDeptWrite, deptInsert, deptWhere, writeDepartmentId, type DepartmentScope } from "@/lib/scoped-db";
 import { notifyUsers, notifyUsersVendorScoped } from "@/lib/notifications";
 import type { LowStockItem } from "@/lib/line-flex-templates";
 
@@ -162,9 +163,12 @@ export async function runReceiveBatch(
 export async function runDispenseBatch(
   batchItems: StockBatchItem[],
   user: AuthenticatedUser,
-  audit: AuditContext
+  audit: AuditContext,
+  scope: DepartmentScope
 ) {
-  const masterData = await sql`SELECT item_id, name, is_active FROM master_data`;
+  // Mode "all" (viewing every department) cannot write: throws DEPARTMENT_READ_ONLY before any SQL runs.
+  writeDepartmentId(scope);
+  const masterData = await sql`SELECT item_id, name, is_active FROM master_data WHERE ${deptWhere(scope)}`;
   const masterMap: Record<string, string> = {};
   const activeMap: Record<string, boolean> = {};
   const affectedItemIds: string[] = [];
@@ -185,6 +189,10 @@ export async function runDispenseBatch(
     const qtyToSubtract = parseFloat(String(item.qty));
 
     if (Number.isNaN(qtyToSubtract) || qtyToSubtract <= 0) continue;
+    // Departments on: an item outside the user's department (or one that does not exist) looks the same to them.
+    if (scope.mode === "one" && !Object.prototype.hasOwnProperty.call(activeMap, targetItemId.toLowerCase())) {
+      throw new AppError("ITEM_NOT_IN_DEPARTMENT", { message: `รายการนี้ไม่อยู่ในงานของคุณ (${targetItemId})`, detail: `ITEM_NOT_IN_DEPARTMENT: ${targetItemId}` });
+    }
     if (activeMap[targetItemId.toLowerCase()] === false) {
       const name = masterMap[targetItemId.toLowerCase()];
       const label = name ? `${name} (${targetItemId})` : targetItemId;
@@ -195,9 +203,9 @@ export async function runDispenseBatch(
       SELECT id, quantity
       FROM inventory
       WHERE LOWER(item_id) = LOWER(${targetItemId})
-        AND quantity > 0
+        AND quantity > 0${andDept(scope)}
         AND lot_no = COALESCE(
-          (SELECT lot_no FROM inventory WHERE id = ${preferredId} AND LOWER(item_id) = LOWER(${targetItemId})),
+          (SELECT lot_no FROM inventory WHERE id = ${preferredId} AND LOWER(item_id) = LOWER(${targetItemId})${andDept(scope)}),
           ${targetLotNo}
         )
       ORDER BY (id = ${preferredId}) DESC, exp_date ASC NULLS LAST, received_on ASC, id ASC
@@ -233,11 +241,12 @@ export async function runDispenseBatch(
   }
 
   const actor = getActorName(user);
+  const d = deptInsert(scope);
   await sql.transaction((transaction) => preparedItems.flatMap((item) => [
     transaction`
       SELECT labstock_assert(EXISTS (
         SELECT 1 FROM master_data
-        WHERE LOWER(item_id) = LOWER(${item.targetItemId}) AND is_active = TRUE
+        WHERE LOWER(item_id) = LOWER(${item.targetItemId}) AND is_active = TRUE${andDeptWrite(scope)}
         FOR UPDATE
       ), 'REAGENT_INACTIVE: ' || ${item.targetItemId}) AS ok
     `,
@@ -247,7 +256,7 @@ export async function runDispenseBatch(
           SELECT 1 FROM inventory
           WHERE id = ${allocation.inventoryId}
             AND LOWER(item_id) = LOWER(${item.targetItemId})
-            AND quantity >= ${allocation.qty}
+            AND quantity >= ${allocation.qty}${andDeptWrite(scope)}
           FOR UPDATE
         ), 'REAGENT_STOCK_INSUFFICIENT: ' || ${item.targetItemId}) AS ok
       `,
@@ -257,11 +266,11 @@ export async function runDispenseBatch(
           SET quantity = quantity - ${allocation.qty}
           WHERE id = ${allocation.inventoryId}
             AND LOWER(item_id) = LOWER(${item.targetItemId})
-            AND quantity >= ${allocation.qty}
+            AND quantity >= ${allocation.qty}${andDeptWrite(scope)}
           RETURNING item_id, lot_no
         )
-        INSERT INTO logs (item_id, name, lot_no, action, quantity, username, user_agent, ip_address)
-        SELECT item_id, ${masterMap[item.targetItemId.toLowerCase()] || 'Unknown'}, lot_no, 'เบิกไปหน้างาน', ${allocation.qty}, ${actor}, ${audit.userAgent}, ${audit.ipAddress}
+        INSERT INTO logs (item_id, name, lot_no, action, quantity, username, user_agent, ip_address${d.column})
+        SELECT item_id, ${masterMap[item.targetItemId.toLowerCase()] || 'Unknown'}, lot_no, 'เบิกไปหน้างาน', ${allocation.qty}, ${actor}, ${audit.userAgent}, ${audit.ipAddress}${d.value}
         FROM updated
       `,
     ]),

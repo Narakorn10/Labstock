@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { trackRoute } from "@/lib/app-events";
+import { isDepartmentScopeFailure } from "@/lib/api-response";
 import { hasUserPinColumn, roleHasMenu, verifyUserPin } from "@/lib/auth-utils";
 import { getLineLinkedUser, hasUserLineIdColumn, verifyLineIdToken } from "@/lib/line-liff-auth";
+import { getDepartmentScope } from "@/lib/scoped-db";
 import { runDispenseBatch, runReceiveBatch, StockBatchItem } from "@/lib/stock-transactions";
 
 type MobileMode = "receive" | "dispense";
@@ -74,7 +76,7 @@ export const POST = trackRoute({ action: "mobile.confirm" }, async (request: Req
 
     const result = mode === "receive"
       ? await runReceiveBatch(batchItems, user, { userAgent, ipAddress })
-      : await runDispenseBatch(batchItems, user, { userAgent, ipAddress });
+      : await runDispenseBatch(batchItems, user, { userAgent, ipAddress }, await getDepartmentScope(user));
 
     return NextResponse.json({
       ...result,
@@ -85,6 +87,7 @@ export const POST = trackRoute({ action: "mobile.confirm" }, async (request: Req
       },
     });
   } catch (error: unknown) {
+    if (isDepartmentScopeFailure(error)) return ctx.fail(error);
     console.error("Mobile confirm error:", error);
     const errorMessage = error instanceof Error ? error.message : String(error);
     const status = errorMessage.startsWith('REAGENT_INACTIVE') ? 409 : 400;

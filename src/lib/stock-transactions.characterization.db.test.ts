@@ -140,7 +140,7 @@ describe("runDispenseBatch characterization (notifications)", () => {
 
   it("calls notifyUsers STOCK_DISPENSED with an empty recipient list", async () => {
     await sql.db.exec("INSERT INTO inventory (item_id, lot_no, quantity, received_on) VALUES ('R1','L1',20,'2026-09-01')");
-    await runDispenseBatch([{ itemId: "R1", lotNo: "L1", qty: 1 }], user, audit);
+    await runDispenseBatch([{ itemId: "R1", lotNo: "L1", qty: 1 }], user, audit, { mode: "legacy" });
     expect(notifyUsers).toHaveBeenCalledTimes(1);
     expect(notifyUsers).toHaveBeenCalledWith(
       "STOCK_DISPENSED",
@@ -151,7 +151,7 @@ describe("runDispenseBatch characterization (notifications)", () => {
 
   it("dropping below min_threshold notifies LOW_STOCK to every user with notify_low_stock = true (including the vendor user)", async () => {
     await sql.db.exec("INSERT INTO inventory (item_id, lot_no, quantity, received_on) VALUES ('R1','L1',6,'2026-09-01')");
-    await runDispenseBatch([{ itemId: "R1", lotNo: "L1", qty: 2 }], user, audit);
+    await runDispenseBatch([{ itemId: "R1", lotNo: "L1", qty: 2 }], user, audit, { mode: "legacy" });
 
     expect(notifyUsersVendorScoped).toHaveBeenCalledTimes(1);
     const [event, items, recipients] = vi.mocked(notifyUsersVendorScoped).mock.calls[0];
@@ -165,7 +165,7 @@ describe("runDispenseBatch characterization (notifications)", () => {
 
   it("does not send LOW_STOCK while stock stays above min_threshold", async () => {
     await sql.db.exec("INSERT INTO inventory (item_id, lot_no, quantity, received_on) VALUES ('R1','L1',20,'2026-09-01')");
-    await runDispenseBatch([{ itemId: "R1", lotNo: "L1", qty: 2 }], user, audit);
+    await runDispenseBatch([{ itemId: "R1", lotNo: "L1", qty: 2 }], user, audit, { mode: "legacy" });
     expect(notifyUsersVendorScoped).not.toHaveBeenCalled();
   });
 });

@@ -29,6 +29,7 @@ vi.mock("@/lib/stock-transactions", () => ({
 }));
 
 import { AppError } from "@/lib/errors";
+import { DepartmentScopeError } from "@/lib/scoped-db";
 import { POST } from "./route";
 
 const item = [{ reagentId: "R1", quantity: 1 }];
@@ -123,5 +124,76 @@ describe("POST /api/mobile/confirm batch error mapping", () => {
 
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ error: "REAGENT_STOCK_INSUFFICIENT: R1" });
+  });
+});
+
+describe("POST /api/mobile/confirm dispense department scope", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    mocks.hasUserPinColumn.mockResolvedValue(true);
+    mocks.verifyUserPin.mockResolvedValue({ username: "mt", name: "MT", role: "Manager" });
+    mocks.roleHasMenu.mockResolvedValue(true);
+  });
+
+  const confirm = () => post({ mode: "dispense", username: "mt", pin: "1234", batchItems: item });
+
+  it("passes { mode: \"legacy\" } as the 4th argument when the flag is off (user has no scope)", async () => {
+    mocks.runDispenseBatch.mockResolvedValue({ success: true });
+
+    const response = await confirm();
+
+    expect(response.status).toBe(200);
+    expect(mocks.runDispenseBatch).toHaveBeenCalledWith(item, expect.objectContaining({ username: "mt" }), expect.any(Object), { mode: "legacy" });
+  });
+
+  it("passes { mode: \"one\", departmentId } when the approver has a department scope", async () => {
+    mocks.verifyUserPin.mockResolvedValue({ username: "mt", name: "MT", role: "Manager", scope: 2 });
+    mocks.runDispenseBatch.mockResolvedValue({ success: true });
+
+    await confirm();
+
+    expect(mocks.runDispenseBatch).toHaveBeenCalledWith(item, expect.anything(), expect.any(Object), { mode: "one", departmentId: 2 });
+  });
+
+  it("maps AppError ITEM_NOT_IN_DEPARTMENT to 409 with a Thai message", async () => {
+    mocks.runDispenseBatch.mockRejectedValue(new AppError("ITEM_NOT_IN_DEPARTMENT", {
+      message: "รายการนี้ไม่อยู่ในงานของคุณ (R1)",
+      detail: "ITEM_NOT_IN_DEPARTMENT: R1",
+    }));
+
+    const response = await confirm();
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body.error).toContain("รายการนี้ไม่อยู่ในงานของคุณ");
+  });
+
+  it("maps a raw ITEM_NOT_IN_DEPARTMENT error (from labstock_assert) to 409 with the item id", async () => {
+    mocks.runDispenseBatch.mockRejectedValue(new Error("ITEM_NOT_IN_DEPARTMENT: X"));
+
+    const response = await confirm();
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body.error).toBe("รายการนี้ไม่อยู่ในงานของคุณ (X)");
+  });
+
+  it("maps DEPARTMENT_READ_ONLY to 409", async () => {
+    mocks.runDispenseBatch.mockRejectedValue(new DepartmentScopeError("DEPARTMENT_READ_ONLY"));
+
+    const response = await confirm();
+
+    expect(response.status).toBe(409);
+    expect((await response.json()).code).toBe("DEPARTMENT_READ_ONLY");
+  });
+
+  it("answers 404 and never dispenses when the approver asked for a department they are not in", async () => {
+    mocks.verifyUserPin.mockResolvedValue({ username: "mt", name: "MT", role: "Manager", scope: 2, departmentDenied: true });
+
+    const response = await confirm();
+
+    expect(response.status).toBe(404);
+    expect(mocks.runDispenseBatch).not.toHaveBeenCalled();
   });
 });
