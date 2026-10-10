@@ -1,6 +1,7 @@
 import sql from "@/lib/db";
 import { AuthenticatedUser } from "@/lib/auth-utils";
 import { AppError } from "@/lib/errors";
+import { andDept, andDeptWrite, deptInsert, deptWhere, writeDepartmentId, type DepartmentScope } from "@/lib/scoped-db";
 import { notifyUsers, notifyUsersVendorScoped } from "@/lib/notifications";
 import type { LowStockItem } from "@/lib/line-flex-templates";
 
@@ -23,10 +24,20 @@ const getActorName = (user: AuthenticatedUser) => {
   return user?.name ? `${user.name} (${user.role})` : "Staff";
 };
 
-async function notifyLowStockForAffectedItems(itemIds: string[]) {
+// Who may receive LOW_STOCK for an item of this department. Legacy: empty fragment, so the recipient SQL is unchanged.
+// One department: members of that department (user_departments) plus Vendors. A Vendor needs no membership row because
+// notifyUsersVendorScoped only gives each Vendor the items of their own vendor name (vendor-notification-scope.ts).
+function recipientDepartmentFilter(scope: DepartmentScope) {
+  if (scope.mode !== "one") return sql``;
+  return sql` AND (u.role = 'Vendor' OR EXISTS (SELECT 1 FROM user_departments ud WHERE ud.username = n.username AND ud.department_id = ${scope.departmentId}))`;
+}
+
+async function notifyLowStockForAffectedItems(itemIds: string[], scope: DepartmentScope) {
   const affectedIds = new Set(itemIds.map((id) => id.toLowerCase()));
   if (affectedIds.size === 0) return;
 
+  // Only "one" adds a filter (mode "all" never gets here: the callers throw before writing).
+  const inventoryWhere = scope.mode === "one" ? sql`WHERE ${deptWhere(scope)}` : sql``;
   try {
     const lowStockRows = await sql`
       WITH InventorySummary AS (
@@ -34,6 +45,7 @@ async function notifyLowStockForAffectedItems(itemIds: string[]) {
           item_id,
           SUM(quantity) as current_qty
         FROM inventory
+        ${inventoryWhere}
         GROUP BY item_id
       )
       SELECT
@@ -45,7 +57,7 @@ async function notifyLowStockForAffectedItems(itemIds: string[]) {
         COALESCE(i.current_qty, 0) as quantity
       FROM master_data m
       LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)
-      WHERE m.is_active = TRUE
+      WHERE m.is_active = TRUE${andDept(scope, "m")}
         AND COALESCE(i.current_qty, 0) <= m.min_threshold
       ORDER BY COALESCE(i.current_qty, 0) ASC, m.item_id ASC
     `;
@@ -60,7 +72,7 @@ async function notifyLowStockForAffectedItems(itemIds: string[]) {
       SELECT n.*, u.role, u.vendor
       FROM notification_settings n
       JOIN users u ON u.username = n.username
-      WHERE n.notify_low_stock = true
+      WHERE n.notify_low_stock = true${recipientDepartmentFilter(scope)}
     `;
 
     if (settingsRows.length > 0) {
@@ -74,9 +86,13 @@ async function notifyLowStockForAffectedItems(itemIds: string[]) {
 export async function runReceiveBatch(
   batchItems: StockBatchItem[],
   user: AuthenticatedUser,
-  audit: AuditContext
+  audit: AuditContext,
+  scope: DepartmentScope
 ) {
-  const masterData = await sql`SELECT item_id, name, is_active FROM master_data`;
+  // Mode "all" (viewing every department) cannot write: throws DEPARTMENT_READ_ONLY before any SQL runs.
+  writeDepartmentId(scope);
+  const d = deptInsert(scope);
+  const masterData = await sql`SELECT item_id, name, is_active FROM master_data WHERE ${deptWhere(scope)}`;
   const itemNameMap: Record<string, string> = {};
   const activeMap: Record<string, boolean> = {};
   const affectedItemIds: string[] = [];
@@ -95,6 +111,14 @@ export async function runReceiveBatch(
     }))
     .filter((item) => !Number.isNaN(item.qty) && item.qty > 0);
 
+  // Departments on: an item outside the user's department (or one that does not exist) looks the same to them.
+  if (scope.mode === "one") {
+    const foreign = validItems.find((item) => !Object.prototype.hasOwnProperty.call(activeMap, item.itemId.toLowerCase()));
+    if (foreign) {
+      throw new AppError("ITEM_NOT_IN_DEPARTMENT", { message: `รายการนี้ไม่อยู่ในงานของคุณ (${foreign.itemId})`, detail: `ITEM_NOT_IN_DEPARTMENT: ${foreign.itemId}` });
+    }
+  }
+
   const inactive = validItems.find((item) => activeMap[item.itemId.toLowerCase()] === false);
   if (inactive) {
     const name = itemNameMap[inactive.itemId.toLowerCase()];
@@ -110,22 +134,31 @@ export async function runReceiveBatch(
     transaction`
       SELECT labstock_assert(EXISTS (
         SELECT 1 FROM master_data
-        WHERE LOWER(item_id) = LOWER(${item.itemId}) AND is_active = TRUE
+        WHERE LOWER(item_id) = LOWER(${item.itemId}) AND is_active = TRUE${andDeptWrite(scope)}
         FOR UPDATE
       ), 'REAGENT_INACTIVE: ' || ${item.itemId}) AS ok
     `,
+    // The upsert below conflicts on (item_id, lot_no, received_on). If that exact row belongs to another department
+    // (inconsistent data) it must not be added to or relabelled, so refuse before touching it.
+    ...(scope.mode === "one" ? [transaction`
+      SELECT labstock_assert(NOT EXISTS (
+        SELECT 1 FROM inventory
+        WHERE item_id = ${item.itemId} AND lot_no = ${item.lotNo} AND received_on = CURRENT_DATE
+          AND department_id <> ${scope.departmentId}
+      ), 'ITEM_NOT_IN_DEPARTMENT: ' || ${item.itemId}) AS ok
+    `] : []),
     transaction`
       WITH upserted AS (
-        INSERT INTO inventory (item_id, lot_no, exp_date, quantity, received_on)
-        VALUES (${item.itemId}, ${item.lotNo}, ${item.expDate}, ${item.qty}, CURRENT_DATE)
+        INSERT INTO inventory (item_id, lot_no, exp_date, quantity, received_on${d.column})
+        VALUES (${item.itemId}, ${item.lotNo}, ${item.expDate}, ${item.qty}, CURRENT_DATE${d.value})
         ON CONFLICT (item_id, lot_no, received_on)
         DO UPDATE SET
           quantity = inventory.quantity + ${item.qty},
           exp_date = COALESCE(EXCLUDED.exp_date, inventory.exp_date)
         RETURNING id, item_id, lot_no, received_on
       )
-      INSERT INTO logs (item_id, name, lot_no, action, quantity, username, user_agent, ip_address)
-      SELECT item_id, ${itemNameMap[item.itemId.toLowerCase()] || 'Unknown'}, lot_no, 'รับเข้าสต๊อกหลัก', ${item.qty}, ${actor}, ${audit.userAgent}, ${audit.ipAddress}
+      INSERT INTO logs (item_id, name, lot_no, action, quantity, username, user_agent, ip_address${d.column})
+      SELECT item_id, ${itemNameMap[item.itemId.toLowerCase()] || 'Unknown'}, lot_no, 'รับเข้าสต๊อกหลัก', ${item.qty}, ${actor}, ${audit.userAgent}, ${audit.ipAddress}${d.value}
       FROM upserted
     `,
   ]));
@@ -151,7 +184,7 @@ export async function runReceiveBatch(
     );
   }
 
-  await notifyLowStockForAffectedItems(affectedItemIds);
+  await notifyLowStockForAffectedItems(affectedItemIds, scope);
 
   return {
     success: true,
@@ -162,9 +195,12 @@ export async function runReceiveBatch(
 export async function runDispenseBatch(
   batchItems: StockBatchItem[],
   user: AuthenticatedUser,
-  audit: AuditContext
+  audit: AuditContext,
+  scope: DepartmentScope
 ) {
-  const masterData = await sql`SELECT item_id, name, is_active FROM master_data`;
+  // Mode "all" (viewing every department) cannot write: throws DEPARTMENT_READ_ONLY before any SQL runs.
+  writeDepartmentId(scope);
+  const masterData = await sql`SELECT item_id, name, is_active FROM master_data WHERE ${deptWhere(scope)}`;
   const masterMap: Record<string, string> = {};
   const activeMap: Record<string, boolean> = {};
   const affectedItemIds: string[] = [];
@@ -185,6 +221,10 @@ export async function runDispenseBatch(
     const qtyToSubtract = parseFloat(String(item.qty));
 
     if (Number.isNaN(qtyToSubtract) || qtyToSubtract <= 0) continue;
+    // Departments on: an item outside the user's department (or one that does not exist) looks the same to them.
+    if (scope.mode === "one" && !Object.prototype.hasOwnProperty.call(activeMap, targetItemId.toLowerCase())) {
+      throw new AppError("ITEM_NOT_IN_DEPARTMENT", { message: `รายการนี้ไม่อยู่ในงานของคุณ (${targetItemId})`, detail: `ITEM_NOT_IN_DEPARTMENT: ${targetItemId}` });
+    }
     if (activeMap[targetItemId.toLowerCase()] === false) {
       const name = masterMap[targetItemId.toLowerCase()];
       const label = name ? `${name} (${targetItemId})` : targetItemId;
@@ -195,9 +235,9 @@ export async function runDispenseBatch(
       SELECT id, quantity
       FROM inventory
       WHERE LOWER(item_id) = LOWER(${targetItemId})
-        AND quantity > 0
+        AND quantity > 0${andDept(scope)}
         AND lot_no = COALESCE(
-          (SELECT lot_no FROM inventory WHERE id = ${preferredId} AND LOWER(item_id) = LOWER(${targetItemId})),
+          (SELECT lot_no FROM inventory WHERE id = ${preferredId} AND LOWER(item_id) = LOWER(${targetItemId})${andDept(scope)}),
           ${targetLotNo}
         )
       ORDER BY (id = ${preferredId}) DESC, exp_date ASC NULLS LAST, received_on ASC, id ASC
@@ -233,11 +273,12 @@ export async function runDispenseBatch(
   }
 
   const actor = getActorName(user);
+  const d = deptInsert(scope);
   await sql.transaction((transaction) => preparedItems.flatMap((item) => [
     transaction`
       SELECT labstock_assert(EXISTS (
         SELECT 1 FROM master_data
-        WHERE LOWER(item_id) = LOWER(${item.targetItemId}) AND is_active = TRUE
+        WHERE LOWER(item_id) = LOWER(${item.targetItemId}) AND is_active = TRUE${andDeptWrite(scope)}
         FOR UPDATE
       ), 'REAGENT_INACTIVE: ' || ${item.targetItemId}) AS ok
     `,
@@ -247,7 +288,7 @@ export async function runDispenseBatch(
           SELECT 1 FROM inventory
           WHERE id = ${allocation.inventoryId}
             AND LOWER(item_id) = LOWER(${item.targetItemId})
-            AND quantity >= ${allocation.qty}
+            AND quantity >= ${allocation.qty}${andDeptWrite(scope)}
           FOR UPDATE
         ), 'REAGENT_STOCK_INSUFFICIENT: ' || ${item.targetItemId}) AS ok
       `,
@@ -257,11 +298,11 @@ export async function runDispenseBatch(
           SET quantity = quantity - ${allocation.qty}
           WHERE id = ${allocation.inventoryId}
             AND LOWER(item_id) = LOWER(${item.targetItemId})
-            AND quantity >= ${allocation.qty}
+            AND quantity >= ${allocation.qty}${andDeptWrite(scope)}
           RETURNING item_id, lot_no
         )
-        INSERT INTO logs (item_id, name, lot_no, action, quantity, username, user_agent, ip_address)
-        SELECT item_id, ${masterMap[item.targetItemId.toLowerCase()] || 'Unknown'}, lot_no, 'เบิกไปหน้างาน', ${allocation.qty}, ${actor}, ${audit.userAgent}, ${audit.ipAddress}
+        INSERT INTO logs (item_id, name, lot_no, action, quantity, username, user_agent, ip_address${d.column})
+        SELECT item_id, ${masterMap[item.targetItemId.toLowerCase()] || 'Unknown'}, lot_no, 'เบิกไปหน้างาน', ${allocation.qty}, ${actor}, ${audit.userAgent}, ${audit.ipAddress}${d.value}
         FROM updated
       `,
     ]),
@@ -288,7 +329,7 @@ export async function runDispenseBatch(
     );
   }
 
-  await notifyLowStockForAffectedItems(affectedItemIds);
+  await notifyLowStockForAffectedItems(affectedItemIds, scope);
 
   return {
     success: true,

@@ -77,7 +77,6 @@ export const DEPARTMENT_SCOPE_PENDING: string[] = [
   "src/lib/purchase-order-suggestions.ts",
   "src/lib/reagent-usage-insights.ts",
   "src/lib/shelf-life.ts",
-  "src/lib/stock-transactions.ts",
   "src/lib/tracking-providers/manual.ts",
 ];
 

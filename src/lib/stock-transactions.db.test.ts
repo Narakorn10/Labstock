@@ -45,29 +45,29 @@ describe("runDispenseBatch across receive rounds of the same lot", () => {
   beforeEach(seed);
 
   it("takes from the chosen round only when it has enough (behaviour unchanged)", async () => {
-    await runDispenseBatch([{ inventoryId: 2, itemId: "R1", lotNo: "L1", qty: 2 }], user, audit);
+    await runDispenseBatch([{ inventoryId: 2, itemId: "R1", lotNo: "L1", qty: 2 }], user, audit, { mode: "legacy" });
     expect(await stock()).toBe("1=2,2=1,3=9");
   });
 
   it("spills into the other round of the same lot when one round is not enough", async () => {
-    await runDispenseBatch([{ inventoryId: 1, itemId: "R1", lotNo: "L1", qty: 4 }], user, audit);
+    await runDispenseBatch([{ inventoryId: 1, itemId: "R1", lotNo: "L1", qty: 4 }], user, audit, { mode: "legacy" });
     expect(await stock()).toBe("1=0,2=1,3=9");
     expect(await loggedQty()).toBe(4);
   });
 
   it("dispenses by lot alone when the client sends no inventoryId", async () => {
-    await runDispenseBatch([{ itemId: "R1", lotNo: "L1", qty: 5 }], user, audit);
+    await runDispenseBatch([{ itemId: "R1", lotNo: "L1", qty: 5 }], user, audit, { mode: "legacy" });
     expect(await stock()).toBe("1=0,2=0,3=9");
   });
 
   it("fails and changes nothing when the whole lot is not enough", async () => {
-    await expect(runDispenseBatch([{ inventoryId: 1, itemId: "R1", lotNo: "L1", qty: 6 }], user, audit)).rejects.toThrow(/REAGENT_STOCK_INSUFFICIENT/);
+    await expect(runDispenseBatch([{ inventoryId: 1, itemId: "R1", lotNo: "L1", qty: 6 }], user, audit, { mode: "legacy" })).rejects.toThrow(/REAGENT_STOCK_INSUFFICIENT/);
     expect(await stock()).toBe("1=2,2=3,3=9");
     expect(await loggedQty()).toBe(0);
   });
 
   it("tells the user which reagent is short, keeping the machine-readable detail", async () => {
-    const error = await runDispenseBatch([{ inventoryId: 1, itemId: "R1", lotNo: "L1", qty: 6 }], user, audit).catch((e: unknown) => e);
+    const error = await runDispenseBatch([{ inventoryId: 1, itemId: "R1", lotNo: "L1", qty: 6 }], user, audit, { mode: "legacy" }).catch((e: unknown) => e);
     expect(error).toMatchObject({ code: "REAGENT_STOCK_INSUFFICIENT", message: "REAGENT_STOCK_INSUFFICIENT: R1" });
     expect((error as { userMessage: string }).userMessage).toContain("R1)");
   });
@@ -76,9 +76,9 @@ describe("runDispenseBatch across receive rounds of the same lot", () => {
     await runDispenseBatch([
       { inventoryId: 1, itemId: "R1", lotNo: "L1", qty: 4 },
       { inventoryId: 2, itemId: "R1", lotNo: "L1", qty: 1 },
-    ], user, audit);
+    ], user, audit, { mode: "legacy" });
     expect(await stock()).toBe("1=0,2=0,3=9");
-    await expect(runDispenseBatch([{ inventoryId: 1, itemId: "R1", lotNo: "L1", qty: 1 }], user, audit)).rejects.toThrow(/REAGENT_STOCK_INSUFFICIENT|ไม่พบรอบรับเข้า/);
+    await expect(runDispenseBatch([{ inventoryId: 1, itemId: "R1", lotNo: "L1", qty: 1 }], user, audit, { mode: "legacy" })).rejects.toThrow(/REAGENT_STOCK_INSUFFICIENT|ไม่พบรอบรับเข้า/);
     expect(await stock()).toBe("1=0,2=0,3=9");
   });
 });
