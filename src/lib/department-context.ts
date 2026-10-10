@@ -85,7 +85,7 @@ export function effectiveRole(globalRole: string | null, memberRole: string | nu
  * Throws on database errors; the caller decides whether SQLSTATE 42P01 / 42703 means "fall back to legacy".
  */
 export async function resolveUserDepartment(q: ResolveDepartmentQuery): Promise<AuthenticatedUser | null> {
-  let lookup;
+  let lookup: ReturnType<typeof sql>;
   if (q.token !== undefined) {
     lookup = sql`(u.token = ${q.token} OR u.token = ${q.tokenHash ?? q.token})`;
   } else if (q.username !== undefined) {
@@ -95,8 +95,31 @@ export async function resolveUserDepartment(q: ResolveDepartmentQuery): Promise<
     return null;
   }
 
-  const requestedValid = typeof q.requested === "number" && Number.isInteger(q.requested) && q.requested >= 1 && q.requested <= MAX_INT4;
-  const requestedId = requestedValid ? (q.requested as number) : null;
+  return resolveCore(lookup, q.requested, q.explicit, q.token !== undefined);
+}
+
+/**
+ * For a user whose identity was ALREADY verified by other means (PIN or LINE login on /api/mobile/confirm): resolves the
+ * department scope without any session version, token or requested department. Pass the user returned by that
+ * verification (its username comes from the database, never from the request).
+ *
+ * - looks the user up by exact username and still requires account_status = 'active';
+ * - no requested department and not explicit: the default department (else the lowest-id active department the user
+ *   belongs to; an Admin without membership rows gets the lowest-id active department);
+ * - never returns scope "ALL" (a mobile approver always works in exactly one department);
+ * - token_expiry is not checked (the PIN/LINE verification is the credential here);
+ * - null when there is no usable department or no active account, like resolveUserDepartment.
+ *
+ * Only /api/mobile/confirm may use this (see department-context.verified-usage.test.ts).
+ * Throws on database errors like resolveUserDepartment.
+ */
+export async function resolveDepartmentForVerifiedUser(verified: AuthenticatedUser): Promise<AuthenticatedUser | null> {
+  return resolveCore(sql`u.username = ${verified.username}`, null, false, false);
+}
+
+async function resolveCore(lookup: ReturnType<typeof sql>, requested: RequestedDepartment, explicit: boolean, checkTokenExpiry: boolean): Promise<AuthenticatedUser | null> {
+  const requestedValid = typeof requested === "number" && Number.isInteger(requested) && requested >= 1 && requested <= MAX_INT4;
+  const requestedId = requestedValid ? (requested as number) : null;
 
   const rows = (await sql`
     SELECT u.username, u.name, u.role AS global_role, u.vendor, u.token_expiry,
@@ -119,7 +142,7 @@ export async function resolveUserDepartment(q: ResolveDepartmentQuery): Promise<
   if (!row) return null;
 
   // Same expiry rule as the legacy bearer path.
-  if (q.token !== undefined && row.token_expiry && new Date(row.token_expiry) < new Date()) return null;
+  if (checkTokenExpiry && row.token_expiry && new Date(row.token_expiry) < new Date()) return null;
 
   // users.role NULL stays null (like the legacy path), it must not become the string "null".
   const globalRole = (row.global_role ?? null) as string | null;
@@ -144,11 +167,11 @@ export async function resolveUserDepartment(q: ResolveDepartmentQuery): Promise<
     return null;
   }
 
-  if (q.requested === "ALL" && isAdmin) {
+  if (requested === "ALL" && isAdmin) {
     return { ...base, role: "Admin", departmentId: null, departmentCode: null, scope: "ALL" };
   }
 
-  const denied = q.explicit && q.requested !== null && !isVendor && !matched;
+  const denied = explicit && requested !== null && !isVendor && !matched;
 
   return {
     ...base,
