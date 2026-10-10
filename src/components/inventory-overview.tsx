@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { apiClient, PurchaseOrderSummary, Reagent, Shipment } from '@/lib/api-client';
 import { useAuth } from '@/components/auth-provider';
+import { ALL_LABEL } from '@/lib/department-switcher-state';
 
 const ReportModal = dynamic(() => import('@/components/report-modal'), { ssr: false });
 const ReagentDetailModal = dynamic(() => import('@/components/reagent-detail-modal'), { ssr: false });
@@ -89,7 +90,7 @@ function daysUntil(expDate: string) {
 }
 
 export default function InventoryOverview() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, departmentContext } = useAuth();
   const [reagents, setReagents] = useState<Reagent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -434,7 +435,7 @@ export default function InventoryOverview() {
     );
   }
 
-  const workName = user?.role === 'Vendor' && user.vendor ? user.vendor : user?.department || 'กลุ่มงานเทคนิคการแพทย์และพยาธิวิทยาคลินิก';
+  const workName = user?.role === 'Vendor' && user.vendor ? user.vendor : (departmentContext?.scope === 'ALL' ? ALL_LABEL : departmentContext?.options != null ? departmentContext.active?.name : undefined) || user?.department || 'กลุ่มงานเทคนิคการแพทย์และพยาธิวิทยาคลินิก';
   const todayLabel = new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' });
 
   return (

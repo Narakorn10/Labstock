@@ -105,3 +105,39 @@ export async function applyActiveDepartmentUpdate<T extends object>(token: T, se
   }
   return token;
 }
+
+export type UserDepartmentRow = {
+  id: number;
+  name: string;
+  /** null = the department has no code yet, so validateDepartmentSwitch refuses to switch into it. */
+  code: string | null;
+  /** true exactly when validateDepartmentSwitch(username, id) would accept this department. */
+  switchable: boolean;
+};
+
+/**
+ * Departments the user can see in the switcher (design step 6): every active department the user is a member of,
+ * or every active department for a global Admin. `switchable` mirrors validateDepartmentSwitch rule for rule
+ * (active user, not Vendor, active department, member or Admin, code present), so the list never offers a target
+ * the switch route would refuse. Unknown / not active users and Vendors get []. Ordered by id.
+ * Never call when departmentsReady() is false. Throws on database errors.
+ */
+export async function listUserDepartments(username: string): Promise<UserDepartmentRow[]> {
+  if (typeof username !== "string" || username === "") return [];
+  const rows = (await sql`
+    SELECT d.id, d.name, d.code, (d.code IS NOT NULL) AS switchable
+    FROM users u
+    JOIN departments d ON d.is_active
+    LEFT JOIN user_departments ud ON ud.department_id = d.id AND ud.username = u.username
+    WHERE u.username = ${username} AND u.account_status = 'active'
+      AND u.role IS DISTINCT FROM 'Vendor'
+      AND (ud.username IS NOT NULL OR u.role = 'Admin')
+    ORDER BY d.id
+  `) as Array<{ id: number; name: string; code: string | null; switchable: boolean }>;
+  return rows.map((row) => ({
+    id: Number(row.id),
+    name: String(row.name),
+    code: row.code === null ? null : String(row.code),
+    switchable: row.switchable === true,
+  }));
+}
