@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { trackRoute } from "@/lib/app-events";
 import { isDepartmentScopeFailure } from "@/lib/api-response";
-import { hasUserPinColumn, roleHasMenu, verifyUserPin } from "@/lib/auth-utils";
+import { hasUserPinColumn, roleHasMenu, verifyUserPin, type AuthenticatedUser } from "@/lib/auth-utils";
+import { resolveDepartmentForVerifiedUser } from "@/lib/department-context";
+import { departmentsReady, isMissingDepartmentSchemaError, markDepartmentsNotReady } from "@/lib/departments-flag";
 import { getLineLinkedUser, hasUserLineIdColumn, verifyLineIdToken } from "@/lib/line-liff-auth";
 import { getDepartmentScope } from "@/lib/scoped-db";
 import { runDispenseBatch, runReceiveBatch, StockBatchItem } from "@/lib/stock-transactions";
@@ -64,6 +66,29 @@ export const POST = trackRoute({ action: "mobile.confirm" }, async (request: Req
 
     if (user.role === "Vendor") {
       return NextResponse.json({ error: "This role cannot approve mobile stock transactions." }, { status: 403 });
+    }
+
+    // Departments on: work in the approver's own (default) department. The identity was verified above by PIN / LINE;
+    // the department is never taken from the request (no header, no body field), and "all departments" is not possible here.
+    if (await departmentsReady()) {
+      let scoped: AuthenticatedUser | null | undefined;
+      try {
+        scoped = await resolveDepartmentForVerifiedUser(user);
+      } catch (e) {
+        if (!isMissingDepartmentSchemaError(e)) return ctx.fail(e);
+        markDepartmentsNotReady("mobile confirm lookup failed; using legacy path");
+      }
+      if (scoped === null) {
+        return NextResponse.json({ error: "บัญชีนี้ยังไม่มีงานที่ใช้งานได้ กรุณาแจ้งผู้ดูแลระบบ" }, { status: 403 });
+      }
+      if (scoped) {
+        user = scoped;
+        ctx.user = user;
+        // The role in this department can be Vendor even if the account is not (and vice versa for the global role).
+        if (user.globalRole === "Vendor" || user.role === "Vendor") {
+          return NextResponse.json({ error: "This role cannot approve mobile stock transactions." }, { status: 403 });
+        }
+      }
     }
 
     // Same menu RBAC as /api/receive and /api/dispense, so the mobile/LINE path cannot bypass it.

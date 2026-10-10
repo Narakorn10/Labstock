@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   getLineLinkedUser: vi.fn(),
   hasUserLineIdColumn: vi.fn(),
   departmentsReady: vi.fn(async () => false),
+  markDepartmentsNotReady: vi.fn(),
+  resolveDepartmentForVerifiedUser: vi.fn(),
   runReceiveBatch: vi.fn(),
   runDispenseBatch: vi.fn(),
 }));
@@ -24,7 +26,16 @@ vi.mock("@/lib/line-liff-auth", () => ({
   getLineLinkedUser: mocks.getLineLinkedUser,
   hasUserLineIdColumn: mocks.hasUserLineIdColumn,
 }));
-vi.mock("@/lib/departments-flag", () => ({ departmentsReady: mocks.departmentsReady }));
+// Real isMissingDepartmentSchemaError; only the flag reads are replaced.
+vi.mock("@/lib/departments-flag", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/departments-flag")>()),
+  departmentsReady: mocks.departmentsReady,
+  markDepartmentsNotReady: (reason: string) => {
+    mocks.markDepartmentsNotReady(reason);
+    mocks.departmentsReady.mockResolvedValue(false);
+  },
+}));
+vi.mock("@/lib/department-context", () => ({ resolveDepartmentForVerifiedUser: mocks.resolveDepartmentForVerifiedUser }));
 vi.mock("@/lib/stock-transactions", () => ({
   runReceiveBatch: mocks.runReceiveBatch,
   runDispenseBatch: mocks.runDispenseBatch,
@@ -273,46 +284,163 @@ describe("POST /api/mobile/confirm flag off: successful response is unchanged", 
   });
 });
 
-// TEMPORARY: replaced by the resolveDepartmentForVerifiedUser tests when the feat/departments-mobile-auth PR (step 8b) merges.
-// Until then a verified PIN/LINE user never carries a department scope, so with departments ON the mobile path must refuse
-// (fail closed) instead of silently showing or writing every department.
-describe("POST /api/mobile/confirm fail-closed when departments are on but the approver has no scope", () => {
+// Departments ON: the approver is verified by PIN / LINE first, then resolveDepartmentForVerifiedUser decides the
+// department (never the request). `getDepartmentScope` stays the real one, so a user that comes back without a scope
+// still fails closed.
+describe("POST /api/mobile/confirm with departments on (resolveDepartmentForVerifiedUser)", () => {
+  const verifiedUser = { username: "user1", name: "User One", role: "Manager", globalRole: "Manager" };
+  const scopedUser = (extra: Record<string, unknown> = {}) => ({ ...verifiedUser, role: "Technician", scope: 2, departmentId: 2, departmentCode: "MB", ...extra });
+  const sqlValues = () => mocks.sql.mock.calls.flatMap((call) => call.slice(1));
+
   beforeEach(() => {
     vi.clearAllMocks();
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     mocks.hasUserPinColumn.mockResolvedValue(true);
     mocks.hasUserLineIdColumn.mockResolvedValue(true);
     mocks.roleHasMenu.mockResolvedValue(true);
+    mocks.verifyUserPin.mockResolvedValue(verifiedUser);
+    mocks.verifyLineIdToken.mockResolvedValue({ sub: "U1" });
+    mocks.getLineLinkedUser.mockResolvedValue(verifiedUser);
+    mocks.runReceiveBatch.mockResolvedValue({ success: true });
+    mocks.runDispenseBatch.mockResolvedValue({ success: true });
     mocks.departmentsReady.mockResolvedValue(true);
+    mocks.resolveDepartmentForVerifiedUser.mockReset();
+    mocks.resolveDepartmentForVerifiedUser.mockResolvedValue(scopedUser());
   });
 
   afterEach(() => {
     mocks.departmentsReady.mockResolvedValue(false);
   });
 
-  it.each(["receive", "dispense"] as const)("PIN %s answers 500 INTERNAL_ERROR without the username and never runs", async (mode) => {
-    mocks.verifyUserPin.mockResolvedValue({ username: "secret.person", name: "Secret", role: "Manager" });
-
-    const response = await post({ mode, username: "secret.person", pin: "1234", batchItems: item });
-    const text = await response.text();
-
-    expect(response.status).toBe(500);
-    expect(JSON.parse(text).code).toBe("INTERNAL_ERROR");
-    expect(text).not.toContain("secret.person");
+  const pin = (mode: "receive" | "dispense", extra: Record<string, unknown> = {}, headers: Record<string, string> = {}) =>
+    POST(new Request("http://test/api/mobile/confirm", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ mode, username: "user1", pin: "1234", batchItems: item, ...extra }),
+    }));
+  const line = () => post({ mode: "dispense", lineIdToken: "token", batchItems: item });
+  const neverRuns = () => {
     expect(mocks.runReceiveBatch).not.toHaveBeenCalled();
     expect(mocks.runDispenseBatch).not.toHaveBeenCalled();
+  };
+
+  it("a) a resolver result without a scope still fails closed: 500 INTERNAL_ERROR, no username, nothing runs", async () => {
+    mocks.resolveDepartmentForVerifiedUser.mockResolvedValue({ username: "secret.person", name: "Secret", role: "Manager" });
+
+    for (const response of [await pin("receive"), await pin("dispense"), await line()]) {
+      const text = await response.text();
+      expect(response.status).toBe(500);
+      expect(JSON.parse(text).code).toBe("INTERNAL_ERROR");
+      expect(text).not.toContain("secret.person");
+    }
+    neverRuns();
   });
 
-  it("LINE dispense answers 500 INTERNAL_ERROR without the username and never runs", async () => {
-    mocks.verifyLineIdToken.mockResolvedValue({ sub: "U1" });
-    mocks.getLineLinkedUser.mockResolvedValue({ username: "secret.person", name: "Secret", role: "Manager" });
+  it("b) null (no usable department) answers 403 in Thai without the username, nothing runs, and the audit row names the verified user", async () => {
+    mocks.resolveDepartmentForVerifiedUser.mockResolvedValue(null);
 
-    const response = await post({ mode: "dispense", lineIdToken: "token", batchItems: item });
+    for (const response of [await pin("receive"), await pin("dispense"), await line()]) {
+      const text = await response.text();
+      expect(response.status).toBe(403);
+      expect(JSON.parse(text)).toEqual({ error: "บัญชีนี้ยังไม่มีงานที่ใช้งานได้ กรุณาแจ้งผู้ดูแลระบบ" });
+      expect(text).not.toContain("user1");
+    }
+    neverRuns();
+    expect(sqlValues()).toEqual(expect.arrayContaining(["user1", "Manager"]));
+  });
+
+  it("c) a department asked for in the header or the body is ignored: the resolver gets only the verified user", async () => {
+    mocks.resolveDepartmentForVerifiedUser.mockResolvedValue(scopedUser({ scope: 1, departmentId: 1 }));
+
+    const response = await pin("dispense", { departmentId: 2, scope: "ALL", department: "ALL" }, { "X-Department-Id": "2" });
+
+    expect(response.status).toBe(200);
+    expect(mocks.resolveDepartmentForVerifiedUser).toHaveBeenCalledTimes(1);
+    expect(mocks.resolveDepartmentForVerifiedUser).toHaveBeenCalledWith(verifiedUser);
+    expect(mocks.runDispenseBatch).toHaveBeenCalledWith(item, expect.objectContaining({ username: "user1" }), expect.any(Object), { mode: "one", departmentId: 1 });
+  });
+
+  it("d) an Admin works in one department, never in mode all", async () => {
+    mocks.verifyUserPin.mockResolvedValue({ username: "admin1", name: "Admin", role: "Admin", globalRole: "Admin" });
+    mocks.resolveDepartmentForVerifiedUser.mockResolvedValue({ username: "admin1", name: "Admin", role: "Admin", globalRole: "Admin", scope: 1, departmentId: 1 });
+
+    await pin("receive");
+    await pin("dispense");
+
+    expect(mocks.runReceiveBatch).toHaveBeenCalledWith(item, expect.anything(), expect.any(Object), { mode: "one", departmentId: 1 });
+    expect(mocks.runDispenseBatch).toHaveBeenCalledWith(item, expect.anything(), expect.any(Object), { mode: "one", departmentId: 1 });
+  });
+
+  it("e) flag off: the resolver is not called, the answer and the legacy scope are unchanged", async () => {
+    mocks.departmentsReady.mockResolvedValue(false);
+
+    const response = await pin("dispense");
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ success: true, approver: { username: "user1", name: "User One", role: "Manager" } });
+    expect(mocks.resolveDepartmentForVerifiedUser).not.toHaveBeenCalled();
+    expect(mocks.runDispenseBatch).toHaveBeenCalledWith(item, verifiedUser, expect.any(Object), { mode: "legacy" });
+  });
+
+  it("f) an unexpected resolver error is answered by the generic handler: no raw message, nothing runs", async () => {
+    mocks.resolveDepartmentForVerifiedUser.mockRejectedValue(new Error("connection reset by peer 10.0.0.5"));
+
+    const response = await pin("dispense");
     const text = await response.text();
 
-    expect(response.status).toBe(500);
-    expect(JSON.parse(text).code).toBe("INTERNAL_ERROR");
-    expect(text).not.toContain("secret.person");
-    expect(mocks.runDispenseBatch).not.toHaveBeenCalled();
+    expect(response.status).toBeGreaterThanOrEqual(500);
+    expect(text).not.toContain("connection reset");
+    expect(text).not.toContain("10.0.0.5");
+    neverRuns();
+  });
+
+  it("g) a missing department schema (42P01) marks departments not ready once and continues on the legacy path", async () => {
+    mocks.resolveDepartmentForVerifiedUser.mockRejectedValue(Object.assign(new Error("relation user_departments does not exist"), { code: "42P01" }));
+
+    const response = await pin("dispense");
+
+    expect(response.status).toBe(200);
+    expect(mocks.markDepartmentsNotReady).toHaveBeenCalledTimes(1);
+    expect(await response.json()).toEqual({ success: true, approver: { username: "user1", name: "User One", role: "Manager" } });
+    expect(mocks.runDispenseBatch).toHaveBeenCalledWith(item, verifiedUser, expect.any(Object), { mode: "legacy" });
+  });
+
+  it("h) the resolver gets the username from the verification, not the (differently cased) body", async () => {
+    await pin("dispense", { username: "USER1" });
+
+    expect(mocks.verifyUserPin).toHaveBeenCalledWith("USER1", "1234");
+    expect(mocks.resolveDepartmentForVerifiedUser).toHaveBeenCalledWith(expect.objectContaining({ username: "user1" }));
+  });
+
+  it("i) a global Vendor is refused before the resolver; a Vendor role in the department is refused too", async () => {
+    mocks.verifyUserPin.mockResolvedValue({ username: "v", name: "V", role: "Vendor", globalRole: "Vendor" });
+    expect((await pin("dispense")).status).toBe(403);
+    expect(mocks.resolveDepartmentForVerifiedUser).not.toHaveBeenCalled();
+
+    mocks.verifyUserPin.mockResolvedValue(verifiedUser);
+    mocks.resolveDepartmentForVerifiedUser.mockResolvedValue(scopedUser({ role: "Vendor" }));
+    expect((await pin("dispense")).status).toBe(403);
+    expect(mocks.roleHasMenu).not.toHaveBeenCalled();
+    neverRuns();
+  });
+
+  it("j) the role of the department is used for the menu check and the approver (PIN and LINE)", async () => {
+    const pinResponse = await pin("receive");
+    expect(mocks.roleHasMenu).toHaveBeenLastCalledWith("Technician", "receive");
+    expect((await pinResponse.json()).approver).toEqual({ username: "user1", name: "User One", role: "Technician" });
+
+    const lineResponse = await line();
+    expect(lineResponse.status).toBe(200);
+    expect(mocks.roleHasMenu).toHaveBeenLastCalledWith("Technician", "dispense");
+    expect((await lineResponse.json()).approver.role).toBe("Technician");
+    expect(mocks.runDispenseBatch).toHaveBeenLastCalledWith(item, expect.anything(), expect.any(Object), { mode: "one", departmentId: 2 });
+  });
+
+  it("j2) a role without the menu in the department is refused with the existing 403", async () => {
+    mocks.roleHasMenu.mockResolvedValue(false);
+    const response = await pin("dispense");
+    expect(response.status).toBe(403);
+    expect(mocks.roleHasMenu).toHaveBeenCalledWith("Technician", "dispense");
+    neverRuns();
   });
 });
