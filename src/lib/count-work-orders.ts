@@ -1,6 +1,7 @@
 import sql from "@/lib/db";
 import type { AuthenticatedUser } from "@/lib/auth-utils";
 import { AppError } from "@/lib/errors";
+import { CountConfirmError, type ConfirmFailure, type ConfirmRemaining } from "@/lib/count-work-orders-errors";
 
 export type CountWorkOrderStatus = "OPEN" | "CONFIRMED" | "CANCELLED";
 export type CountInput = { itemId: string; countedQty: number };
@@ -150,21 +151,14 @@ export async function getFreshLots(user: AuthenticatedUser, workOrderId: number)
   return lots;
 }
 
-export type ConfirmFailureReason = "INACTIVE" | "NOT_PENDING" | "QTY_MISMATCH" | "LOT_INVALID" | "INSUFFICIENT";
-export type ConfirmFailure = { itemId: string; name: string | null; reason: ConfirmFailureReason; requiredQty: number | null; requestedQty: number; available: number };
-export type ConfirmRemaining = { itemId: string; name: string; requiredQty: number };
 export type ConfirmResult = {
   success: true; status: "CONFIRMED" | "OPEN"; message: string;
   dispensed: Array<{ itemId: string; name: string; qty: number }>; failed: ConfirmFailure[]; remaining: ConfirmRemaining[];
 };
 
-// Raised when nothing could be dispensed; carries the per-item reasons so the UI can explain what to do next.
-export class CountConfirmError extends Error {
-  constructor(message: string, readonly failed: ConfirmFailure[], readonly remaining: ConfirmRemaining[]) {
-    super(message);
-    this.name = "CountConfirmError";
-  }
-}
+// These live in a leaf file so api-response.ts can import CountConfirmError without a cycle (scoped-db -> api-response).
+export { CountConfirmError } from "@/lib/count-work-orders-errors";
+export type { ConfirmFailure, ConfirmFailureReason, ConfirmRemaining } from "@/lib/count-work-orders-errors";
 
 export async function confirmCountWorkOrder(user: AuthenticatedUser, id: number, allocations: AllocationInput[], audit: { userAgent: string; ipAddress: string }): Promise<ConfirmResult> {
   assertLabUser(user);
