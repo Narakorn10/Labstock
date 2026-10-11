@@ -56,7 +56,6 @@ export const DEPARTMENT_SCOPE_PENDING: string[] = [
   "src/app/api/stations/catalog/route.ts",
   "src/app/api/usage/route.ts",
   "src/app/api/users/[username]/account-status/route.ts",
-  "src/app/api/vendor/shipments/[id]/route.ts",
   "src/app/api/vendor/shipments/ocr/route.ts",
   "src/app/api/vendor/shipments/orders/route.ts",
   "src/app/api/vendor/shipments/route.ts",
