@@ -160,16 +160,64 @@ describe("reagent-loans POST with a department scope", () => {
     expect((await stock()).slice(-1)).toEqual([`MB-000002/LFOREIGN/d${DEPT_A}=5`]);
   });
 
-  // Returns currently end in 500 for every scope (pre-existing SQL bug, see route.db.test.ts). The point here is that
-  // mode one gives the same answer as legacy (not a success) and changes nothing.
-  it("RETURN_IN with a loan of another department fails like legacy and changes nothing", async () => {
+  it("RETURN_IN puts the stock back into the department and closes the loan", async () => {
+    const loan = (await rows<{ id: number }>(`SELECT id FROM reagent_loans WHERE department_id = ${DEPT_B}`))[0];
+
+    const response = await post({ operation: "RETURN_IN", partnerName: "Lab Y", batchItems: [{ itemId: "MB-000001", lotNo: "LB1", qty: 3, loanId: loan.id }] });
+
+    expect(response.status).toBe(200);
+    expect(await stock()).toEqual([...noStockChange, `MB-000001/LB1/d${DEPT_B}=3`]);
+    expect(await rows("SELECT action, department_id FROM logs")).toEqual([{ action: "รับคืนจากผู้ยืม", department_id: DEPT_B }]);
+    expect(await rows(`SELECT returned_qty, status FROM reagent_loans WHERE id = ${loan.id}`)).toEqual([{ returned_qty: "3", status: "CLOSED" }]);
+  });
+
+  it("RETURN_OUT takes the stock out of the department and updates the loan", async () => {
+    await post(borrowB);
+    const loan = (await rows<{ id: number }>("SELECT id FROM reagent_loans WHERE partner_name = 'Lab B'"))[0];
+
+    const response = await post({ operation: "RETURN_OUT", partnerName: "Lab B", batchItems: [{ itemId: "MB-000001", lotNo: "LN", qty: 1, loanId: loan.id }] });
+
+    expect(response.status).toBe(200);
+    expect(await stock()).toEqual([...noStockChange, `MB-000001/LN/d${DEPT_B}=3`]);
+    expect(await rows("SELECT action, department_id FROM logs WHERE action = 'ส่งคืนเจ้าของ'")).toEqual([{ action: "ส่งคืนเจ้าของ", department_id: DEPT_B }]);
+    expect(await rows(`SELECT returned_qty, status FROM reagent_loans WHERE id = ${loan.id}`)).toEqual([{ returned_qty: "1", status: "OPEN" }]);
+  });
+
+  it("RETURN_IN with a loan of another department answers 409 and changes nothing", async () => {
     const loan = (await rows<{ id: number }>(`SELECT id FROM reagent_loans WHERE department_id = ${DEPT_A}`))[0];
 
     const response = await post({ operation: "RETURN_IN", partnerName: "Lab X", batchItems: [{ itemId: "MB-000001", lotNo: "LB1", qty: 2, loanId: loan.id }] });
 
-    expect(response.status).toBe(500);
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toContain("no longer match");
     expect(await stock()).toEqual(noStockChange);
+    expect(await rows("SELECT 1 FROM logs")).toHaveLength(0);
     expect(await rows("SELECT status FROM reagent_loans WHERE status = 'OPEN'")).toHaveLength(2);
+  });
+
+  it("RETURN_IN refuses to merge into an inventory row of another department (409, nothing written)", async () => {
+    // Inconsistent data on purpose: a department A row for B's item/lot with today's received_on, so the upsert would collide.
+    await sql.db.exec(`INSERT INTO inventory (item_id, lot_no, quantity, received_on, department_id) VALUES ('MB-000001', 'LB1', 1, CURRENT_DATE, ${DEPT_A})`);
+    const loan = (await rows<{ id: number }>(`SELECT id FROM reagent_loans WHERE department_id = ${DEPT_B}`))[0];
+
+    const response = await post({ operation: "RETURN_IN", partnerName: "Lab Y", batchItems: [{ itemId: "MB-000001", lotNo: "LB1", qty: 2, loanId: loan.id }] });
+
+    expect(response.status).toBe(409);
+    expect((await response.json()).code).toBe("ITEM_NOT_IN_DEPARTMENT");
+    expect((await stock()).slice(-1)).toEqual([`MB-000001/LB1/d${DEPT_A}=1`]);
+    expect(await rows("SELECT 1 FROM logs")).toHaveLength(0);
+    expect(await rows(`SELECT returned_qty, status FROM reagent_loans WHERE id = ${loan.id}`)).toEqual([{ returned_qty: "0", status: "OPEN" }]);
+  });
+
+  it("answers 409 DEPARTMENT_READ_ONLY for a return in mode all before any write", async () => {
+    mocks.getAuthenticatedUser.mockResolvedValue({ ...staffB, scope: "ALL" });
+    const loan = (await rows<{ id: number }>(`SELECT id FROM reagent_loans WHERE department_id = ${DEPT_B}`))[0];
+
+    const response = await post({ operation: "RETURN_IN", partnerName: "Lab Y", batchItems: [{ itemId: "MB-000001", lotNo: "LB1", qty: 1, loanId: loan.id }] });
+
+    expect(response.status).toBe(409);
+    expect((await response.json()).code).toBe("DEPARTMENT_READ_ONLY");
+    expect(await stock()).toEqual(noStockChange);
   });
 
   it("answers 409 DEPARTMENT_READ_ONLY in mode all before any write", async () => {
