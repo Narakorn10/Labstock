@@ -51,7 +51,7 @@ export async function applyDepartmentMigrations(db: PGlite) {
  *   user1    global User    dept 1 role NULL (default), dept 2 explicit override Operator
  *   solo1    global User    dept 1 only (role NULL)
  *   solo2    global User    dept 2 only (explicit override Technician)
- *   vendor1  global Vendor  dept 1 only (role NULL), vendor 'Vendor A'
+ *   vendor1  global Vendor  dept 1 only (role NULL), users.vendor empty (tests set their own vendor)
  *   newbie   global User    NO membership row (created after the v30 backfill): department-aware auth REJECTS this user
  * and master_data / vendors / logs rows for each department (dept 1 rows come from the seed + extras).
  */
