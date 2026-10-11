@@ -63,7 +63,6 @@ export const DEPARTMENT_SCOPE_PENDING: string[] = [
   "src/lib/barcode-learning-v2.ts",
   "src/lib/barcode-runtime.ts",
   "src/lib/bot-stock-queries.ts",
-  "src/lib/count-work-orders.ts",
   "src/lib/line-liff-ordering.ts",
   "src/lib/notification-outbox.ts",
   "src/lib/po-communication.ts",

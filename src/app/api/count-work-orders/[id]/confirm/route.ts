@@ -3,12 +3,14 @@ import { trackRoute } from "@/lib/app-events";
 import { apiError } from "@/lib/api-response";
 import { getAuthenticatedUser } from "@/lib/auth-utils";
 import { confirmCountWorkOrder, CountConfirmError } from "@/lib/count-work-orders";
+import { getDepartmentScope } from "@/lib/scoped-db";
 
 export const POST = trackRoute<{ params: Promise<{ id: string }> }>({ action: "count.confirm" }, async (request: Request, ctx, { params }) => {
   try {
     const user = await getAuthenticatedUser(request);
     if (!user) return apiError("AUTH_REQUIRED", { requestId: ctx.requestId });
     ctx.user = user;
+    const scope = await getDepartmentScope(user);
     const id = Number((await params).id);
     const body = await request.json() as { allocations?: Array<{ itemId: string; inventoryId: number; qty: number }> };
     const allocations = body.allocations || [];
@@ -16,7 +18,7 @@ export const POST = trackRoute<{ params: Promise<{ id: string }> }>({ action: "c
     try {
       const result = await confirmCountWorkOrder(user, id, allocations, {
         userAgent: request.headers.get("user-agent") || "Unknown", ipAddress: request.headers.get("x-forwarded-for") || "Unknown",
-      });
+      }, scope);
       ctx.details = { workOrderId: id, count: allocations.length, status: result.status, dispensedCount: result.dispensed.length, failed: result.failed, remainingCount: result.remaining.length };
       return NextResponse.json(result);
     } catch (error) {

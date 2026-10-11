@@ -2,6 +2,7 @@ import sql from "@/lib/db";
 import type { AuthenticatedUser } from "@/lib/auth-utils";
 import { AppError } from "@/lib/errors";
 import { CountConfirmError, type ConfirmFailure, type ConfirmRemaining } from "@/lib/count-work-orders-errors";
+import { andDept, andDeptWrite, deptInsert, deptWhereWrite, writeDepartmentId, type DepartmentScope } from "@/lib/scoped-db";
 
 export type CountWorkOrderStatus = "OPEN" | "CONFIRMED" | "CANCELLED";
 export type CountInput = { itemId: string; countedQty: number };
@@ -31,7 +32,7 @@ function assertLabUser(user: AuthenticatedUser) {
   if (user.role === "Vendor") throw new AppError("FORBIDDEN", { message: "Vendor ไม่มีสิทธิ์เข้าถึงใบงานนับสต็อก", detail: "Vendor ไม่มีสิทธิ์เข้าถึงใบงานนับสต็อก" });
 }
 
-export async function listCountWorkOrders(user: AuthenticatedUser) {
+export async function listCountWorkOrders(user: AuthenticatedUser, scope: DepartmentScope) {
   assertLabUser(user);
   const isReviewer = user.role === "Admin" || user.role === "Manager";
   return sql`
@@ -40,14 +41,17 @@ export async function listCountWorkOrders(user: AuthenticatedUser) {
            COUNT(i.id)::int AS "itemCount"
     FROM count_work_orders w
     LEFT JOIN count_work_order_items i ON i.work_order_id = w.id
-    WHERE ${isReviewer} OR LOWER(w.owner_username) = LOWER(${user.username})
+    WHERE (${isReviewer} OR LOWER(w.owner_username) = LOWER(${user.username}))${andDept(scope, "w")}
     GROUP BY w.id
     ORDER BY CASE w.status WHEN 'OPEN' THEN 0 ELSE 1 END, w.updated_at DESC
   `;
 }
 
-export async function saveCountWorkOrder(user: AuthenticatedUser, jobType: string, inputs: CountInput[]) {
+export async function saveCountWorkOrder(user: AuthenticatedUser, jobType: string, inputs: CountInput[], scope: DepartmentScope) {
   assertLabUser(user);
+  // Mode "all" (viewing every department) cannot write: throws DEPARTMENT_READ_ONLY before any SQL runs.
+  writeDepartmentId(scope);
+  const dept = deptInsert(scope);
   const normalized = inputs.map((entry) => ({ itemId: String(entry.itemId || "").trim(), countedQty: Number(entry.countedQty) }))
     .filter((entry) => entry.itemId && Number.isFinite(entry.countedQty) && entry.countedQty >= 0);
   if (normalized.length === 0 || normalized.length !== inputs.length) throw new AppError("VALIDATION_FAILED", { message: "กรุณาระบุยอดนับที่ถูกต้องอย่างน้อยหนึ่งรายการ", detail: "กรุณาระบุยอดนับที่ถูกต้องอย่างน้อยหนึ่งรายการ" });
@@ -59,9 +63,19 @@ export async function saveCountWorkOrder(user: AuthenticatedUser, jobType: strin
   }
   const safeJobType = String(jobType || "").trim();
   const payload = JSON.stringify(normalized);
+  // Departments on: an item outside the user's department (or one that does not exist) looks the same to them.
+  if (scope.mode === "one") {
+    const known = await sql`
+      SELECT LOWER(item_id) AS item_key FROM master_data
+      WHERE LOWER(item_id) IN (SELECT LOWER(TRIM(entry->>'itemId')) FROM JSONB_ARRAY_ELEMENTS(${payload}::jsonb) entry)${andDept(scope)}
+    ` as Array<{ item_key: string }>;
+    const knownKeys = new Set(known.map((row) => row.item_key));
+    const foreign = normalized.find((entry) => !knownKeys.has(entry.itemId.toLowerCase()));
+    if (foreign) throw new AppError("ITEM_NOT_IN_DEPARTMENT", { message: `รายการนี้ไม่อยู่ในงานของคุณ (${foreign.itemId})`, detail: `ITEM_NOT_IN_DEPARTMENT: ${foreign.itemId}` });
+  }
   const inactive = await sql`
     SELECT item_id FROM master_data
-    WHERE is_active = FALSE AND LOWER(item_id) IN (SELECT LOWER(TRIM(entry->>'itemId')) FROM JSONB_ARRAY_ELEMENTS(${payload}::jsonb) entry)
+    WHERE is_active = FALSE AND LOWER(item_id) IN (SELECT LOWER(TRIM(entry->>'itemId')) FROM JSONB_ARRAY_ELEMENTS(${payload}::jsonb) entry)${andDept(scope)}
   ` as Array<{ item_id: string }>;
   if (inactive.length) {
     const text = `น้ำยาถูกปิดใช้งานแล้ว (${inactive.map((row) => row.item_id).join(", ")}) กรุณารีเฟรชหน้าแล้วนับใหม่`;
@@ -69,10 +83,13 @@ export async function saveCountWorkOrder(user: AuthenticatedUser, jobType: strin
   }
   const [resultRows] = await sql.transaction([sql`
     WITH order_row AS (
-      INSERT INTO count_work_orders (owner_username, job_type)
-      VALUES (${user.username}, ${safeJobType})
+      INSERT INTO count_work_orders (owner_username, job_type${dept.column})
+      VALUES (${user.username}, ${safeJobType}${dept.value})
       ON CONFLICT (LOWER(owner_username), job_type) WHERE status = 'OPEN'
       DO UPDATE SET updated_at = NOW()
+      -- Qualified on purpose: EXCLUDED is also in scope here, so a bare department_id would be ambiguous.
+      -- An OPEN order of another department (same owner and job type) is left alone: RETURNING is empty and the save fails below.
+      WHERE ${deptWhereWrite(scope, "count_work_orders")}
       RETURNING id
     ), input_items AS (
       SELECT TRIM(entry->>'itemId') AS item_id, (entry->>'countedQty')::NUMERIC AS counted_qty
@@ -88,7 +105,7 @@ export async function saveCountWorkOrder(user: AuthenticatedUser, jobType: strin
       SELECT o.id, m.item_id, m.name, m.unit, COALESCE(m.weekly_target, 0), x.counted_qty,
              GREATEST(COALESCE(m.weekly_target, 0) - x.counted_qty, 0), 1
       FROM order_row o JOIN input_items x ON TRUE
-      JOIN master_data m ON LOWER(m.item_id) = LOWER(x.item_id)
+      JOIN master_data m ON LOWER(m.item_id) = LOWER(x.item_id)${andDept(scope, "m")}
       WHERE (${safeJobType} = '' OR m.job_type = ${safeJobType})
         AND NOT EXISTS (SELECT 1 FROM already_dispensed d WHERE LOWER(d.item_id) = LOWER(m.item_id))
       ON CONFLICT (work_order_id, item_id) DO UPDATE SET
@@ -110,12 +127,12 @@ export async function saveCountWorkOrder(user: AuthenticatedUser, jobType: strin
   return { id: Number(result!.id), savedCount: Number(result!.savedCount), alreadyDispensed };
 }
 
-export async function getCountWorkOrder(user: AuthenticatedUser, id: number) {
+export async function getCountWorkOrder(user: AuthenticatedUser, id: number, scope: DepartmentScope) {
   assertLabUser(user);
   const isReviewer = user.role === "Admin" || user.role === "Manager";
   const orders = await sql`
     SELECT id, owner_username AS "ownerUsername", job_type AS "jobType", status, created_at AS "createdAt", updated_at AS "updatedAt"
-    FROM count_work_orders WHERE id = ${id} AND (${isReviewer} OR LOWER(owner_username) = LOWER(${user.username})) LIMIT 1
+    FROM count_work_orders WHERE id = ${id} AND (${isReviewer} OR LOWER(owner_username) = LOWER(${user.username}))${andDept(scope)} LIMIT 1
   `;
   if (!orders[0]) return null;
   const items = await sql`
@@ -128,24 +145,24 @@ export async function getCountWorkOrder(user: AuthenticatedUser, id: number) {
   return { ...(orders[0] as { id: number; ownerUsername: string; jobType: string; status: CountWorkOrderStatus }), items };
 }
 
-export async function cancelCountWorkOrder(user: AuthenticatedUser, id: number) {
+export async function cancelCountWorkOrder(user: AuthenticatedUser, id: number, scope: DepartmentScope) {
   assertLabUser(user);
   const updated = await sql`
     UPDATE count_work_orders SET status = 'CANCELLED', cancelled_at = NOW(), cancelled_by = ${user.username}, updated_at = NOW()
-    WHERE id = ${id} AND status = 'OPEN' AND LOWER(owner_username) = LOWER(${user.username}) RETURNING id
+    WHERE id = ${id} AND status = 'OPEN' AND LOWER(owner_username) = LOWER(${user.username})${andDeptWrite(scope)} RETURNING id
   `;
   if (!updated[0]) throw new AppError("COUNT_ORDER_NOT_FOUND", { message: "ไม่พบใบงานที่เปิดอยู่หรือคุณไม่ใช่ผู้สร้าง", detail: "ไม่พบใบงานที่เปิดอยู่หรือคุณไม่ใช่ผู้สร้าง" });
   await sql`INSERT INTO count_work_order_audit (work_order_id, action, actor_username) VALUES (${id}, 'CANCELLED', ${user.username})`;
 }
 
-export async function getFreshLots(user: AuthenticatedUser, workOrderId: number) {
-  const workOrder = await getCountWorkOrder(user, workOrderId);
+export async function getFreshLots(user: AuthenticatedUser, workOrderId: number, scope: DepartmentScope) {
+  const workOrder = await getCountWorkOrder(user, workOrderId, scope);
   if (!workOrder) return null;
   const lots = await sql`
     SELECT i.id AS "inventoryId", i.item_id AS "itemId", i.lot_no AS "lotNo", i.quantity AS qty,
       TO_CHAR(i.exp_date, 'YYYY-MM-DD') AS "expDate", TO_CHAR(i.received_on, 'YYYY-MM-DD') AS "receivedOn"
     FROM inventory i JOIN count_work_order_items w ON LOWER(w.item_id) = LOWER(i.item_id)
-    WHERE w.work_order_id = ${workOrderId} AND i.quantity > 0
+    WHERE w.work_order_id = ${workOrderId} AND i.quantity > 0${andDept(scope, "i")}
     ORDER BY i.item_id, i.exp_date ASC NULLS LAST, i.received_on ASC, i.id ASC
   `;
   return lots;
@@ -160,8 +177,11 @@ export type ConfirmResult = {
 export { CountConfirmError } from "@/lib/count-work-orders-errors";
 export type { ConfirmFailure, ConfirmFailureReason, ConfirmRemaining } from "@/lib/count-work-orders-errors";
 
-export async function confirmCountWorkOrder(user: AuthenticatedUser, id: number, allocations: AllocationInput[], audit: { userAgent: string; ipAddress: string }): Promise<ConfirmResult> {
+export async function confirmCountWorkOrder(user: AuthenticatedUser, id: number, allocations: AllocationInput[], audit: { userAgent: string; ipAddress: string }, scope: DepartmentScope): Promise<ConfirmResult> {
   assertLabUser(user);
+  // Mode "all" (viewing every department) cannot write: throws DEPARTMENT_READ_ONLY before any SQL runs.
+  writeDepartmentId(scope);
+  const dept = deptInsert(scope);
   const normalized = normalizeAllocations(allocations);
   const payload = JSON.stringify(normalized);
   // Each requested item is checked on its own: items whose lots fully cover the required quantity are dispensed,
@@ -169,7 +189,7 @@ export async function confirmCountWorkOrder(user: AuthenticatedUser, id: number,
   // dispense it twice. Deactivated reagents are never dispensed and do not hold the order open.
   const [resultRows] = await sql.transaction([sql`
     WITH locked_order AS (
-      SELECT id FROM count_work_orders WHERE id = ${id} AND status = 'OPEN' AND LOWER(owner_username) = LOWER(${user.username}) FOR UPDATE
+      SELECT id FROM count_work_orders WHERE id = ${id} AND status = 'OPEN' AND LOWER(owner_username) = LOWER(${user.username})${andDeptWrite(scope)} FOR UPDATE
     ), requested AS (
       SELECT LOWER(TRIM(entry->>'itemId')) AS item_key, TRIM(entry->>'itemId') AS raw_item_id,
         (entry->>'inventoryId')::BIGINT AS inventory_id, (entry->>'qty')::NUMERIC AS qty
@@ -181,7 +201,7 @@ export async function confirmCountWorkOrder(user: AuthenticatedUser, id: number,
       FROM count_work_order_items i JOIN locked_order o ON o.id = i.work_order_id WHERE i.required_qty > 0
         AND NOT EXISTS (SELECT 1 FROM master_data m WHERE LOWER(m.item_id) = LOWER(i.item_id) AND m.is_active = FALSE)
     ), locked_inventory AS (
-      SELECT inv.id, inv.item_id, inv.lot_no, inv.quantity FROM inventory inv WHERE inv.id IN (SELECT inventory_id FROM requested) FOR UPDATE
+      SELECT inv.id, inv.item_id, inv.lot_no, inv.quantity FROM inventory inv WHERE inv.id IN (SELECT inventory_id FROM requested)${andDeptWrite(scope, "inv")} FOR UPDATE
     ), item_checks AS (
       SELECT t.item_key, COALESCE(p.item_id, m.item_id, t.raw_item_id) AS item_id, COALESCE(p.name, m.name) AS name,
         p.work_item_id, p.required_qty, t.qty AS requested_qty,
@@ -198,7 +218,7 @@ export async function confirmCountWorkOrder(user: AuthenticatedUser, id: number,
         END AS reason
       FROM requested_totals t
       LEFT JOIN pending p ON p.item_key = t.item_key
-      LEFT JOIN LATERAL (SELECT md.item_id, md.name, md.is_active FROM master_data md WHERE LOWER(md.item_id) = t.item_key LIMIT 1) m ON TRUE
+      LEFT JOIN LATERAL (SELECT md.item_id, md.name, md.is_active FROM master_data md WHERE LOWER(md.item_id) = t.item_key${andDept(scope, "md")} LIMIT 1) m ON TRUE
     ), ok_items AS (
       SELECT * FROM item_checks WHERE reason IS NULL
     ), ok_requested AS (
@@ -212,11 +232,11 @@ export async function confirmCountWorkOrder(user: AuthenticatedUser, id: number,
       RETURNING inventory_id
     ), deducted AS (
       UPDATE inventory inv SET quantity = inv.quantity - r.qty FROM ok_requested r
-      WHERE inv.id = r.inventory_id
+      WHERE inv.id = r.inventory_id${andDeptWrite(scope, "inv")}
       RETURNING inv.item_id, inv.lot_no, r.qty
     ), logs_saved AS (
-      INSERT INTO logs (item_id, name, lot_no, action, quantity, username, user_agent, ip_address)
-      SELECT d.item_id, o.name, d.lot_no, 'เบิกเติมจากใบงานนับสต็อก', d.qty, ${user.name + ' (' + user.role + ')'}, ${audit.userAgent}, ${audit.ipAddress}
+      INSERT INTO logs (item_id, name, lot_no, action, quantity, username, user_agent, ip_address${dept.column})
+      SELECT d.item_id, o.name, d.lot_no, 'เบิกเติมจากใบงานนับสต็อก', d.qty, ${user.name + ' (' + user.role + ')'}, ${audit.userAgent}, ${audit.ipAddress}${dept.value}
       FROM deducted d JOIN ok_items o ON o.item_key = LOWER(d.item_id)
     ), closed AS (
       UPDATE count_work_orders SET status = 'CONFIRMED', confirmed_at = NOW(), updated_at = NOW()
