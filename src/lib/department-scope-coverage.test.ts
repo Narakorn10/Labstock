@@ -30,7 +30,6 @@ export const DEPARTMENT_TABLES = [
 export const DEPARTMENT_SCOPE_PENDING: string[] = [
   "src/app/api/auth/register/route.ts",
   "src/app/api/dashboard/route.ts",
-  "src/app/api/inventory/reconcile/route.ts",
   "src/app/api/liff/orders/[id]/route.ts",
   "src/app/api/liff/orders/bootstrap/route.ts",
   "src/app/api/liff/orders/route.ts",

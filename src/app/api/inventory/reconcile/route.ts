@@ -1,8 +1,12 @@
 import { NextResponse } from 'next/server';
 import sql from '@/lib/db';
 import { getAuthenticatedUser } from '@/lib/auth-utils';
+import { isDepartmentScopeFailure, toApiError } from '@/lib/api-response';
+import { getRequestId } from '@/lib/request-observability';
+import { andDept, andDeptWrite, deptInsert, getDepartmentScope, writeDepartmentId } from '@/lib/scoped-db';
 
 export async function POST(request: Request) {
+  const requestId = getRequestId(request);
   try {
     const user = await getAuthenticatedUser(request);
     if (!user || (user.role !== 'Admin' && user.role !== 'Manager')) {
@@ -20,12 +24,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'ข้อมูลไม่ครบหรือไม่ถูกต้อง' }, { status: 400 });
     }
 
+    const scope = await getDepartmentScope(user);
+    // Mode "all" cannot write: throws DEPARTMENT_READ_ONLY before any SQL runs.
+    writeDepartmentId(scope);
+    const d = deptInsert(scope);
+
     const targetRows = await sql`
       SELECT i.id, i.item_id, i.lot_no, i.received_on, m.name
       FROM inventory i
-      LEFT JOIN master_data m ON LOWER(m.item_id) = LOWER(i.item_id)
+      LEFT JOIN master_data m ON LOWER(m.item_id) = LOWER(i.item_id)${andDept(scope, 'm')}
       WHERE i.id = ${inventoryId}
-        AND LOWER(i.item_id) = LOWER(${itemId})
+        AND LOWER(i.item_id) = LOWER(${itemId})${andDept(scope, 'i')}
       LIMIT 1
     `;
 
@@ -36,6 +45,8 @@ export async function POST(request: Request) {
     const targetRow = targetRows[0];
     const itemName = targetRow.name || 'Unknown';
 
+    // Deliberately NOT department-filtered: inventory is UNIQUE (item_id, lot_no, received_on) across ALL departments,
+    // so a row of another department would still make the UPDATE fail with 23505 (a 500). Checking everything keeps the 409.
     const duplicateLot = await sql`
       SELECT 1
       FROM inventory
@@ -61,11 +72,11 @@ export async function POST(request: Request) {
           exp_date = ${newExpDate},
           quantity = ${newQty}
         WHERE id = ${inventoryId}
-          AND LOWER(item_id) = LOWER(${itemId})
+          AND LOWER(item_id) = LOWER(${itemId})${andDeptWrite(scope)}
         RETURNING item_id, lot_no
       )
-      INSERT INTO logs (item_id, name, lot_no, action, quantity, username)
-      SELECT item_id, ${itemName}, lot_no, 'ปรับปรุง lot/exp/qty (Reconciliation)', ${newQty}, ${user.name + ' (' + user.role + ')'}
+      INSERT INTO logs (item_id, name, lot_no, action, quantity, username${d.column})
+      SELECT item_id, ${itemName}, lot_no, 'ปรับปรุง lot/exp/qty (Reconciliation)', ${newQty}, ${user.name + ' (' + user.role + ')'}${d.value}
       FROM updated
       RETURNING *
     `;
@@ -76,6 +87,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, message: 'ปรับ lot, expiry และยอดสต๊อกสำเร็จ' });
   } catch (error: unknown) {
+    if (isDepartmentScopeFailure(error)) return toApiError(error, requestId).response;
     console.error('Reconcile API Error:', error);
     const errorMessage = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: errorMessage }, { status: 500 });
