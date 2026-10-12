@@ -1,4 +1,5 @@
 import sql from "@/lib/db";
+import { andDept, type DepartmentScope } from "@/lib/scoped-db";
 import { computeReorderInsight, daysFromToday, type ReorderStatus } from "@/lib/reagent-usage-insights";
 
 const DISPENSE_ACTION = "เบิกไปหน้างาน";
@@ -57,7 +58,7 @@ function daysInRange(startDate: string, endDate: string) {
 }
 
 /** Usage detail of one reagent for the Analysis "รายน้ำยา" tab. Returns null when the item does not exist. */
-export async function getReagentItemUsage(itemId: string, startDate: string, endDate: string): Promise<ItemUsageDetail | null> {
+export async function getReagentItemUsage(itemId: string, startDate: string, endDate: string, scope: DepartmentScope): Promise<ItemUsageDetail | null> {
   const itemRows = await sql`
     SELECT
       m.item_id AS "itemId",
@@ -65,15 +66,15 @@ export async function getReagentItemUsage(itemId: string, startDate: string, end
       m.unit,
       m.min_threshold AS "minThreshold",
       m.is_active AS "isActive",
-      (SELECT COALESCE(SUM(quantity), 0) FROM inventory WHERE item_id = m.item_id) AS quantity,
+      (SELECT COALESCE(SUM(i.quantity), 0) FROM inventory i WHERE i.item_id = m.item_id${andDept(scope, "i")}) AS quantity,
       (
-        SELECT COALESCE(SUM(quantity), 0) FROM logs
-        WHERE item_id = m.item_id
-          AND action = ${DISPENSE_ACTION}
-          AND timestamp >= CURRENT_DATE - INTERVAL '90 days'
+        SELECT COALESCE(SUM(l.quantity), 0) FROM logs l
+        WHERE l.item_id = m.item_id
+          AND l.action = ${DISPENSE_ACTION}
+          AND l.timestamp >= CURRENT_DATE - INTERVAL '90 days'${andDept(scope, "l")}
       ) AS "dispensedLast90Days"
     FROM master_data m
-    WHERE m.item_id = ${itemId}
+    WHERE m.item_id = ${itemId}${andDept(scope, "m")}
   `;
   const row = (itemRows as unknown as ItemRow[])[0];
   if (!row) return null;
@@ -89,7 +90,7 @@ export async function getReagentItemUsage(itemId: string, startDate: string, end
       FROM logs
       WHERE item_id = ${itemId}
         AND timestamp >= ${startDate}::date
-        AND timestamp < (${endDate}::date + INTERVAL '1 day')
+        AND timestamp < (${endDate}::date + INTERVAL '1 day')${andDept(scope)}
     `,
     sql`
       SELECT TO_CHAR(timestamp, 'YYYY-MM-DD') AS date, SUM(quantity) AS qty
@@ -97,7 +98,7 @@ export async function getReagentItemUsage(itemId: string, startDate: string, end
       WHERE item_id = ${itemId}
         AND action = ${DISPENSE_ACTION}
         AND timestamp >= ${startDate}::date
-        AND timestamp < (${endDate}::date + INTERVAL '1 day')
+        AND timestamp < (${endDate}::date + INTERVAL '1 day')${andDept(scope)}
       GROUP BY date
       ORDER BY date ASC
     `,
@@ -107,7 +108,7 @@ export async function getReagentItemUsage(itemId: string, startDate: string, end
       WHERE item_id = ${itemId}
         AND action = ${DISPENSE_ACTION}
         AND timestamp >= ${startDate}::date
-        AND timestamp < (${endDate}::date + INTERVAL '1 day')
+        AND timestamp < (${endDate}::date + INTERVAL '1 day')${andDept(scope)}
       GROUP BY month
       ORDER BY month ASC
     `,
@@ -117,7 +118,7 @@ export async function getReagentItemUsage(itemId: string, startDate: string, end
       WHERE item_id = ${itemId}
         AND action = ${DISPENSE_ACTION}
         AND timestamp >= ${startDate}::date
-        AND timestamp < (${endDate}::date + INTERVAL '1 day')
+        AND timestamp < (${endDate}::date + INTERVAL '1 day')${andDept(scope)}
       GROUP BY 1
       ORDER BY qty DESC
     `,
@@ -127,7 +128,7 @@ export async function getReagentItemUsage(itemId: string, startDate: string, end
       WHERE item_id = ${itemId}
         AND action = ${DISPENSE_ACTION}
         AND timestamp >= ${startDate}::date
-        AND timestamp < (${endDate}::date + INTERVAL '1 day')
+        AND timestamp < (${endDate}::date + INTERVAL '1 day')${andDept(scope)}
       GROUP BY 1
       ORDER BY qty DESC
       LIMIT ${TOP_USERS_LIMIT}
@@ -135,7 +136,7 @@ export async function getReagentItemUsage(itemId: string, startDate: string, end
     sql`
       SELECT lot_no AS "lotNo", exp_date::text AS "expDate", received_on::text AS "receivedOn", quantity
       FROM inventory
-      WHERE item_id = ${itemId} AND quantity > 0
+      WHERE item_id = ${itemId} AND quantity > 0${andDept(scope)}
       ORDER BY NULLIF(exp_date::text, '') ASC NULLS LAST, received_on ASC
     `
   ]);

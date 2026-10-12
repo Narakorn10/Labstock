@@ -46,11 +46,11 @@ describe("getReagentItemUsage", () => {
   beforeEach(seed);
 
   it("returns null for an unknown item", async () => {
-    expect(await getReagentItemUsage("NOPE", "2026-09-01", "2026-09-30")).toBeNull();
+    expect(await getReagentItemUsage("NOPE", "2026-09-01", "2026-09-30", { mode: "legacy" })).toBeNull();
   });
 
   it("sums only this item's logs inside the date range", async () => {
-    const detail = await getReagentItemUsage("R1", "2026-09-01", "2026-09-30");
+    const detail = await getReagentItemUsage("R1", "2026-09-01", "2026-09-30", { mode: "legacy" });
     expect(detail?.item).toMatchObject({ itemId: "R1", unit: "กล่อง", quantity: 7, minThreshold: 2, isActive: true });
     expect(detail?.range.days).toBe(30);
     expect(detail?.totals).toMatchObject({ dispensed: 10, received: 10, adjusted: -1, dispenseCount: 4 });
@@ -59,7 +59,7 @@ describe("getReagentItemUsage", () => {
   });
 
   it("groups dispensing by day, month, lot and user", async () => {
-    const detail = await getReagentItemUsage("R1", "2026-09-01", "2026-09-30");
+    const detail = await getReagentItemUsage("R1", "2026-09-01", "2026-09-30", { mode: "legacy" });
     expect(detail?.daily).toEqual([
       { date: "2026-09-03", qty: 3 },
       { date: "2026-09-20", qty: 3 },
@@ -75,7 +75,7 @@ describe("getReagentItemUsage", () => {
   });
 
   it("lists lots still on hand in FEFO order", async () => {
-    const detail = await getReagentItemUsage("R1", "2026-09-01", "2026-09-30");
+    const detail = await getReagentItemUsage("R1", "2026-09-01", "2026-09-30", { mode: "legacy" });
     expect(detail?.lotsOnHand.map((lot) => `${lot.lotNo}:${lot.expDate}:${lot.quantity}`)).toEqual([
       "L1:2027-01-01:3",
       "L2:2027-03-01:4",
@@ -83,7 +83,7 @@ describe("getReagentItemUsage", () => {
   });
 
   it("handles an item with no usage in range", async () => {
-    const detail = await getReagentItemUsage("R2", "2026-09-11", "2026-09-30");
+    const detail = await getReagentItemUsage("R2", "2026-09-11", "2026-09-30", { mode: "legacy" });
     expect(detail?.item).toMatchObject({ unit: "หน่วย", isActive: false });
     expect(detail?.totals).toMatchObject({ dispensed: 0, dispenseCount: 0, averageDailyUsage: 0, lastDispensedAt: null });
     expect(detail?.daily).toEqual([]);
