@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import sql from "@/lib/db";
 import type { AuthenticatedUser } from "@/lib/auth-utils";
-import { apiError } from "@/lib/api-response";
+import { departmentScopeErrorResponse } from "@/lib/api-response";
 import { departmentsReady } from "@/lib/departments-flag";
 
 // Department (multi-lab) scoping helpers for SQL.
@@ -121,8 +121,8 @@ export function deptInsert(scope: DepartmentScope): { column: SqlFragment; value
  */
 export function departmentErrorResponse(e: unknown, requestId: string = crypto.randomUUID()): Response | null {
   if (!(e instanceof DepartmentScopeError)) return null;
-  if (e.code === "DEPARTMENT_NOT_FOUND") return apiError("DEPARTMENT_NOT_FOUND", { requestId });
-  if (e.code === "DEPARTMENT_READ_ONLY") return apiError("DEPARTMENT_READ_ONLY", { requestId });
-  console.error(`[departments] ${e.code}: ${e.message}`, { requestId });
-  return apiError("INTERNAL_ERROR", { requestId });
+  if (e.code !== "DEPARTMENT_NOT_FOUND" && e.code !== "DEPARTMENT_READ_ONLY") {
+    console.error(`[departments] ${e.code}: ${e.message}`, { requestId });
+  }
+  return departmentScopeErrorResponse(e, requestId);
 }

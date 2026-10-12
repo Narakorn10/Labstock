@@ -11,6 +11,7 @@ vi.mock("@/lib/auth-utils", () => ({ hasMenuPermission: mocks.hasMenuPermission 
 vi.mock("@/lib/stock-transactions", () => ({ runReceiveBatch: mocks.runReceiveBatch }));
 
 import { AppError } from "@/lib/errors";
+import { DepartmentScopeError } from "@/lib/scoped-db";
 import { POST } from "./route";
 
 function receiveRequest(init: { headers?: Record<string, string>; body?: string } = {}) {
@@ -47,7 +48,62 @@ describe("Receive API permissions", () => {
 
     expect(response.status).toBe(200);
     expect(mocks.hasMenuPermission).toHaveBeenCalledWith(expect.any(Request), "receive");
-    expect(mocks.runReceiveBatch).toHaveBeenCalledWith(expect.any(Array), user, expect.any(Object));
+    expect(mocks.runReceiveBatch).toHaveBeenCalledWith(expect.any(Array), user, expect.any(Object), { mode: "legacy" });
+  });
+});
+
+describe("receive API department scope", () => {
+  const baseUser = { username: "staff", name: "Staff", role: "Operator" };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    mocks.runReceiveBatch.mockResolvedValue({ success: true });
+  });
+
+  it("passes { mode: \"one\", departmentId } when the user has a department scope", async () => {
+    const user = { ...baseUser, scope: 2 };
+    mocks.hasMenuPermission.mockResolvedValue({ user, allowed: true });
+
+    const response = await POST(receiveRequest());
+
+    expect(response.status).toBe(200);
+    expect(mocks.runReceiveBatch).toHaveBeenCalledWith(expect.any(Array), user, expect.any(Object), { mode: "one", departmentId: 2 });
+  });
+
+  it("answers 404 and never receives when the user asked for a department they are not in", async () => {
+    mocks.hasMenuPermission.mockResolvedValue({ user: { ...baseUser, scope: 2, departmentDenied: true }, allowed: true });
+
+    const response = await POST(receiveRequest());
+
+    expect(response.status).toBe(404);
+    expect(mocks.runReceiveBatch).not.toHaveBeenCalled();
+  });
+
+  it("maps DEPARTMENT_READ_ONLY to 409", async () => {
+    mocks.hasMenuPermission.mockResolvedValue({ user: { ...baseUser, scope: "ALL" }, allowed: true });
+    mocks.runReceiveBatch.mockRejectedValue(new DepartmentScopeError("DEPARTMENT_READ_ONLY"));
+
+    const response = await POST(receiveRequest());
+
+    expect(mocks.runReceiveBatch).toHaveBeenCalledWith(expect.any(Array), expect.anything(), expect.any(Object), { mode: "all" });
+    expect(response.status).toBe(409);
+    expect((await response.json()).code).toBe("DEPARTMENT_READ_ONLY");
+  });
+
+  it("maps ITEM_NOT_IN_DEPARTMENT to 409 with the Thai message", async () => {
+    mocks.hasMenuPermission.mockResolvedValue({ user: { ...baseUser, scope: 2 }, allowed: true });
+    mocks.runReceiveBatch.mockRejectedValue(new AppError("ITEM_NOT_IN_DEPARTMENT", {
+      message: "รายการนี้ไม่อยู่ในงานของคุณ (LAB-000001)",
+      detail: "ITEM_NOT_IN_DEPARTMENT: LAB-000001",
+    }));
+
+    const response = await POST(receiveRequest());
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body.code).toBe("ITEM_NOT_IN_DEPARTMENT");
+    expect(body.error).toContain("รายการนี้ไม่อยู่ในงานของคุณ");
   });
 });
 

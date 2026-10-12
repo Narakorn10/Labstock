@@ -63,10 +63,36 @@ function legacyItemId(message: string, code: string): string | null {
   return match ? match[1] : null;
 }
 
+/**
+ * Maps a DepartmentScopeError (scoped-db.ts) to the catalogue response; null for anything else.
+ * Duck-typed on name/code so this file does not import scoped-db (which imports this file).
+ * DEPARTMENT_SCOPE_MISSING (and any unknown code) becomes a plain 500: the raw message may name the user.
+ */
+export function departmentScopeErrorResponse(err: unknown, requestId: string): NextResponse<ApiErrorBody> | null {
+  if (!(err instanceof Error) || err.name !== "DepartmentScopeError") return null;
+  const code = (err as { code?: unknown }).code;
+  if (code === "DEPARTMENT_NOT_FOUND") return apiError("DEPARTMENT_NOT_FOUND", { requestId });
+  if (code === "DEPARTMENT_READ_ONLY") return apiError("DEPARTMENT_READ_ONLY", { requestId });
+  return apiError("INTERNAL_ERROR", { requestId });
+}
+
+/** True when the failure means "this item/department combination is not allowed" (route should answer via the catalogue). */
+export function isDepartmentScopeFailure(err: unknown): boolean {
+  if (err instanceof Error && err.name === "DepartmentScopeError") return true;
+  if (err instanceof AppError && err.code === "ITEM_NOT_IN_DEPARTMENT") return true;
+  try {
+    return rawMessage(err).startsWith("ITEM_NOT_IN_DEPARTMENT");
+  } catch {
+    return false;
+  }
+}
+
 function classify(err: unknown, requestId: string, message: string): NextResponse<ApiErrorBody> {
   if (err instanceof AppError) {
     return apiError(err.code, { requestId, message: err.userMessage, hint: err.hint, extra: err.extra });
   }
+  const dept = departmentScopeErrorResponse(err, requestId);
+  if (dept) return dept;
   if (err instanceof CountConfirmError) {
     return apiError("COUNT_NOTHING_TO_DISPENSE", {
       requestId,
@@ -84,6 +110,10 @@ function classify(err: unknown, requestId: string, message: string): NextRespons
   if (message.startsWith("REAGENT_STOCK_INSUFFICIENT")) {
     const itemId = legacyItemId(message, "REAGENT_STOCK_INSUFFICIENT");
     return apiError("REAGENT_STOCK_INSUFFICIENT", { requestId, ...(itemId ? { message: `จำนวนคงเหลือไม่พอสำหรับรายการที่เบิก (${itemId})` } : {}) });
+  }
+  if (message.startsWith("ITEM_NOT_IN_DEPARTMENT")) {
+    const itemId = legacyItemId(message, "ITEM_NOT_IN_DEPARTMENT");
+    return apiError("ITEM_NOT_IN_DEPARTMENT", { requestId, ...(itemId ? { message: `รายการนี้ไม่อยู่ในงานของคุณ (${itemId})` } : {}) });
   }
   if (err instanceof SyntaxError) return apiError("INVALID_JSON", { requestId });
   if (sqlState(err) === "23505") return apiError("DUPLICATE_ENTRY", { requestId });

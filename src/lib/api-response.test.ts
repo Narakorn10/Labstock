@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./db", () => ({ default: Object.assign(() => Promise.resolve([]), { transaction: () => Promise.resolve([]) }) }));
 
-import { apiError, toApiError } from "./api-response";
+import { apiError, departmentScopeErrorResponse, isDepartmentScopeFailure, toApiError } from "./api-response";
+import { DepartmentScopeError, departmentErrorResponse } from "./scoped-db";
 import { AppError, ERROR_CATALOGUE } from "./errors";
 import { CountConfirmError } from "./count-work-orders";
 import { PurchaseOrderCreationError } from "./purchase-order-creation";
@@ -114,5 +115,72 @@ describe("toApiError", () => {
       const { response } = toApiError(err, "req-1");
       expect(response.status).toBeGreaterThanOrEqual(400);
     }
+  });
+});
+
+describe("department scope errors", () => {
+  const codes = [
+    ["DEPARTMENT_NOT_FOUND", 404],
+    ["DEPARTMENT_READ_ONLY", 409],
+    ["DEPARTMENT_SCOPE_MISSING", 500],
+  ] as const;
+
+  it.each(codes)("maps DepartmentScopeError %s to the catalogue status", async (code, status) => {
+    const r = await map(new DepartmentScopeError(code));
+    expect(r.status).toBe(status);
+    expect(r.body.code).toBe(code === "DEPARTMENT_SCOPE_MISSING" ? "INTERNAL_ERROR" : code);
+  });
+
+  it("does not leak the username from a DEPARTMENT_SCOPE_MISSING message", async () => {
+    const err = new DepartmentScopeError("DEPARTMENT_SCOPE_MISSING", 'departments are ready but user "somchai" has no department scope');
+    const direct = departmentScopeErrorResponse(err, "req-1");
+    expect(direct?.status).toBe(500);
+    expect(JSON.stringify(await direct?.json())).not.toContain("somchai");
+    expect(JSON.stringify((await map(err)).body)).not.toContain("somchai");
+  });
+
+  it("departmentScopeErrorResponse returns null for other errors", () => {
+    expect(departmentScopeErrorResponse(new Error("boom"), "req-1")).toBeNull();
+    expect(departmentScopeErrorResponse("DepartmentScopeError", "req-1")).toBeNull();
+    expect(departmentScopeErrorResponse(null, "req-1")).toBeNull();
+  });
+
+  it.each(codes)("departmentErrorResponse and toApiError agree on %s", async (code) => {
+    const err = new DepartmentScopeError(code);
+    const a = departmentErrorResponse(err, "req-1")!;
+    const b = toApiError(err, "req-1").response;
+    expect(a.status).toBe(b.status);
+    expect((await a.json()).code).toBe((await b.json()).code);
+  });
+
+  it("isDepartmentScopeFailure recognises the 3 forms and rejects others", () => {
+    expect(isDepartmentScopeFailure(new DepartmentScopeError("DEPARTMENT_READ_ONLY"))).toBe(true);
+    expect(isDepartmentScopeFailure(new AppError("ITEM_NOT_IN_DEPARTMENT"))).toBe(true);
+    expect(isDepartmentScopeFailure(new Error("ITEM_NOT_IN_DEPARTMENT: X"))).toBe(true);
+    expect(isDepartmentScopeFailure(new AppError("REAGENT_INACTIVE"))).toBe(false);
+    expect(isDepartmentScopeFailure(new Error("boom"))).toBe(false);
+    expect(isDepartmentScopeFailure("boom")).toBe(false);
+  });
+
+  it("maps AppError ITEM_NOT_IN_DEPARTMENT to 409 Thai", async () => {
+    const r = await map(new AppError("ITEM_NOT_IN_DEPARTMENT", { message: "รายการนี้ไม่อยู่ในงานของคุณ (X)", detail: "ITEM_NOT_IN_DEPARTMENT: X" }));
+    expect(r.status).toBe(409);
+    expect(r.body.code).toBe("ITEM_NOT_IN_DEPARTMENT");
+    expect(r.body.error).toBe("รายการนี้ไม่อยู่ในงานของคุณ (X)");
+    expect((await map(new AppError("ITEM_NOT_IN_DEPARTMENT"))).body.error).toBe("รายการนี้ไม่อยู่ในงานของคุณ");
+  });
+
+  it("maps a legacy ITEM_NOT_IN_DEPARTMENT message to 409 with the item id", async () => {
+    const r = await map(new Error("ITEM_NOT_IN_DEPARTMENT: X"));
+    expect(r.status).toBe(409);
+    expect(r.body.code).toBe("ITEM_NOT_IN_DEPARTMENT");
+    expect(r.body.error).toBe("รายการนี้ไม่อยู่ในงานของคุณ (X)");
+    const odd = await map(new Error("ITEM_NOT_IN_DEPARTMENT: some free text here"));
+    expect(odd.body.error).toBe("รายการนี้ไม่อยู่ในงานของคุณ");
+  });
+
+  it("keeps existing mappings unchanged", async () => {
+    expect((await map(new Error("REAGENT_INACTIVE: R1"))).body.error).toBe("สารเคมีรายการนี้ถูกปิดใช้งานแล้ว (R1)");
+    expect((await map(new Error("something odd"))).status).toBe(500);
   });
 });
