@@ -1,6 +1,7 @@
 import axios from 'axios';
 import type { AppEventsResponse } from '@/lib/app-events-types';
 import type { ConfirmResult } from '@/lib/count-work-orders';
+import type { ItemUsageDetail } from '@/lib/reagent-item-usage';
 
 // Create axios instance
 const instance = axios.create();
@@ -108,6 +109,8 @@ export interface UsageResponse {
   insights?: ReagentUsageInsight[];
   expiryRisks?: ExpiryRiskInsight[];
 }
+
+export type { ItemUsageDetail };
 
 export interface BatchItem {
   inventoryId?: number;
@@ -394,6 +397,13 @@ export const apiClient = {
 
   getUsage: async (startDate: string, endDate: string) => {
     const res = await instance.get<UsageResponse>(`/api/usage?startDate=${startDate}&endDate=${endDate}`);
+    return res.data;
+  },
+
+  getItemUsage: async (itemId: string, startDate: string, endDate: string) => {
+    const res = await instance.get<ItemUsageDetail>(
+      `/api/usage/item?itemId=${encodeURIComponent(itemId)}&startDate=${startDate}&endDate=${endDate}`
+    );
     return res.data;
   },
 

@@ -37,8 +37,10 @@ import {
   UsageData
 } from '@/lib/api-client';
 import { useAuth } from '@/components/auth-provider';
+import { ItemUsagePanel } from '@/components/analysis/item-usage-panel';
 
 type RiskFilter = 'all' | ReorderStatus;
+type AnalysisTab = 'overview' | 'item';
 
 const statusMeta: Record<ReorderStatus, { label: string; color: string; badge: string }> = {
   normal: { label: 'ปกติ', color: '#237a3f', badge: 'bg-ok-bg text-ok' },
@@ -64,6 +66,8 @@ export default function AnalysisPage() {
   const [expiryRisks, setExpiryRisks] = useState<ExpiryRiskInsight[]>([]);
   const [selectedItemId, setSelectedItemId] = useState('TOTAL');
   const [riskFilter, setRiskFilter] = useState<RiskFilter>('all');
+  const [tab, setTab] = useState<AnalysisTab>('overview');
+  const [detailItemId, setDetailItemId] = useState<string | null>(null);
   const [startDate, setStartDate] = useState(() => {
     const date = new Date();
     date.setDate(date.getDate() - 89);
@@ -161,6 +165,12 @@ export default function AnalysisPage() {
     }
   };
 
+  const openItemDetail = (itemId: string) => {
+    setDetailItemId(itemId);
+    setTab('item');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const selectStatus = (entry: unknown) => {
     const status = (entry as { payload?: { status?: ReorderStatus }; status?: ReorderStatus })?.payload?.status
       || (entry as { status?: ReorderStatus })?.status;
@@ -205,6 +215,30 @@ export default function AnalysisPage() {
           บัญชีนี้ดูยอดการใช้ได้ แต่ Dashboard วางแผนจัดซื้อสงวนสำหรับ Admin และ Manager
         </div>
       ) : <>
+        <div className="flex gap-2" role="tablist" aria-label="มุมมองการวิเคราะห์">
+          {([['overview', 'ภาพรวม'], ['item', 'รายน้ำยา']] as Array<[AnalysisTab, string]>).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              role="tab"
+              aria-selected={tab === value}
+              onClick={() => setTab(value)}
+              className={`rounded-full border px-4 py-1.5 text-sm font-medium transition-colors ${tab === value ? 'border-ink bg-ink text-white' : 'border-line bg-white text-gray-700 hover:bg-gray-50'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'item' ? (
+          <ItemUsagePanel
+            items={insights}
+            selectedItemId={detailItemId}
+            onSelectItem={setDetailItemId}
+            startDate={startDate}
+            endDate={endDate}
+          />
+        ) : <>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(230px,1fr))] gap-4">
           {[
             { label: 'รายการวิกฤต', value: criticalCount, unit: 'รายการ', icon: CircleAlert, style: 'text-crit bg-crit-bg' },
@@ -335,7 +369,7 @@ export default function AnalysisPage() {
           <div className="mb-3.5 flex flex-wrap items-center gap-4">
             <div className="mr-auto">
               <h2 id="plan-heading" className="text-xl font-medium">แผนจัดซื้อรายน้ำยา</h2>
-              <p className="mt-0.5 text-[13px] text-gray-600">ค่าเฉลี่ยการใช้และคำแนะนำคำนวณจาก 90 วันล่าสุด</p>
+              <p className="mt-0.5 text-[13px] text-gray-600">ค่าเฉลี่ยการใช้และคำแนะนำคำนวณจาก 90 วันล่าสุด · กดรายการเพื่อดูรายละเอียด</p>
             </div>
             <div className="flex flex-wrap gap-2" role="group" aria-label="กรองตามสถานะ">
               {(['all', 'critical', 'reorder', 'normal'] as RiskFilter[]).map((status) => (
@@ -366,7 +400,7 @@ export default function AnalysisPage() {
               </thead>
               <tbody>
                 {filteredInsights.map((item) => (
-                  <tr key={item.itemId} onClick={() => setSelectedItemId(item.itemId)} className="cursor-pointer transition-colors hover:bg-[#fafafa]">
+                  <tr key={item.itemId} onClick={() => openItemDetail(item.itemId)} className="cursor-pointer transition-colors hover:bg-[#fafafa]">
                     <td className="border-b border-line px-3.5 py-3 text-sm">
                       <div className="font-medium">{item.name}</div>
                       <div className="text-xs text-gray-600">{item.itemId}</div>
@@ -385,7 +419,7 @@ export default function AnalysisPage() {
           </div>
           <div className="space-y-3 md:hidden">
             {filteredInsights.map((item) => (
-              <button key={item.itemId} type="button" onClick={() => setSelectedItemId(item.itemId)} className="w-full rounded-xl border border-line p-4 text-left">
+              <button key={item.itemId} type="button" onClick={() => openItemDetail(item.itemId)} className="w-full rounded-xl border border-line p-4 text-left">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="font-medium">{item.name}</p>
@@ -402,6 +436,7 @@ export default function AnalysisPage() {
           </div>
           {filteredInsights.length === 0 && <p className="py-10 text-sm text-gray-600">ไม่พบรายการในสถานะที่เลือก</p>}
         </section>
+        </>}
       </>}
     </div>
   );

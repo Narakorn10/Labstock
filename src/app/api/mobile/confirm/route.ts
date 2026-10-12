@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { trackRoute } from "@/lib/app-events";
 import { hasUserPinColumn, roleHasMenu, verifyUserPin } from "@/lib/auth-utils";
+import { PIN_ATTEMPT_LIMIT, countRecentPinAttempts, markPinAttemptSuccess, recordPinAttempt } from "@/lib/pin-attempts";
 import { getLineLinkedUser, hasUserLineIdColumn, verifyLineIdToken } from "@/lib/line-liff-auth";
 import { runDispenseBatch, runReceiveBatch, StockBatchItem } from "@/lib/stock-transactions";
 
@@ -51,7 +52,15 @@ export const POST = trackRoute({ action: "mobile.confirm" }, async (request: Req
       if (!pinEnabled) {
         return NextResponse.json({ error: "PIN support is not enabled yet. Run upgrade_v5_user_pin.sql first." }, { status: 400 });
       }
+      // Record first, then count: the attempt row exists before any other request can count, so parallel
+      // guesses cannot all slip under the limit. Both helpers fail open (null) if app_events is unavailable.
+      const pinAttemptId = await recordPinAttempt(username);
+      const recentAttempts = await countRecentPinAttempts(username);
+      if (recentAttempts !== null && recentAttempts > PIN_ATTEMPT_LIMIT) {
+        return NextResponse.json({ error: "ใส่ PIN ผิดหลายครั้ง กรุณารอ 15 นาทีแล้วลองใหม่", code: "RATE_LIMITED" }, { status: 429 });
+      }
       user = await verifyUserPin(username, pin);
+      if (user) await markPinAttemptSuccess(pinAttemptId);
     }
 
     if (!user) {

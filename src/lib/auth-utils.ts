@@ -6,6 +6,10 @@ import { departmentsReady, isMissingDepartmentSchemaError, markDepartmentsNotRea
 
 const SALT_ROUNDS = 10;
 
+// Fixed bcrypt cost-10 hash of a random, non-secret string. verifyUserPin compares against it when the
+// account cannot be verified (unknown / inactive / no PIN) so every path costs one bcrypt compare.
+export const DUMMY_PIN_HASH = "$2b$10$yZRNdw/leiCCMSGU1Aa7oe.HzATFby729LGmWHWsYUOtKwRa6auDC";
+
 export interface AuthenticatedUser {
   username: string;
   name: string;
@@ -253,14 +257,13 @@ export async function verifyUserPin(username: string, pin: string): Promise<Auth
           LIMIT 1
         `;
 
-    if (users.length === 0) return null;
-
     const user = users[0];
-    if (hasAccountStatus && user.account_status !== 'active') return null;
-    if (!user.pin_hash) return null;
-
-    const isMatch = await comparePassword(pin, user.pin_hash);
-    if (!isMatch) return null;
+    const active = !!user && (!hasAccountStatus || user.account_status === 'active');
+    // Always one bcrypt compare (dummy hash when the account cannot match) so response time does not reveal
+    // whether the username exists, is active, or has a PIN.
+    const hash = (user && active && user.pin_hash) ? user.pin_hash : DUMMY_PIN_HASH;
+    const isMatch = await comparePassword(pin, hash);
+    if (!user || !active || !user.pin_hash || !isMatch) return null;
 
     return {
       username: user.username,
