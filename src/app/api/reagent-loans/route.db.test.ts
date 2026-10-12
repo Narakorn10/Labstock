@@ -105,32 +105,98 @@ describe("POST /api/reagent-loans (legacy)", () => {
     expect(await stock()).toEqual(["L1=3"]);
   });
 
-  // KNOWN PRE-EXISTING BUG (found while writing these tests): the RETURN_IN / RETURN_OUT statements end with
-  // `EXISTS (SELECT 1 FROM logged)` but the `logged` CTE is an INSERT without RETURNING, which Postgres rejects
-  // ("WITH query "logged" does not have a RETURNING clause"). So every return currently answers 500 and changes nothing.
-  // These tests pin that behaviour; when the SQL is fixed they should be changed to expect 200 / 409.
-  it("RETURN_IN currently fails with 500 and changes nothing (known bug, see comment)", async () => {
+  const loanState = async () => rows<{ returned_qty: string; status: string }>("SELECT returned_qty, status FROM reagent_loans");
+  const logActions = async () => rows<{ action: string; quantity: string; username: string }>("SELECT action, quantity, username FROM logs WHERE action NOT IN ('ให้ยืมออก', 'ยืมเข้าคลัง')");
+  const returnIn = (loanId: number, qty: number, partnerName = "Lab B") =>
+    post({ operation: "RETURN_IN", partnerName, batchItems: [{ itemId: "LAB-000001", lotNo: "L1", qty, loanId }] });
+  const returnOut = (loanId: number, qty: number) =>
+    post({ operation: "RETURN_OUT", partnerName: "Lab B", batchItems: [{ itemId: "LAB-000001", lotNo: "LN", qty, loanId }] });
+
+  it("RETURN_IN puts the stock back, writes a log and closes a fully returned loan", async () => {
     await post(lend);
     const loan = (await rows<{ id: number }>("SELECT id FROM reagent_loans"))[0];
 
-    const response = await post({ operation: "RETURN_IN", partnerName: "Lab B", batchItems: [{ itemId: "LAB-000001", lotNo: "L1", qty: 2, loanId: loan.id }] });
+    const response = await returnIn(loan.id, 2);
 
-    expect(response.status).toBe(500);
+    expect(response.status).toBe(200);
+    expect(await stock()).toEqual(["L1=3", "L1=2"]);
+    expect(await logActions()).toEqual([{ action: "รับคืนจากผู้ยืม", quantity: "2", username: ACTOR }]);
+    expect(await loanState()).toEqual([{ returned_qty: "2", status: "CLOSED" }]);
+  });
+
+  it("RETURN_IN with a partial quantity keeps the loan OPEN, then closes it with the rest", async () => {
+    await post(lend);
+    const loan = (await rows<{ id: number }>("SELECT id FROM reagent_loans"))[0];
+
+    expect((await returnIn(loan.id, 1)).status).toBe(200);
+    expect(await loanState()).toEqual([{ returned_qty: "1", status: "OPEN" }]);
+
+    expect((await returnIn(loan.id, 1)).status).toBe(200);
+    expect(await loanState()).toEqual([{ returned_qty: "2", status: "CLOSED" }]);
+    expect((await rows<{ total: string }>("SELECT SUM(quantity) AS total FROM inventory"))[0].total).toBe("5");
+  });
+
+  it("RETURN_IN beyond the outstanding balance answers 409 and changes nothing", async () => {
+    await post(lend);
+    const loan = (await rows<{ id: number }>("SELECT id FROM reagent_loans"))[0];
+
+    const response = await returnIn(loan.id, 3);
+
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toContain("no longer match");
     expect(await stock()).toEqual(["L1=3"]);
-    expect((await rows<{ status: string }>("SELECT status FROM reagent_loans"))).toEqual([{ status: "OPEN" }]);
+    expect(await logActions()).toEqual([]);
+    expect(await loanState()).toEqual([{ returned_qty: "0", status: "OPEN" }]);
+  });
+
+  it("RETURN_IN for a loan that does not match (wrong partner, already closed) answers 409", async () => {
+    await post(lend);
+    const loan = (await rows<{ id: number }>("SELECT id FROM reagent_loans"))[0];
+
+    expect((await returnIn(loan.id, 1, "Someone Else")).status).toBe(409);
+
+    expect((await returnIn(loan.id, 2)).status).toBe(200);
+    expect((await returnIn(loan.id, 1)).status).toBe(409);
+    expect(await stock()).toEqual(["L1=3", "L1=2"]);
   });
 
   it("RETURN_IN without a loan id answers 400", async () => {
     expect((await post({ operation: "RETURN_IN", partnerName: "Lab B", batchItems: [{ itemId: "LAB-000001", lotNo: "L1", qty: 2 }] })).status).toBe(400);
   });
 
-  it("RETURN_OUT currently fails with 500 and changes nothing (known bug, see comment above)", async () => {
+  it("RETURN_OUT takes the stock out, writes a log and closes a fully returned loan", async () => {
     await post(borrow);
     const loan = (await rows<{ id: number }>("SELECT id FROM reagent_loans"))[0];
 
-    const response = await post({ operation: "RETURN_OUT", partnerName: "Lab B", batchItems: [{ itemId: "LAB-000001", lotNo: "LN", qty: 4, loanId: loan.id }] });
+    const response = await returnOut(loan.id, 4);
 
-    expect(response.status).toBe(500);
-    expect(await stock()).toEqual(["L1=5", "LN=4"]);
+    expect(response.status).toBe(200);
+    expect(await stock()).toEqual(["L1=5", "LN=0"]);
+    expect(await logActions()).toEqual([{ action: "ส่งคืนเจ้าของ", quantity: "4", username: ACTOR }]);
+    expect(await loanState()).toEqual([{ returned_qty: "4", status: "CLOSED" }]);
+  });
+
+  it("RETURN_OUT with a partial quantity keeps the loan OPEN", async () => {
+    await post(borrow);
+    const loan = (await rows<{ id: number }>("SELECT id FROM reagent_loans"))[0];
+
+    expect((await returnOut(loan.id, 1)).status).toBe(200);
+
+    expect(await stock()).toEqual(["L1=5", "LN=3"]);
+    expect(await loanState()).toEqual([{ returned_qty: "1", status: "OPEN" }]);
+  });
+
+  it("RETURN_OUT beyond the outstanding balance, or beyond the stock on hand, answers 409 and changes nothing", async () => {
+    await post(borrow);
+    const loan = (await rows<{ id: number }>("SELECT id FROM reagent_loans"))[0];
+
+    expect((await returnOut(loan.id, 5)).status).toBe(409);
+
+    await sql.db.exec("UPDATE inventory SET quantity = 1 WHERE lot_no = 'LN'");
+    expect((await returnOut(loan.id, 2)).status).toBe(409);
+
+    expect(await stock()).toEqual(["L1=5", "LN=1"]);
+    expect(await logActions()).toEqual([]);
+    expect(await loanState()).toEqual([{ returned_qty: "0", status: "OPEN" }]);
   });
 });
