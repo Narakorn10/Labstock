@@ -5,6 +5,8 @@ import { useAuth } from '@/components/auth-provider';
 import { apiClient, BarcodePattern, Reagent } from '@/lib/api-client';
 import { findMatchingReagentWithV2 } from '@/lib/barcode-parser';
 import QRScanner from '@/components/lazy-qr-scanner';
+import { ErrorNotice } from '@/components/error-notice';
+import { parseApiError, type ApiErrorInfo } from '@/lib/api-errors-client';
 import Modal from '@/components/modal';
 import {
   Camera,
@@ -30,7 +32,8 @@ export default function ReceivePage() {
   const [patterns, setPatterns] = useState<BarcodePattern[]>([]);
   const [v2Patterns, setV2Patterns] = useState<import('@/lib/api-client').BarcodePatternV2Runtime[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
+  const [loadError, setLoadError] = useState<ApiErrorInfo | null>(null);
+  const [submitError, setSubmitError] = useState<ApiErrorInfo | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [scanMode, setScanMode] = useState(false);
   const [search, setSearch] = useState('');
@@ -40,7 +43,7 @@ export default function ReceivePage() {
   const [showResults, setShowResults] = useState(false);
   const [inactiveScan, setInactiveScan] = useState<{ reagent: Reagent; lot: string; exp: string } | null>(null);
   const [activating, setActivating] = useState(false);
-  const [activateError, setActivateError] = useState('');
+  const [activateError, setActivateError] = useState<ApiErrorInfo | null>(null);
   const canActivate = user?.role === 'Admin' || user?.role === 'Manager';
   const cartIdRef = useRef(0);
 
@@ -51,7 +54,7 @@ export default function ReceivePage() {
 
   const loadLookupData = async () => {
     setLoading(true);
-    setLoadError('');
+    setLoadError(null);
     try {
       const [reagentsData, runtimeData] = await Promise.all([
         apiClient.getDashboard(),
@@ -62,8 +65,7 @@ export default function ReceivePage() {
       setV2Patterns(runtimeData.v2Patterns);
     } catch (err: unknown) {
       console.error(err);
-      const error = err as { response?: { data?: { error?: string } }, message?: string };
-      setLoadError(error.response?.data?.error || error.message || 'Unable to load lookup data');
+      setLoadError(parseApiError(err, 'โหลดข้อมูลสำหรับค้นหาไม่สำเร็จ'));
     } finally {
       setLoading(false);
     }
@@ -101,8 +103,7 @@ export default function ReceivePage() {
         }
 
         console.error(err);
-        const error = err as { response?: { data?: { error?: string } }, message?: string };
-        setLoadError(error.response?.data?.error || error.message || 'Unable to load lookup data');
+        setLoadError(parseApiError(err, 'โหลดข้อมูลสำหรับค้นหาไม่สำเร็จ'));
       } finally {
         if (active) {
           setLoading(false);
@@ -120,7 +121,7 @@ export default function ReceivePage() {
   const addToCart = (match: Reagent, lot: string = '', exp: string = '') => {
     // A deactivated reagent cannot be received; ask first so Admin/Manager can turn it back on.
     if (match.isActive === false) {
-      setActivateError('');
+      setActivateError(null);
       setInactiveScan({ reagent: match, lot, exp });
       setSearch('');
       setShowResults(false);
@@ -153,7 +154,7 @@ export default function ReceivePage() {
   const handleActivateScanned = async () => {
     if (!inactiveScan) return;
     setActivating(true);
-    setActivateError('');
+    setActivateError(null);
     try {
       await apiClient.updateReagentStatus(inactiveScan.reagent.itemId, true, 'เปิดใช้งานจากหน้ารับเข้า (สแกนพบน้ำยาที่ปิดใช้งาน)');
       const activated: Reagent = { ...inactiveScan.reagent, isActive: true, statusReason: null };
@@ -162,8 +163,7 @@ export default function ReceivePage() {
       addToCart(activated, inactiveScan.lot, inactiveScan.exp);
       setFeedback({ type: 'success', msg: `เปิดใช้งาน ${activated.name} แล้ว และเพิ่มลงตะกร้า` });
     } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } }, message?: string };
-      setActivateError(error.response?.data?.error || error.message || 'เปิดใช้งานน้ำยาไม่สำเร็จ');
+      setActivateError(parseApiError(err, 'เปิดใช้งานน้ำยาไม่สำเร็จ'));
     } finally {
       setActivating(false);
     }
@@ -240,14 +240,15 @@ export default function ReceivePage() {
     }
 
     setSubmitting(true);
+    setSubmitError(null);
     try {
       await apiClient.receiveBatch(validItems);
       setFeedback({ type: 'success', msg: 'บันทึกรายการรับน้ำยาเข้าคลังเรียบร้อยแล้ว' });
       setCart([]);
       await loadLookupData();
       } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } }, message: string };
-      setFeedback({ type: 'error', msg: 'เกิดข้อผิดพลาด: ' + (error.response?.data?.error || error.message) });
+      setFeedback(null);
+      setSubmitError(parseApiError(err, 'บันทึกรายการไม่สำเร็จ'));
       } finally {
       setSubmitting(false);
       }
@@ -279,11 +280,7 @@ export default function ReceivePage() {
         <p className="mt-1.5 text-[15px] text-gray-600">แสกนบาร์โค้ด GS1 หรือพิมพ์รหัสเพื่อเพิ่มลงตะกร้า</p>
       </div>
 
-      {loadError && (
-        <div role="alert" className="rounded-xl bg-crit-bg px-3.5 py-3 text-sm font-medium text-crit">
-          โหลดข้อมูลไม่สำเร็จ: {loadError}
-        </div>
-      )}
+      <ErrorNotice error={loadError} onRetry={() => void loadLookupData()} />
 
       <div className="grid items-start gap-6 lg:grid-cols-[340px_minmax(0,1fr)]">
         {/* Action Area */}
@@ -369,6 +366,7 @@ export default function ReceivePage() {
               <button type="button" onClick={() => setFeedback(null)} aria-label="ปิดข้อความ" className="opacity-70 hover:opacity-100"><X size={16} /></button>
             </div>
           )}
+          <ErrorNotice error={submitError} onDismiss={() => setSubmitError(null)} />
         </section>
 
         {/* Cart Area */}
@@ -489,7 +487,7 @@ export default function ReceivePage() {
                 ? 'ต้องเปิดใช้งานน้ำยานี้ก่อนจึงจะรับเข้าคลังได้ ต้องการเปิดใช้งานและเพิ่มลงตะกร้าหรือไม่?'
                 : 'ไม่สามารถรับเข้าน้ำยาที่ปิดใช้งานได้ กรุณาติดต่อ Admin หรือ Manager เพื่อเปิดใช้งานก่อน'}
             </p>
-            {activateError && <p role="alert" className="rounded-xl bg-crit-bg px-3.5 py-3 text-sm font-medium text-crit">{activateError}</p>}
+            <ErrorNotice error={activateError} />
             <div className="flex justify-end gap-2">
               <button type="button" onClick={() => setInactiveScan(null)} disabled={activating} className="rounded-[10px] border border-line bg-white px-4 py-[9px] text-sm font-medium text-ink hover:bg-gray-50 disabled:opacity-50">
                 {canActivate ? 'ยกเลิก' : 'ปิด'}

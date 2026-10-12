@@ -66,6 +66,12 @@ describe("runDispenseBatch across receive rounds of the same lot", () => {
     expect(await loggedQty()).toBe(0);
   });
 
+  it("tells the user which reagent is short, keeping the machine-readable detail", async () => {
+    const error = await runDispenseBatch([{ inventoryId: 1, itemId: "R1", lotNo: "L1", qty: 6 }], user, audit).catch((e: unknown) => e);
+    expect(error).toMatchObject({ code: "REAGENT_STOCK_INSUFFICIENT", message: "REAGENT_STOCK_INSUFFICIENT: R1" });
+    expect((error as { userMessage: string }).userMessage).toContain("R1)");
+  });
+
   it("does not count the same round twice when two cart lines share a lot", async () => {
     await runDispenseBatch([
       { inventoryId: 1, itemId: "R1", lotNo: "L1", qty: 4 },

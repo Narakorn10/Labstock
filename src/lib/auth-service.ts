@@ -1,4 +1,6 @@
 import { comparePassword, upgradeLegacyPasswordHash } from '@/lib/auth-utils';
+import { resolveUserDepartment } from '@/lib/department-context';
+import { departmentsReady, isMissingDepartmentSchemaError, markDepartmentsNotReady } from '@/lib/departments-flag';
 import sql from '@/lib/db';
 
 export type DatabaseAuthUser = {
@@ -88,6 +90,16 @@ export async function findActiveUserByEmail(email: string): Promise<DatabaseAuth
 }
 
 export async function isCurrentAuthSession(username: string, sessionVersion: number | undefined): Promise<boolean> {
+  if (await departmentsReady()) {
+    try {
+      // One query instead of the schema probe + session check.
+      return (await resolveUserDepartment({ username, sessionVersion, requested: null, explicit: false })) !== null;
+    } catch (error) {
+      if (!isMissingDepartmentSchemaError(error)) throw error;
+      markDepartmentsNotReady(`session check failed (${(error as { code?: string }).code}); using legacy path`);
+    }
+  }
+
   const schema = await getLoginSchemaState();
   if (!schema.hasSessionVersion) return true;
   if (!Number.isInteger(sessionVersion)) return false;

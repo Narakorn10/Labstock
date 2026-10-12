@@ -2,8 +2,9 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 import { findActiveUserByEmail, validateCredentials } from "@/lib/auth-service";
+import { applyActiveDepartmentUpdate } from "@/lib/department-switch";
 
-export const { handlers, auth } = NextAuth({
+export const { handlers, auth, unstable_update } = NextAuth({
   trustHost: true,
   session: {
     strategy: "jwt",
@@ -43,7 +44,10 @@ export const { handlers, auth } = NextAuth({
       const email = typeof profile?.email === "string" ? profile.email : user.email;
       return Boolean(email && await findActiveUserByEmail(email));
     },
-    async jwt({ token, user, account, profile }) {
+    async jwt({ token, user, account, profile, trigger, session }) {
+      // Department switch (useSession().update / unstable_update). Does nothing unless departments are enabled and the
+      // requested department passes the membership check; the client-supplied `session` is never merged into the token.
+      if (trigger === "update") return applyActiveDepartmentUpdate(token, session);
       if (!user) return token;
 
       const credentialsUser = user as typeof user & { username?: string; role?: string; vendor?: string; sessionVersion?: number };
@@ -66,6 +70,7 @@ export const { handlers, auth } = NextAuth({
         role: token.role,
         vendor: token.vendor,
         sessionVersion: token.sessionVersion,
+        activeDepartmentId: token.activeDepartmentId,
       } as typeof session.user;
       return session;
     },

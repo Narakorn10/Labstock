@@ -1,28 +1,78 @@
-# WIP — 2026-10-02 15:50
+# WIP — 2026-10-10 12.41
 
 ## Git Status
 
 ```text
-lab-stock-nextjs: branch main ค้าง (b5a267e, ก.ค.) แยกทางกับ origin/main (4112c97 = PR #33) — working tree สะอาด
-local main มี 5 commit ที่ไม่อยู่บน GitHub: 3 อันมีอยู่แล้วในชื่อ hash อื่น ส่วน 35aa4f5, b5a267e หาคู่ไม่เจอ
-stash@{0} po-line-fix (ใช้แล้ว ลบได้), stash@{1} WIP.md + retros เดิม (ของเหล่านี้อยู่บน main แล้ว)
-retro/WIP นี้อยู่ใน worktree ../lab-stock-retro-1002b, branch docs/session-2026-10-02-po-line-qr
+branch feat/departments-auth (HEAD ce9d8e6) — ขั้น 6 ตัวสลับงาน เขียนเสร็จ ผู้ใช้ทดสอบบน Neon branch แล้ว **ยังไม่ commit**
+ M .gitignore                                  M src/components/auth-provider.tsx
+ M src/app/api/auth/me/route.ts                M src/components/inventory-overview.tsx
+ M src/lib/department-switch.ts                M src/components/sidebar.tsx
+ M src/lib/errors.ts                           ?? 13 ไฟล์ใหม่ (department-switcher*, department-session-client*, department-options.db.test, auth/me route.test + route.extra.test)
+ (+ .claude/settings.local.json ใหม่ — ถูก gitignore แล้ว; + ψ/memory/retrospectives/2026-10/10/ รอ commit)
 ```
 
 ## งานค้าง
-- [ ] ถามผู้ใช้เรื่อง local main: สำรองไว้ใน `backup/old-local-main` แล้ว reset ตาม origin/main หรือตรวจ 35aa4f5/b5a267e ก่อน (ห้าม reset เอง)
-- [ ] ลองสอน QR V2 ด้วย QR จริง 2 ชิ้นต่าง Lot แล้วกด "บันทึกและเปิดใช้" จากนั้นสแกนที่หน้ารับหรือเบิก
-- [ ] ลบ env `BARCODE_LEARNING_V2_MANAGEMENT_ENABLED` บน Vercel (ไม่มีโค้ดใช้แล้ว)
-- [ ] ตรวจ LINE จริงหลัง PR #32: Vendor ได้ LINE ครั้งเดียวต่อใบใหม่ และ Lab ไม่ได้ LINE
-- [ ] ข้อเสนอ: badge "เกินกำหนด" ในหน้า `/orders`
+- [ ] ผู้ใช้สั่ง: commit ขั้น 6 (ห้ามรวม `ψ/` เว้นแต่สั่ง) / push / PR — ถามก่อนทุกครั้ง
+- [ ] เก็บกวาดหลังทดสอบ (ต้องผู้ใช้สั่ง): คืน `.env.local` เดิม (สำรองไว้ `.env.local.backup`) ปิด `DEPARTMENTS_ENABLED`; ลบกฎอนุญาต Neon ใน `.claude/settings.local.json`; ลบ Neon branch `dept-switcher-test-2026-10-10` (`br-solitary-queen-aoz4mxta`) และ `dept-rehearsal-2026-10-08` (`br-quiet-hall-aohmgi8c`); รีเซ็ตรหัสผ่าน role `neondb_owner` (หลุดเข้าแชท 10 ต.ค. ใช้ได้กับ production — ต้องอัปเดต Vercel + `.env.local` พร้อมกัน ทำช่วงไม่มีคนใช้)
+- [ ] `npm run build` (ปิด dev server ก่อน) แล้วรายงานผล
+- [ ] ย้ายการเบิก–รับเข้า (`src/lib/stock-transactions.ts` ← `api/dispense`, `api/mobile/confirm`) เข้า `scoped-db` ผ่าน `/dev-team` (เสี่ยงสูง ต้องวางแผน+ผู้ตรวจ Opus+ผู้ใช้อนุมัติ) แล้วทยอยจน `DEPARTMENT_SCOPE_PENDING` (51 ไฟล์) ว่าง
+- [ ] ก่อนเปิด flag production: ตัวกันหลายแท็บฝั่งเซิร์ฟเวอร์, เลือกห้องบน /mobile + LIFF + LINE (`X-Department-Id`), หน้าจัดการสมาชิกห้อง/admin ต่อแผนก, ซ้อม v30–v34 ตามไฟล์จริงด้วย `apply-migration.mjs`, อัปเดต `docs/departments-rollout.md`
 
 ## Context
-- PR #32 (LINE ส่งเฉพาะใบใหม่ถึง Vendor) และ PR #33 (QR V2 เปิดถาวร, Wizard 3 ขั้น) merge แล้ว; production มี V2 pattern 0 รายการ
-- งานใหม่ให้แตก branch จาก `origin/main` เท่านั้น ห้ามจาก local main ที่ค้าง
+- ⚠️ `.env.local` ตอนนี้ **อาจยังชี้ Neon branch ทดสอบ + `DEPARTMENTS_ENABLED=true`** (ผู้ใช้แก้เอง) — ตรวจกับผู้ใช้ก่อนทำอะไรที่ต่อฐาน; ห้ามเปิด flag บน production จนกว่างานย้ายเบิกเสร็จ
+- แผนเต็ม+เงื่อนไขผู้ตรวจ: scratchpad `step6-plan-v2.1.md`, `step6-conditions.md` (อาจหายเมื่อ session ใหม่); retrospective: `ψ/memory/retrospectives/2026-10/10/12.41_department-switcher-step6.md`; ผู้ใช้สั่ง "กลับไปใช้ตามแผนเดิม" (เบิกต้องจำกัดตามห้อง) ไอเดียสแกน QR เบิกข้ามห้องพักไว้
 
 ---
 
-## (history) WIP 2026-10-02 14:48
+## (history) WIP — 2026-10-08 23.06
+
+## Git Status
+
+```text
+checkout นี้: feat/departments-auth (243ac81) ← feat/departments-migrations (35c5937) ← feat/user-facing-errors (eff6da1) ← feat/lot-qr-labels (6e22ee0, PR #37)
+ทั้ง 3 branch ใหม่ commit แล้ว ยังไม่ push / ไม่มี PR / ไม่ได้ deploy / migration ยังไม่รันบน production
+ M "ψ/WIP.md"                                                                     (รอ commit)
+?? "ψ/memory/retrospectives/2026-10/06/"                                          (รอ commit)
+?? "ψ/memory/retrospectives/2026-10/08/23.06_errors-multi-department-agent-team.md" (รอ commit)
+```
+
+## งานค้าง
+- [ ] ขั้น 6 หน้าจอสลับงาน (`/api/auth/me`, `department-switcher`, `auth-provider`, `api-client`) ตาม design `docs/departments-rollout.md` — ลองใช้ `/dev-team` (ทีม agent ชุดใหม่)
+- [ ] ย้าย route เข้า `scoped-db` ทีละกลุ่ม (เริ่ม dispense) จน `DEPARTMENT_SCOPE_PENDING` (51 ไฟล์) ว่าง; UPDATE/DELETE ต้องใช้ `andDeptWrite`/`deptWhereWrite`
+- [ ] ซ้อม v30–v34 ใหม่บน Neon branch ใหม่ (ขออนุมัติก่อน) — branch `dept-rehearsal-2026-10-08` (`br-quiet-hall-aohmgi8c`) ล้าสมัยเพราะ v30 เปลี่ยน ขอผู้ใช้อนุญาตลบ
+- [ ] ผู้ใช้ทดสอบ `scripts/apply-migration.mjs` เองด้วย `!` (connection string ของ branch ซ้อม แบบไม่ pooler)
+- [ ] ตัดสินใจลำดับ merge branch ซ้อน และเปิด PR เมื่อผู้ใช้สั่ง
+
+## Context
+- `.env.local` ชี้ Neon **production** (บันทึก 2026-09-26) → ห้ามบันทึกข้อมูลผ่าน `npm run dev`; งานเริ่มต้น = "ห้องปฏิบัติการเคมีคลินิก" รหัส `CC` (ห้ามใช้ `LAB`)
+- แผน: `~/.claude/plans/scalable-marinating-muffin.md`; retrospective: `ψ/memory/retrospectives/2026-10/08/23.06_errors-multi-department-agent-team.md`
+
+---
+
+## (history) WIP — 2026-10-06 19.30
+
+## Git Status
+
+```text
+checkout นี้: branch feat/lot-qr-labels (PR #37, commit 6e22ee0, push แล้ว)
+PR #36 feat/item-usage-analysis (commit 294f0ee, push แล้ว) — ทั้งสอง PR ยังไม่ merge, base=main
+?? "ψ/memory/retrospectives/2026-10/06/"   (รอ commit)
+ M "ψ/WIP.md"                              (รอ commit)
+```
+
+## งานค้าง
+- [ ] ผู้ใช้ขอ "ทดสอบ API ต่าง ๆ" แต่ยังไม่ได้ระบุขอบเขต: เทสอัตโนมัติ / ยิง dev server (GET อย่างเดียว) / เฉพาะ API ใหม่ และฐานข้อมูลที่ใช้ (ห้ามยิงของจริงโดยไม่ยืนยัน `.env.local` ชี้ไหน)
+- [ ] PR #37: ปริ้นป้าย 50x35 มม. จริง 1–2 ดวง + สแกนในหน้าเบิกจ่าย/รับเข้า
+- [ ] PR #36: เทียบแท็บ "รายน้ำยา" กับหน้า Logs ด้วยบัญชี Admin
+- [ ] merge PR #36/#37 เมื่อผู้ใช้สั่งชัดเจนเท่านั้น
+
+## Context
+- เมนูใหม่ `lot_labels` ให้ Admin เห็นอัตโนมัติ บทบาทอื่นต้องเปิดในหน้า Permissions; QR รูปแบบ `LS1|itemId|lot|exp`
+- ไม่ push/merge เข้า main เองโดยไม่ถาม
+
+---
+
+## (history) WIP — 2026-10-02 14:48
 
 ## Git Status
 

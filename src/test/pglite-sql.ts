@@ -17,6 +17,8 @@ type PgliteQuery = PromiseLike<Row[]> & {
 export type PgliteSql = {
   (strings: TemplateStringsArray, ...values: unknown[]): PgliteQuery;
   transaction: (queries: PgliteQuery[] | ((tx: PgliteSql) => PgliteQuery[])) => Promise<Row[][]>;
+  /** Like Neon's sql.unsafe: raw SQL text with no parameters, composable as a fragment inside other queries. */
+  unsafe: (text: string) => PgliteQuery;
   db: PGlite;
 };
 
@@ -47,7 +49,11 @@ export function createPgliteSql(db: PGlite = new PGlite()): PgliteSql {
       text += strings[index + 1];
     });
 
-    const query = {
+    return makeQuery(text, params);
+  }) as unknown as PgliteSql;
+
+  function makeQuery(text: string, params: unknown[]): PgliteQuery {
+    return {
       [QUERY]: true as const,
       text,
       params,
@@ -58,8 +64,9 @@ export function createPgliteSql(db: PGlite = new PGlite()): PgliteSql {
         return run(text, params).then(onFulfilled, onRejected);
       },
     };
-    return query;
-  }) as unknown as PgliteSql;
+  }
+
+  sql.unsafe = (text) => makeQuery(text, []);
 
   // Like Neon's non-interactive transaction: statements run in order, all or nothing.
   sql.transaction = async (queries) => {

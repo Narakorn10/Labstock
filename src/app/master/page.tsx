@@ -5,6 +5,9 @@ import { apiClient, Reagent, SettingsResponse } from '@/lib/api-client';
 import Modal from '@/components/modal';
 import { Plus, Edit2, Search, Package, AlertTriangle, Cpu, FileUp, X, Power, PowerOff } from 'lucide-react';
 import { useAuth } from '@/components/auth-provider';
+import { usePopup } from '@/components/popup/popup-provider';
+import { ErrorNotice, notifyApiError } from '@/components/error-notice';
+import { parseApiError, type ApiErrorInfo } from '@/lib/api-errors-client';
 
 interface MasterDataImportItem {
   itemId: string;
@@ -19,11 +22,6 @@ interface MasterDataImportItem {
   vendor: string;
 }
 
-function getApiErrorMessage(error: unknown, fallback: string) {
-  const apiError = error as { response?: { data?: { message?: string; error?: string } }; message?: string };
-  return apiError.response?.data?.message || apiError.response?.data?.error || apiError.message || fallback;
-}
-
 function getCategoryDefaults(currentValue: string | undefined, options: string[]) {
   const normalizedValue = currentValue?.trim() ?? "";
   const isKnownValue = normalizedValue ? options.includes(normalizedValue) : false;
@@ -36,10 +34,11 @@ function getCategoryDefaults(currentValue: string | undefined, options: string[]
 
 export default function MasterDataPage() {
   const { user } = useAuth();
+  const popup = usePopup();
   const [reagents, setReagents] = useState<Reagent[]>([]);
   const [settings, setSettings] = useState<SettingsResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
+  const [loadError, setLoadError] = useState<ApiErrorInfo | null>(null);
   const [search, setSearch] = useState('');
   const [vendorFilter, setVendorFilter] = useState('ALL');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -68,7 +67,7 @@ export default function MasterDataPage() {
   const fetchReagents = useCallback(async () => {
     try {
       setLoading(true);
-      setLoadError('');
+      setLoadError(null);
       const [data, settingsData] = await Promise.all([
         apiClient.getDashboard(),
         apiClient.getSettings()
@@ -77,8 +76,7 @@ export default function MasterDataPage() {
       setSettings(settingsData);
     } catch (error: unknown) {
       console.error('Fetch error:', error);
-      const apiError = error as { response?: { data?: { error?: string } }, message?: string };
-      setLoadError(apiError.response?.data?.error || apiError.message || 'Unable to load master data');
+      setLoadError(parseApiError(error, 'โหลดข้อมูลหลักไม่สำเร็จ'));
       setReagents([]);
     } finally {
       setLoading(false);
@@ -124,7 +122,7 @@ export default function MasterDataPage() {
         alert(res.message);
         fetchReagents();
       } catch (err: unknown) {
-        alert(getApiErrorMessage(err, 'นำเข้าข้อมูลไม่สำเร็จ'));
+        void notifyApiError(popup, err, 'นำเข้าข้อมูลไม่สำเร็จ');
       }
     };
     reader.readAsText(file);
@@ -185,12 +183,11 @@ export default function MasterDataPage() {
         setIsModalOpen(false);
         fetchReagents();
       } else {
-        alert(res.message || res.error || 'เกิดข้อผิดพลาดในการบันทึก');
+        void notifyApiError(popup, new Error(res.message || res.error || ''), 'เกิดข้อผิดพลาดในการบันทึก');
       }
     } catch (err: unknown) {
       console.error('Save Error:', err);
-      const errorMsg = getApiErrorMessage(err, 'เกิดข้อผิดพลาดไม่ทราบสาเหตุ');
-      alert(errorMsg);
+      void notifyApiError(popup, err, 'บันทึกข้อมูลไม่สำเร็จ');
     }
   };
 
@@ -220,7 +217,7 @@ export default function MasterDataPage() {
         : '';
       alert(nextIsActive ? 'เปิดใช้งานน้ำยาแล้ว' : `ปิดใช้งานน้ำยาแล้ว รายการเดิมยังดูประวัติได้${impactNote}`);
     } catch (error: unknown) {
-      alert(getApiErrorMessage(error, 'เปลี่ยนสถานะน้ำยาไม่สำเร็จ'));
+      void notifyApiError(popup, error, 'เปลี่ยนสถานะน้ำยาไม่สำเร็จ');
     }
   };
 
@@ -274,9 +271,7 @@ export default function MasterDataPage() {
       </div>
 
       {loadError && (
-        <div className="p-4 rounded-2xl bg-red-50 text-red-700 border border-red-100 text-sm font-bold">
-          โหลด Master Data ไม่สำเร็จ: {loadError}
-        </div>
+        <ErrorNotice error={loadError} onRetry={fetchReagents} />
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

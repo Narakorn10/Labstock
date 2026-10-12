@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 import sql from "@/lib/db";
+import { apiError, toApiError } from "@/lib/api-response";
+import { getRequestId } from "@/lib/request-observability";
+import type { ErrorCode } from "@/lib/errors";
 import { getAuthenticatedUser } from "@/lib/auth-utils";
 import { normalizePurchaseOrder } from "@/lib/notifications";
 import { recordPurchaseOrderCommunication } from "@/lib/po-communication";
@@ -7,15 +10,16 @@ import { describeInvalidPurchaseOrderItems, isLabPurchasingRole, validatePurchas
 import { createPurchaseOrderWithAudit, PurchaseOrderCreationError } from "@/lib/purchase-order-creation";
 
 export async function GET(request: Request) {
+  const requestId = getRequestId(request);
   try {
     const user = await getAuthenticatedUser(request);
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    if (user.role !== "Vendor" && !isLabPurchasingRole(user.role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!user) return apiError("AUTH_REQUIRED", { requestId });
+    if (user.role !== "Vendor" && !isLabPurchasingRole(user.role)) return apiError("FORBIDDEN", { requestId });
 
     const requestedVendor = new URL(request.url).searchParams.get("vendor");
     const vendor = user.role === "Vendor" ? user.vendor : requestedVendor;
     if (user.role === "Vendor" && !vendor) {
-      return NextResponse.json({ error: "Vendor profile is not configured" }, { status: 403 });
+      return apiError("FORBIDDEN", { requestId, message: "ยังไม่ได้ตั้งค่าโปรไฟล์บริษัทของบัญชีนี้", hint: "แจ้งผู้ดูแลระบบให้ผูกบัญชีนี้กับบริษัทผู้ขาย" });
     }
 
     const orders = user.role === "Vendor"
@@ -89,17 +93,19 @@ export async function GET(request: Request) {
             ORDER BY po.created_at DESC
           `;
 
-    return NextResponse.json(orders);
+    const response = NextResponse.json(orders);
+    response.headers.set("x-request-id", requestId);
+    return response;
   } catch (error: unknown) {
-    console.error("Error fetching purchase orders:", error);
-    return NextResponse.json({ error: "Failed to fetch purchase orders" }, { status: 500 });
+    return toApiError(error, requestId).response;
   }
 }
 
 export async function POST(request: Request) {
+  const requestId = getRequestId(request);
   try {
     const user = await getAuthenticatedUser(request);
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!user) return apiError("AUTH_REQUIRED", { requestId });
 
     const body = await request.json();
     const vendor = String(body.vendor ?? "").trim();
@@ -107,14 +113,14 @@ export async function POST(request: Request) {
     const note = String(body.note ?? "").trim() || null;
     const expectedDate = body.expected_date || null;
 
-    if (!vendor) return NextResponse.json({ error: "กรุณาเลือกบริษัท" }, { status: 400 });
-    if (!items) return NextResponse.json({ error: describeInvalidPurchaseOrderItems(body.items) }, { status: 400 });
+    if (!vendor) return apiError("VALIDATION_FAILED", { requestId, message: "กรุณาเลือกบริษัท" });
+    if (!items) return apiError("VALIDATION_FAILED", { requestId, message: describeInvalidPurchaseOrderItems(body.items) });
 
     if (user.role === "Vendor" && user.vendor !== vendor) {
-      return NextResponse.json({ error: "Vendor can only propose orders for its own company" }, { status: 403 });
+      return apiError("FORBIDDEN", { requestId, message: "บัญชีผู้ขายเสนอใบสั่งซื้อได้เฉพาะของบริษัทตัวเองเท่านั้น" });
     }
     if (user.role !== "Vendor" && !isLabPurchasingRole(user.role)) {
-      return NextResponse.json({ error: "Only Admin, Manager, or the assigned Vendor can create an order" }, { status: 403 });
+      return apiError("FORBIDDEN", { requestId, message: "สร้างใบสั่งซื้อได้เฉพาะ Admin, Manager หรือผู้ขายที่ได้รับมอบหมาย" });
     }
 
     const origin = user.role === "Vendor" ? "VENDOR" : "LAB";
@@ -140,12 +146,16 @@ export async function POST(request: Request) {
       metadata: { origin },
       note,
     });
-    return NextResponse.json(fullPO, { status: 201 });
+    const response = NextResponse.json(fullPO, { status: 201 });
+    response.headers.set("x-request-id", requestId);
+    return response;
   } catch (error: unknown) {
-    console.error("Error creating purchase order:", error);
     if (error instanceof PurchaseOrderCreationError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
+      // These messages are written in Thai for users (e.g. which item or why), so they are kept.
+      console.error(`[api-error] ${requestId}:`, error);
+      const code: ErrorCode = error.status === 404 ? "PO_NOT_FOUND" : error.status === 409 ? "PO_STATE_CONFLICT" : "VALIDATION_FAILED";
+      return apiError(code, { requestId, status: error.status, message: error.message });
     }
-    return NextResponse.json({ error: "Failed to create purchase order" }, { status: 500 });
+    return toApiError(error, requestId).response;
   }
 }

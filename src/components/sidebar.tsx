@@ -6,6 +6,8 @@ import { usePathname } from 'next/navigation';
 import { LogOut, Menu, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from './auth-provider';
+import { DepartmentSwitcher } from './department-switcher';
+import { shouldShowLoadError, shouldShowSwitcher, type DepartmentContext } from '@/lib/department-switcher-state';
 import { apiClient } from '@/lib/api-client';
 import { NAVIGATION_GROUPS, getRoleFallbackMenus, mergeMenus } from '@/lib/menu-config';
 
@@ -19,6 +21,16 @@ const ROLE_LABELS: Record<string, string> = {
   Vendor: 'บริษัทคู่ค้า',
 };
 
+/** Read-only text for the collapsed rail: department code (or "ทุกงาน"), plus the full name for the tooltip. null = show nothing. */
+function collapsedDepartmentBadge(ctx: DepartmentContext | null): { text: string; label: string; warn: boolean } | null {
+  if (!ctx) return null;
+  // Same rule as the switcher itself: a solo user with no problem to report sees nothing.
+  const visible = shouldShowSwitcher(ctx) || shouldShowLoadError(ctx) || (ctx.options === null && ctx.active !== null);
+  if (!visible) return null;
+  if (ctx.scope === 'ALL' || !ctx.active) return { text: 'ทุกงาน', label: 'งานที่ทำอยู่: ดูทุกงาน (อ่านอย่างเดียว)', warn: true };
+  return { text: ctx.active.code ?? ctx.active.name, label: `งานที่ทำอยู่: ${ctx.active.name}`, warn: ctx.readOnly };
+}
+
 interface SidebarProps {
   onExpandedChange?: (expanded: boolean) => void;
 }
@@ -30,14 +42,27 @@ export default function Sidebar({ onExpandedChange }: SidebarProps) {
   const [isLoadingPerms, setIsLoadingPerms] = useState(true);
   const sidebarRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
-  const { user, logout } = useAuth();
+  const {
+    user,
+    logout,
+    departmentContext = null,
+    departmentNotice = null,
+    departmentError = null,
+    onDepartmentSwitched,
+    onDepartmentDisabled,
+    refreshDepartmentContext,
+  } = useAuth();
   // Desktop: a narrow icon rail that widens while hovered or focused. The drawer on small screens is always wide.
   const [expanded, setExpanded] = useState(false);
-  const wide = isOpen || expanded;
+  // The department switcher keeps the rail open while its select has focus or a switch is confirming / busy.
+  const [switcherEngaged, setSwitcherEngaged] = useState(false);
+  const engaged = departmentContext !== null && switcherEngaged;
+  const wide = isOpen || expanded || engaged;
+  const departmentBadge = collapsedDepartmentBadge(departmentContext);
 
   useEffect(() => {
-    onExpandedChange?.(expanded);
-  }, [expanded, onExpandedChange]);
+    onExpandedChange?.(expanded || engaged);
+  }, [expanded, engaged, onExpandedChange]);
 
   useEffect(() => {
     if (!user) return;
@@ -87,6 +112,9 @@ export default function Sidebar({ onExpandedChange }: SidebarProps) {
     const focusableSelector = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      // A child (the department confirm panel) already used this key: do not also close the drawer.
+      if (event.defaultPrevented) return;
+
       if (event.key === 'Escape') {
         event.preventDefault();
         setIsOpen(false);
@@ -259,6 +287,35 @@ export default function Sidebar({ onExpandedChange }: SidebarProps) {
                 </div>
               )}
             </div>
+            {!wide && departmentBadge && (
+              <p
+                title={departmentBadge.label}
+                aria-label={departmentBadge.label}
+                className={`mx-auto max-w-full truncate rounded-md px-1.5 py-0.5 text-[11px] font-semibold ${departmentBadge.warn ? 'bg-amber-100 text-amber-900' : 'bg-gray-100 text-ink'}`}
+              >
+                {departmentBadge.text}
+              </p>
+            )}
+            {departmentContext !== null && departmentError && (
+              // Outside the hidden box on purpose: a failed switch must stay visible while the rail is collapsed.
+              <p role="alert" className={wide ? 'text-xs text-crit' : 'mx-auto max-w-full break-words rounded-md bg-red-50 px-1 py-0.5 text-center text-[11px] font-semibold leading-tight text-crit'}>
+                {departmentError}
+              </p>
+            )}
+            {departmentContext !== null && (
+              // Stays mounted while the rail is collapsed so a pending switch / message is not lost; only hidden.
+              <div className={wide ? 'flex flex-col gap-2' : 'hidden'}>
+                <DepartmentSwitcher
+                  ctx={departmentContext}
+                  notice={departmentNotice}
+                  idPrefix="sidebar-department"
+                  onSwitched={onDepartmentSwitched}
+                  onDisabled={onDepartmentDisabled}
+                  onRetry={refreshDepartmentContext}
+                  onEngagedChange={setSwitcherEngaged}
+                />
+              </div>
+            )}
             {wide && (
               <button
                 type="button"

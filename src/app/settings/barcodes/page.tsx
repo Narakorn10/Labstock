@@ -7,6 +7,9 @@ import { Trash2, Plus, Loader2, CheckCircle, Save, Camera, AlertCircle, ArrowRig
 import QRScanner from '@/components/lazy-qr-scanner';
 import QrCharPicker, { type QrField } from '@/components/qr-char-picker';
 import { previewV2Values } from '@/lib/barcode-learning-v2-derive';
+import { usePopup } from '@/components/popup/popup-provider';
+import { ErrorNotice, notifyApiError } from '@/components/error-notice';
+import { getApiErrorMessage, parseApiError, type ApiErrorInfo } from '@/lib/api-errors-client';
 
 function V2StatusLabel({ status }: { status: BarcodePatternV2['status'] }) {
   const labels: Record<BarcodePatternV2['status'], string> = {
@@ -37,17 +40,6 @@ const ensureTwoV2Examples = (source: BarcodePatternV2Example[]) => {
   return examples;
 };
 
-function getApiErrorMessage(error: unknown, fallback: string) {
-  const apiError = error as {
-    response?: { data?: { error?: unknown; message?: unknown } };
-    message?: unknown;
-  };
-  const responseError = apiError.response?.data?.error ?? apiError.response?.data?.message;
-  if (typeof responseError === 'string' && responseError.trim()) return responseError;
-  if (typeof apiError.message === 'string' && apiError.message.trim()) return apiError.message;
-  return fallback;
-}
-
 function BarcodeLearningV2Panel() {
   const [patterns, setPatterns] = useState<BarcodePatternV2[]>([]);
   const [reagents, setReagents] = useState<Reagent[]>([]);
@@ -65,7 +57,7 @@ function BarcodeLearningV2Panel() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [scannerIndex, setScannerIndex] = useState<number | null>(null);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<ApiErrorInfo | null>(null);
   const [notice, setNotice] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
   const [editingPatternId, setEditingPatternId] = useState<number | null>(null);
@@ -79,9 +71,9 @@ function BarcodeLearningV2Panel() {
       ]);
       setPatterns(loadedPatterns);
       setReagents(loadedReagents);
-      setError('');
+      setError(null);
     } catch (err: unknown) {
-      setError(getApiErrorMessage(err, 'ยังโหลดรูปแบบ V2 ไม่ได้ กรุณาตรวจสิทธิ์เมนูสอนอ่านบาร์โค้ด'));
+      setError(parseApiError(err, 'ยังโหลดรูปแบบ V2 ไม่ได้ กรุณาตรวจสิทธิ์เมนูสอนอ่านบาร์โค้ด'));
     } finally {
       setLoading(false);
     }
@@ -158,7 +150,7 @@ function BarcodeLearningV2Panel() {
 
   const validate = async () => {
     setSaving(true);
-    setError('');
+    setError(null);
     try {
       const result = await apiClient.validateBarcodeV2Pattern(payload());
       const resultData = result.data;
@@ -171,7 +163,7 @@ function BarcodeLearningV2Panel() {
       setExpDateGroup(resultData?.exp_date_group ?? null);
       setStep(3);
     } catch (err: unknown) {
-      setError(getApiErrorMessage(err, 'ตรวจสอบรูปแบบไม่สำเร็จ กรุณาตรวจตัวอย่างและลองใหม่'));
+      setError(parseApiError(err, 'ตรวจสอบรูปแบบไม่สำเร็จ กรุณาตรวจตัวอย่างและลองใหม่'));
     } finally {
       setSaving(false);
     }
@@ -190,12 +182,12 @@ function BarcodeLearningV2Panel() {
     setAdvancedRegexEnabled(false);
     setExamples(createEmptyV2Examples());
     setVerification(null);
-    setError('');
+    setError(null);
   };
 
   const save = async (activateAfterSave: boolean) => {
     setSaving(true);
-    setError('');
+    setError(null);
     setNotice('');
     try {
       const result = editingPatternId !== null
@@ -215,7 +207,7 @@ function BarcodeLearningV2Panel() {
       resetWizard();
       await load();
     } catch (err: unknown) {
-      setError(getApiErrorMessage(err, editingPatternId !== null ? 'อัปเดตฉบับร่างไม่สำเร็จ กรุณาตรวจข้อมูลแล้วลองใหม่' : 'บันทึกไม่สำเร็จ กรุณาตรวจข้อมูลแล้วลองใหม่'));
+      setError(parseApiError(err, editingPatternId !== null ? 'อัปเดตฉบับร่างไม่สำเร็จ กรุณาตรวจข้อมูลแล้วลองใหม่' : 'บันทึกไม่สำเร็จ กรุณาตรวจข้อมูลแล้วลองใหม่'));
     } finally {
       setSaving(false);
     }
@@ -227,7 +219,7 @@ function BarcodeLearningV2Panel() {
       await apiClient.activateBarcodeV2Pattern(id);
       await load();
     } catch (err: unknown) {
-      setError(getApiErrorMessage(err, 'เปิดใช้ไม่สำเร็จ กรุณาตรวจรูปแบบและสิทธิ์อีกครั้ง'));
+      setError(parseApiError(err, 'เปิดใช้ไม่สำเร็จ กรุณาตรวจรูปแบบและสิทธิ์อีกครั้ง'));
     }
   };
 
@@ -238,7 +230,7 @@ function BarcodeLearningV2Panel() {
       await apiClient.deactivateBarcodeV2Pattern(id, reason.trim());
       await load();
     } catch (err: unknown) {
-      setError(getApiErrorMessage(err, 'ปิดใช้ไม่สำเร็จ กรุณาลองใหม่'));
+      setError(parseApiError(err, 'ปิดใช้ไม่สำเร็จ กรุณาลองใหม่'));
     }
   };
 
@@ -249,7 +241,7 @@ function BarcodeLearningV2Panel() {
       if (editingPatternId === pattern.id) resetWizard();
       await load();
     } catch (err: unknown) {
-      setError(getApiErrorMessage(err, 'ลบไม่สำเร็จ กรุณาลองใหม่'));
+      setError(parseApiError(err, 'ลบไม่สำเร็จ กรุณาลองใหม่'));
     }
   };
 
@@ -267,7 +259,7 @@ function BarcodeLearningV2Panel() {
     setAdvancedRegexEnabled(Boolean(pattern.regex_pattern) && isAdmin);
     setExamples(ensureTwoV2Examples(pattern.examples));
     setVerification(pattern.verification || null);
-    setError('');
+    setError(null);
     setNotice('');
     setStep(1);
   };
@@ -322,7 +314,7 @@ function BarcodeLearningV2Panel() {
         </div>
       </div>
 
-      {error && <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-800">{error}</div>}
+      <ErrorNotice error={error} onDismiss={() => setError(null)} />
       {notice && <div role="status" className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-800">{notice}</div>}
 
       <section className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
@@ -444,6 +436,7 @@ function BarcodeLearningV2Panel() {
 }
 
 export default function BarcodeSettingsPage() {
+  const popup = usePopup();
   const legacyPatternsReadOnly = true;
   const [patterns, setPatterns] = useState<BarcodePattern[]>([]);
   const [loading, setLoading] = useState(true);
@@ -479,6 +472,7 @@ export default function BarcodeSettingsPage() {
       setPatterns(data);
     } catch (error) {
       console.error(error);
+      void notifyApiError(popup, error, 'โหลดรูปแบบบาร์โค้ดไม่สำเร็จ');
     } finally {
       setLoading(false);
     }
@@ -629,8 +623,7 @@ export default function BarcodeSettingsPage() {
       setTestResult(null);
       loadPatterns();
     } catch (error: unknown) {
-      const apiError = error as { response?: { data?: { error?: string } }; message?: string };
-      alert("Error: " + (apiError.response?.data?.error || apiError.message || "Unable to save pattern"));
+      void notifyApiError(popup, error, 'บันทึกรูปแบบไม่สำเร็จ');
     } finally {
       setSaving(false);
     }
@@ -641,8 +634,8 @@ export default function BarcodeSettingsPage() {
     try {
       await apiClient.deleteBarcodePattern(id);
       loadPatterns();
-    } catch {
-      alert("Error deleting");
+    } catch (error) {
+      void notifyApiError(popup, error, 'ลบรูปแบบไม่สำเร็จ');
     }
   };
 

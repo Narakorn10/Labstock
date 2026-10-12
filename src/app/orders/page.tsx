@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth-provider";
 import { usePopup } from "@/components/popup/popup-provider";
+import { notifyApiError } from "@/components/error-notice";
+import { fetchErrorShape, getApiErrorMessage } from "@/lib/api-errors-client";
 
 type PurchaseOrderStatus = "PENDING_MANAGER_REVIEW" | "PENDING_LAB_REVIEW" | "SUBMITTED" | "ACKNOWLEDGED" | "REVISION_REQUESTED" | "CONFIRMED" | "PARTIALLY_SHIPPED" | "SHIPPED" | "PARTIALLY_RECEIVED" | "RECEIVED" | "REJECTED" | "CANCELLED" | "CLOSED_SHORT";
 
@@ -167,7 +169,8 @@ const ORDER_COLUMNS: Array<{
 ];
 
 export default function PurchaseOrdersPage() {
-  const { confirm, notify } = usePopup();
+  const popup = usePopup();
+  const { confirm, notify } = popup;
   const router = useRouter();
   const { user } = useAuth();
   const canManageLabOrders = user?.role === "Admin" || user?.role === "Manager";
@@ -200,11 +203,15 @@ export default function PurchaseOrdersPage() {
       if (res.ok) {
         const data = (await res.json()) as PurchaseOrderSummary[];
         setOrders(Array.isArray(data) ? data : []);
+      } else {
+        const body = await res.json().catch(() => null);
+        void notifyApiError(popup, fetchErrorShape(res.status, body), "โหลดรายการใบสั่งซื้อไม่สำเร็จ");
       }
     } catch (e) {
       console.error(e);
+      void notifyApiError(popup, e, "โหลดรายการใบสั่งซื้อไม่สำเร็จ");
     }
-  }, []);
+  }, [popup]);
 
   useEffect(() => {
     let active = true;
@@ -217,9 +224,13 @@ export default function PurchaseOrdersPage() {
           if (active) {
             setOrders(Array.isArray(data) ? data : []);
           }
+        } else if (active) {
+          const body = await res.json().catch(() => null);
+          void notifyApiError(popup, fetchErrorShape(res.status, body), "โหลดรายการใบสั่งซื้อไม่สำเร็จ");
         }
       } catch (e) {
         console.error(e);
+        if (active) void notifyApiError(popup, e, "โหลดรายการใบสั่งซื้อไม่สำเร็จ");
       }
     };
 
@@ -228,7 +239,7 @@ export default function PurchaseOrdersPage() {
     return () => {
       active = false;
     };
-  }, [fetchOrders]);
+  }, [fetchOrders, popup]);
 
   useEffect(() => {
     let active = true;
@@ -251,8 +262,14 @@ export default function PurchaseOrdersPage() {
           const data = (await catalogResponse.json()) as CatalogReagent[];
           setCatalog(Array.isArray(data) ? data : []);
         }
+        if (!settingsResponse.ok || !catalogResponse.ok) {
+          const failed = settingsResponse.ok ? catalogResponse : settingsResponse;
+          const body = await failed.json().catch(() => null);
+          void notifyApiError(popup, fetchErrorShape(failed.status, body), "โหลดรายชื่อบริษัทหรือรายการน้ำยาไม่สำเร็จ");
+        }
       } catch (error) {
         console.error(error);
+        if (active) void notifyApiError(popup, error, "โหลดรายชื่อบริษัทหรือรายการน้ำยาไม่สำเร็จ");
       } finally {
         if (active) setCatalogLoading(false);
       }
@@ -262,7 +279,7 @@ export default function PurchaseOrdersPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [popup]);
 
   const loadSuggestions = async () => {
     if (!vendor.trim()) {
@@ -304,8 +321,8 @@ export default function PurchaseOrdersPage() {
           ? `แสดงผลคำนวณแล้ว ${data.length} รายการ; มี ${heldForReview.length} รายการที่ควรตรวจทานก่อนบันทึกใบสั่งซื้อ`
           : "");
       } else {
-        const error = (await res.json().catch(() => null)) as { error?: string } | null;
-        setSuggestionNotice(error?.error ?? "ไม่สามารถคำนวณรายการแนะนำได้ กรุณาลองใหม่อีกครั้ง");
+        const body = await res.json().catch(() => null);
+        setSuggestionNotice(getApiErrorMessage(fetchErrorShape(res.status, body), "ไม่สามารถคำนวณรายการแนะนำได้ กรุณาลองใหม่อีกครั้ง"));
       }
     } catch (error) {
       console.error(error);
@@ -328,7 +345,7 @@ export default function PurchaseOrdersPage() {
       const data = await res.json().catch(() => null) as { reviews?: AiReviewerResult[]; error?: string } | null;
       if (!res.ok || !data?.reviews) {
         setAiReviews([]);
-        setAiReviewNotice(data?.error ?? "AI ใช้ไม่ได้ชั่วคราว คำแนะนำตามสูตรเดิมยังใช้งานได้");
+        setAiReviewNotice(getApiErrorMessage(fetchErrorShape(res.status, data), "AI ใช้ไม่ได้ชั่วคราว คำแนะนำตามสูตรเดิมยังใช้งานได้"));
         return;
       }
       setAiReviews(data.reviews);
@@ -390,11 +407,11 @@ export default function PurchaseOrdersPage() {
         await fetchOrders();
       } else {
         const data = await res.json().catch(() => null);
-        void notify({ title: "เกิดข้อผิดพลาด", description: data?.error ?? (editingOrder ? "ไม่สามารถแก้ไขใบสั่งน้ำยาได้" : "ไม่สามารถสร้างใบสั่งน้ำยาได้"), severity: "danger" });
+        void notifyApiError(popup, fetchErrorShape(res.status, data), editingOrder ? "ไม่สามารถแก้ไขใบสั่งน้ำยาได้" : "ไม่สามารถสร้างใบสั่งน้ำยาได้");
       }
     } catch (e) {
       console.error(e);
-      void notify({ title: "เกิดข้อผิดพลาด", description: editingOrder ? "เกิดข้อผิดพลาดขณะแก้ไขใบสั่งน้ำยา" : "เกิดข้อผิดพลาดขณะสร้างใบสั่งน้ำยา", severity: "danger" });
+      void notifyApiError(popup, e, editingOrder ? "เกิดข้อผิดพลาดขณะแก้ไขใบสั่งน้ำยา" : "เกิดข้อผิดพลาดขณะสร้างใบสั่งน้ำยา");
     } finally {
       setLoading(false);
     }
@@ -505,7 +522,7 @@ export default function PurchaseOrdersPage() {
     });
     if (!res.ok) {
       const data = await res.json().catch(() => null);
-      void notify({ title: "เกิดข้อผิดพลาด", description: data?.error ?? "อัปเดตรายการไม่สำเร็จ", severity: "danger" });
+      void notifyApiError(popup, fetchErrorShape(res.status, data), "อัปเดตรายการไม่สำเร็จ");
       return;
     }
     await fetchOrders();
