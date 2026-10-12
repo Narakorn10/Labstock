@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 import sql from "@/lib/db";
 import { getAuthenticatedUser } from "@/lib/auth-utils";
+import { isDepartmentScopeFailure, toApiError } from "@/lib/api-response";
 import { SHIPMENTS_DISABLED_MESSAGE, SHIPMENTS_ENABLED } from "@/lib/feature-flags";
 import { recordPurchaseOrderCommunication } from "@/lib/po-communication";
 import { recomputePurchaseOrderStatusQuery } from "@/lib/purchase-order-status";
+import { getRequestId } from "@/lib/request-observability";
+import { andDept, andDeptWrite, deptInsert, getDepartmentScope, writeDepartmentId } from "@/lib/scoped-db";
 import { describeShelfLifeViolations, findShelfLifeViolations, loadMinShelfLifeRules, SHELF_LIFE_BELOW_MINIMUM } from "@/lib/shelf-life";
 
 function quantitiesMatch(total: number, accepted: number, rejected: number) {
@@ -12,18 +15,23 @@ function quantitiesMatch(total: number, accepted: number, rejected: number) {
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   if (!SHIPMENTS_ENABLED) return NextResponse.json({ error: SHIPMENTS_DISABLED_MESSAGE }, { status: 503 });
+  const requestId = getRequestId(request);
   try {
     const user = await getAuthenticatedUser(request);
     if (!user || (user.role !== "Admin" && user.role !== "Manager")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    const scope = await getDepartmentScope(user);
+    // Mode "all" (viewing every department) cannot write: throws DEPARTMENT_READ_ONLY before any SQL runs.
+    writeDepartmentId(scope);
+    const dept = deptInsert(scope);
     const { id } = await params;
     const body = await request.json() as { action?: string; accepted_qty?: number; rejected_qty?: number; rejection_reason?: string; shelf_life_override_reason?: string };
     const action = body.action;
     const shipmentRows = await sql`
       SELECT s.*, m.name AS reagent_name, s.exp_date::text AS exp_date_text
-      FROM shipments s JOIN master_data m ON s.item_id = m.item_id
-      WHERE s.id = ${id} LIMIT 1
+      FROM shipments s JOIN master_data m ON s.item_id = m.item_id${andDept(scope, "m")}
+      WHERE s.id = ${id}${andDept(scope, "s")} LIMIT 1
     `;
     if (!shipmentRows.length) return NextResponse.json({ error: "Shipment not found" }, { status: 404 });
     const shipment = shipmentRows[0];
@@ -33,7 +41,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       // The PO status is recomputed by a second statement so it sees the cancelled shipment.
       const [cancelled, recomputed] = await sql.transaction([sql`
         UPDATE shipments SET status = 'Cancelled'
-        WHERE id = ${id} AND status = 'In Transit'
+        WHERE id = ${id} AND status = 'In Transit'${andDeptWrite(scope)}
         RETURNING id AS shipment_id, po_number
       `, recomputePurchaseOrderStatusQuery(sql, shipment.po_number ?? null)]);
       if (!cancelled[0]?.shipment_id) return NextResponse.json({ error: "รายการนี้ถูกดำเนินการไปก่อนหน้าแล้ว" }, { status: 400 });
@@ -66,23 +74,33 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     }
     const overrideFragment = shortDated ? sql`, shelf_life_override_reason = ${shelfLifeOverrideReason}` : sql``;
 
+    // Departments on: the inventory upsert below conflicts on (item_id, lot_no, received_on). If that exact row belongs to
+    // another department (inconsistent data) it must not be added to or relabelled, so refuse before touching it.
+    // The check runs first inside the same transaction; the main statement stays at index pre.length of the results.
+    const pre = scope.mode === "one" && acceptedQty > 0 ? [sql`
+      SELECT labstock_assert(NOT EXISTS (
+        SELECT 1 FROM inventory
+        WHERE item_id = ${String(shipment.item_id)} AND lot_no = ${String(shipment.lot_no)} AND received_on = CURRENT_DATE
+          AND department_id <> ${scope.departmentId}
+      ), 'ITEM_NOT_IN_DEPARTMENT: ' || ${String(shipment.item_id)}::text) AS ok
+    `] : [];
     // The PO status is recomputed by a second statement so it sees the updated accepted quantities.
-    const [received] = await sql.transaction([sql`
+    const results = await sql.transaction([...pre, sql`
       WITH claimed AS (
         UPDATE shipments
         SET status = 'Received', received_at = CURRENT_TIMESTAMP, received_by = ${user.name},
             accepted_qty = ${acceptedQty}, rejected_qty = ${rejectedQty}, rejection_reason = ${rejectionReason || null}${overrideFragment}
-        WHERE id = ${id} AND status = 'In Transit'
+        WHERE id = ${id} AND status = 'In Transit'${andDeptWrite(scope)}
         RETURNING *
       ), inv_update AS (
-        INSERT INTO inventory (item_id, lot_no, exp_date, quantity, received_on)
-        SELECT item_id, lot_no, exp_date, ${acceptedQty}, CURRENT_DATE FROM claimed WHERE ${acceptedQty} > 0
+        INSERT INTO inventory (item_id, lot_no, exp_date, quantity, received_on${dept.column})
+        SELECT item_id, lot_no, exp_date, ${acceptedQty}, CURRENT_DATE${dept.value} FROM claimed WHERE ${acceptedQty} > 0
         ON CONFLICT (item_id, lot_no, received_on)
         DO UPDATE SET quantity = inventory.quantity + EXCLUDED.quantity, exp_date = EXCLUDED.exp_date
         RETURNING item_id, lot_no, quantity
       ), log_insert AS (
-        INSERT INTO logs (item_id, name, lot_no, action, quantity, username)
-        SELECT item_id, ${shipment.reagent_name}, lot_no, 'รับเข้าจากบริษัท (Handshake)', ${acceptedQty}, ${user.name + " (" + user.role + ")"}
+        INSERT INTO logs (item_id, name, lot_no, action, quantity, username${dept.column})
+        SELECT item_id, ${shipment.reagent_name}, lot_no, 'รับเข้าจากบริษัท (Handshake)', ${acceptedQty}, ${user.name + " (" + user.role + ")"}${dept.value}
         FROM inv_update
         RETURNING id
       ), po_item_update AS (
@@ -98,6 +116,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       SELECT c.id AS shipment_id, c.po_number, c.rejected_qty, (SELECT po_id FROM po_item_update LIMIT 1) AS po_id
       FROM claimed c
     `, recomputePurchaseOrderStatusQuery(sql, shipment.po_number ?? null)]);
+    const received = results[pre.length];
     if (!received.length) return NextResponse.json({ error: "รายการนี้ถูกรับเข้าหรือยกเลิกไปก่อนหน้าแล้ว" }, { status: 400 });
     const row = received[0];
     const poId = row.po_id ? Number(row.po_id) : null;
@@ -117,6 +136,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     }
     return NextResponse.json({ success: true, replacementRequired: rejectedQty > 0, message: rejectedQty > 0 ? "รับรายการแล้วและแจ้งให้ Vendor จัดส่งทดแทน" : "รับเข้าสต๊อกสำเร็จ" });
   } catch (error: unknown) {
+    if (isDepartmentScopeFailure(error)) return toApiError(error, requestId).response;
     console.error("Shipment error:", error);
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to process shipment" }, { status: 500 });
   }

@@ -49,7 +49,7 @@ async function seedOrder() {
   `);
   return saveCountWorkOrder(owner, "เคมี", [
     { itemId: "R1", countedQty: 4 }, { itemId: "R2", countedQty: 6 }, { itemId: "R3", countedQty: 7 },
-  ]);
+  ], { mode: "legacy" });
 }
 
 const alloc = (itemId: string, inventoryId: number, qty: number) => ({ itemId, inventoryId, qty });
@@ -69,7 +69,7 @@ describe("confirmCountWorkOrder (real Postgres)", () => {
   beforeEach(async () => { id = (await seedOrder()).id; });
 
   it("confirms an order that needs several items refilled", async () => {
-    const result = await confirmCountWorkOrder(owner, id, [alloc("R1", 1, 6), alloc("R2", 2, 4), alloc("R3", 3, 3)], audit);
+    const result = await confirmCountWorkOrder(owner, id, [alloc("R1", 1, 6), alloc("R2", 2, 4), alloc("R3", 3, 3)], audit, { mode: "legacy" });
     expect(result.status).toBe("CONFIRMED");
     expect(result.dispensed.map((item) => item.itemId).sort()).toEqual(["R1", "R2", "R3"]);
     expect(await stock()).toBe("R1=94,R2=96,R3=97");
@@ -78,27 +78,27 @@ describe("confirmCountWorkOrder (real Postgres)", () => {
   });
 
   it("dispenses only the requested items and keeps the rest of the order open", async () => {
-    const result = await confirmCountWorkOrder(owner, id, [alloc("R2", 2, 4)], audit);
+    const result = await confirmCountWorkOrder(owner, id, [alloc("R2", 2, 4)], audit, { mode: "legacy" });
     expect(result.status).toBe("OPEN");
     expect(result.remaining.map((item) => item.itemId).sort()).toEqual(["R1", "R3"]);
     expect(await stock()).toBe("R1=100,R2=96,R3=100");
     expect(await status(id)).toBe("OPEN");
 
-    await confirmCountWorkOrder(owner, id, [alloc("R1", 1, 6), alloc("R3", 3, 3)], audit);
+    await confirmCountWorkOrder(owner, id, [alloc("R1", 1, 6), alloc("R3", 3, 3)], audit, { mode: "legacy" });
     expect(await stock()).toBe("R1=94,R2=96,R3=97");
     expect(await status(id)).toBe("CONFIRMED");
   });
 
   it("does not dispense the same item twice when a partial confirm is replayed", async () => {
-    await confirmCountWorkOrder(owner, id, [alloc("R2", 2, 4)], audit);
-    const error = failure(await confirmCountWorkOrder(owner, id, [alloc("R2", 2, 4)], audit).catch((e) => e));
+    await confirmCountWorkOrder(owner, id, [alloc("R2", 2, 4)], audit, { mode: "legacy" });
+    const error = failure(await confirmCountWorkOrder(owner, id, [alloc("R2", 2, 4)], audit, { mode: "legacy" }).catch((e) => e));
     expect(reasons(error.failed)).toBe("R2:NOT_PENDING");
     expect(await stock()).toBe("R1=100,R2=96,R3=100");
     expect(await logCount()).toBe(1);
   });
 
   it("dispenses complete items and reports a quantity that differs from what is required", async () => {
-    const result = await confirmCountWorkOrder(owner, id, [alloc("R1", 1, 6), alloc("R2", 2, 3)], audit);
+    const result = await confirmCountWorkOrder(owner, id, [alloc("R1", 1, 6), alloc("R2", 2, 3)], audit, { mode: "legacy" });
     expect(result.dispensed.map((item) => item.itemId)).toEqual(["R1"]);
     expect(reasons(result.failed)).toBe("R2:QTY_MISMATCH");
     expect(result.remaining.map((item) => item.itemId).sort()).toEqual(["R2", "R3"]);
@@ -107,7 +107,7 @@ describe("confirmCountWorkOrder (real Postgres)", () => {
   });
 
   it("throws with the reasons when nothing can be dispensed, without changing stock", async () => {
-    const error = failure(await confirmCountWorkOrder(owner, id, [alloc("R1", 1, 5)], audit).catch((e) => e));
+    const error = failure(await confirmCountWorkOrder(owner, id, [alloc("R1", 1, 5)], audit, { mode: "legacy" }).catch((e) => e));
     expect(reasons(error.failed)).toBe("R1:QTY_MISMATCH");
     expect(error.remaining).toHaveLength(3);
     expect(await stock()).toBe("R1=100,R2=100,R3=100");
@@ -115,27 +115,27 @@ describe("confirmCountWorkOrder (real Postgres)", () => {
   });
 
   it("rejects an empty confirmation while items still need a refill", async () => {
-    const error = failure(await confirmCountWorkOrder(owner, id, [], audit).catch((e) => e));
+    const error = failure(await confirmCountWorkOrder(owner, id, [], audit, { mode: "legacy" }).catch((e) => e));
     expect(error.failed).toHaveLength(0);
     expect(error.remaining).toHaveLength(3);
     expect(await stock()).toBe("R1=100,R2=100,R3=100");
   });
 
   it("reports items that are not part of the order", async () => {
-    const error = failure(await confirmCountWorkOrder(owner, id, [alloc("R9", 1, 6)], audit).catch((e) => e));
+    const error = failure(await confirmCountWorkOrder(owner, id, [alloc("R9", 1, 6)], audit, { mode: "legacy" }).catch((e) => e));
     expect(reasons(error.failed)).toBe("R9:NOT_PENDING");
     expect(await stock()).toBe("R1=100,R2=100,R3=100");
   });
 
   it("reports a lot that belongs to another reagent", async () => {
-    const result = await confirmCountWorkOrder(owner, id, [alloc("R1", 2, 6), alloc("R3", 3, 3)], audit);
+    const result = await confirmCountWorkOrder(owner, id, [alloc("R1", 2, 6), alloc("R3", 3, 3)], audit, { mode: "legacy" });
     expect(reasons(result.failed)).toBe("R1:LOT_INVALID");
     expect(await stock()).toBe("R1=100,R2=100,R3=97");
   });
 
   it("dispenses the items that still have stock when another lot ran short", async () => {
     await sql.db.exec("UPDATE inventory SET quantity = 2 WHERE id = 3");
-    const result = await confirmCountWorkOrder(owner, id, [alloc("R1", 1, 6), alloc("R3", 3, 3)], audit);
+    const result = await confirmCountWorkOrder(owner, id, [alloc("R1", 1, 6), alloc("R3", 3, 3)], audit, { mode: "legacy" });
     expect(result.dispensed.map((item) => item.itemId)).toEqual(["R1"]);
     expect(result.failed).toEqual([expect.objectContaining({ itemId: "R3", reason: "INSUFFICIENT", requiredQty: 3, available: 2 })]);
     expect(await stock()).toBe("R1=94,R2=100,R3=2");
@@ -143,35 +143,35 @@ describe("confirmCountWorkOrder (real Postgres)", () => {
   });
 
   it("only lets the owner confirm", async () => {
-    await expect(confirmCountWorkOrder({ ...owner, username: "someone-else" }, id, [alloc("R1", 1, 6)], audit)).rejects.toThrow("ไม่พบใบงาน");
+    await expect(confirmCountWorkOrder({ ...owner, username: "someone-else" }, id, [alloc("R1", 1, 6)], audit, { mode: "legacy" })).rejects.toThrow("ไม่พบใบงาน");
     expect(await stock()).toBe("R1=100,R2=100,R3=100");
   });
 
   it("does not re-open a dispensed item when the order is recounted", async () => {
-    await confirmCountWorkOrder(owner, id, [alloc("R2", 2, 4)], audit);
-    const saved = await saveCountWorkOrder(owner, "เคมี", [{ itemId: "R1", countedQty: 4 }, { itemId: "R2", countedQty: 6 }, { itemId: "R3", countedQty: 7 }]);
+    await confirmCountWorkOrder(owner, id, [alloc("R2", 2, 4)], audit, { mode: "legacy" });
+    const saved = await saveCountWorkOrder(owner, "เคมี", [{ itemId: "R1", countedQty: 4 }, { itemId: "R2", countedQty: 6 }, { itemId: "R3", countedQty: 7 }], { mode: "legacy" });
     expect(saved.id).toBe(id);
     expect(saved.alreadyDispensed).toEqual(["R2"]);
     const required = (await sql.db.query<{ required_qty: string }>("SELECT required_qty FROM count_work_order_items WHERE item_id = 'R2'")).rows[0].required_qty;
     expect(Number(required)).toBe(0);
-    const error = failure(await confirmCountWorkOrder(owner, id, [alloc("R2", 2, 4)], audit).catch((e) => e));
+    const error = failure(await confirmCountWorkOrder(owner, id, [alloc("R2", 2, 4)], audit, { mode: "legacy" }).catch((e) => e));
     expect(reasons(error.failed)).toBe("R2:NOT_PENDING");
     expect(await stock()).toBe("R1=100,R2=96,R3=100");
   });
 
   it("does not keep the order open for a deactivated reagent", async () => {
     await sql.db.exec("UPDATE master_data SET is_active = FALSE WHERE item_id = 'R2'");
-    const result = await confirmCountWorkOrder(owner, id, [alloc("R1", 1, 6), alloc("R3", 3, 3)], audit);
+    const result = await confirmCountWorkOrder(owner, id, [alloc("R1", 1, 6), alloc("R3", 3, 3)], audit, { mode: "legacy" });
     expect(result.message).toBe("ยืนยันเบิกจากใบงานเรียบร้อยแล้ว");
     expect(await stock()).toBe("R1=94,R2=100,R3=97");
     expect(await status(id)).toBe("CONFIRMED");
   });
 
   it("closes an order whose only remaining item was deactivated, without touching stock", async () => {
-    await confirmCountWorkOrder(owner, id, [alloc("R1", 1, 6), alloc("R3", 3, 3)], audit);
+    await confirmCountWorkOrder(owner, id, [alloc("R1", 1, 6), alloc("R3", 3, 3)], audit, { mode: "legacy" });
     expect(await status(id)).toBe("OPEN");
     await sql.db.exec("UPDATE master_data SET is_active = FALSE WHERE item_id = 'R2'");
-    await confirmCountWorkOrder(owner, id, [], audit);
+    await confirmCountWorkOrder(owner, id, [], audit, { mode: "legacy" });
     expect(await status(id)).toBe("CONFIRMED");
     expect(await stock()).toBe("R1=94,R2=100,R3=97");
     expect(await logCount()).toBe(2);
@@ -179,7 +179,7 @@ describe("confirmCountWorkOrder (real Postgres)", () => {
 
   it("never dispenses a deactivated reagent", async () => {
     await sql.db.exec("UPDATE master_data SET is_active = FALSE WHERE item_id = 'R2'");
-    const result = await confirmCountWorkOrder(owner, id, [alloc("R1", 1, 6), alloc("R2", 2, 4), alloc("R3", 3, 3)], audit);
+    const result = await confirmCountWorkOrder(owner, id, [alloc("R1", 1, 6), alloc("R2", 2, 4), alloc("R3", 3, 3)], audit, { mode: "legacy" });
     expect(reasons(result.failed)).toBe("R2:INACTIVE");
     expect(await stock()).toBe("R1=94,R2=100,R3=97");
     expect(await status(id)).toBe("CONFIRMED");
@@ -187,6 +187,6 @@ describe("confirmCountWorkOrder (real Postgres)", () => {
 
   it("refuses to save a count for a deactivated reagent", async () => {
     await sql.db.exec("UPDATE master_data SET is_active = FALSE WHERE item_id = 'R2'");
-    await expect(saveCountWorkOrder(owner, "เคมี", [{ itemId: "R2", countedQty: 1 }])).rejects.toThrow("REAGENT_INACTIVE");
+    await expect(saveCountWorkOrder(owner, "เคมี", [{ itemId: "R2", countedQty: 1 }], { mode: "legacy" })).rejects.toThrow("REAGENT_INACTIVE");
   });
 });

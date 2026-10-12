@@ -4,13 +4,15 @@ import { apiError, toApiError } from "@/lib/api-response";
 import { getAuthenticatedUser } from "@/lib/auth-utils";
 import { getRequestId } from "@/lib/request-observability";
 import { listCountWorkOrders, saveCountWorkOrder } from "@/lib/count-work-orders";
+import { getDepartmentScope } from "@/lib/scoped-db";
 
 export async function GET(request: Request) {
   const requestId = getRequestId(request);
   try {
     const user = await getAuthenticatedUser(request);
     if (!user) return apiError("AUTH_REQUIRED", { requestId });
-    const response = NextResponse.json(await listCountWorkOrders(user));
+    const scope = await getDepartmentScope(user);
+    const response = NextResponse.json(await listCountWorkOrders(user, scope));
     response.headers.set("x-request-id", requestId);
     return response;
   } catch (error) {
@@ -23,11 +25,12 @@ export const POST = trackRoute({ action: "count.save" }, async (request: Request
     const user = await getAuthenticatedUser(request);
     if (!user) return apiError("AUTH_REQUIRED", { requestId: ctx.requestId });
     ctx.user = user;
+    const scope = await getDepartmentScope(user);
     const body = await request.json() as { jobType?: unknown; items?: Array<{ itemId?: unknown; countedQty?: unknown }> };
     ctx.details = { jobType: body.jobType, count: (body.items || []).length, items: body.items };
     const result = await saveCountWorkOrder(user, String(body.jobType || ""), (body.items || []).map((item) => ({
       itemId: String(item.itemId || ""), countedQty: Number(item.countedQty),
-    })));
+    })), scope);
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
     return ctx.fail(error);

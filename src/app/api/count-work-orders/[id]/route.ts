@@ -4,6 +4,7 @@ import { apiError, toApiError } from "@/lib/api-response";
 import { getAuthenticatedUser } from "@/lib/auth-utils";
 import { getRequestId } from "@/lib/request-observability";
 import { cancelCountWorkOrder, getCountWorkOrder, saveCountWorkOrder } from "@/lib/count-work-orders";
+import { getDepartmentScope } from "@/lib/scoped-db";
 
 const parseId = (value: string) => Number(value);
 
@@ -12,7 +13,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   try {
     const user = await getAuthenticatedUser(request);
     if (!user) return apiError("AUTH_REQUIRED", { requestId });
-    const order = await getCountWorkOrder(user, parseId((await params).id));
+    const scope = await getDepartmentScope(user);
+    const order = await getCountWorkOrder(user, parseId((await params).id), scope);
     if (!order) return apiError("COUNT_ORDER_NOT_FOUND", { requestId });
     const response = NextResponse.json(order);
     response.headers.set("x-request-id", requestId);
@@ -27,11 +29,13 @@ export const PATCH = trackRoute<{ params: Promise<{ id: string }> }>({ action: "
     ctx.user = user;
     const id = parseId((await params).id);
     ctx.details = { workOrderId: id };
-    const existing = await getCountWorkOrder(user, id);
+    // One scope for the whole request: the same department is used to read the order and to save it.
+    const scope = await getDepartmentScope(user);
+    const existing = await getCountWorkOrder(user, id, scope);
     if (!existing || existing.ownerUsername.toLowerCase() !== user.username.toLowerCase() || existing.status !== "OPEN") return apiError("FORBIDDEN", { requestId: ctx.requestId, message: "แก้ไขได้เฉพาะเจ้าของใบงานที่ยังเปิดอยู่" });
     const body = await request.json() as { items?: Array<{ itemId?: unknown; countedQty?: unknown }> };
     ctx.details = { workOrderId: id, count: (body.items || []).length, items: body.items };
-    const result = await saveCountWorkOrder(user, String(existing.jobType || ""), (body.items || []).map((item) => ({ itemId: String(item.itemId || ""), countedQty: Number(item.countedQty) })));
+    const result = await saveCountWorkOrder(user, String(existing.jobType || ""), (body.items || []).map((item) => ({ itemId: String(item.itemId || ""), countedQty: Number(item.countedQty) })), scope);
     if (result.id !== id) return apiError("STOCK_CHANGED", { requestId: ctx.requestId, message: "ใบงานมีการเปลี่ยนแปลงระหว่างบันทึก" });
     return NextResponse.json(result);
   } catch (error) { return ctx.fail(error); }
@@ -44,7 +48,7 @@ export const DELETE = trackRoute<{ params: Promise<{ id: string }> }>({ action: 
     ctx.user = user;
     const id = parseId((await params).id);
     ctx.details = { workOrderId: id };
-    await cancelCountWorkOrder(user, id);
+    await cancelCountWorkOrder(user, id, await getDepartmentScope(user));
     return NextResponse.json({ success: true });
   } catch (error) { return ctx.fail(error); }
 });
