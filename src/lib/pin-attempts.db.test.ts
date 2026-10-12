@@ -88,6 +88,14 @@ describe("PIN attempt limiter (real SQL)", () => {
     expect(await countRecentPinAttempts("tech1")).toBe(12);
   });
 
+  it("counts line-link and confirm attempts together and stores the source", async () => {
+    await recordPinAttempt("Tech1", "line-link");
+    await recordPinAttempt("TECH1");
+    expect(await countRecentPinAttempts("tech1")).toBe(2);
+    const { rows } = await sql.db.query<{ source: string }>("SELECT details->>'source' AS source FROM app_events ORDER BY id");
+    expect(rows.map((row) => row.source)).toEqual(["line-link", "confirm"]);
+  });
+
   it("never throws and returns null when app_events is missing", async () => {
     const spy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     await sql.db.exec("DROP TABLE app_events");

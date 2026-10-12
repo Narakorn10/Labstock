@@ -1,10 +1,12 @@
 import sql from "./db";
 
 /**
- * PIN attempt limiter for /api/mobile/confirm, stored in app_events (no new table).
+ * PIN attempt limiter shared by /api/mobile/confirm and /api/mobile/line-link (same counter),
+ * stored in app_events (no new table).
  * An attempt row is written BEFORE counting, so parallel requests cannot all see an
  * under-limit count. A correct PIN flips its row to 'success' (not counted afterwards).
- * Helpers never throw; callers fail open when they return null.
+ * Helpers never throw and return null on error; /api/mobile/confirm then fails open,
+ * /api/mobile/line-link fails closed (503).
  */
 
 export const PIN_ATTEMPT_ACTION = "mobile.pin_attempt";
@@ -19,16 +21,16 @@ function warnOnce(error: unknown) {
   if (warnedPinAttempts) return;
   warnedPinAttempts = true;
   const text = error instanceof Error ? error.message : String(error);
-  console.warn("[pin-attempts] PIN rate limiting is unavailable (failing open):", text);
+  console.warn("[pin-attempts] PIN attempt tracking is unavailable (confirm fails open, line-link fails closed):", text);
 }
 
-export async function recordPinAttempt(username: string): Promise<number | null> {
+export async function recordPinAttempt(username: string, source: "confirm" | "line-link" = "confirm"): Promise<number | null> {
   try {
     const rows = await sql`
       INSERT INTO app_events (action, route, method, outcome, status, details)
       VALUES (
         ${PIN_ATTEMPT_ACTION}, '/api/mobile/confirm', 'POST', 'rejected', 401,
-        ${JSON.stringify({ attemptedUser: username.slice(0, MAX_USERNAME) })}::jsonb
+        ${JSON.stringify({ attemptedUser: username.slice(0, MAX_USERNAME), source })}::jsonb
       )
       RETURNING id
     `;
