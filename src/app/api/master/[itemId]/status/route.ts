@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import sql from '@/lib/db';
 import { getAuthenticatedUser } from '@/lib/auth-utils';
+import { andDeptWrite, departmentErrorResponse, getDepartmentScope } from '@/lib/scoped-db';
+import { canManageRoomReagents } from '@/lib/room-admin';
 
 function normalizeReason(value: unknown) {
   return typeof value === 'string' ? value.trim().slice(0, 500) : '';
@@ -13,8 +15,8 @@ export async function PATCH(
   try {
     const user = await getAuthenticatedUser(request);
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    if (user.role !== 'Admin' && user.role !== 'Manager') {
-      return NextResponse.json({ error: 'เฉพาะ Admin หรือ Manager เท่านั้นที่เปลี่ยนสถานะน้ำยาได้' }, { status: 403 });
+    if (!await canManageRoomReagents(user)) {
+      return NextResponse.json({ error: 'เฉพาะ Admin, Manager หรือผู้ดูแลห้องเท่านั้นที่เปลี่ยนสถานะน้ำยาได้' }, { status: 403 });
     }
 
     const { itemId } = await params;
@@ -33,11 +35,14 @@ export async function PATCH(
       return NextResponse.json({ error: 'กรุณาระบุเหตุผลก่อนปิดใช้งานน้ำยา' }, { status: 400 });
     }
 
+    // An item of another room is "not found" (404). The impact counts below hang off this one row, so they stay in the room.
+    const scope = await getDepartmentScope(user);
+
     const [rows] = await sql.transaction([sql`
       WITH current_item AS (
         SELECT m.*
         FROM master_data m
-        WHERE UPPER(m.item_id) = ${normalizedItemId}
+        WHERE UPPER(m.item_id) = ${normalizedItemId}${andDeptWrite(scope, 'm')}
         FOR UPDATE
       ),
       impact AS (
@@ -107,6 +112,8 @@ export async function PATCH(
       },
     });
   } catch (error: unknown) {
+    const scoped = departmentErrorResponse(error);
+    if (scoped) return scoped;
     console.error('Master status API error:', error);
     const dbError = error as { code?: string; message?: string };
     if (dbError.code === '42703') {
