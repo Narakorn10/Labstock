@@ -30,7 +30,12 @@
      (`INSERT INTO user_departments ... WHERE NOT EXISTS (SELECT 1 FROM user_departments x WHERE x.username = u.username)`)
      ต้องนับจำนวนก่อน/หลังและบันทึกรายชื่อผู้ที่ถูกเพิ่ม ทำได้เฉพาะ **ก่อนเปิดสวิตช์ครั้งแรก**
      หลังเปิดแล้ว ผู้ใช้ใหม่ต้องได้แถวสมาชิกจากหน้าสมัคร/สร้างผู้ใช้ (ข้อ 7) ไม่ใช่จากสคริปต์นี้
-   - สคริปต์นี้ยังไม่ได้เขียน และต้องขออนุมัติทุกครั้งก่อนรันบนฐานข้อมูลจริง
+   - สคริปต์: `scripts/backfill-user-departments.mjs` (ตรรกะใน `scripts/backfill-user-departments-lib.mjs`, มีเทสต์ใน `src/lib/backfill-user-departments.db.test.ts`)
+     - ไม่อ่านไฟล์ `.env` ต้องส่ง `DATABASE_URL` ทาง environment เอง และแสดงชื่อ host (ไม่แสดงรหัสผ่าน)
+     - โหมดปกติ **อ่านอย่างเดียว** แสดงรายชื่อผู้ที่จะถูกเพิ่ม: `DATABASE_URL=... node scripts/backfill-user-departments.mjs`
+     - เขียนจริงต้องมีทั้ง `--apply` และ `--confirm-host=<host>`: ทำใน transaction เดียว ตรวจจำนวนก่อน/หลัง และกันผู้ใช้ที่มีแผนกหลักซ้ำ ถ้าตรวจไม่ผ่านจะ rollback
+     - เพิ่มเฉพาะผู้ใช้ที่ไม่มีแถวสมาชิกเลย เข้าแผนก CC เป็นแผนกหลัก (role ว่าง) ไม่แตะคนที่มีแผนกอยู่แล้ว รันซ้ำได้ (รอบสองไม่เพิ่มใคร)
+     - ต้องขออนุมัติทุกครั้งก่อนรันบนฐานข้อมูลจริง และถ่าย snapshot ก่อน; ควรซ้อมบน Neon branch แยกก่อน
 6. แก้ route (หน้า API) ทีละกลุ่มให้กรองตามแผนก จนรายการ `DEPARTMENT_SCOPE_PENDING`
    ในไฟล์ `src/lib/department-scope-coverage.test.ts` **ว่างเปล่า** (เทสต์จะเตือนเองถ้ายังค้าง)
 7. ทำให้การสร้างผู้ใช้ใหม่/การสมัครสมาชิก เขียนแผนกลงตาราง `user_departments` ด้วย
