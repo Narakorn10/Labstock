@@ -116,7 +116,7 @@ export function mergeMenus(primary: string[], fallback: string[]) {
 }
 
 /** Menus a room admin ("ผู้ดูแลห้อง") gets on top of their role's menus. Never stored in the role permissions. */
-export const ROOM_ADMIN_MENUS = ["room_admin"];
+export const ROOM_ADMIN_MENUS = ["room_admin", "reagent_order_policies", "master_data"];
 
 /** Pure: adds the room admin menus when the user is a room admin, otherwise returns the same list. */
 export function mergeRoomAdminMenus(menus: string[], isRoomAdmin: boolean) {

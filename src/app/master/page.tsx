@@ -33,7 +33,7 @@ function getCategoryDefaults(currentValue: string | undefined, options: string[]
 }
 
 export default function MasterDataPage() {
-  const { user } = useAuth();
+  const { user, isRoomAdmin = false } = useAuth();
   const popup = usePopup();
   const [reagents, setReagents] = useState<Reagent[]>([]);
   const [settings, setSettings] = useState<SettingsResponse | null>(null);
@@ -44,7 +44,8 @@ export default function MasterDataPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingReagent, setEditingReagent] = useState<Partial<Reagent> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const canManageShelfLife = user?.role === 'Admin' || user?.role === 'Manager';
+  // Admin / Manager as before, or the room admin of the room they work in (the server enforces the room as well).
+  const canManageShelfLife = user?.role === 'Admin' || user?.role === 'Manager' || isRoomAdmin;
   const [shelfLifeRules, setShelfLifeRules] = useState<Record<string, number>>({});
   const [shelfLifeAvailable, setShelfLifeAvailable] = useState(false);
 
@@ -369,7 +370,7 @@ export default function MasterDataPage() {
                     {reagent.weeklyTarget} {reagent.unit}
                   </td>
                   <td className="px-6 py-4 text-center">
-                    {user?.role === 'Admin' || user?.role === 'Manager' ? (
+                    {canManageShelfLife ? (
                       <button
                         type="button"
                         onClick={() => void handleStatusToggle(reagent)}

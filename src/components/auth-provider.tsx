@@ -40,6 +40,8 @@ interface AuthContextType {
   refreshDepartmentContext?: () => Promise<void>;
   /** The user is a room admin of the room they are working in (from /api/auth/me). Not part of `user` on purpose. */
   isRoomAdmin?: boolean;
+  /** /api/auth/me has answered for this user (so `isRoomAdmin` is known). False while it is still loading. */
+  accountContextLoaded?: boolean;
 }
 
 interface DepartmentState {
@@ -200,6 +202,7 @@ function AuthStateProvider({ children }: { children: React.ReactNode }) {
         onDepartmentDisabled,
         refreshDepartmentContext,
         isRoomAdmin: dept.isRoomAdmin,
+        accountContextLoaded: dept.owner !== null && dept.owner === username,
       }}
     >
       {children}
