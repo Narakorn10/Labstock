@@ -5,7 +5,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { PROD_SCHEMA_DDL, PROD_SEED_SQL } from "@/test/pglite-prod-schema";
 import { splitSqlStatements } from "../../scripts/sql-statements.mjs";
 
-// Runs upgrade_v30..v34 (and their rollbacks) against an in-memory Postgres that mirrors the real production
+// Runs upgrade_v30..v35 (and their rollbacks) against an in-memory Postgres that mirrors the real production
 // schema. Each file is executed statement-by-statement with the same splitter the real runner uses
 // (scripts/apply-migration.mjs), so CREATE INDEX CONCURRENTLY is not wrapped in an implicit transaction.
 // The ONLY rewrite: the keyword CONCURRENTLY is removed from CREATE/DROP INDEX, because PGlite (single-user mode)
@@ -21,8 +21,10 @@ const FORWARD = [
   "upgrade_v32_department_constraints.sql",
   "upgrade_v33_item_code.sql",
   "upgrade_v34_indexes.sql",
+  "upgrade_v35_room_admin_slot.sql",
 ];
 const ROLLBACK = [
+  "upgrade_v35_room_admin_slot_rollback.sql",
   "upgrade_v34_indexes_rollback.sql",
   "upgrade_v33_item_code_rollback.sql",
   "upgrade_v32_department_constraints_rollback.sql",
@@ -274,9 +276,59 @@ describe("departments migrations v30-v34", () => {
   it("refuses to roll back v31 once a row belongs to another department", async () => {
     const second = await scalar<number>(db, "INSERT INTO departments (name, code) VALUES ('Second', 'SEC') RETURNING id AS v");
     await db.exec(`INSERT INTO vendors (name, department_id) VALUES ('Other dept vendor', ${second})`);
-    await applyAll(db, ROLLBACK.slice(0, 3));
-    await expect(applyFile(db, ROLLBACK[3])).rejects.toThrow(/rollback refused/);
+    await applyAll(db, ROLLBACK.slice(0, 4));
+    await expect(applyFile(db, ROLLBACK[4])).rejects.toThrow(/rollback refused/);
     expect(await columnExists(db, "vendors", "department_id")).toBe(true);
+  }, 60_000);
+});
+
+describe("v35 room admin slot", () => {
+  async function v35Db() {
+    const db = await newDb();
+    await applyAll(db, FORWARD);
+    await db.exec("INSERT INTO users (username, password_hash, name, role) VALUES ('u3', 'x', 'U3', 'User'), ('u4', 'x', 'U4', 'User')");
+    await db.exec("INSERT INTO user_departments (username, department_id, role, is_default) VALUES ('u3', 1, NULL, false), ('u4', 1, NULL, false)");
+    return db;
+  }
+
+  it("adds a nullable admin_slot and gives nobody a slot (no backfill)", async () => {
+    const db = await v35Db();
+    expect(await columnExists(db, "user_departments", "admin_slot")).toBe(true);
+    expect(await scalar(db, "SELECT count(*)::int AS v FROM user_departments WHERE admin_slot IS NOT NULL")).toBe(0);
+    await db.close();
+  });
+
+  it("allows at most 2 room admins per room and rejects a duplicate slot or a slot outside 1-2", async () => {
+    const db = await v35Db();
+    await db.exec("UPDATE user_departments SET admin_slot = 1 WHERE username = 'user1' AND department_id = 1");
+    await db.exec("UPDATE user_departments SET admin_slot = 2 WHERE username = 'u3' AND department_id = 1");
+    await expect(db.exec("UPDATE user_departments SET admin_slot = 1 WHERE username = 'u4' AND department_id = 1")).rejects.toThrow(/user_departments_admin_slot_idx/);
+    await expect(db.exec("UPDATE user_departments SET admin_slot = 3 WHERE username = 'u4' AND department_id = 1")).rejects.toThrow(/check/i);
+    await db.close();
+  });
+
+  it("lets the same slot number exist in different rooms and a user hold slots in several rooms", async () => {
+    const db = await v35Db();
+    await db.exec("INSERT INTO user_departments (username, department_id, role, is_default) VALUES ('user1', 2, NULL, false)");
+    await db.exec("UPDATE user_departments SET admin_slot = 1 WHERE username = 'user1'");
+    await db.exec("INSERT INTO user_departments (username, department_id, role, is_default) VALUES ('u3', 2, NULL, false)");
+    await db.exec("UPDATE user_departments SET admin_slot = 2 WHERE username = 'u3' AND department_id = 2");
+    expect(await scalar(db, "SELECT count(*)::int AS v FROM user_departments WHERE admin_slot IS NOT NULL")).toBe(3);
+    await db.close();
+  });
+
+  it("is idempotent and its rollback removes only the slot (also when run twice or after v30 is gone)", async () => {
+    const db = await v35Db();
+    await applyFile(db, FORWARD[5]);
+    await db.exec("UPDATE user_departments SET admin_slot = 1 WHERE username = 'user1'");
+    await applyFile(db, ROLLBACK[0]);
+    await applyFile(db, ROLLBACK[0]);
+    expect(await columnExists(db, "user_departments", "admin_slot")).toBe(false);
+    expect(await scalar(db, "SELECT count(*)::int AS v FROM pg_indexes WHERE indexname = 'user_departments_admin_slot_idx'")).toBe(0);
+    expect(await scalar(db, "SELECT count(*)::int AS v FROM user_departments")).toBe(5);
+    await applyAll(db, ROLLBACK.slice(1));
+    await applyFile(db, ROLLBACK[0]);
+    await db.close();
   }, 60_000);
 });
 

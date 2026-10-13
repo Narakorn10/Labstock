@@ -7,7 +7,7 @@ import type { PgliteSql } from "@/test/pglite-sql";
 import { splitSqlStatements } from "../../scripts/sql-statements.mjs";
 
 // Shared fixtures for department (multi-lab) tests. They run on an in-memory PGlite that mirrors the real production
-// schema (PROD_SCHEMA_DDL) and apply upgrade_v30..v34 the same way src/lib/department-migrations.db.test.ts does:
+// schema (PROD_SCHEMA_DDL) and apply upgrade_v30..v35 the same way src/lib/department-migrations.db.test.ts does:
 // statement by statement with the production splitter, with only the keyword CONCURRENTLY removed (PGlite cannot run
 // CREATE INDEX CONCURRENTLY). The helpers below are intentionally the same as that test's private ones.
 
@@ -17,6 +17,7 @@ export const DEPARTMENT_MIGRATIONS = [
   "upgrade_v32_department_constraints.sql",
   "upgrade_v33_item_code.sql",
   "upgrade_v34_indexes.sql",
+  "upgrade_v35_room_admin_slot.sql",
 ];
 
 export const DEPT_A = 1; // CC, the default department that owns all pre-existing data
