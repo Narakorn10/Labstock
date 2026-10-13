@@ -29,7 +29,6 @@ export const DEPARTMENT_TABLES = [
 // Paths are relative to the repo root, forward slashes, sorted.
 export const DEPARTMENT_SCOPE_PENDING: string[] = [
   "src/app/api/auth/register/route.ts",
-  "src/app/api/dashboard/route.ts",
   "src/app/api/liff/orders/[id]/route.ts",
   "src/app/api/liff/orders/bootstrap/route.ts",
   "src/app/api/liff/orders/route.ts",
@@ -48,7 +47,6 @@ export const DEPARTMENT_SCOPE_PENDING: string[] = [
   "src/app/api/settings/barcode-v2/[id]/route.ts",
   "src/app/api/settings/barcode-v2/route.ts",
   "src/app/api/settings/barcodes/route.ts",
-  "src/app/api/settings/route.ts",
   "src/app/api/stations/catalog/route.ts",
   "src/app/api/usage/route.ts",
   "src/app/api/users/[username]/account-status/route.ts",
