@@ -1,4 +1,5 @@
 import type sqlClient from "./db";
+import { andDept, type DepartmentScope } from "./scoped-db";
 
 type Sql = typeof sqlClient;
 
@@ -37,7 +38,7 @@ function isUndefinedColumn(error: unknown) {
 }
 
 /** Minimum shelf-life rules keyed by lower-case item ID. Empty before upgrade_v26 is applied. */
-export async function loadMinShelfLifeRules(sql: Sql, itemIds: string[]) {
+export async function loadMinShelfLifeRules(sql: Sql, itemIds: string[], scope: DepartmentScope) {
   const rules = new Map<string, number>();
   if (!itemIds.length) return rules;
   try {
@@ -45,7 +46,7 @@ export async function loadMinShelfLifeRules(sql: Sql, itemIds: string[]) {
       SELECT item_id, min_shelf_life_days
       FROM master_data
       WHERE LOWER(item_id) = ANY(${itemIds.map((id) => id.toLowerCase())}::text[])
-        AND min_shelf_life_days IS NOT NULL
+        AND min_shelf_life_days IS NOT NULL${andDept(scope)}
     `;
     for (const row of rows) rules.set(String(row.item_id).toLowerCase(), Number(row.min_shelf_life_days));
   } catch (error) {
@@ -54,8 +55,8 @@ export async function loadMinShelfLifeRules(sql: Sql, itemIds: string[]) {
   return rules;
 }
 
-export async function listMinShelfLifeRules(sql: Sql) {
-  const rows = await sql`SELECT item_id, min_shelf_life_days FROM master_data WHERE min_shelf_life_days IS NOT NULL`;
+export async function listMinShelfLifeRules(sql: Sql, scope: DepartmentScope) {
+  const rows = await sql`SELECT item_id, min_shelf_life_days FROM master_data WHERE min_shelf_life_days IS NOT NULL${andDept(scope)}`;
   return Object.fromEntries(rows.map((row) => [String(row.item_id), Number(row.min_shelf_life_days)]));
 }
 
