@@ -62,7 +62,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const [shortDated] = acceptedQty > 0
       ? findShelfLifeViolations(
         [{ itemId: String(shipment.item_id), lotNo: String(shipment.lot_no), expDate: String(shipment.exp_date_text ?? "") }],
-        await loadMinShelfLifeRules(sql, [String(shipment.item_id)]),
+        await loadMinShelfLifeRules(sql, [String(shipment.item_id)], scope),
       )
       : [];
     if (shortDated && !shelfLifeOverrideReason) {

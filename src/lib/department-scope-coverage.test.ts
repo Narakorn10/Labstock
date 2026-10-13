@@ -35,7 +35,6 @@ export const DEPARTMENT_SCOPE_PENDING: string[] = [
   "src/app/api/liff/orders/route.ts",
   "src/app/api/line-webhook/route.ts",
   "src/app/api/logs/route.ts",
-  "src/app/api/master/shelf-life/route.ts",
   "src/app/api/mobile/lookup/route.ts",
   "src/app/api/notifications/expiring-soon/route.ts",
   "src/app/api/notifications/outbox/[id]/route.ts",
@@ -69,7 +68,6 @@ export const DEPARTMENT_SCOPE_PENDING: string[] = [
   "src/lib/purchase-order-status.ts",
   "src/lib/purchase-order-suggestions.ts",
   "src/lib/reagent-usage-insights.ts",
-  "src/lib/shelf-life.ts",
   "src/lib/tracking-providers/manual.ts",
 ];
 

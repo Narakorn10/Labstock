@@ -66,7 +66,8 @@ export async function POST(request: Request) {
     if (!poNumber || !referenceNo || !items) return NextResponse.json({ error: "Choose a confirmed order and complete item, lot, expiry, and positive quantity" }, { status: 400 });
 
     // Lots below the Lab's minimum remaining shelf life are not accepted for shipment.
-    const shelfLifeRules = await loadMinShelfLifeRules(sql, items.map((item) => item.itemId));
+    // PENDING (not scoped by room yet, see department-scope-coverage.test.ts): keep the old, unfiltered lookup.
+    const shelfLifeRules = await loadMinShelfLifeRules(sql, items.map((item) => item.itemId), { mode: "legacy" });
     const shortDated = findShelfLifeViolations(items, shelfLifeRules);
     if (shortDated.length) {
       return NextResponse.json({
