@@ -64,3 +64,12 @@ export async function requireRoomSettingsAccess(user: AuthenticatedUser): Promis
     ? { ok: true, via: "room-admin", departmentId: scope }
     : { ok: false, reason: "forbidden" };
 }
+
+/**
+ * Reagent / material settings (policies, master data, shelf life): Admin and Manager as before, plus the room admin of
+ * the room in user.scope. The routes still scope every query by the same room, so a room admin can only touch their own room.
+ */
+export async function canManageRoomReagents(user: AuthenticatedUser): Promise<boolean> {
+  if (user.role === "Admin" || user.role === "Manager") return true;
+  return (await requireRoomSettingsAccess(user)).ok;
+}

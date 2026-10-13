@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import sql from '@/lib/db';
 import { getAuthenticatedUser } from '@/lib/auth-utils';
+import { andDept, andDeptWrite, departmentErrorResponse, getDepartmentScope } from '@/lib/scoped-db';
+import { canManageRoomReagents } from '@/lib/room-admin';
 
 const SOURCE_VERIFICATION_STATUSES = [
   'VERIFIED',
@@ -37,8 +39,8 @@ async function requirePolicyManager(request: Request) {
     return { response: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
   }
 
-  if (user.role !== 'Admin' && user.role !== 'Manager') {
-    return { response: NextResponse.json({ error: 'เฉพาะ Admin หรือ Manager เท่านั้น' }, { status: 403 }) };
+  if (!await canManageRoomReagents(user)) {
+    return { response: NextResponse.json({ error: 'เฉพาะ Admin, Manager หรือผู้ดูแลห้องเท่านั้น' }, { status: 403 }) };
   }
 
   return { user };
@@ -187,6 +189,7 @@ export async function GET(request: Request) {
     const rawLimit = Number(url.searchParams.get('limit') || 150);
     const limit = Number.isInteger(rawLimit) ? Math.max(1, Math.min(rawLimit, 300)) : 150;
     const searchTerm = `%${keyword}%`;
+    const scope = await getDepartmentScope(auth.user);
     const policies = await sql`
       SELECT
         m.item_id, m.name, m.barcode, m.unit, m.vendor, m.reagent_type, m.machine_type,
@@ -213,12 +216,14 @@ export async function GET(request: Request) {
         OR m.item_id ILIKE ${searchTerm}
         OR m.name ILIKE ${searchTerm}
         OR COALESCE(m.barcode, '') ILIKE ${searchTerm}
-        OR COALESCE(m.vendor, '') ILIKE ${searchTerm})
+        OR COALESCE(m.vendor, '') ILIKE ${searchTerm})${andDept(scope, 'm')}
       ORDER BY p.enabled DESC, m.name ASC, p.item_id ASC
       LIMIT ${limit}
     `;
     return NextResponse.json({ data: policies });
   } catch (error: unknown) {
+    const scoped = departmentErrorResponse(error);
+    if (scoped) return scoped;
     console.error('Reagent order policy GET error:', error);
     return NextResponse.json({ error: 'Unable to load reagent order policies.' }, { status: 500 });
   }
@@ -241,12 +246,13 @@ export async function POST(request: Request) {
     if (policy.expected_revision !== 0) {
       return NextResponse.json({ error: 'การสร้างนโยบายใหม่ต้องใช้ expected_revision เป็น 0' }, { status: 400 });
     }
+    const scope = await getDepartmentScope(auth.user);
 
     const [createdRows] = await sql.transaction([sql`
       WITH master AS (
         SELECT item_id
         FROM master_data
-        WHERE item_id = ${policy.item_id}
+        WHERE item_id = ${policy.item_id}${andDeptWrite(scope)}
         FOR SHARE
       ),
       created AS (
@@ -283,6 +289,8 @@ export async function POST(request: Request) {
     }
     return NextResponse.json({ success: true, data: createdRows[0] }, { status: 201 });
   } catch (error: unknown) {
+    const scoped = departmentErrorResponse(error);
+    if (scoped) return scoped;
     console.error('Reagent order policy POST error:', error);
     return NextResponse.json({ error: 'Unable to create reagent order policy.' }, { status: 500 });
   }
@@ -302,12 +310,17 @@ export async function PATCH(request: Request) {
     const validation = validatePayload(body);
     if (!validation.payload) return NextResponse.json({ error: validation.error }, { status: 400 });
     const policy = validation.payload;
+    const scope = await getDepartmentScope(auth.user);
+    // Policies have no department_id: a policy belongs to the room of its master_data row. Legacy adds nothing.
+    const ownRoom = scope.mode === 'legacy'
+      ? sql``
+      : sql` AND EXISTS (SELECT 1 FROM master_data m WHERE m.item_id = p.item_id${andDeptWrite(scope, 'm')})`;
 
     const [updatedRows] = await sql.transaction([sql`
       WITH current_policy AS (
         SELECT p.*
         FROM reagent_order_policy p
-        WHERE p.item_id = ${policy.item_id} AND p.revision = ${policy.expected_revision}
+        WHERE p.item_id = ${policy.item_id} AND p.revision = ${policy.expected_revision}${ownRoom}
         FOR UPDATE
       ),
       updated_policy AS (
@@ -355,6 +368,8 @@ export async function PATCH(request: Request) {
     }
     return NextResponse.json({ success: true, data: updatedRows[0] });
   } catch (error: unknown) {
+    const scoped = departmentErrorResponse(error);
+    if (scoped) return scoped;
     console.error('Reagent order policy PATCH error:', error);
     return NextResponse.json({ error: 'Unable to update reagent order policy.' }, { status: 500 });
   }

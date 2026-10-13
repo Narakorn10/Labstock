@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => {
     mock: { results: Array<{ value: { strings: TemplateStringsArray; values: unknown[] } }> };
   };
   sql.transaction = vi.fn();
+  (sql as unknown as { unsafe: unknown }).unsafe = (text: string) => ({ strings: [text], values: [] }); // scoped-db column fragments
   return { sql, getAuthenticatedUser: vi.fn() };
 });
 
