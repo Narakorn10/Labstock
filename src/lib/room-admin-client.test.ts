@@ -112,6 +112,7 @@ describe("room admin menu", () => {
     expect(new Set(ALL_MENUS.map((menu) => menu.id)).size).toBe(ALL_MENUS.length);
     expect(new Set(ALL_MENUS.map((menu) => menu.href)).size).toBe(ALL_MENUS.length);
     for (const id of ROOM_ADMIN_MENUS) expect(ALL_MENUS.some((menu) => menu.id === id), id).toBe(true);
+    expect(ROOM_ADMIN_MENUS).toEqual(expect.arrayContaining(["room_admin", "reagent_order_policies", "master_data"]));
   });
 
   it("room admins get the extra menus; everyone else gets the same list back (nothing is stored)", () => {

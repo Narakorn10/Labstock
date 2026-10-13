@@ -136,7 +136,11 @@ function NumberField({
 }
 
 export default function ReagentOrderPoliciesPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, isRoomAdmin = false, accountContextLoaded = false } = useAuth();
+  // Admin / Manager as before, or the room admin of the room they work in (the server enforces the room as well).
+  const canEdit = user?.role === 'Admin' || user?.role === 'Manager' || isRoomAdmin;
+  // Anyone else has to wait for /api/auth/me before we can say 'no access' (the room admin flag comes from there).
+  const waitingForRights = !canEdit && !accountContextLoaded;
   const [policies, setPolicies] = useState<ReagentOrderPolicy[]>([]);
   const [selected, setSelected] = useState<ReagentOrderPolicy | null>(null);
   const [form, setForm] = useState<PolicyForm | null>(null);
@@ -184,14 +188,14 @@ export default function ReagentOrderPoliciesPage() {
   };
 
   useEffect(() => {
-    if (!authLoading && (user?.role === 'Admin' || user?.role === 'Manager')) {
+    if (!authLoading && canEdit) {
       // The auth provider is the external system being synchronized here.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       void loadPolicies('');
     }
     // Only run after the authentication state settles; search is applied explicitly.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, user?.role]);
+  }, [authLoading, canEdit]);
 
   const theoreticalMonthlyBoxes = useMemo(() => {
     if (!form) return null;
@@ -266,7 +270,7 @@ export default function ReagentOrderPoliciesPage() {
     }
   };
 
-  if (authLoading || ((user?.role === 'Admin' || user?.role === 'Manager') && loading && policies.length === 0)) {
+  if (authLoading || waitingForRights || (canEdit && loading && policies.length === 0)) {
     return (
       <div className="flex h-96 flex-col items-center justify-center gap-3 text-slate-600">
         <RefreshCw className="animate-spin text-blue-700" size={34} />
@@ -277,12 +281,12 @@ export default function ReagentOrderPoliciesPage() {
 
   if (!user) return null;
 
-  if (user.role !== 'Admin' && user.role !== 'Manager') {
+  if (!canEdit) {
     return (
       <div className="flex h-96 flex-col items-center justify-center gap-3 text-center">
         <Lock className="text-rose-600" size={44} />
         <h1 className="text-xl font-bold text-slate-900">ไม่มีสิทธิ์เข้าถึง</h1>
-        <p className="mt-1 text-sm text-ink-muted">เฉพาะ Admin หรือ Manager เท่านั้นที่แก้ไขนโยบายการสั่งซื้อน้ำยาได้</p>
+        <p className="mt-1 text-sm text-ink-muted">เฉพาะ Admin, Manager หรือผู้ดูแลห้องเท่านั้นที่แก้ไขนโยบายการสั่งซื้อน้ำยาได้</p>
       </div>
     );
   }
