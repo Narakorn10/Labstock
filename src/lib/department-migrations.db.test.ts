@@ -312,6 +312,29 @@ describe("v30 default department", () => {
     await db.close();
   });
 
+  // docs/departments-rollout.md item 5 used to say re-running v30 is always safe. It is only safe while every user's
+  // default department is CC and nobody has been removed from CC. These two tests pin down the limits.
+  it("fails when re-run after a user's default department is not CC (one-default index, 23505)", async () => {
+    const db = await newDb();
+    await applyFile(db, FORWARD[0]);
+    const roomId = await scalar<number>(db, "SELECT id AS v FROM departments WHERE code IS NULL ORDER BY id LIMIT 1");
+    await db.query("UPDATE departments SET code = 'MB' WHERE id = $1", [roomId]);
+    await db.query("DELETE FROM user_departments WHERE username = 'user1'");
+    await db.query("INSERT INTO user_departments (username, department_id, role, is_default) VALUES ('user1', $1, NULL, true)", [roomId]);
+    await expect(applyFile(db, FORWARD[0])).rejects.toThrow(/user_departments_one_default_idx/);
+    await db.close();
+  });
+
+  it("re-grants CC to a user who was removed from every room (revocation is not preserved)", async () => {
+    const db = await newDb();
+    await applyFile(db, FORWARD[0]);
+    await db.query("DELETE FROM user_departments WHERE username = 'user1'");
+    await applyFile(db, FORWARD[0]);
+    const { rows } = await db.query<{ department_id: number; is_default: boolean }>("SELECT department_id, is_default FROM user_departments WHERE username = 'user1'");
+    expect(rows).toEqual([{ department_id: 1, is_default: true }]);
+    await db.close();
+  });
+
   it("never uses 'LAB' as a department code in any migration file", () => {
     for (const file of [...FORWARD, ...ROLLBACK]) {
       const text = readFileSync(path.resolve(process.cwd(), file), "utf8");
