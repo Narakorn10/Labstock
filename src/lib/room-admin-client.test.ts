@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  appointRoomAdmin,
   approvePending,
   listMembers,
   listPending,
   removeMember,
+  removeRoomAdmin,
   roomRoleLabel,
   saveMember,
   type FetchImpl,
@@ -60,6 +62,17 @@ describe("room admin client calls", () => {
     expect(f.calls()[0][0]).toBe("/api/rooms/3/members/solo1");
     expect(f.calls()[0][1].method).toBe("DELETE");
     expect(f.calls()[0][1].body).toBeUndefined();
+  });
+
+  it("appoint / remove room admin: POST room-admins with { username }, DELETE room-admins/[username]", async () => {
+    const f = fetchOf(201, { success: true });
+    await appointRoomAdmin(4, "solo1", f.impl);
+    await removeRoomAdmin(4, "a b", f.impl);
+    expect(f.calls()[0][0]).toBe("/api/rooms/4/room-admins");
+    expect(f.calls()[0][1].method).toBe("POST");
+    expect(JSON.parse(String(f.calls()[0][1].body))).toEqual({ username: "solo1" });
+    expect(f.calls()[1][0]).toBe("/api/rooms/4/room-admins/a%20b");
+    expect(f.calls()[1][1].method).toBe("DELETE");
   });
 
   it("an API error becomes the Thai message, hint, code, request id and status", async () => {

@@ -12,6 +12,8 @@ import {
   listPending,
   removeMember,
   ROLE_LABELS,
+  appointRoomAdmin,
+  removeRoomAdmin,
   roomRoleLabel,
   saveMember,
   type PendingUser,
@@ -37,6 +39,8 @@ export default function RoomAdminPage() {
   const [newUsername, setNewUsername] = useState('');
   const [newRole, setNewRole] = useState<RoomAssignableRole | ''>('');
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
+  // Only the system Admin appoints / removes room admins (the server refuses everyone else too).
+  const isSystemAdmin = user?.role === 'Admin';
 
   const load = useCallback(async (id: number) => {
     const [pendingResult, memberResult] = await Promise.all([listPending(id), listMembers(id)]);
@@ -114,7 +118,7 @@ export default function RoomAdminPage() {
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Room admin</p>
           <h1 className="mt-1 text-[28px] leading-tight font-medium tracking-tight text-ink">ห้องของฉัน{roomName ? `: ${roomName}` : ''}</h1>
-          <p className="mt-1 text-sm text-ink-muted">อนุมัติผู้สมัครและจัดการสมาชิกของห้องนี้ การแต่งตั้งผู้ดูแลห้องทำโดยผู้ดูแลระบบ</p>
+          <p className="mt-1 text-sm text-ink-muted">อนุมัติผู้สมัครและจัดการสมาชิกของห้องนี้ การแต่งตั้งผู้ดูแลห้อง (สูงสุด 2 คนต่อห้อง) ทำโดยผู้ดูแลระบบ</p>
         </div>
         <button
           type="button"
@@ -161,7 +165,9 @@ export default function RoomAdminPage() {
       </section>
 
       <section aria-labelledby="members-heading" className="rounded-2xl border border-gray-200 bg-white p-5">
-        <h2 id="members-heading" className="text-lg font-bold text-gray-900">สมาชิกของห้อง ({members.length})</h2>
+        <h2 id="members-heading" className="text-lg font-bold text-gray-900">
+          สมาชิกของห้อง ({members.length}) <span className="ml-2 text-sm font-medium text-gray-500">ผู้ดูแลห้อง {members.filter((m) => m.isRoomAdmin).length}/2</span>
+        </h2>
         <p className="mt-1 text-xs text-gray-500">บทบาทในห้องมีผลเฉพาะห้องนี้ ผู้ถูกเพิ่มไม่ต้องยืนยัน และถอดไม่ได้ถ้าเป็นผู้ดูแลห้องหรือเป็นห้องสุดท้ายของผู้ใช้</p>
 
         <form onSubmit={handleAdd} className="mt-4 flex flex-wrap items-end gap-3 rounded-xl bg-gray-50 p-4">
@@ -220,7 +226,7 @@ export default function RoomAdminPage() {
                       <td className="py-3 pr-3">
                         <p className="font-medium text-gray-900">
                           {member.name || member.username}
-                          {member.isRoomAdmin && <span className="ml-2 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-bold text-blue-700">ผู้ดูแลห้อง</span>}
+                          {member.isRoomAdmin && <span className="ml-2 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-bold text-blue-700">ผู้ดูแลห้อง{member.accountStatus !== 'active' ? ' (ระงับอยู่)' : ''}</span>}
                         </p>
                         <p className="text-xs text-gray-500">{member.username}{member.isDefault ? ' · ห้องหลัก' : ''}</p>
                       </td>
@@ -247,8 +253,28 @@ export default function RoomAdminPage() {
                       </td>
                       <td className="py-3 pr-3 text-gray-700">{STATUS_LABELS[member.accountStatus ?? ''] ?? member.accountStatus ?? '-'}</td>
                       <td className="py-3 text-right">
+                        {isSystemAdmin && member.isRoomAdmin && (
+                          <button
+                            type="button"
+                            disabled={busy !== ''}
+                            onClick={() => void run(`unappoint:${member.username}`, () => removeRoomAdmin(roomId, member.username), `ถอด ${member.username} จากการเป็นผู้ดูแลห้องแล้ว`)}
+                            className="mr-2 inline-flex items-center gap-1 rounded-lg border border-amber-300 px-3 py-1 text-xs font-medium text-amber-800 hover:bg-amber-50 disabled:opacity-50"
+                          >
+                            ถอดสิทธิ์ผู้ดูแลห้อง
+                          </button>
+                        )}
+                        {isSystemAdmin && !member.isRoomAdmin && editable && member.accountStatus === 'active' && (
+                          <button
+                            type="button"
+                            disabled={busy !== ''}
+                            onClick={() => void run(`appoint:${member.username}`, () => appointRoomAdmin(roomId, member.username), `แต่งตั้ง ${member.username} เป็นผู้ดูแลห้องแล้ว`)}
+                            className="mr-2 inline-flex items-center gap-1 rounded-lg border border-blue-300 px-3 py-1 text-xs font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+                          >
+                            ตั้งเป็นผู้ดูแลห้อง
+                          </button>
+                        )}
                         {member.isRoomAdmin || member.username === user.username ? (
-                          <span className="text-xs text-gray-400">—</span>
+                          isSystemAdmin && member.isRoomAdmin ? null : <span className="text-xs text-gray-400">—</span>
                         ) : confirmRemove === member.username ? (
                           <span className="inline-flex items-center gap-2">
                             <button
