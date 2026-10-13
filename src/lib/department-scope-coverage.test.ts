@@ -51,7 +51,6 @@ export const DEPARTMENT_SCOPE_PENDING: string[] = [
   "src/app/api/settings/barcode-v2/[id]/route.ts",
   "src/app/api/settings/barcode-v2/route.ts",
   "src/app/api/settings/barcodes/route.ts",
-  "src/app/api/settings/reagent-orders/route.ts",
   "src/app/api/settings/route.ts",
   "src/app/api/stations/catalog/route.ts",
   "src/app/api/usage/route.ts",
