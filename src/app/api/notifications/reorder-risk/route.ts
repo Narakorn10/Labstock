@@ -46,7 +46,8 @@ export async function POST(request: Request) {
       SELECT n.username, n.email, n.line_user_id, n.notify_reorder_risk
       FROM notification_settings n
       JOIN users u ON u.username = n.username
-      WHERE u.role IN ('Admin', 'Manager')
+      WHERE COALESCE(u.account_status, 'active') = 'active'
+        AND u.role IN ('Admin', 'Manager')
         AND n.notify_reorder_risk = true
         AND (n.line_user_id IS NOT NULL OR n.email IS NOT NULL)
     `;

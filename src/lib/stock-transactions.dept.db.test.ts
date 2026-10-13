@@ -421,6 +421,7 @@ const ORIGINAL_RECIPIENT_SQL = `
       FROM notification_settings n
       JOIN users u ON u.username = n.username
       WHERE n.notify_low_stock = true
+        AND COALESCE(u.account_status, 'active') = 'active'
     `;
 
 async function seedNotificationFixture() {
@@ -474,7 +475,7 @@ describe("LOW_STOCK notification recipients by department", () => {
     expect(forVendor("vendor1")).toEqual([]);
   });
 
-  it("11b) legacy on the migrated schema keeps the recipient SQL byte for byte and tells everyone who opted in", async () => {
+  it("11b) legacy on the migrated schema keeps the recipient SQL (plus the active-account filter) and tells everyone active who opted in", async () => {
     const query = vi.spyOn(sql.db, "query");
 
     await runDispenseBatch([{ itemId: "MB-000001", lotNo: "LB1", qty: 6 }], userB, audit, { mode: "legacy" });
