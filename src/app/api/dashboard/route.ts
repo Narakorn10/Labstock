@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import sql from '@/lib/db';
 import { getAuthenticatedUser } from '@/lib/auth-utils';
+import { andDept, departmentErrorResponse, getDepartmentScope } from '@/lib/scoped-db';
 import { getRequestId, logApiEvent, withRequestId } from '@/lib/request-observability';
 
 export async function GET(request: Request) {
@@ -42,6 +43,12 @@ export async function GET(request: Request) {
       );
     }
 
+    // Items and their stock of the user's room only. Legacy / "all rooms": no filter (the fragments are empty).
+    // The inventory join is limited too, so a lot never adds to another room's quantity. (Filtering the join through
+    // `andDept` and not a raw column compare keeps the SQL valid before migration v31.)
+    const scope = await getDepartmentScope(user);
+    const onlyOwnRoom = scope.mode === 'one' ? sql`WHERE TRUE${andDept(scope, 'm')}` : sql``;
+
     const rows = user.role === 'Vendor'
       ? await sql`
           SELECT
@@ -73,8 +80,8 @@ export async function GET(request: Request) {
               '[]'::json
             ) AS lots
           FROM master_data m
-          LEFT JOIN inventory i ON i.item_id = m.item_id AND i.quantity > 0
-          WHERE m.vendor = ${user.vendor}
+          LEFT JOIN inventory i ON i.item_id = m.item_id AND i.quantity > 0${andDept(scope, 'i')}
+          WHERE m.vendor = ${user.vendor}${andDept(scope, 'm')}
           GROUP BY m.item_id
           ORDER BY m.item_id ASC
         `
@@ -108,7 +115,8 @@ export async function GET(request: Request) {
               '[]'::json
             ) AS lots
           FROM master_data m
-          LEFT JOIN inventory i ON i.item_id = m.item_id AND i.quantity > 0
+          LEFT JOIN inventory i ON i.item_id = m.item_id AND i.quantity > 0${andDept(scope, 'i')}
+          ${onlyOwnRoom}
           GROUP BY m.item_id
           ORDER BY m.item_id ASC
         `;
@@ -135,6 +143,8 @@ export async function GET(request: Request) {
     });
     return withRequestId(NextResponse.json(data), requestId);
   } catch (error: unknown) {
+    const scoped = departmentErrorResponse(error, requestId);
+    if (scoped) return scoped;
     console.error(`[Dashboard API] requestId=${requestId}`, error);
     return withRequestId(
       NextResponse.json({ error: 'Failed to fetch dashboard data', requestId }, { status: 500 }),
