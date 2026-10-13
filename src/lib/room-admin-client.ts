@@ -78,6 +78,16 @@ export function removeMember(roomId: number, username: string, fetchImpl: FetchI
   return call(`${room(roomId)}/members/${encodeURIComponent(username)}`, { method: "DELETE" }, () => true as const, fetchImpl);
 }
 
+/** System Admin only: give the person one of the room's 2 room admin slots. */
+export function appointRoomAdmin(roomId: number, username: string, fetchImpl: FetchImpl = defaultFetch) {
+  return call(`${room(roomId)}/room-admins`, { method: "POST", body: { username } }, () => true as const, fetchImpl);
+}
+
+/** System Admin only: free the person's room admin slot (they stay a member). */
+export function removeRoomAdmin(roomId: number, username: string, fetchImpl: FetchImpl = defaultFetch) {
+  return call(`${room(roomId)}/room-admins/${encodeURIComponent(username)}`, { method: "DELETE" }, () => true as const, fetchImpl);
+}
+
 export const ROLE_LABELS: Record<string, string> = {
   Admin: "ผู้ดูแลระบบ",
   Manager: "หัวหน้างาน",
