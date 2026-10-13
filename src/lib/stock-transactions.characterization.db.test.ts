@@ -26,6 +26,8 @@ let schemaReady = false;
 async function seed() {
   if (!schemaReady) {
     await sql.db.exec(PURCHASE_ORDER_TEST_SCHEMA);
+    // Production has users.account_status (v16); the minimal test schema does not.
+    await sql.db.exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS account_status TEXT NOT NULL DEFAULT 'active'");
     await sql.db.exec(`
       CREATE TABLE notification_settings (
         username TEXT PRIMARY KEY, email TEXT, line_user_id TEXT, notify_low_stock BOOLEAN DEFAULT FALSE
@@ -161,6 +163,16 @@ describe("runDispenseBatch characterization (notifications)", () => {
     expect(Number((items[0] as unknown as { quantity: unknown }).quantity)).toBe(4);
     expect((recipients as Array<{ username: string }>).map((r) => r.username).sort()).toEqual(["staff1", "staff2", "vend1"]);
     expect(recipients.find((r) => r.username === "vend1")).toMatchObject({ role: "Vendor", vendor: "V1" });
+  });
+
+  it("does not send LOW_STOCK to a suspended or pending account (behavior change: only active accounts are recipients)", async () => {
+    await sql.db.exec("UPDATE users SET account_status = 'suspended' WHERE username = 'staff1'");
+    await sql.db.exec("UPDATE users SET account_status = 'pending' WHERE username = 'vend1'");
+    await sql.db.exec("INSERT INTO inventory (item_id, lot_no, quantity, received_on) VALUES ('R1','L1',6,'2026-09-01')");
+    await runDispenseBatch([{ itemId: "R1", lotNo: "L1", qty: 2 }], user, audit, { mode: "legacy" });
+
+    const [, , recipients] = vi.mocked(notifyUsersVendorScoped).mock.calls[0];
+    expect((recipients as Array<{ username: string }>).map((r) => r.username).sort()).toEqual(["staff2"]);
   });
 
   it("does not send LOW_STOCK while stock stays above min_threshold", async () => {

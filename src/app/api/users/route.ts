@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import sql from '@/lib/db';
 import { hasUserDepartmentColumn, hasUserPinColumn, hashPassword, hashPin, isAdmin } from '@/lib/auth-utils';
+import { departmentsReady } from '@/lib/departments-flag';
+import { defaultRoomId, parseRoomId } from '@/lib/user-rooms';
 
 const ALLOWED_ROLES = new Set(['User', 'Operator', 'Manager', 'Admin', 'Vendor']);
 
@@ -102,17 +104,40 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'ชื่อผู้ใช้นี้มีอยู่ในระบบแล้ว' }, { status: 400 });
     }
 
-    await sql`
-      INSERT INTO users (username, password_hash, pin_hash, name, role, vendor)
-      VALUES (
-        ${username}, 
-        ${await hashPassword(password)}, 
-        ${pinEnabled && pin ? await hashPin(pin) : null},
-        ${name}, 
-        ${role}, 
-        ${typeof userData.vendor === 'string' ? userData.vendor.trim() : ''}
-      )
-    `;
+    const passwordHash = await hashPassword(password);
+    const pinHash = pinEnabled && pin ? await hashPin(pin) : null;
+    const vendorName = typeof userData.vendor === 'string' ? userData.vendor.trim() : '';
+
+    if (await departmentsReady()) {
+      // Departments on: the new user must belong to a room, otherwise department-aware login rejects them.
+      // Room = departmentId from the request, else the default room (CC). Checked in the same statement as the insert.
+      const requested = userData.departmentId === undefined || userData.departmentId === null || userData.departmentId === ''
+        ? await defaultRoomId()
+        : parseRoomId(userData.departmentId);
+      if (requested === null) {
+        return NextResponse.json({ error: 'ห้องปฏิบัติการไม่ถูกต้อง' }, { status: 400 });
+      }
+      const created = await sql`
+        WITH room AS (
+          SELECT id FROM departments WHERE id = ${requested} AND is_active AND code IS NOT NULL
+        ), new_user AS (
+          INSERT INTO users (username, password_hash, pin_hash, name, role, vendor)
+          SELECT ${username}, ${passwordHash}, ${pinHash}, ${name}, ${role}, ${vendorName} FROM room
+          RETURNING username
+        )
+        INSERT INTO user_departments (username, department_id, role, is_default)
+        SELECT new_user.username, room.id, NULL, true FROM new_user, room
+        RETURNING username
+      `;
+      if (created.length === 0) {
+        return NextResponse.json({ error: 'ห้องปฏิบัติการที่เลือกไม่ถูกต้องหรือปิดใช้งานอยู่' }, { status: 400 });
+      }
+    } else {
+      await sql`
+        INSERT INTO users (username, password_hash, pin_hash, name, role, vendor)
+        VALUES (${username}, ${passwordHash}, ${pinHash}, ${name}, ${role}, ${vendorName})
+      `;
+    }
     if (department && await hasUserDepartmentColumn()) {
       await sql`UPDATE users SET department = ${department} WHERE username = ${username}`;
     }

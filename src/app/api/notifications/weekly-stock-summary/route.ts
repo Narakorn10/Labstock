@@ -66,7 +66,7 @@ export async function POST(request: Request) {
     const recipientRows = await sql`
       SELECT n.username, n.email, n.line_user_id, n.notify_weekly_summary, u.role, u.vendor
       FROM notification_settings n JOIN users u ON u.username = n.username
-      WHERE n.notify_weekly_summary = true AND (n.line_user_id IS NOT NULL OR n.email IS NOT NULL)
+      WHERE n.notify_weekly_summary = true AND COALESCE(u.account_status, 'active') = 'active' AND (n.line_user_id IS NOT NULL OR n.email IS NOT NULL)
     `;
     const generalRows = recipientRows.filter((row) => row.role !== "Vendor");
     const generalSettings = normalizeNotificationSettings(generalRows);

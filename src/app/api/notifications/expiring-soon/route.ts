@@ -64,6 +64,7 @@ export async function POST(request: Request) {
       FROM notification_settings n
       JOIN users u ON u.username = n.username
       WHERE n.notify_expiring_soon = true
+        AND COALESCE(u.account_status, 'active') = 'active'
         AND (n.line_user_id IS NOT NULL OR n.email IS NOT NULL)
     `;
 

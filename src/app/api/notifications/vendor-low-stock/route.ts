@@ -81,7 +81,8 @@ export async function POST(request: Request) {
           n.notify_low_stock
         FROM notification_settings n
         JOIN users u ON u.username = n.username
-        WHERE u.role = 'Vendor'
+        WHERE COALESCE(u.account_status, 'active') = 'active'
+          AND u.role = 'Vendor'
           AND u.vendor = ${vendor}
           AND n.notify_low_stock = true
           AND (n.line_user_id IS NOT NULL OR n.email IS NOT NULL)

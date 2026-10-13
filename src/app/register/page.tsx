@@ -18,6 +18,7 @@ type VendorMode = 'existing' | 'request';
 
 type RegistrationOptions = {
   vendors?: string[];
+  departments?: { id: number; name: string }[];
   error?: string;
 };
 
@@ -38,6 +39,8 @@ export default function RegisterPage() {
   const [vendorName, setVendorName] = useState('');
   const [vendorRequest, setVendorRequest] = useState('');
   const [vendors, setVendors] = useState<string[]>([]);
+  const [rooms, setRooms] = useState<{ id: number; name: string }[]>([]);
+  const [departmentId, setDepartmentId] = useState('');
   const [loadingOptions, setLoadingOptions] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -56,6 +59,7 @@ export default function RegisterPage() {
 
         if (!cancelled) {
           setVendors(data.vendors || []);
+          setRooms(data.departments || []);
         }
       } catch (requestError: unknown) {
         if (!cancelled) {
@@ -84,6 +88,11 @@ export default function RegisterPage() {
       return;
     }
 
+    if (accountType === 'lab' && rooms.length > 0 && !departmentId) {
+      setError('กรุณาเลือกห้องปฏิบัติการ');
+      return;
+    }
+
     setSubmitting(true);
     try {
       const response = await fetch('/api/auth/register', {
@@ -95,6 +104,7 @@ export default function RegisterPage() {
           username,
           password,
           accountType,
+          departmentId: accountType === 'lab' && rooms.length > 0 ? Number(departmentId) : undefined,
           vendorMode: accountType === 'vendor' ? vendorMode : undefined,
           vendorName: accountType === 'vendor' && vendorMode === 'existing' ? vendorName : undefined,
           vendorRequest: accountType === 'vendor' && vendorMode === 'request' ? vendorRequest : undefined,
@@ -277,6 +287,25 @@ export default function RegisterPage() {
                   <span className="mt-1 block text-xs leading-5 text-gray-600">ผูกกับบริษัทที่ได้รับอนุมัติเท่านั้น</span>
                 </label>
               </div>
+
+              {accountType === 'lab' && rooms.length > 0 && (
+                <div className="space-y-2">
+                  <label htmlFor="register-room" className="ml-1 text-xs font-bold text-gray-600">ห้องปฏิบัติการที่สังกัด</label>
+                  <select
+                    id="register-room"
+                    name="departmentId"
+                    required
+                    value={departmentId}
+                    onChange={(event) => setDepartmentId(event.target.value)}
+                    className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3.5 text-sm font-medium text-gray-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">เลือกห้องปฏิบัติการ</option>
+                    {rooms.map((room) => (
+                      <option key={room.id} value={room.id}>{room.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {accountType === 'vendor' && (
                 <div className="space-y-4 rounded-2xl border border-blue-100 bg-blue-50/60 p-4">

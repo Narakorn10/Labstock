@@ -72,7 +72,8 @@ async function notifyLowStockForAffectedItems(itemIds: string[], scope: Departme
       SELECT n.*, u.role, u.vendor
       FROM notification_settings n
       JOIN users u ON u.username = n.username
-      WHERE n.notify_low_stock = true${recipientDepartmentFilter(scope)}
+      WHERE n.notify_low_stock = true
+        AND COALESCE(u.account_status, 'active') = 'active'${recipientDepartmentFilter(scope)}
     `;
 
     if (settingsRows.length > 0) {

@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import sql from '@/lib/db';
 import { hashPassword } from '@/lib/auth-utils';
+import { departmentsReady } from '@/lib/departments-flag';
+import { defaultRoomId, listSelectableRooms, parseRoomId } from '@/lib/user-rooms';
 
 type RegistrationRequest = {
   name?: unknown;
@@ -11,6 +13,7 @@ type RegistrationRequest = {
   vendorMode?: unknown;
   vendorName?: unknown;
   vendorRequest?: unknown;
+  departmentId?: unknown;
 };
 
 type RegistrationSchemaState = {
@@ -72,8 +75,12 @@ export async function GET() {
       ORDER BY name ASC
     `;
 
+    // Rooms to pick from: only when departments are enabled and ready (otherwise empty and the form shows no room field).
+    const departments = await departmentsReady() ? await listSelectableRooms() : [];
+
     return NextResponse.json({
       vendors: vendors.map((vendor) => String(vendor.name)),
+      departments,
       registrationMode: 'pending_approval',
     });
   } catch (error: unknown) {
@@ -157,6 +164,24 @@ export async function POST(request: Request) {
       }
     }
 
+    // Departments on: a lab account must pick an active room; a vendor account goes to the default room (CC).
+    // The room is checked in the same statement that creates the user, so a bad room creates nothing.
+    const useDepartments = await departmentsReady();
+    let roomId: number | null = null;
+    if (useDepartments) {
+      if (accountType === 'lab') {
+        roomId = parseRoomId(body.departmentId);
+        if (roomId === null) {
+          return NextResponse.json({ error: 'กรุณาเลือกห้องปฏิบัติการ' }, { status: 400 });
+        }
+      } else {
+        roomId = await defaultRoomId();
+        if (roomId === null) {
+          return NextResponse.json({ error: 'ยังไม่สามารถลงทะเบียนบัญชีบริษัทได้ในขณะนี้ กรุณาติดต่อผู้ดูแลระบบ' }, { status: 503 });
+        }
+      }
+    }
+
     const existingUsers = await sql`
       SELECT username
       FROM users
@@ -169,28 +194,48 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'ชื่อผู้ใช้หรืออีเมลนี้มีอยู่ในระบบแล้ว' }, { status: 409 });
     }
 
-    await sql`
-      INSERT INTO users (
-        username,
-        password_hash,
-        name,
-        role,
-        vendor,
-        email,
-        account_status,
-        vendor_request
-      )
-      VALUES (
-        ${username},
-        ${await hashPassword(password)},
-        ${name},
-        ${role},
-        ${vendor},
-        ${email},
-        'pending',
-        ${vendorRequest}
-      )
-    `;
+    const passwordHash = await hashPassword(password);
+    if (useDepartments) {
+      const created = await sql`
+        WITH room AS (
+          SELECT id FROM departments WHERE id = ${roomId} AND is_active AND code IS NOT NULL
+        ), new_user AS (
+          INSERT INTO users (username, password_hash, name, role, vendor, email, account_status, vendor_request)
+          SELECT ${username}, ${passwordHash}, ${name}, ${role}, ${vendor}, ${email}, 'pending', ${vendorRequest}
+          FROM room
+          RETURNING username
+        )
+        INSERT INTO user_departments (username, department_id, role, is_default)
+        SELECT new_user.username, room.id, NULL, true FROM new_user, room
+        RETURNING username
+      `;
+      if (created.length === 0) {
+        return NextResponse.json({ error: 'ห้องปฏิบัติการที่เลือกไม่ถูกต้องหรือปิดใช้งานอยู่ กรุณาเลือกใหม่' }, { status: 400 });
+      }
+    } else {
+      await sql`
+        INSERT INTO users (
+          username,
+          password_hash,
+          name,
+          role,
+          vendor,
+          email,
+          account_status,
+          vendor_request
+        )
+        VALUES (
+          ${username},
+          ${passwordHash},
+          ${name},
+          ${role},
+          ${vendor},
+          ${email},
+          'pending',
+          ${vendorRequest}
+        )
+      `;
+    }
 
     return NextResponse.json({
       success: true,
