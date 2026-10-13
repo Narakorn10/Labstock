@@ -351,6 +351,59 @@ describe("GET /api/auth/me (flag on, departmentContext)", () => {
   });
 });
 
+describe("GET /api/auth/me (isRoomAdmin)", () => {
+  beforeEach(async () => {
+    process.env.DEPARTMENTS_ENABLED = "true";
+    await migrated.db.exec("UPDATE user_departments SET admin_slot = NULL");
+  });
+  afterEach(async () => {
+    await migrated.db.exec("UPDATE user_departments SET admin_slot = NULL");
+  });
+
+  it("a room admin of the room they work in gets isRoomAdmin: true", async () => {
+    await migrated.db.exec("UPDATE user_departments SET admin_slot = 1 WHERE username = 'solo2' AND department_id = 2");
+    sessionAs("solo2");
+    const body = await (await get()).json();
+    expect(body.isRoomAdmin).toBe(true);
+  });
+
+  it("an ordinary member, and a room admin of ANOTHER room, get no isRoomAdmin key", async () => {
+    sessionAs("solo1");
+    expect("isRoomAdmin" in (await (await get()).json())).toBe(false);
+    await migrated.db.exec("UPDATE user_departments SET admin_slot = 1 WHERE username = 'solo2' AND department_id = 2");
+    sessionAs("solo1");
+    expect("isRoomAdmin" in (await (await get()).json())).toBe(false);
+  });
+
+  it("a system Admin never gets the key (their rights come from the Admin role) and no slot query runs", async () => {
+    sessionAs("admin1", "Admin");
+    h.texts = [];
+    expect("isRoomAdmin" in (await (await get()).json())).toBe(false);
+    expect(h.texts.some((text) => text.includes("admin_slot"))).toBe(false);
+  });
+
+  it("flag off: no key and no admin_slot query at all", async () => {
+    delete process.env.DEPARTMENTS_ENABLED;
+    await migrated.db.exec("UPDATE user_departments SET admin_slot = 1 WHERE username = 'solo2' AND department_id = 2");
+    sessionAs("solo2");
+    h.texts = [];
+    expect("isRoomAdmin" in (await (await get()).json())).toBe(false);
+    expect(h.texts.some((text) => text.includes("admin_slot"))).toBe(false);
+  });
+
+  it("the slot lookup failing is never a 500: 200 without the key", async () => {
+    sessionAs("solo2");
+    const real = migrated as unknown as Impl;
+    h.target = (strings, ...values) => {
+      if (strings.join("?").includes("admin_slot")) return Promise.reject(Object.assign(new Error("boom"), { code: "57P01" }));
+      return real(strings, ...values);
+    };
+    const response = await get();
+    expect(response.status).toBe(200);
+    expect("isRoomAdmin" in (await response.json())).toBe(false);
+  });
+});
+
 const squash =(text: string) => text.replace(/\s+/g, " ").trim();
 
 const GOLDEN_SCHEMA_PROBE = squash(`

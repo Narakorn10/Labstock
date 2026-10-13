@@ -4,6 +4,7 @@ import sql from '@/lib/db';
 import { listUserDepartments } from '@/lib/department-switch';
 import type { DepartmentContext } from '@/lib/department-switcher-types';
 import { isMissingDepartmentSchemaError, markDepartmentsNotReady } from '@/lib/departments-flag';
+import { hasRoomAdminSlot } from '@/lib/room-admin';
 
 /** Context used when the department list cannot be built: no options, active taken from the user as resolved. Pure. */
 function fallbackDepartmentContext(user: AuthenticatedUser): DepartmentContext {
@@ -93,10 +94,23 @@ export async function GET(request: Request) {
       }
     }
 
+    // Room admin ("ผู้ดูแลห้อง") of the room the user is working in. Only asked on the department-aware path (numeric
+    // scope) for non-Admins, and the key is added only when it is true, so every other answer keeps its exact old shape.
+    // A failed lookup just means "not a room admin": this endpoint must never turn into a 500 (the client signs out then).
+    let isRoomAdmin = false;
+    if (typeof user.scope === 'number' && user.role !== 'Admin') {
+      try {
+        isRoomAdmin = await hasRoomAdminSlot(user, user.scope);
+      } catch (error) {
+        console.error('Auth me room admin lookup failed:', error);
+      }
+    }
+
     return NextResponse.json({
       success: true,
       user: { ...user, department },
-      ...(departmentContext ? { departmentContext } : {})
+      ...(departmentContext ? { departmentContext } : {}),
+      ...(isRoomAdmin ? { isRoomAdmin: true } : {})
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);

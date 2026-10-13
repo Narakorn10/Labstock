@@ -19,6 +19,7 @@ import {
   Shield,
   ShieldCheck,
   ShoppingCart,
+  UsersRound,
 } from "lucide-react";
 import { SHIPMENTS_ENABLED } from "@/lib/feature-flags";
 
@@ -87,6 +88,7 @@ const ALL_NAVIGATION_GROUPS: NavigationGroup[] = [
       { id: "notifications", name: "Notifications", label: "Notifications", href: "/settings/notifications", icon: BellRing },
       { id: "barcodes", name: "สอนอ่านบาร์โค้ด", label: "Barcode Learning", href: "/settings/barcodes", icon: ScanLine },
       { id: "reagent_order_policies", name: "ตั้งค่านโยบายสั่งซื้อน้ำยา", label: "Reagent Order Policies", href: "/settings/reagent-orders", icon: ClipboardList },
+      { id: "room_admin", name: "ห้องของฉัน (ผู้ดูแลห้อง)", label: "My Room", href: "/settings/room", icon: UsersRound },
     ],
   },
 ];
@@ -101,7 +103,7 @@ export const ALL_MENUS = NAVIGATION_GROUPS.flatMap((group) => group.items);
 export const ROLES = ["Admin", "Manager", "Operator", "User", "Vendor"] as const;
 
 const ROLE_FALLBACK_MENUS: Record<string, string[]> = {
-  Admin: ["dashboard", "master_data", "user_management", "rbac", "reagent_order_policies", "activity", "lot_labels"],
+  Admin: ["dashboard", "master_data", "user_management", "rbac", "reagent_order_policies", "activity", "lot_labels", "room_admin"],
   Manager: ["dashboard", "master_data"],
 };
 
@@ -111,4 +113,12 @@ export function getRoleFallbackMenus(role: string) {
 
 export function mergeMenus(primary: string[], fallback: string[]) {
   return Array.from(new Set([...primary, ...fallback]));
+}
+
+/** Menus a room admin ("ผู้ดูแลห้อง") gets on top of their role's menus. Never stored in the role permissions. */
+export const ROOM_ADMIN_MENUS = ["room_admin"];
+
+/** Pure: adds the room admin menus when the user is a room admin, otherwise returns the same list. */
+export function mergeRoomAdminMenus(menus: string[], isRoomAdmin: boolean) {
+  return isRoomAdmin ? mergeMenus(menus, ROOM_ADMIN_MENUS) : menus;
 }
