@@ -90,6 +90,8 @@ export type MeInterpretation = {
   signOut: boolean;
   department: string | null;
   ctx: DepartmentContext | null;
+  /** Present (true) only when /api/auth/me said the user is a room admin of the room they work in. */
+  isRoomAdmin?: true;
 };
 
 /**
@@ -102,7 +104,12 @@ export function interpretMeResponse(ok: boolean, body: unknown): MeInterpretatio
   if (!isRecord(body)) return { signOut: false, department: null, ctx: null };
   const user = isRecord(body.user) ? body.user : null;
   const department = typeof user?.department === "string" ? user.department : null;
-  return { signOut: false, department, ctx: parseDepartmentContext(body.departmentContext) };
+  return {
+    signOut: false,
+    department,
+    ctx: parseDepartmentContext(body.departmentContext),
+    ...(body.isRoomAdmin === true ? { isRoomAdmin: true as const } : {}),
+  };
 }
 
 // ---------------------------------------------------------------- switch result

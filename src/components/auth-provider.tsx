@@ -38,6 +38,8 @@ interface AuthContextType {
   onDepartmentSwitched?: (target: SwitchTarget) => void;
   onDepartmentDisabled?: () => void;
   refreshDepartmentContext?: () => Promise<void>;
+  /** The user is a room admin of the room they are working in (from /api/auth/me). Not part of `user` on purpose. */
+  isRoomAdmin?: boolean;
 }
 
 interface DepartmentState {
@@ -45,9 +47,10 @@ interface DepartmentState {
   ctx: DepartmentContext | null;
   notice: string | null;
   error: string | null;
+  isRoomAdmin: boolean;
 }
 
-const EMPTY_DEPARTMENT_STATE: DepartmentState = { owner: null, ctx: null, notice: null, error: null };
+const EMPTY_DEPARTMENT_STATE: DepartmentState = { owner: null, ctx: null, notice: null, error: null, isRoomAdmin: false };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -127,6 +130,7 @@ function AuthStateProvider({ children }: { children: React.ReactNode }) {
           setDeptState((prev) => ({
             owner: username,
             ctx: result.ctx,
+            isRoomAdmin: result.isRoomAdmin === true,
             // Keep the one-shot message / error across a later re-run of this effect; replace only on a new result.
             notice: pendingResult === 'ok' ? `สลับไปงาน ${result.ctx?.active?.name ?? ALL_LABEL} แล้ว` : (prev.owner === username ? prev.notice : null),
             error: pendingResult === 'failed' ? 'สลับงานไม่สำเร็จ' : (prev.owner === username ? prev.error : null),
@@ -153,7 +157,7 @@ function AuthStateProvider({ children }: { children: React.ReactNode }) {
 
   // 409 DEPARTMENTS_DISABLED: the flag was turned off, hide the switcher.
   const onDepartmentDisabled = React.useCallback(() => {
-    setDeptState((prev) => ({ ...prev, ctx: null }));
+    setDeptState((prev) => ({ ...prev, ctx: null, isRoomAdmin: false }));
   }, []);
 
   // "Retry" button: no signOut path, a failed call keeps what is already shown.
@@ -195,6 +199,7 @@ function AuthStateProvider({ children }: { children: React.ReactNode }) {
         onDepartmentSwitched,
         onDepartmentDisabled,
         refreshDepartmentContext,
+        isRoomAdmin: dept.isRoomAdmin,
       }}
     >
       {children}

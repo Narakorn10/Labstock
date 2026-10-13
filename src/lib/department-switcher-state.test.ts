@@ -136,6 +136,13 @@ describe("interpretMeResponse(ok, body)", () => {
       expect(interpretMeResponse(true, body)).toEqual({ signOut: false, department: null, ctx: null });
     }
   });
+  it("isRoomAdmin is passed on only when the body says exactly true", () => {
+    expect(interpretMeResponse(true, { ...golden, isRoomAdmin: true }).isRoomAdmin).toBe(true);
+    for (const value of ["true", 1, "yes", null, {}, false]) {
+      expect("isRoomAdmin" in interpretMeResponse(true, { ...golden, isRoomAdmin: value }), String(value)).toBe(false);
+    }
+    expect("isRoomAdmin" in interpretMeResponse(false, { isRoomAdmin: true })).toBe(false);
+  });
   it("department missing -> null", () => {
     expect(interpretMeResponse(true, { user: {} }).department).toBeNull();
   });

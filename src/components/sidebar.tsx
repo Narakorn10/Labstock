@@ -4,12 +4,12 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { LogOut, Menu, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from './auth-provider';
 import { DepartmentSwitcher } from './department-switcher';
 import { shouldShowLoadError, shouldShowSwitcher, type DepartmentContext } from '@/lib/department-switcher-state';
 import { apiClient } from '@/lib/api-client';
-import { NAVIGATION_GROUPS, getRoleFallbackMenus, mergeMenus } from '@/lib/menu-config';
+import { NAVIGATION_GROUPS, getRoleFallbackMenus, mergeMenus, mergeRoomAdminMenus } from '@/lib/menu-config';
 
 const PERMISSION_CACHE_VERSION = 'v3';
 
@@ -51,6 +51,7 @@ export default function Sidebar({ onExpandedChange }: SidebarProps) {
     onDepartmentSwitched,
     onDepartmentDisabled,
     refreshDepartmentContext,
+    isRoomAdmin = false,
   } = useAuth();
   // Desktop: a narrow icon rail that widens while hovered or focused. The drawer on small screens is always wide.
   const [expanded, setExpanded] = useState(false);
@@ -59,6 +60,9 @@ export default function Sidebar({ onExpandedChange }: SidebarProps) {
   const engaged = departmentContext !== null && switcherEngaged;
   const wide = isOpen || expanded || engaged;
   const departmentBadge = collapsedDepartmentBadge(departmentContext);
+  // Worked out while rendering, never stored: allowedMenus (and its sessionStorage copy, keyed by role) must not carry
+  // room admin menus, otherwise other users of the same role on this browser would see them.
+  const visibleMenus = useMemo(() => mergeRoomAdminMenus(allowedMenus, isRoomAdmin), [allowedMenus, isRoomAdmin]);
 
   useEffect(() => {
     onExpandedChange?.(expanded || engaged);
@@ -225,7 +229,7 @@ export default function Sidebar({ onExpandedChange }: SidebarProps) {
               </div>
             ) : (
               NAVIGATION_GROUPS.map((group) => {
-                const filteredItems = group.items.filter((item) => allowedMenus.includes(item.id));
+                const filteredItems = group.items.filter((item) => visibleMenus.includes(item.id));
 
                 if (filteredItems.length === 0) return null;
 
