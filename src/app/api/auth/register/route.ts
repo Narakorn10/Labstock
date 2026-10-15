@@ -68,6 +68,8 @@ export async function GET() {
       return migrationRequiredResponse();
     }
 
+    // Deliberate (owner decision): sign-up lists/validates approved vendors of ALL departments, so this query has no department filter
+    // and the file stays in DEPARTMENT_SCOPE_PENDING. Once a 2nd department exists, other rooms' company names are publicly visible here.
     const vendors = await sql`
       SELECT name
       FROM vendors
@@ -141,6 +143,7 @@ export async function POST(request: Request) {
           return NextResponse.json({ error: 'กรุณาเลือกบริษัทที่ได้รับอนุมัติ' }, { status: 400 });
         }
 
+        // Deliberate (owner decision): any department's approved vendor is accepted at sign-up (no department filter, see GET).
         const approvedVendors = await sql`
           SELECT name
           FROM vendors

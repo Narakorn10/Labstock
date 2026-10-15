@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import sql from '@/lib/db';
-import { getAuthenticatedUser, isAdmin } from '@/lib/auth-utils';
+import { getAuthenticatedUser } from '@/lib/auth-utils';
+import { andDept } from '@/lib/scoped-db';
+import { departmentsReady } from '@/lib/departments-flag';
 
 const ALLOWED_ACCOUNT_STATUSES = new Set(['active', 'suspended']);
 
@@ -25,7 +27,9 @@ export async function PATCH(
   { params }: { params: Promise<{ username: string }> },
 ) {
   try {
-    if (!await isAdmin(request)) {
+    // Only a global Admin may change account status (a room admin has role "User" here), whatever room or "ALL" they view.
+    const currentUser = await getAuthenticatedUser(request);
+    if (!currentUser || currentUser.role !== 'Admin') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -41,11 +45,6 @@ export async function PATCH(
     const accountStatus = typeof body.accountStatus === 'string' ? body.accountStatus : '';
     if (!ALLOWED_ACCOUNT_STATUSES.has(accountStatus)) {
       return NextResponse.json({ error: 'สถานะบัญชีไม่ถูกต้อง' }, { status: 400 });
-    }
-
-    const currentUser = await getAuthenticatedUser(request);
-    if (!currentUser) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const users = await sql`
@@ -92,13 +91,38 @@ export async function PATCH(
         return NextResponse.json({ error: message }, { status: 400 });
       }
 
-      const approvedVendors = await sql`
-        SELECT name FROM vendors
-        WHERE name = ${vendor} AND is_approved = TRUE
-        LIMIT 1
-      `;
-      if (approvedVendors.length === 0) {
-        return NextResponse.json({ error: 'บริษัทของ Vendor ยังไม่ได้รับอนุมัติ จึงไม่สามารถเปิดใช้งานบัญชีได้' }, { status: 400 });
+      if (!await departmentsReady()) {
+        const approvedVendors = await sql`
+          SELECT name FROM vendors
+          WHERE name = ${vendor} AND is_approved = TRUE
+          LIMIT 1
+        `;
+        if (approvedVendors.length === 0) {
+          return NextResponse.json({ error: 'บริษัทของ Vendor ยังไม่ได้รับอนุมัติ จึงไม่สามารถเปิดใช้งานบัญชีได้' }, { status: 400 });
+        }
+      } else {
+        // Departments on: the company must be approved in the vendor account's own room (same pick as department-context.ts:
+        // default room first, else lowest id, active rooms only). The acting global Admin's room or "ALL" does not matter.
+        const rooms = await sql`
+          SELECT ud.department_id
+          FROM user_departments ud
+          JOIN departments d ON d.id = ud.department_id
+          WHERE ud.username = ${targetUser.username} AND d.is_active
+          ORDER BY ud.is_default DESC NULLS LAST, d.id
+          LIMIT 1
+        `;
+        if (rooms.length === 0) {
+          return NextResponse.json({ error: 'บัญชี Vendor นี้ไม่ได้อยู่ในห้องปฏิบัติการที่เปิดใช้งาน จึงไม่สามารถเปิดใช้งานบัญชีได้' }, { status: 400 });
+        }
+        const departmentId = Number(rooms[0].department_id);
+        const approvedVendors = await sql`
+          SELECT name FROM vendors
+          WHERE name = ${vendor} AND is_approved = TRUE${andDept({ mode: 'one', departmentId })}
+          LIMIT 1
+        `;
+        if (approvedVendors.length === 0) {
+          return NextResponse.json({ error: 'บริษัทของ Vendor ยังไม่ได้รับอนุมัติในห้องปฏิบัติการของบัญชีนี้ จึงไม่สามารถเปิดใช้งานบัญชีได้' }, { status: 400 });
+        }
       }
     }
 
