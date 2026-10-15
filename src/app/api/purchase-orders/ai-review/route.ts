@@ -4,6 +4,7 @@ import sql from "@/lib/db";
 import { getAuthenticatedUser } from "@/lib/auth-utils";
 import { getPurchaseOrderSuggestions } from "@/lib/purchase-order-suggestions";
 import { isLabPurchasingRole } from "@/lib/purchase-order-workflow";
+import { departmentErrorResponse, getDepartmentScope, type DepartmentScope } from "@/lib/scoped-db";
 import {
   aiReviewerResponseSchema,
   buildAiReviewerPayload,
@@ -27,6 +28,17 @@ export async function POST(request: Request) {
   const user = await getAuthenticatedUser(request);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!isLabPurchasingRole(user.role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  // Resolve the department before reading the body or touching the rate-limit table.
+  let scope: DepartmentScope;
+  try {
+    scope = await getDepartmentScope(user);
+  } catch (error: unknown) {
+    const departmentResponse = departmentErrorResponse(error);
+    if (departmentResponse) return departmentResponse;
+    console.error("Purchase order AI review department scope failed", error instanceof Error ? error.message : "unknown error");
+    return aiUnavailable();
+  }
 
   let vendor: string;
   try {
@@ -54,7 +66,7 @@ export async function POST(request: Request) {
       VALUES (${user.username}, ${vendorHash}, NOW())
       ON CONFLICT (actor, vendor_fingerprint) DO UPDATE SET requested_at = EXCLUDED.requested_at
     `;
-    const suggestions = await getPurchaseOrderSuggestions(sql, { vendor });
+    const suggestions = await getPurchaseOrderSuggestions(sql, { vendor }, scope);
     const payload = buildAiReviewerPayload(suggestions);
     const fingerprint = fingerprintAiReviewerPayload(payload);
     const inserted = await sql`

@@ -8,10 +8,15 @@ const mocks = vi.hoisted(() => ({
   fingerprintAiReviewerPayload: vi.fn(),
   parseAiReviews: vi.fn(),
   generateContent: vi.fn(),
+  getDepartmentScope: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({ default: mocks.sql }));
 vi.mock("@/lib/auth-utils", () => ({ getAuthenticatedUser: mocks.getAuthenticatedUser }));
+vi.mock("@/lib/scoped-db", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/scoped-db")>()),
+  getDepartmentScope: mocks.getDepartmentScope,
+}));
 vi.mock("@/lib/purchase-order-suggestions", () => ({ getPurchaseOrderSuggestions: mocks.getPurchaseOrderSuggestions }));
 vi.mock("@/lib/purchase-order-workflow", () => ({ isLabPurchasingRole: (role: string) => role === "Admin" || role === "Manager" }));
 vi.mock("@/lib/purchase-order-ai-review", () => ({
@@ -27,6 +32,7 @@ vi.mock("@google/genai", () => ({
 }));
 
 import { POST } from "./route";
+import { DepartmentScopeError } from "@/lib/scoped-db";
 
 function request(body: unknown) {
   return new Request("http://localhost/api/purchase-orders/ai-review", {
@@ -40,6 +46,7 @@ describe("purchase-order AI reviewer access gate", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.getDepartmentScope.mockResolvedValue({ mode: "legacy" });
     delete process.env.GEMINI_API_KEY;
     delete process.env.GEMINI_MODEL;
   });
@@ -87,10 +94,25 @@ describe("purchase-order AI reviewer access gate", () => {
     await vi.advanceTimersByTimeAsync(60_000);
     const response = await responsePromise;
 
+    expect(mocks.getPurchaseOrderSuggestions).toHaveBeenCalledWith(mocks.sql, { vendor: "Vendor" }, { mode: "legacy" });
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({
       error: "AI ใช้เวลาวิเคราะห์นานเกิน 60 วินาที กรุณาลองใหม่อีกครั้ง",
       code: "AI_UNAVAILABLE",
     });
+  });
+
+  it("returns the department error before reading the body, rate-limiting or loading suggestions", async () => {
+    process.env.GEMINI_API_KEY = "test-key";
+    process.env.GEMINI_MODEL = "gemini-test";
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    mocks.getAuthenticatedUser.mockResolvedValue({ username: "manager", role: "Manager" });
+    mocks.getDepartmentScope.mockRejectedValue(new DepartmentScopeError("DEPARTMENT_NOT_FOUND", "no such department"));
+
+    const response = await POST(request({ vendor: "V" }));
+
+    expect(response.status).toBe(404);
+    expect(mocks.getPurchaseOrderSuggestions).not.toHaveBeenCalled();
+    expect(mocks.sql).not.toHaveBeenCalled(); // no rate-limit SELECT/INSERT
   });
 });

@@ -56,10 +56,10 @@ beforeEach(async () => {
 
 describe("suggestion query and reagents without an order policy (real Postgres)", () => {
   it("keeps auto-suggest policy-only, but search finds the no-policy reagent flagged for review", async () => {
-    const auto = await getPurchaseOrderSuggestions(sql as never, { vendor: "Vendor A", includeAll: true });
+    const auto = await getPurchaseOrderSuggestions(sql as never, { vendor: "Vendor A", includeAll: true }, { mode: "legacy" });
     expect(auto.map((row) => row.item_id)).toEqual(["POL-1"]);
 
-    const search = await getPurchaseOrderSuggestions(sql as never, { vendor: "Vendor A", includeAll: true, includeUnconfigured: true });
+    const search = await getPurchaseOrderSuggestions(sql as never, { vendor: "Vendor A", includeAll: true, includeUnconfigured: true }, { mode: "legacy" });
     const noPolicy = search.find((row) => row.item_id === "NOPOL-1");
     expect(noPolicy).toMatchObject({ policy_configured: false, auto_selectable: false });
     expect(noPolicy?.review_reasons).toContain("NO_ORDER_POLICY");
@@ -67,7 +67,7 @@ describe("suggestion query and reagents without an order policy (real Postgres)"
   });
 
   it("returns every requested item even when the default page size would cut it off", async () => {
-    const rows = await getPurchaseOrderSuggestions(sql as never, { vendor: "Vendor A", itemIds: ["POL-1"], includeAll: true, limit: 1 });
+    const rows = await getPurchaseOrderSuggestions(sql as never, { vendor: "Vendor A", itemIds: ["POL-1"], includeAll: true, limit: 1 }, { mode: "legacy" });
     expect(rows.map((row) => row.item_id)).toEqual(["POL-1"]);
   });
 });
@@ -87,14 +87,14 @@ describe("large Vendor catalogue (PCL has 116 active reagents in production)", (
   });
 
   it("auto-suggest evaluates every reagent, even when the caller passes a small limit", async () => {
-    const suggested = await getPurchaseOrderSuggestions(sql as never, { vendor: "Vendor A", limit: 30 });
+    const suggested = await getPurchaseOrderSuggestions(sql as never, { vendor: "Vendor A", limit: 30 }, { mode: "legacy" });
     const bigSuggested = suggested.filter((row) => row.item_id.startsWith("BIG-"));
     expect(bigSuggested).toHaveLength(40);
     expect(bigSuggested.every((row) => Number(row.item_id.slice(4)) > 80)).toBe(true);
   });
 
   it("browsing the catalogue without a keyword can list the whole Vendor", async () => {
-    const browse = await getPurchaseOrderSuggestions(sql as never, { vendor: "Vendor A", includeAll: true, includeUnconfigured: true, limit: 300 });
+    const browse = await getPurchaseOrderSuggestions(sql as never, { vendor: "Vendor A", includeAll: true, includeUnconfigured: true, limit: 300 }, { mode: "legacy" });
     expect(browse.filter((row) => row.item_id.startsWith("BIG-"))).toHaveLength(120);
   });
 
