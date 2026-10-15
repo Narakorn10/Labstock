@@ -5,6 +5,7 @@ import type {
   BarcodePatternV2Payload,
 } from '@/lib/api-client';
 import { loadLegacyPatternsForVerification } from '@/lib/barcode-runtime';
+import { andDept, type DepartmentScope } from '@/lib/scoped-db';
 import { findMatchingReagent, normalizeLookupValue, processAnyBarcode, standardizeDate } from '@/lib/barcode-parser';
 import {
   compilePortableRegex,
@@ -22,6 +23,8 @@ export { deriveV2Regex } from './barcode-learning-v2-derive';
 export type { BarcodeV2Verification, BarcodeV2ValidationResult } from './barcode-learning-v2-derive';
 
 export interface BarcodeV2ValidationOptions {
+  /** Department whose Master Data, V1 and active V2 patterns the payload is checked against (required, no default). */
+  scope: DepartmentScope;
   /** Exclude the pattern currently being rechecked, such as during Activate. */
   excludePatternId?: number;
 }
@@ -75,16 +78,16 @@ function valueMatches(expected: string | undefined, actual: string | undefined, 
   return left === right;
 }
 
-async function loadMasterRows() {
-  return sql`SELECT item_id, barcode FROM master_data`;
+async function loadMasterRows(scope: DepartmentScope) {
+  return sql`SELECT item_id, barcode FROM master_data WHERE TRUE${andDept(scope)}`;
 }
 
-async function loadActiveV2PatternsForCollision(excludePatternId?: number) {
+async function loadActiveV2PatternsForCollision(excludePatternId: number | undefined, scope: DepartmentScope) {
   const excludedId = Number.isSafeInteger(excludePatternId) ? excludePatternId as number : -1;
   return sql`
     SELECT id, name, regex_pattern, examples
     FROM barcode_pattern_v2
-    WHERE status = 'ACTIVE' AND id <> ${excludedId}
+    WHERE status = 'ACTIVE' AND id <> ${excludedId}${andDept(scope)}
   `;
 }
 
@@ -98,7 +101,7 @@ function masterMatches(value: string, rows: Array<Record<string, unknown>>) {
 
 export async function validateBarcodeV2Payload(
   input: BarcodePatternV2Payload,
-  options: BarcodeV2ValidationOptions = {},
+  options: BarcodeV2ValidationOptions,
 ): Promise<BarcodeV2ValidationResult> {
   const payload = { ...input, examples: input.examples.slice(0, 10) };
   const errors: string[] = [];
@@ -134,9 +137,9 @@ export async function validateBarcodeV2Payload(
   let activePatterns: BarcodeV2PatternCollisionInput[] = [];
   try {
     const [loadedMasterRows, loadedLegacyPatterns, loadedActivePatterns] = await Promise.all([
-      loadMasterRows() as unknown as Promise<Array<Record<string, unknown>>>,
-      loadLegacyPatternsForVerification(),
-      loadActiveV2PatternsForCollision(options.excludePatternId),
+      loadMasterRows(options.scope) as unknown as Promise<Array<Record<string, unknown>>>,
+      loadLegacyPatternsForVerification(options.scope),
+      loadActiveV2PatternsForCollision(options.excludePatternId, options.scope),
     ]);
     masterRows = loadedMasterRows;
     legacyPatterns = loadedLegacyPatterns;

@@ -1,13 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({
-  sql: vi.fn(),
-  requireAccess: vi.fn(),
-  normalize: vi.fn(),
-  validate: vi.fn(),
-  map: vi.fn((row) => row),
-  hasAdvanced: vi.fn((body: unknown) => Boolean((body as { regex_pattern?: string })?.regex_pattern)),
-}));
+const mocks = vi.hoisted(() => {
+  const sql = vi.fn() as ReturnType<typeof vi.fn> & { unsafe: (text: string) => unknown };
+  sql.unsafe = (text: string) => text; // scoped-db column fragments
+  return {
+    sql,
+    requireAccess: vi.fn(),
+    normalize: vi.fn(),
+    validate: vi.fn(),
+    map: vi.fn((row) => row),
+    hasAdvanced: vi.fn((body: unknown) => Boolean((body as { regex_pattern?: string })?.regex_pattern)),
+  };
+});
 
 vi.mock("@/lib/db", () => ({ default: mocks.sql }));
 vi.mock("@/lib/barcode-learning-auth", () => ({ requireBarcodeLearningV2Access: mocks.requireAccess }));
@@ -39,6 +43,11 @@ const validation = {
   verification: { status: "VERIFIED" as const, errors: [], warnings: [], checked_at: "2026-08-19T00:00:00.000Z" },
 };
 
+// Scope fragments (andDept / deptInsert) are tagged-template calls too, so find the statements by their text.
+function statements() {
+  return mocks.sql.mock.calls.map((call) => Array.from(call[0] as TemplateStringsArray).join(" "));
+}
+
 function postRequest(body: unknown) {
   return new Request("http://localhost/api/settings/barcode-v2", {
     method: "POST",
@@ -62,7 +71,7 @@ describe("Barcode Learning V2 create API", () => {
 
     expect(response.status).toBe(403);
     expect(mocks.validate).not.toHaveBeenCalled();
-    expect(mocks.sql).not.toHaveBeenCalled();
+    expect(statements().filter((text) => text.includes("INSERT INTO"))).toEqual([]);
   });
 
   it("writes the pattern and CREATE audit record in one statement", async () => {
@@ -71,8 +80,9 @@ describe("Barcode Learning V2 create API", () => {
     const response = await POST(postRequest(normalizedPayload));
 
     expect(response.status).toBe(201);
-    expect(mocks.sql).toHaveBeenCalledTimes(1);
-    const statement = Array.from(mocks.sql.mock.calls[0][0] as TemplateStringsArray).join(" ");
+    const inserts = statements().filter((text) => text.includes("INSERT INTO barcode_pattern_v2 "));
+    expect(inserts).toHaveLength(1);
+    const statement = inserts[0];
     expect(statement).toContain("WITH created AS");
     expect(statement).toContain("INSERT INTO barcode_pattern_v2_audit");
     expect(statement).toContain("to_jsonb(created)");

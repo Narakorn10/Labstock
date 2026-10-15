@@ -54,7 +54,9 @@ export async function GET() {
         WHERE quantity > 0
         ORDER BY exp_date ASC NULLS LAST, received_on ASC, id ASC
       `,
-      loadRuntimeBarcodePatterns(),
+      // Still unscoped (file stays in DEPARTMENT_SCOPE_PENDING): every department's patterns, as before
+      // (accepted behavior, docs/departments-rollout.md). Literal on purpose so this file imports nothing from scoped-db.
+      loadRuntimeBarcodePatterns({ mode: "all" }),
     ]);
 
     interface LookupLot {

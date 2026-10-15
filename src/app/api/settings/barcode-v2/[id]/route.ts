@@ -7,31 +7,42 @@ import {
   normalizeV2Payload,
   validateBarcodeV2Payload,
 } from '@/lib/barcode-learning-v2';
+import { andDept, andDeptWrite, departmentErrorResponse, getDepartmentScope, writeDepartmentId, type DepartmentScope } from '@/lib/scoped-db';
+import { getRequestId } from '@/lib/request-observability';
 
-async function findPattern(id: string) {
-  const rows = await sql`SELECT * FROM barcode_pattern_v2 WHERE id = ${id} LIMIT 1`;
+// Another department's id looks exactly like a missing one (callers answer 404).
+async function findPattern(id: string, scope: DepartmentScope) {
+  const rows = await sql`SELECT * FROM barcode_pattern_v2 WHERE id = ${id}${andDept(scope)} LIMIT 1`;
   return rows[0] as Record<string, unknown> | undefined;
 }
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const requestId = getRequestId(request);
   const access = await requireBarcodeLearningV2Access(request);
-  if (access.response) return access.response;
+  if (access.response || !access.user) return access.response || NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { id } = await params;
   try {
-    const row = await findPattern(id);
+    const scope = await getDepartmentScope(access.user);
+    const row = await findPattern(id, scope);
     return row ? NextResponse.json(mapBarcodeV2Row(row)) : NextResponse.json({ error: 'Pattern not found.' }, { status: 404 });
   } catch (error: unknown) {
+    const departmentResponse = departmentErrorResponse(error, requestId);
+    if (departmentResponse) return departmentResponse;
     console.error('Barcode V2 detail error:', error);
     return NextResponse.json({ error: 'Unable to load barcode pattern.' }, { status: 500 });
   }
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const requestId = getRequestId(request);
   const access = await requireBarcodeLearningV2Access(request);
   if (access.response || !access.user) return access.response || NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { id } = await params;
   try {
-    const before = await findPattern(id);
+    // Scope first (outside validateBarcodeV2Payload's own try/catch) so scope errors reach departmentErrorResponse.
+    const scope = await getDepartmentScope(access.user);
+    writeDepartmentId(scope); // rejects "all" (DEPARTMENT_READ_ONLY)
+    const before = await findPattern(id, scope);
     if (!before) return NextResponse.json({ error: 'Pattern not found.' }, { status: 404 });
     if (before.status === 'ACTIVE') return NextResponse.json({ error: 'Deactivate an active pattern before editing it.' }, { status: 409 });
 
@@ -40,7 +51,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       return NextResponse.json({ error: 'Advanced Regex and capture groups require an Admin account.' }, { status: 403 });
     }
     const payload = normalizeV2Payload(body);
-    const result = await validateBarcodeV2Payload(payload);
+    const result = await validateBarcodeV2Payload(payload, { scope });
     const status = result.verification.status === 'VERIFIED' ? 'VERIFIED' : 'DRAFT';
     const rows = await sql`
       WITH current AS (
@@ -48,7 +59,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         FROM barcode_pattern_v2 p
         WHERE p.id = ${id}
           AND p.status <> 'ACTIVE'
-          AND p.updated_at = ${before.updated_at}
+          AND p.updated_at = ${before.updated_at}${andDeptWrite(scope, 'p')}
         FOR UPDATE
       ), updated AS (
         UPDATE barcode_pattern_v2 p
@@ -73,17 +84,22 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const after = rows[0] as Record<string, unknown>;
     return NextResponse.json({ success: true, data: { pattern: mapBarcodeV2Row(after) } });
   } catch (error: unknown) {
+    const departmentResponse = departmentErrorResponse(error, requestId);
+    if (departmentResponse) return departmentResponse;
     console.error('Barcode V2 PATCH error:', error);
     return NextResponse.json({ error: 'Unable to update barcode pattern.' }, { status: 500 });
   }
 }
 
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const requestId = getRequestId(request);
   const access = await requireBarcodeLearningV2Access(request);
   if (access.response || !access.user) return access.response || NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { id } = await params;
   try {
-    const before = await findPattern(id);
+    const scope = await getDepartmentScope(access.user);
+    writeDepartmentId(scope); // rejects "all" (DEPARTMENT_READ_ONLY)
+    const before = await findPattern(id, scope);
     if (!before) return NextResponse.json({ error: 'Pattern not found.' }, { status: 404 });
     if (before.status === 'ACTIVE' || before.activated_at) {
       return NextResponse.json({ error: 'An active or previously active pattern cannot be permanently deleted.' }, { status: 409 });
@@ -91,7 +107,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     const deletedRows = await sql`
       WITH deleted AS (
         DELETE FROM barcode_pattern_v2
-        WHERE id = ${id} AND activated_at IS NULL AND status <> 'ACTIVE'
+        WHERE id = ${id} AND activated_at IS NULL AND status <> 'ACTIVE'${andDeptWrite(scope)}
         RETURNING *
       ), audit AS (
         INSERT INTO barcode_pattern_v2_audit (pattern_id, action, actor, before_json)
@@ -103,6 +119,8 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     if (!deletedRows.length) return NextResponse.json({ error: 'Pattern changed before delete completed.' }, { status: 409 });
     return NextResponse.json({ success: true, message: 'ลบฉบับร่างแล้ว' });
   } catch (error: unknown) {
+    const departmentResponse = departmentErrorResponse(error, requestId);
+    if (departmentResponse) return departmentResponse;
     console.error('Barcode V2 DELETE error:', error);
     return NextResponse.json({ error: 'Unable to delete barcode pattern.' }, { status: 500 });
   }

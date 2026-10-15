@@ -30,11 +30,11 @@
      (`INSERT INTO user_departments ... WHERE NOT EXISTS (SELECT 1 FROM user_departments x WHERE x.username = u.username)`)
      ต้องนับจำนวนก่อน/หลังและบันทึกรายชื่อผู้ที่ถูกเพิ่ม ทำได้เฉพาะ **ก่อนเปิดสวิตช์ครั้งแรก**
      หลังเปิดแล้ว ผู้ใช้ใหม่ต้องได้แถวสมาชิกจากหน้าสมัคร/สร้างผู้ใช้ (ข้อ 7) ไม่ใช่จากสคริปต์นี้
-   - สคริปต์: `scripts/backfill-user-departments.mjs` (ตรรกะใน `scripts/backfill-user-departments-lib.mjs`, มีเทสต์ใน `src/lib/backfill-user-departments.db.test.ts`)
-     - ไม่อ่านไฟล์ `.env` ต้องส่ง `DATABASE_URL` ทาง environment เอง และแสดงชื่อ host (ไม่แสดงรหัสผ่าน)
-     - โหมดปกติ **อ่านอย่างเดียว** แสดงรายชื่อผู้ที่จะถูกเพิ่ม: `DATABASE_URL=... node scripts/backfill-user-departments.mjs`
-     - เขียนจริงต้องมีทั้ง `--apply` และ `--confirm-host=<host>`: ทำใน transaction เดียว ตรวจจำนวนก่อน/หลัง และกันผู้ใช้ที่มีแผนกหลักซ้ำ ถ้าตรวจไม่ผ่านจะ rollback
-     - เพิ่มเฉพาะผู้ใช้ที่ไม่มีแถวสมาชิกเลย เข้าแผนก CC เป็นแผนกหลัก (role ว่าง) ไม่แตะคนที่มีแผนกอยู่แล้ว รันซ้ำได้ (รอบสองไม่เพิ่มใคร)
+   - สคริปต์: `scripts/backfill-user-departments.mjs` (ตรรกะใน `scripts/backfill-user-departments-lib.mjs`, มีเทสต์ใน `src/lib/backfill-user-departments.db.test.ts`)
+     - ไม่อ่านไฟล์ `.env` ต้องส่ง `DATABASE_URL` ทาง environment เอง และแสดงชื่อ host (ไม่แสดงรหัสผ่าน)
+     - โหมดปกติ **อ่านอย่างเดียว** แสดงรายชื่อผู้ที่จะถูกเพิ่ม: `DATABASE_URL=... node scripts/backfill-user-departments.mjs`
+     - เขียนจริงต้องมีทั้ง `--apply` และ `--confirm-host=<host>`: ทำใน transaction เดียว ตรวจจำนวนก่อน/หลัง และกันผู้ใช้ที่มีแผนกหลักซ้ำ ถ้าตรวจไม่ผ่านจะ rollback
+     - เพิ่มเฉพาะผู้ใช้ที่ไม่มีแถวสมาชิกเลย เข้าแผนก CC เป็นแผนกหลัก (role ว่าง) ไม่แตะคนที่มีแผนกอยู่แล้ว รันซ้ำได้ (รอบสองไม่เพิ่มใคร)
      - ต้องขออนุมัติทุกครั้งก่อนรันบนฐานข้อมูลจริง และถ่าย snapshot ก่อน; ควรซ้อมบน Neon branch แยกก่อน
 6. แก้ route (หน้า API) ทีละกลุ่มให้กรองตามแผนก จนรายการ `DEPARTMENT_SCOPE_PENDING`
    ในไฟล์ `src/lib/department-scope-coverage.test.ts` **ว่างเปล่า** (เทสต์จะเตือนเองถ้ายังค้าง)
@@ -144,8 +144,21 @@
 - ผู้ใช้ที่ไม่มีแถว `user_departments` จะได้ 403 ตอนกดยืนยัน
   (หน้า LIFF ยังแจ้งว่าผูกบัญชีแล้ว เพราะการผูกบัญชีไม่ตรวจงาน)
 - role ประจำงาน (ถ้ามี) ต้องมีแถวใน `role_permissions` ไม่งั้นจะได้ 403 ต้องตรวจตอนซ้อมบน Neon
-- เครื่องสแกนที่สถานี (stations) ยังไม่แยกงาน เมื่อเปิดสวิตช์จะเขียนลงงาน CC
+- เครื่องสแกนที่สถานี (stations) ยังไม่มีคอลัมน์งานของตัวเอง เมื่อเปิดสวิตช์ทุกสถานีถือเป็นงาน CC
+  (ตัดสินใจแล้ว 2026-10-15: `/api/stations/catalog` ส่งเฉพาะรายการน้ำยาและรูปแบบบาร์โค้ดของ CC; ถ้าไม่พบงาน CC จะตอบ 500 ไม่ส่งข้อมูลทุกงาน)
 - ช่วงที่ระบบตรวจสถานะหลายงานหมดอายุ (ไม่เกิน 5 วินาที) ผู้ใช้อาจได้ 500 ชั่วคราว ปลอดภัย (ปฏิเสธไว้ก่อน) ลองใหม่ได้
+
+**ย้ายกลุ่มบาร์โค้ดแล้ว (2026-10-15):**
+
+- ย้าย 8 ไฟล์ออกจาก `DEPARTMENT_SCOPE_PENDING` (นับจริงจาก `department-scope-coverage.test.ts`: เหลือ 31 จาก 39 ที่ฐาน branch นี้
+  ตัวเลข 38 -> 30 ในแผนนับต่างไป 1): `settings/barcodes`, `settings/barcode-v2` (+ `[id]`, activate, deactivate),
+  `barcode-learning-v2.ts`, `barcode-runtime.ts`, `stations/catalog`
+- `loadRuntimeBarcodePatterns(scope)` และ `validateBarcodeV2Payload(input, { scope })` บังคับส่ง scope (มีตัวตรวจตอนรันกันส่งผิดช่อง)
+- `/api/mobile/lookup` ยังอยู่ใน PENDING และส่ง `{ mode: "all" }` (เห็นรูปแบบบาร์โค้ดทุกงาน เหมือนเดิม ดูหัวข้อมือถือด้านบน)
+- `/api/settings/barcodes` (GET) ยังเรียกได้โดยไม่ล็อกอินตราบที่ยังไม่เปิดระบบหลายงาน (ตอบเหมือนเดิม) แต่เมื่อระบบหลายงานพร้อมใช้ ถ้าไม่ล็อกอินจะได้ 401
+- ข้อจำกัดที่ยอมรับ: unique index `uq_barcode_pattern_v2_active_regex` ยังเป็นแบบทั้งระบบ (regex เหมือนกันที่เปิดใช้อยู่พร้อมกันข้ามงานไม่ได้)
+  งานที่สองที่พยายามเปิดใช้ regex ซ้ำกับงานแรกจะได้ 409 การแก้ต้องทำที่ migration แยก
+- ข้อจำกัดที่ยอมรับ: ทุกสถานี = งาน CC จนกว่าจะเพิ่มคอลัมน์งานให้ตาราง stations
 
 **ปัญหาเดิมที่อยู่นอกขอบเขตงานนี้ (ควรแยกเป็นงานต่างหาก):**
 
