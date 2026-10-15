@@ -22,7 +22,8 @@ export async function POST(request: Request) {
     }
 
     await ensureReorderRiskNotificationSchema();
-    const { insights } = await getReagentUsageInsights();
+    // Intentionally system-wide (cron, no user): preserves the current behavior. To be split per department later.
+    const { insights } = await getReagentUsageInsights({ mode: "all" });
     const weekStart = getMonday();
     const riskItems = insights.filter((item) => item.status !== "normal");
 

@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server';
 import sql from '@/lib/db';
 import { hasMenuPermission } from '@/lib/auth-utils';
+import { andDept, departmentErrorResponse, getDepartmentScope } from '@/lib/scoped-db';
+import { getRequestId } from '@/lib/request-observability';
 
 export async function GET(request: Request) {
+  const requestId = getRequestId(request);
   try {
     const { user, allowed } = await hasMenuPermission(request, 'logs');
     if (!user) {
@@ -11,6 +14,8 @@ export async function GET(request: Request) {
     if (!allowed) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
+
+    const scope = await getDepartmentScope(user);
 
     const { searchParams } = new URL(request.url);
     const limit = parseInt(searchParams.get('limit') || '200');
@@ -33,13 +38,15 @@ export async function GET(request: Request) {
       WHERE (name ILIKE ${'%' + searchTerm + '%'} OR item_id ILIKE ${'%' + searchTerm + '%'} OR lot_no ILIKE ${'%' + searchTerm + '%'})
       AND (${action === '' ? true : false} OR action = ${action})
       AND (${startDate ? true : false} = false OR timestamp >= ${startDate || '1970-01-01'})
-      AND (${endDate ? true : false} = false OR timestamp <= ${endDate ? endDate + ' 23:59:59' : '9999-12-31'})
+      AND (${endDate ? true : false} = false OR timestamp <= ${endDate ? endDate + ' 23:59:59' : '9999-12-31'})${andDept(scope)}
       ORDER BY timestamp DESC, id DESC
       LIMIT ${limit}
     `;
 
     return NextResponse.json(data);
   } catch (error: unknown) {
+    const departmentResponse = departmentErrorResponse(error, requestId);
+    if (departmentResponse) return departmentResponse;
     console.error('Logs API Error:', error);
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: message }, { status: 500 });

@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { messagingApi } from "@line/bot-sdk";
 import sql from "@/lib/db";
+import { andDept, type DepartmentScope } from "@/lib/scoped-db";
 import { sendEmailStrict } from "@/lib/notifications";
 import { generatePOStatusTemplate } from "@/lib/line-flex-templates";
 import { sendLinePushStrict } from "@/lib/line-bot";
@@ -46,6 +47,7 @@ async function isStaleReminder(row: OutboxRow) {
   if (!statuses) return false;
   const poId = Number(poFromPayload(row.payload)?.id);
   if (!Number.isFinite(poId)) return false;
+  // Read by id for a row this worker already claimed, so it is left unscoped here; the PO group scopes purchase_orders.
   const rows = await sql`SELECT status FROM purchase_orders WHERE id = ${poId} LIMIT 1`;
   return !rows.length || !statuses.includes(String(rows[0].status));
 }
@@ -63,14 +65,34 @@ async function deliver(row: OutboxRow): Promise<"DELIVERED" | "SKIPPED"> {
   return "DELIVERED";
 }
 
-export async function drainNotificationOutbox(limit = 50) {
+// REQUIRED scope. The runtime check guards the slot against a wrong argument (a user object, a number, undefined...):
+// andDept() treats any non-"one" mode as "no filter", which would fail open.
+function assertScope(scope: DepartmentScope | undefined): asserts scope is DepartmentScope {
+  const mode = (scope as { mode?: unknown } | undefined)?.mode;
+  const valid = mode === "legacy" || mode === "all" || (mode === "one" && Number.isInteger((scope as { departmentId?: unknown }).departmentId));
+  if (!valid) throw new Error("drainNotificationOutbox requires a DepartmentScope");
+}
+
+/**
+ * Claims and delivers due outbox rows. `scope` limits WHICH rows are claimed:
+ * - "one": only that department's rows (a staff member triggering a drain)
+ * - "all": every department (the cron job; no user)
+ * - "legacy": no filtering (departments off)
+ * Deliberately andDept (read helper), not andDeptWrite: the claim does UPDATE rows, but "all" must work for cron and the
+ * claim only flips queue state (PROCESSING), it never changes a row's department. The result UPDATEs below are keyed by
+ * id + locked_by (rows this worker just claimed), so they need no department filter.
+ */
+export async function drainNotificationOutbox(limit: number, scope: DepartmentScope) {
+  assertScope(scope);
   const workerId = `${process.env.VERCEL_REGION ?? "local"}:${crypto.randomUUID()}`;
   const claimRows = await sql`
     WITH claimed AS (
       SELECT id
       FROM notification_outbox
-      WHERE (status = 'PENDING' AND next_attempt_at <= NOW())
-         OR (status = 'PROCESSING' AND locked_at < NOW() - INTERVAL '10 minutes')
+      WHERE (
+        (status = 'PENDING' AND next_attempt_at <= NOW())
+        OR (status = 'PROCESSING' AND locked_at < NOW() - INTERVAL '10 minutes')
+      )${andDept(scope)}
       ORDER BY id
       FOR UPDATE SKIP LOCKED
       LIMIT ${Math.min(Math.max(limit, 1), 100)}

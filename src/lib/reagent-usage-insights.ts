@@ -1,4 +1,5 @@
 import sql from "@/lib/db";
+import { andDept, type DepartmentScope } from "@/lib/scoped-db";
 
 export const USAGE_LOOKBACK_DAYS = 90;
 export const LEAD_TIME_DAYS = 7;
@@ -90,18 +91,28 @@ export function computeReorderInsight(quantity: number, minThreshold: number, di
   };
 }
 
-export async function getReagentUsageInsights() {
+// REQUIRED scope. The runtime check guards the slot against a wrong argument (a user object, a number, undefined...):
+// andDept() treats any non-"one" mode as "no filter", which would fail open.
+function assertScope(scope: DepartmentScope | undefined): asserts scope is DepartmentScope {
+  const mode = (scope as { mode?: unknown } | undefined)?.mode;
+  const valid = mode === "legacy" || mode === "all" || (mode === "one" && Number.isInteger((scope as { departmentId?: unknown }).departmentId));
+  if (!valid) throw new Error("getReagentUsageInsights requires a DepartmentScope");
+}
+
+export async function getReagentUsageInsights(scope: DepartmentScope) {
+  assertScope(scope);
   const [insightRows, lotRows] = await Promise.all([
     sql`
       WITH recent_usage AS (
         SELECT item_id, SUM(quantity) AS dispensed
         FROM logs
         WHERE action = 'เบิกไปหน้างาน'
-          AND timestamp >= CURRENT_DATE - INTERVAL '90 days'
+          AND timestamp >= CURRENT_DATE - INTERVAL '90 days'${andDept(scope)}
         GROUP BY item_id
       ), inventory_summary AS (
         SELECT item_id, SUM(quantity) AS quantity
         FROM inventory
+        WHERE TRUE${andDept(scope)}
         GROUP BY item_id
       )
       SELECT
@@ -114,6 +125,7 @@ export async function getReagentUsageInsights() {
       FROM master_data m
       LEFT JOIN inventory_summary i ON i.item_id = m.item_id
       LEFT JOIN recent_usage u ON u.item_id = m.item_id
+      WHERE TRUE${andDept(scope, "m")}
       ORDER BY m.name ASC
     `,
     sql`
@@ -128,7 +140,7 @@ export async function getReagentUsageInsights() {
       JOIN master_data m ON m.item_id = i.item_id
       WHERE i.quantity > 0
         AND i.exp_date IS NOT NULL
-        AND i.exp_date::text <> ''
+        AND i.exp_date::text <> ''${andDept(scope, "i")}${andDept(scope, "m")}
       ORDER BY i.item_id ASC, i.exp_date ASC
     `
   ]);

@@ -152,7 +152,8 @@ export async function recordPurchaseOrderCommunication(input: {
   try {
     after(async () => {
       const { drainNotificationOutbox } = await import("@/lib/notification-outbox");
-      await drainNotificationOutbox(20);
+      // System-wide drain on purpose (no user here); keeps the pre-departments behavior until the PO group is scoped.
+      await drainNotificationOutbox(20, { mode: "all" });
     });
   } catch {
     // `after` is unavailable in unit tests or non-request callers; the cron worker remains authoritative.
