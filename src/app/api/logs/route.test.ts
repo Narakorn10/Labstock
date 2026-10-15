@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({
-  hasMenuPermission: vi.fn(),
-  sql: vi.fn(),
-}));
+const mocks = vi.hoisted(() => {
+  const sql = vi.fn() as ReturnType<typeof vi.fn> & { unsafe: (text: string) => unknown };
+  sql.unsafe = (text: string) => text; // scoped-db column fragments
+  return { hasMenuPermission: vi.fn(), sql };
+});
 
 vi.mock("@/lib/db", () => ({ default: mocks.sql }));
 vi.mock("@/lib/auth-utils", () => ({ hasMenuPermission: mocks.hasMenuPermission }));

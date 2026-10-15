@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import sql from "@/lib/db";
 import { getAuthenticatedUser } from "@/lib/auth-utils";
 import { getReagentUsageInsights } from "@/lib/reagent-usage-insights";
+import { andDept, departmentErrorResponse, getDepartmentScope } from "@/lib/scoped-db";
+import { getRequestId } from "@/lib/request-observability";
 
 type SummaryItem = {
   itemId: string;
@@ -12,9 +14,11 @@ type SummaryItem = {
 };
 
 export async function GET(request: Request) {
+  const requestId = getRequestId(request);
   try {
     const user = await getAuthenticatedUser(request);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const scope = await getDepartmentScope(user);
 
     const { searchParams } = new URL(request.url);
     const startDate = (searchParams.get("startDate") || "").trim();
@@ -33,7 +37,7 @@ export async function GET(request: Request) {
         SUM(CASE WHEN action LIKE '%ปรับปรุงยอด%' THEN quantity ELSE 0 END) AS adjusted
       FROM logs
       WHERE timestamp >= ${startDate}::date
-        AND timestamp < (${endDate}::date + INTERVAL '1 day')
+        AND timestamp < (${endDate}::date + INTERVAL '1 day')${andDept(scope)}
       GROUP BY item_id
     `;
     const summary = (summaryRows as unknown as SummaryItem[]).map((row) => ({
@@ -56,7 +60,7 @@ export async function GET(request: Request) {
         FROM logs
         WHERE action = 'เบิกไปหน้างาน'
           AND timestamp >= ${startDate}::date
-          AND timestamp < (${endDate}::date + INTERVAL '1 day')
+          AND timestamp < (${endDate}::date + INTERVAL '1 day')${andDept(scope)}
         GROUP BY date, item_id
         ORDER BY date ASC
       `,
@@ -67,25 +71,25 @@ export async function GET(request: Request) {
         FROM logs
         WHERE action = 'เบิกไปหน้างาน'
           AND timestamp >= ${startDate}::date
-          AND timestamp < (${endDate}::date + INTERVAL '1 day')
+          AND timestamp < (${endDate}::date + INTERVAL '1 day')${andDept(scope)}
         GROUP BY week
         ORDER BY week ASC
       `,
       sql`
         SELECT m.item_id AS "itemId", m.name, SUM(i.quantity) AS stock
         FROM master_data m
-        JOIN inventory i ON m.item_id = i.item_id
+        JOIN inventory i ON m.item_id = i.item_id${andDept(scope, "i")}
         WHERE m.item_id NOT IN (
-          SELECT DISTINCT item_id FROM logs
-          WHERE action = 'เบิกไปหน้างาน'
-            AND timestamp >= CURRENT_DATE - INTERVAL '30 days'
-        )
+          SELECT DISTINCT l.item_id FROM logs l
+          WHERE l.action = 'เบิกไปหน้างาน'
+            AND l.timestamp >= CURRENT_DATE - INTERVAL '30 days'${andDept(scope, "l")}
+        )${andDept(scope, "m")}
         GROUP BY m.item_id, m.name
         HAVING SUM(i.quantity) > 0
         ORDER BY stock DESC
         LIMIT 5
       `,
-      getReagentUsageInsights()
+      getReagentUsageInsights(scope)
     ]);
 
     const dailyStats: Record<string, { date: string; totalDispensed: number; items: Record<string, number> }> = {};
@@ -105,6 +109,8 @@ export async function GET(request: Request) {
       expiryRisks: insightData.expiryRisks
     });
   } catch (error: unknown) {
+    const departmentResponse = departmentErrorResponse(error, requestId);
+    if (departmentResponse) return departmentResponse;
     console.error("Usage API Error:", error);
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: message }, { status: 500 });

@@ -1,10 +1,10 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({
-  sql: vi.fn(),
-  getAuthenticatedUser: vi.fn(),
-  drainNotificationOutbox: vi.fn(),
-}));
+const mocks = vi.hoisted(() => {
+  const sql = vi.fn() as ReturnType<typeof vi.fn> & { unsafe: (text: string) => unknown };
+  sql.unsafe = (text: string) => text; // scoped-db column fragments
+  return { sql, getAuthenticatedUser: vi.fn(), drainNotificationOutbox: vi.fn() };
+});
 
 vi.mock("@/lib/db", () => ({ default: mocks.sql }));
 vi.mock("@/lib/auth-utils", () => ({ getAuthenticatedUser: mocks.getAuthenticatedUser }));
@@ -31,14 +31,15 @@ describe("/api/notifications/outbox", () => {
   it("GET with the cron secret delivers the queue (what Vercel cron sends)", async () => {
     const response = await call("GET", cron);
     expect(response.status).toBe(200);
-    expect(mocks.drainNotificationOutbox).toHaveBeenCalledWith(50);
+    expect(mocks.drainNotificationOutbox).toHaveBeenCalledWith(50, { mode: "all" });
     expect(await response.json()).toEqual({ success: true, claimed: 2, delivered: 2, failed: 0 });
     expect(mocks.sql).not.toHaveBeenCalled();
   });
 
   it("POST with the cron secret still delivers the queue", async () => {
     expect((await call("POST", cron)).status).toBe(200);
-    expect(mocks.drainNotificationOutbox).toHaveBeenCalledTimes(1);
+    expect(mocks.drainNotificationOutbox).toHaveBeenCalledWith(50, { mode: "all" });
+    expect(mocks.getAuthenticatedUser).not.toHaveBeenCalled(); // cron never resolves a user or a department scope
   });
 
   it("GET from a signed-in Admin or Manager only reports status and delivers nothing", async () => {
@@ -54,7 +55,7 @@ describe("/api/notifications/outbox", () => {
   it("POST from a signed-in Admin delivers the queue", async () => {
     mocks.getAuthenticatedUser.mockResolvedValue({ username: "a", role: "Admin" });
     expect((await call("POST")).status).toBe(200);
-    expect(mocks.drainNotificationOutbox).toHaveBeenCalledTimes(1);
+    expect(mocks.drainNotificationOutbox).toHaveBeenCalledWith(50, { mode: "legacy" });
   });
 
   it("rejects anonymous callers and a wrong secret without delivering", async () => {
