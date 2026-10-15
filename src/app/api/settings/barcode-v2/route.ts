@@ -7,24 +7,35 @@ import {
   normalizeV2Payload,
   validateBarcodeV2Payload,
 } from '@/lib/barcode-learning-v2';
+import { andDept, deptInsert, departmentErrorResponse, getDepartmentScope, writeDepartmentId } from '@/lib/scoped-db';
+import { getRequestId } from '@/lib/request-observability';
 
 export async function GET(request: Request) {
+  const requestId = getRequestId(request);
   const access = await requireBarcodeLearningV2Access(request);
-  if (access.response) return access.response;
+  if (access.response || !access.user) return access.response || NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   try {
-    const rows = await sql`SELECT * FROM barcode_pattern_v2 ORDER BY created_at DESC, id DESC`;
+    const scope = await getDepartmentScope(access.user);
+    const rows = await sql`SELECT * FROM barcode_pattern_v2 WHERE TRUE${andDept(scope)} ORDER BY created_at DESC, id DESC`;
     return NextResponse.json(rows.map((row) => mapBarcodeV2Row(row as Record<string, unknown>)));
   } catch (error: unknown) {
+    const departmentResponse = departmentErrorResponse(error, requestId);
+    if (departmentResponse) return departmentResponse;
     console.error('Barcode V2 GET error:', error);
     return NextResponse.json({ error: 'Unable to load V2 barcode patterns.' }, { status: 500 });
   }
 }
 
 export async function POST(request: Request) {
+  const requestId = getRequestId(request);
   const access = await requireBarcodeLearningV2Access(request);
   if (access.response) return access.response;
   if (!access.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   try {
+    // Scope first (outside validateBarcodeV2Payload's own try/catch) so scope errors reach departmentErrorResponse.
+    const scope = await getDepartmentScope(access.user);
+    writeDepartmentId(scope); // rejects "all" (DEPARTMENT_READ_ONLY) before any work is done
+    const dept = deptInsert(scope);
     const body = await request.json();
     if (hasBarcodeV2AdvancedRegexInput(body) && access.user.role !== 'Admin') {
       return NextResponse.json({ error: 'Advanced Regex and capture groups require an Admin account.' }, { status: 403 });
@@ -34,19 +45,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Name and at least one barcode example are required.' }, { status: 400 });
     }
 
-    const result = await validateBarcodeV2Payload(payload);
+    const result = await validateBarcodeV2Payload(payload, { scope });
     const status = result.verification.status === 'VERIFIED' ? 'VERIFIED' : 'DRAFT';
     const rows = await sql`
       WITH created AS (
         INSERT INTO barcode_pattern_v2 (
           name, status, mapping_mode, fixed_item_id, regex_pattern,
           item_id_group, lot_no_group, exp_date_group, examples, verification,
-          created_by, updated_by
+          created_by, updated_by${dept.column}
         ) VALUES (
           ${payload.name}, ${status}, ${payload.mapping_mode}, ${payload.fixed_item_id || null},
           ${result.regex_pattern}, ${result.item_id_group}, ${result.lot_no_group}, ${result.exp_date_group},
           ${JSON.stringify(payload.examples)}::jsonb, ${JSON.stringify(result.verification)}::jsonb,
-          ${access.user.username}, ${access.user.username}
+          ${access.user.username}, ${access.user.username}${dept.value}
         )
         RETURNING *
       ), audit AS (
@@ -59,6 +70,8 @@ export async function POST(request: Request) {
     const pattern = rows[0] as Record<string, unknown>;
     return NextResponse.json({ success: true, data: { pattern: mapBarcodeV2Row(pattern) } }, { status: 201 });
   } catch (error: unknown) {
+    const departmentResponse = departmentErrorResponse(error, requestId);
+    if (departmentResponse) return departmentResponse;
     console.error('Barcode V2 POST error:', error);
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: message }, { status: 500 });

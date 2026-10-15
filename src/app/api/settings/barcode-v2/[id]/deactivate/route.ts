@@ -2,17 +2,22 @@ import { NextResponse } from 'next/server';
 import sql from '@/lib/db';
 import { requireBarcodeLearningV2Access } from '@/lib/barcode-learning-auth';
 import { mapBarcodeV2Row } from '@/lib/barcode-learning-v2';
+import { andDept, andDeptWrite, departmentErrorResponse, getDepartmentScope, writeDepartmentId } from '@/lib/scoped-db';
+import { getRequestId } from '@/lib/request-observability';
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const requestId = getRequestId(request);
   const access = await requireBarcodeLearningV2Access(request);
   if (access.response || !access.user) return access.response || NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { id } = await params;
   try {
+    const scope = await getDepartmentScope(access.user);
+    writeDepartmentId(scope); // rejects "all" (DEPARTMENT_READ_ONLY)
     const body = await request.json().catch(() => ({}));
     const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
     if (!reason) return NextResponse.json({ error: 'กรุณาระบุเหตุผลก่อนปิดใช้รูปแบบ' }, { status: 400 });
 
-    const current = await sql`SELECT * FROM barcode_pattern_v2 WHERE id = ${id} LIMIT 1`;
+    const current = await sql`SELECT * FROM barcode_pattern_v2 WHERE id = ${id}${andDept(scope)} LIMIT 1`;
     if (!current.length) return NextResponse.json({ error: 'Pattern not found.' }, { status: 404 });
     const before = current[0] as Record<string, unknown>;
     if (before.status !== 'ACTIVE') return NextResponse.json({ error: 'Only an active pattern can be deactivated.' }, { status: 409 });
@@ -21,7 +26,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       WITH current AS (
         SELECT p.*
         FROM barcode_pattern_v2 p
-        WHERE p.id = ${id} AND p.status = 'ACTIVE'
+        WHERE p.id = ${id} AND p.status = 'ACTIVE'${andDeptWrite(scope, 'p')}
         FOR UPDATE
       ), updated AS (
         UPDATE barcode_pattern_v2 p
@@ -42,6 +47,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const after = updatedRows[0] as Record<string, unknown>;
     return NextResponse.json({ success: true, data: { pattern: mapBarcodeV2Row(after) }, message: 'ปิดใช้รูปแบบแล้ว' });
   } catch (error: unknown) {
+    const departmentResponse = departmentErrorResponse(error, requestId);
+    if (departmentResponse) return departmentResponse;
     console.error('Barcode V2 deactivate error:', error);
     return NextResponse.json({ error: 'Unable to deactivate barcode pattern.' }, { status: 500 });
   }

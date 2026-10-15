@@ -1,14 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({
-  sql: vi.fn(),
-  isAdmin: vi.fn(),
-}));
+const mocks = vi.hoisted(() => {
+  const sql = vi.fn() as ReturnType<typeof vi.fn> & { unsafe: (text: string) => unknown };
+  sql.unsafe = (text: string) => text; // scoped-db column fragments
+  return { sql, isAdmin: vi.fn(), getAuthenticatedUser: vi.fn() };
+});
 
 vi.mock('@/lib/db', () => ({ default: mocks.sql }));
-vi.mock('@/lib/auth-utils', () => ({ isAdmin: mocks.isAdmin }));
+vi.mock('@/lib/auth-utils', () => ({ isAdmin: mocks.isAdmin, getAuthenticatedUser: mocks.getAuthenticatedUser }));
 
-import { DELETE, POST } from './route';
+import { DELETE, GET, POST } from './route';
 
 const request = (method: 'POST' | 'DELETE') => new Request('http://localhost/api/settings/barcodes', { method });
 
@@ -16,6 +17,16 @@ describe('legacy Barcode V1 write lock', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.isAdmin.mockResolvedValue(true);
+    mocks.getAuthenticatedUser.mockResolvedValue(null);
+  });
+
+  it('keeps the anonymous V1 list working while departments are off (legacy)', async () => {
+    mocks.sql.mockResolvedValue([{ id: 1, name: 'Legacy' }]);
+
+    const response = await GET(new Request('http://localhost/api/settings/barcodes'));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual([{ id: 1, name: 'Legacy' }]);
   });
 
   it.each([POST, DELETE])('rejects Admin %p requests without changing V1 patterns', async (handler) => {

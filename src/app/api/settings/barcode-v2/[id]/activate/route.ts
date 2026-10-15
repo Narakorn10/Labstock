@@ -6,6 +6,8 @@ import {
   mapBarcodeV2Row,
   validateBarcodeV2Payload,
 } from '@/lib/barcode-learning-v2';
+import { andDept, andDeptWrite, departmentErrorResponse, getDepartmentScope, writeDepartmentId } from '@/lib/scoped-db';
+import { getRequestId } from '@/lib/request-observability';
 
 function activationLockQuery() {
   return sql`
@@ -29,12 +31,16 @@ function isUniqueActiveRegexConflict(error: unknown) {
 }
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const requestId = getRequestId(request);
   const access = await requireBarcodeLearningV2Access(request);
   if (access.response || !access.user) return access.response || NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { id } = await params;
   try {
-    const current = await sql`SELECT * FROM barcode_pattern_v2 WHERE id = ${id} LIMIT 1`;
+    // Scope first (outside validateBarcodeV2Payload's own try/catch) so scope errors reach departmentErrorResponse.
+    const scope = await getDepartmentScope(access.user);
+    writeDepartmentId(scope); // rejects "all" (DEPARTMENT_READ_ONLY)
+    const current = await sql`SELECT * FROM barcode_pattern_v2 WHERE id = ${id}${andDept(scope)} LIMIT 1`;
     if (!current.length) return NextResponse.json({ error: 'Pattern not found.' }, { status: 404 });
     const before = current[0] as Record<string, unknown>;
     if (before.status !== 'VERIFIED') {
@@ -45,6 +51,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     // verification JSON is evidence of a prior check, not authorization to run.
     const payload = barcodeV2PayloadFromStoredRow(before);
     const verificationResult = await validateBarcodeV2Payload(payload, {
+      scope,
       excludePatternId: Number(before.id),
     });
     if (verificationResult.verification.status !== 'VERIFIED') {
@@ -52,7 +59,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         WITH current AS (
           SELECT p.*
           FROM barcode_pattern_v2 p
-          WHERE p.id = ${id} AND p.status = 'VERIFIED' AND p.updated_at = ${before.updated_at}
+          WHERE p.id = ${id} AND p.status = 'VERIFIED' AND p.updated_at = ${before.updated_at}${andDeptWrite(scope, 'p')}
           FOR UPDATE
         ), updated AS (
           UPDATE barcode_pattern_v2 p
@@ -82,7 +89,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       WITH current AS (
         SELECT p.*
         FROM barcode_pattern_v2 p
-        WHERE p.id = ${id} AND p.status = 'VERIFIED' AND p.updated_at = ${before.updated_at}
+        WHERE p.id = ${id} AND p.status = 'VERIFIED' AND p.updated_at = ${before.updated_at}${andDeptWrite(scope, 'p')}
         FOR UPDATE
       ), candidate AS (
         SELECT current.*, ${verificationResult.regex_pattern}::text AS verified_regex
@@ -91,7 +98,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         SELECT active.id, active.name
         FROM barcode_pattern_v2 active
         CROSS JOIN candidate
-        WHERE active.status = 'ACTIVE'
+        WHERE active.status = 'ACTIVE'${andDeptWrite(scope, 'active')}
           AND active.id <> candidate.id
           AND (
             active.regex_pattern = candidate.verified_regex
@@ -146,6 +153,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const after = activation.pattern;
     return NextResponse.json({ success: true, data: { pattern: mapBarcodeV2Row(after) }, message: 'เปิดใช้รูปแบบแล้ว โดย V1 จะถูกอ่านก่อนเสมอ' });
   } catch (error: unknown) {
+    // Before the 23505 check: a scope error must never be reported as a regex conflict.
+    const departmentResponse = departmentErrorResponse(error, requestId);
+    if (departmentResponse) return departmentResponse;
     console.error('Barcode V2 activate error:', error);
     if (isUniqueActiveRegexConflict(error)) {
       return NextResponse.json({ error: 'Pattern conflicts with an active V2 pattern. Reload and review it again.' }, { status: 409 });

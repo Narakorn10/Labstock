@@ -1,5 +1,8 @@
 import crypto from "crypto";
 import sql from "@/lib/db";
+import { departmentsReady } from "@/lib/departments-flag";
+import { defaultRoomId } from "@/lib/user-rooms";
+import { DepartmentScopeError, type DepartmentScope } from "@/lib/scoped-db";
 
 export interface AuthenticatedStation {
   stationId: string;
@@ -33,4 +36,18 @@ export async function getAuthenticatedStation(request: Request): Promise<Authent
   return station
     ? { stationId: String(station.station_id), stationName: String(station.station_name) }
     : null;
+}
+
+/**
+ * Department scope for a station. Stations have no department column yet, so while departments are on every station
+ * belongs to the default room 'CC' (decision 2026-10-15, docs/departments-rollout.md). Departments off => legacy.
+ * A missing/inactive CC fails closed (DEPARTMENT_SCOPE_MISSING -> 500) instead of serving every department.
+ */
+export async function getStationDepartmentScope(): Promise<DepartmentScope> {
+  if (!(await departmentsReady())) return { mode: "legacy" };
+  const departmentId = await defaultRoomId();
+  if (departmentId === null) {
+    throw new DepartmentScopeError("DEPARTMENT_SCOPE_MISSING", "departments are ready but the default room CC is missing or inactive");
+  }
+  return { mode: "one", departmentId };
 }
