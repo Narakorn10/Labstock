@@ -2,6 +2,7 @@ import sql from "./db";
 import type { AuthenticatedUser } from "./auth-utils";
 import { getPurchaseOrderSuggestions, type PurchaseOrderSuggestion } from "./purchase-order-suggestions";
 import type { PurchaseOrderItemInput } from "./purchase-order-workflow";
+import { PurchaseOrderCreationError } from "./purchase-order-creation-errors";
 
 type CreatePurchaseOrderInput = {
   user: AuthenticatedUser;
@@ -28,11 +29,7 @@ type AuditedPurchaseOrderItem = {
   snapshot_no_eta_qty: number;
 };
 
-export class PurchaseOrderCreationError extends Error {
-  constructor(message: string, public readonly status = 400) {
-    super(message);
-  }
-}
+export { PurchaseOrderCreationError };
 
 export function selectPurchaseOrderBasis(item: PurchaseOrderItemInput, suggestion: PurchaseOrderSuggestion) {
   const requested = item.selected_basis;
@@ -88,7 +85,10 @@ async function recomputeItems(input: CreatePurchaseOrderInput): Promise<AuditedP
     itemIds: input.items.map((item) => item.item_id),
     includeUnconfigured: true,
     includeAll: true,
-  });
+  },
+  // TODO(PR-2): pass the real department scope when this file is migrated (it must not import scoped-db before then).
+  // The suggestions on_order and the current_open CTEs below must be changed together.
+  { mode: "legacy" });
   const byItemId = new Map(suggestions.map((suggestion) => [suggestion.item_id, suggestion]));
   const calculatedAt = new Date().toISOString();
 
@@ -137,6 +137,7 @@ export async function createPurchaseOrderWithAudit(input: CreatePurchaseOrderInp
         LEFT JOIN master_data master ON master.item_id = input.item_id
         WHERE master.item_id IS NULL OR master.is_active = FALSE
       ), current_open AS (
+        -- TODO(PR-2): keep in step with the on_order CTE in purchase-order-suggestions.ts; change both together.
         SELECT poi.item_id,
           COALESCE(SUM(GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0)) FILTER (WHERE p.expected_date IS NOT NULL), 0) AS on_order_qty,
           COALESCE(SUM(GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0)) FILTER (WHERE p.expected_date IS NULL), 0) AS no_eta_qty
@@ -212,6 +213,7 @@ export async function createPurchaseOrderWithAudit(input: CreatePurchaseOrderInp
         LEFT JOIN master_data master ON master.item_id = input.item_id
         WHERE master.item_id IS NULL OR master.is_active = FALSE
       ), current_open AS (
+        -- TODO(PR-2): keep in step with the on_order CTE in purchase-order-suggestions.ts; change both together.
         SELECT poi.item_id,
           COALESCE(SUM(GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0)) FILTER (WHERE p.expected_date IS NOT NULL), 0) AS on_order_qty,
           COALESCE(SUM(GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0)) FILTER (WHERE p.expected_date IS NULL), 0) AS no_eta_qty

@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// Pure calculation tests: the suggestions module reaches @/lib/db through scoped-db, and neon() throws without a DATABASE_URL.
+vi.mock("@/lib/db", () => ({ default: vi.fn() }));
+
 import { calculateSuggestion } from "./purchase-order-suggestions";
 
 const NOW = new Date("2026-08-10T00:00:00.000Z");

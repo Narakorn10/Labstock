@@ -3,8 +3,11 @@ import sql from '@/lib/db';
 import { getAuthenticatedUser } from '@/lib/auth-utils';
 import { getPurchaseOrderSuggestions } from '@/lib/purchase-order-suggestions';
 import { isLabPurchasingRole } from '@/lib/purchase-order-workflow';
+import { departmentErrorResponse, getDepartmentScope } from '@/lib/scoped-db';
+import { getRequestId } from '@/lib/request-observability';
 
 export async function GET(request: Request) {
+  const requestId = getRequestId(request);
   try {
     const user = await getAuthenticatedUser(request);
     if (!user) {
@@ -22,10 +25,13 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Vendor profile is not configured' }, { status: 403 });
     }
 
-    const query = await getPurchaseOrderSuggestions(sql, { vendor });
+    const scope = await getDepartmentScope(user);
+    const query = await getPurchaseOrderSuggestions(sql, { vendor }, scope);
 
     return NextResponse.json(query);
   } catch (error: unknown) {
+    const departmentResponse = departmentErrorResponse(error, requestId);
+    if (departmentResponse) return departmentResponse;
     console.error('Error suggesting PO items:', error);
     return NextResponse.json({ error: 'Failed to suggest items' }, { status: 500 });
   }

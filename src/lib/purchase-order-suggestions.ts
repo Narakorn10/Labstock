@@ -1,3 +1,5 @@
+import { andDept, type DepartmentScope } from "@/lib/scoped-db";
+
 type SqlClient = (strings: TemplateStringsArray, ...values: unknown[]) => Promise<Record<string, unknown>[]>;
 
 export type SuggestionConfidence = "high" | "low" | "none";
@@ -502,9 +504,13 @@ async function fetchSuggestionRows(
   keyword: string,
   limit: number,
   includeUnconfigured: boolean,
-  itemIds: string[] | null
+  itemIds: string[] | null,
+  scope: DepartmentScope
 ) {
   const searchTerm = `%${keyword}%`;
+  // The on_order CTE deliberately has NO department filter on purchase_orders: item_id is a global primary key, so
+  // on_order is already isolated by the join to master_data m (filtered below). Filtering purchase_orders here would
+  // diverge from purchase-order-creation.ts current_open (TODO(PR-2) there) and could cause a permanent 409.
   const commonCtes = policyTableExists
     ? sql`
       WITH inventory_lots AS (
@@ -516,7 +522,7 @@ async function fetchSuggestionRows(
           ) AS lots,
           COALESCE(SUM(quantity), 0) AS current_qty
         FROM inventory
-        WHERE quantity > 0
+        WHERE quantity > 0${andDept(scope)}
         GROUP BY item_id
       ),
       on_order AS (
@@ -557,7 +563,7 @@ async function fetchSuggestionRows(
       LEFT JOIN reagent_order_policy p ON p.item_id = m.item_id AND p.enabled = true
       LEFT JOIN inventory_lots i ON i.item_id = m.item_id
       LEFT JOIN on_order o ON o.item_id = m.item_id
-      WHERE m.is_active = TRUE
+      WHERE m.is_active = TRUE${andDept(scope, "m")}
         AND (${includeUnconfigured}::boolean OR p.item_id IS NOT NULL)
         AND (${itemIds}::text[] IS NULL OR m.item_id = ANY(${itemIds}::text[]))
         AND (${vendor}::text IS NULL OR m.vendor = ${vendor}::text)
@@ -580,7 +586,7 @@ async function fetchSuggestionRows(
           ) AS lots,
           COALESCE(SUM(quantity), 0) AS current_qty
         FROM inventory
-        WHERE quantity > 0
+        WHERE quantity > 0${andDept(scope)}
         GROUP BY item_id
       ),
       on_order AS (
@@ -613,7 +619,7 @@ async function fetchSuggestionRows(
       FROM master_data m
       LEFT JOIN inventory_lots i ON i.item_id = m.item_id
       LEFT JOIN on_order o ON o.item_id = m.item_id
-      WHERE m.is_active = TRUE
+      WHERE m.is_active = TRUE${andDept(scope, "m")}
         AND (${itemIds}::text[] IS NULL OR m.item_id = ANY(${itemIds}::text[]))
         AND (${vendor}::text IS NULL OR m.vendor = ${vendor}::text)
         AND (
@@ -629,7 +635,7 @@ async function fetchSuggestionRows(
   return commonCtes;
 }
 
-async function fetchDispenseUsage(sql: SqlClient) {
+async function fetchDispenseUsage(sql: SqlClient, scope: DepartmentScope) {
   return sql`
     WITH bangkok_clock AS (
       SELECT (CURRENT_TIMESTAMP AT TIME ZONE ${BANGKOK_TIME_ZONE})::date AS today_bangkok
@@ -645,7 +651,7 @@ async function fetchDispenseUsage(sql: SqlClient) {
       CROSS JOIN bangkok_clock c
       WHERE l.action = ${DISPENSE_ACTION}
         AND l.quantity > 0
-        AND l.timestamp IS NOT NULL
+        AND l.timestamp IS NOT NULL${andDept(scope, "l")}${andDept(scope, "m")}
     )
     SELECT
       item_id,
@@ -673,7 +679,16 @@ async function fetchDispenseUsage(sql: SqlClient) {
   `;
 }
 
-export async function getPurchaseOrderSuggestions(sql: SqlClient, options: FetchSuggestionOptions = {}) {
+// REQUIRED scope. The runtime check guards the slot against a wrong argument (a user object, a number, undefined...):
+// andDept() treats any non-"one" mode as "no filter", which would fail open.
+function assertScope(scope: DepartmentScope | undefined): asserts scope is DepartmentScope {
+  const mode = (scope as { mode?: unknown } | undefined)?.mode;
+  const valid = mode === "legacy" || mode === "all" || (mode === "one" && Number.isInteger((scope as { departmentId?: unknown }).departmentId));
+  if (!valid) throw new Error("getPurchaseOrderSuggestions requires a DepartmentScope");
+}
+
+export async function getPurchaseOrderSuggestions(sql: SqlClient, options: FetchSuggestionOptions, scope: DepartmentScope) {
+  assertScope(scope); // first, before any DB call
   const policyTableExists = await hasPolicyTable(sql);
   const vendor = options.vendor?.trim() || null;
   const keyword = options.keyword?.trim() || "";
@@ -689,8 +704,8 @@ export async function getPurchaseOrderSuggestions(sql: SqlClient, options: Fetch
       ? Math.max(1, Math.min(MAX_SUGGESTION_ROWS, options.limit ?? 100))
       : MAX_SUGGESTION_ROWS;
   const [rows, usageRows] = await Promise.all([
-    fetchSuggestionRows(sql, policyTableExists, vendor, keyword, limit, Boolean(options.includeUnconfigured), itemIds),
-    fetchDispenseUsage(sql),
+    fetchSuggestionRows(sql, policyTableExists, vendor, keyword, limit, Boolean(options.includeUnconfigured), itemIds, scope),
+    fetchDispenseUsage(sql, scope),
   ]);
   const usageByItemId = new Map(
     usageRows.map((usage) => [String(usage.item_id), usage] as const)

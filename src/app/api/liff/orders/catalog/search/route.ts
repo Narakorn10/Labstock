@@ -24,7 +24,10 @@ export async function POST(request: Request) {
       // Browsing without a keyword must show the whole Vendor catalogue (PCL has 116 reagents);
       // auto-suggest ignores this and evaluates every reagent anyway.
       limit: keyword ? 50 : 300,
-    });
+    },
+    // LINE users have no department scope yet (getDepartmentScope would throw SCOPE_MISSING once departments are ready).
+    // Stays legacy, so the LINE catalog shows every department, until line-liff-ordering.ts is migrated (group 6).
+    { mode: "legacy" });
 
     return NextResponse.json(rows);
   } catch (error) {

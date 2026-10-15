@@ -189,3 +189,20 @@
 
 - ตอนตรวจ PIN ถ้าไม่มี username นั้นในระบบ ระบบตอบเร็วกว่าปกติ (เดา username จากเวลาตอบได้)
 - `/api/mobile/confirm` ยังไม่มีการจำกัดจำนวนครั้ง (rate limit) ในการเดา PIN
+
+## 7. กลุ่ม G5 PR-1: ใบสั่งซื้อ (คำแนะนำสั่งซื้อ) และ tracking (ทำแล้ว)
+
+ถอด 2 ไฟล์ออกจาก `DEPARTMENT_SCOPE_PENDING` (39 -> 37): `src/lib/purchase-order-suggestions.ts`, `src/lib/tracking-providers/manual.ts`
+
+- `getPurchaseOrderSuggestions(sql, options, scope)`: `scope` เป็นพารามิเตอร์บังคับ ตรวจ `assertScope` ก่อนเรียกฐานข้อมูลทุกครั้ง; กรองผ่าน `master_data` (`is_active` + แผนก) และกรอง `inventory` กับ `logs` (ตารางที่ใช้คำนวณยอดและการเบิก) ตามแผนกเดียวกัน
+- CTE `on_order` **ตั้งใจไม่กรอง `purchase_orders` ตามแผนก**: `item_id` เป็น primary key ระดับระบบ จึงถูกแยกแผนกอยู่แล้วเมื่อ join กับ `master_data`; ถ้ากรองจะไม่ตรงกับ `current_open` ใน `purchase-order-creation.ts` และอาจทำให้สร้าง PO ติด 409 ถาวร (ก่อน PR-2)
+- `purchase-order-creation.ts` ยังเป็น legacy (ส่ง `{ mode: "legacy" }`) จนกว่าจะทำ PR-2; ต้องแก้ `on_order` ของ suggestions และ `current_open` ของ creation **พร้อมกัน** (มี `TODO(PR-2)` ในโค้ด)
+- LINE catalog (`/api/liff/orders/catalog/search`) ยังส่ง `{ mode: "legacy" }` = เห็นทุกแผนกไปก่อน จนกว่าจะแก้ `line-liff-ordering.ts` (กลุ่ม 6)
+- `manual.ts` (tracking แบบ MANUAL) กรอง `shipments` ตามแผนก; เลข tracking ของแผนกอื่นให้ผลเหมือนเลขที่ไม่มีอยู่จริง; ผู้ให้บริการภายนอก (THAIPOST/DKSH) ไม่ใช่ข้อมูลของแผนก จึงไม่กรอง
+- ปัญหาเดิมที่ยังไม่ได้แก้: route `/api/tracking/[trackingNo]` ไม่มีการตรวจ role (ผู้ใช้ที่ล็อกอินแล้วเรียกได้ทุกคน); คีย์ rate-limit ของ AI-review (`actor` + `vendor_fingerprint`) ไม่มีแผนกรวมอยู่
+
+**คำตัดสินของเจ้าของระบบ (สำหรับ PR ถัดไป):**
+
+- ผู้รับแจ้งเตือน PO = สมาชิกของแผนกที่เป็นเจ้าของ PO นั้น
+- หัวใบสั่งซื้อ (`lab_profile`) **ต้องแยกตามแผนก**: ต้องมี migration เพราะ `lab_profile` มี CHECK `id = 1` -- **ไม่อยู่ในงานนี้ และต้องให้เจ้าของอนุมัติก่อนทำ**
+- คำถามเรื่อง Vendor ที่ใช้ร่วมหลายแผนกยังเปิดอยู่ (ยังไม่ตัดสิน)

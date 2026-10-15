@@ -1,12 +1,20 @@
 import { TrackingProvider } from './index';
 import { TrackingResult } from '../line-flex-templates';
-import { neon } from '@neondatabase/serverless';
+import sql from '@/lib/db';
+import { andDept, type DepartmentScope } from '@/lib/scoped-db';
 
-const sql = neon(process.env.DATABASE_URL || '');
+// REQUIRED scope. The runtime check guards the slot against a wrong argument (a user object, a number, undefined...):
+// andDept() treats any non-"one" mode as "no filter", which would fail open.
+function assertScope(scope: DepartmentScope | undefined): asserts scope is DepartmentScope {
+  const mode = (scope as { mode?: unknown } | undefined)?.mode;
+  const valid = mode === 'legacy' || mode === 'all' || (mode === 'one' && Number.isInteger((scope as { departmentId?: unknown }).departmentId));
+  if (!valid) throw new Error('manualProvider.track requires a DepartmentScope');
+}
 
 export const manualProvider: TrackingProvider = {
   name: 'Manual',
-  track: async (trackingNo: string): Promise<TrackingResult> => {
+  track: async (trackingNo: string, scope: DepartmentScope): Promise<TrackingResult> => {
+    assertScope(scope);
     // For manual provider, trackingNo could just be the shipment ID or a manual reference
     // We fetch the shipment status from our database directly
     try {
@@ -14,7 +22,7 @@ export const manualProvider: TrackingProvider = {
         SELECT s.*, p.po_number, p.vendor 
         FROM shipments s
         LEFT JOIN purchase_orders p ON s.po_number = p.po_number
-        WHERE s.tracking_no = ${trackingNo}
+        WHERE s.tracking_no = ${trackingNo}${andDept(scope, 's')}
       `;
 
       if (shipments.length === 0) {
