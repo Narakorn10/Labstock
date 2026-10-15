@@ -9,9 +9,12 @@ type Impl = (strings: TemplateStringsArray, ...values: unknown[]) => unknown;
 
 const h = vi.hoisted(() => ({ target: null as null | ((strings: TemplateStringsArray, ...values: unknown[]) => unknown) }));
 
-vi.mock("@/lib/db", () => ({
-  default: (strings: TemplateStringsArray, ...values: unknown[]) => (h.target as Impl)(strings, ...values),
-}));
+vi.mock("@/lib/db", () => {
+  const fn = ((strings: TemplateStringsArray, ...values: unknown[]) => (h.target as Impl)(strings, ...values)) as unknown as Record<string, unknown>;
+  fn.unsafe = (text: string) => (h.target as unknown as { unsafe: (t: string) => unknown }).unsafe(text);
+  fn.transaction = (queries: unknown) => (h.target as unknown as { transaction: (q: unknown) => unknown }).transaction(queries);
+  return { default: fn };
+});
 
 import { GET, POST } from "./route";
 import { resetDepartmentsFlagForTests } from "@/lib/departments-flag";
@@ -71,6 +74,58 @@ describe("flag OFF: unchanged", () => {
     delete process.env.DEPARTMENTS_ENABLED;
     const data = await (await GET()).json();
     expect(data.departments).toEqual([]);
+  });
+});
+
+describe("vendors of ALL departments (deliberate, owner decision): sign-up has no department filter", () => {
+  // 'MB Vendor' exists only in department B (see department-fixtures.ts).
+  const vendorOf = async (username: string) =>
+    (await migrated.db.query<{ vendor: string }>("SELECT vendor FROM users WHERE username = $1", [username])).rows[0].vendor;
+
+  for (const flag of ["on", "off"]) {
+    it(`flag ${flag}: GET lists a vendor that exists only in department B`, async () => {
+      if (flag === "off") delete process.env.DEPARTMENTS_ENABLED;
+      const data = await (await GET()).json();
+      expect(data.vendors).toContain("MB Vendor");
+      expect(data.vendors).toContain("Vendor A");
+    });
+
+    it(`flag ${flag}: POST vendorMode existing accepts a vendor that exists only in department B`, async () => {
+      if (flag === "off") delete process.env.DEPARTMENTS_ENABLED;
+      const body = lab({ accountType: "vendor", vendorMode: "existing", vendorName: "mb vendor" });
+      const response = await post(body);
+      expect(response.status).toBe(201);
+      expect(await vendorOf(body.username)).toBe("MB Vendor");
+    });
+  }
+
+  it("flag ON: that vendor account lands in the default room (CC), not in the vendor's room B", async () => {
+    const body = lab({ accountType: "vendor", vendorMode: "existing", vendorName: "MB Vendor" });
+    expect((await post(body)).status).toBe(201);
+    expect((await memberships(body.username)).map((row) => (row as { department_id: number }).department_id)).toEqual([DEPT_A]);
+  });
+});
+
+describe("flag OFF: recorded SQL", () => {
+  it("GET and POST (lab, vendor existing, vendor request) never mention department_id, user_departments or departments", async () => {
+    delete process.env.DEPARTMENTS_ENABLED;
+    const seen: string[] = [];
+    for (const db of [migrated, legacy]) {
+      h.target = Object.assign(
+        (strings: TemplateStringsArray, ...values: unknown[]) => {
+          const query = db(strings, ...values);
+          seen.push(query.text);
+          return query;
+        },
+        { unsafe: (text: string) => db.unsafe(text), transaction: (queries: never) => db.transaction(queries) },
+      ) as unknown as Impl;
+      expect((await GET()).status).toBe(200);
+      expect((await post(lab())).status).toBe(201);
+      expect((await post(lab({ accountType: "vendor", vendorMode: "existing", vendorName: "Vendor A" }))).status).toBe(201);
+      expect((await post(lab({ accountType: "vendor", vendorMode: "request", vendorRequest: "Some Vendor Co" }))).status).toBe(201);
+    }
+    expect(seen.length).toBeGreaterThan(12);
+    expect(seen.filter((text) => /department_id|user_departments|departments/i.test(text))).toEqual([]);
   });
 });
 

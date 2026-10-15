@@ -39,7 +39,6 @@ export const DEPARTMENT_SCOPE_PENDING: string[] = [
   "src/app/api/notifications/weekly-stock-summary/route.ts",
   "src/app/api/purchase-orders/[id]/route.ts",
   "src/app/api/purchase-orders/route.ts",
-  "src/app/api/users/[username]/account-status/route.ts",
   "src/app/api/vendor/shipments/ocr/route.ts",
   "src/app/api/vendor/shipments/orders/route.ts",
   "src/app/api/vendor/shipments/route.ts",
