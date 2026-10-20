@@ -79,7 +79,7 @@ describe("purchase-order-overdue route", () => {
     expect(await eventPos()).toEqual([]);
   });
 
-  it("the right cron secret (Bearer or header, POST or GET) reminds every department", async () => {
+  it("the right cron secret (Bearer header, GET) reminds every department", async () => {
     const response = await call({ authorization: `Bearer ${CRON_SECRET}` }, "GET");
 
     expect(response.status).toBe(200);
