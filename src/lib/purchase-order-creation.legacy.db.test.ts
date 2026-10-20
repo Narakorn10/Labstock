@@ -9,8 +9,9 @@ import type { PgliteSql } from "@/test/pglite-sql";
 // (origin/main 4c97fbb), before purchase-order-creation.ts was touched.
 //
 // LIMIT: this proves identity only through the PGlite shim (createPgliteSql), which composes nested sql fragments itself.
-// The real @neondatabase/serverless fragment composition cannot be proven offline, and fragments with params
-// (`department_id = $n`) have never run on Neon with the flag off. Check that at rehearsal before enabling the flag.
+// Reading the @neondatabase/serverless 1.1.0 source shows it concatenates nested fragments the same way, but it was never
+// run against Neon. In legacy there is no fragment with params (`id = 1` is plain text); the scoped `department_id = $n`
+// fragment is only used with the flag on, so check it on real Neon at rehearsal before enabling the flag.
 //
 // To regenerate the baseline on purpose (never done silently): UPDATE_CREATION_LEGACY_BASELINE=1 npx vitest run <this file>.
 
