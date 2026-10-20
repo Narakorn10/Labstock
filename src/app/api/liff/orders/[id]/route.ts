@@ -36,6 +36,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       po: { id: Number(po.id), status: po.status, confirmed_at: po.confirmed_at },
       decision: status,
       reviewer: auth.user.username,
+      scope: { mode: "legacy" }, // PENDING กลุ่ม 6 / vendor shipments
     });
     if (!applied) return NextResponse.json({ error: "This order was already reviewed." }, { status: 409 });
 

@@ -86,7 +86,7 @@ describe("Vendor revision and Lab review (real Postgres)", () => {
     const result = await runGuardedPurchaseOrderUpdate(sql as never, 1, "ACKNOWLEDGED", [
       sql`UPDATE purchase_order_items SET revision_qty = 1 WHERE po_id = 1` as never,
       sql`UPDATE purchase_orders SET status = 'REVISION_REQUESTED' WHERE id = 1` as never,
-    ]);
+    ], { mode: "legacy" });
 
     expect(result).toBeNull();
     expect(await poStatus()).toBe("CONFIRMED");
@@ -98,8 +98,8 @@ describe("Vendor revision and Lab review (real Postgres)", () => {
     await sql`UPDATE purchase_order_items SET revision_qty = 3 WHERE item_id = 'Y'`;
     const staleRead = { id: 1, status: "REVISION_REQUESTED" };
 
-    expect(await applyLabReviewDecision(sql as never, { po: staleRead, decision: "CONFIRMED", reviewer: "a" })).toBe(true);
-    expect(await applyLabReviewDecision(sql as never, { po: staleRead, decision: "REJECTED", reviewer: "b" })).toBe(false);
+    expect(await applyLabReviewDecision(sql as never, { po: staleRead, decision: "CONFIRMED", reviewer: "a", scope: { mode: "legacy" } })).toBe(true);
+    expect(await applyLabReviewDecision(sql as never, { po: staleRead, decision: "REJECTED", reviewer: "b", scope: { mode: "legacy" } })).toBe(false);
     expect(await poStatus()).toBe("CONFIRMED");
   });
 });
@@ -136,7 +136,7 @@ describe("Lab cancel and close-short (real Postgres)", () => {
     expect((await patch(manager, { action: "CLOSE_SHORT", note: "vendor discontinued" })).status).toBe(200);
     expect(await poStatus()).toBe("CLOSED_SHORT");
 
-    await recomputePurchaseOrderStatusQuery(sql as never, "PO-1");
+    await recomputePurchaseOrderStatusQuery(sql as never, "PO-1", { mode: "legacy" });
     expect(await poStatus()).toBe("CLOSED_SHORT");
   });
 

@@ -43,7 +43,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         UPDATE shipments SET status = 'Cancelled'
         WHERE id = ${id} AND status = 'In Transit'${andDeptWrite(scope)}
         RETURNING id AS shipment_id, po_number
-      `, recomputePurchaseOrderStatusQuery(sql, shipment.po_number ?? null)]);
+      `, recomputePurchaseOrderStatusQuery(sql, shipment.po_number ?? null, scope)]);
       if (!cancelled[0]?.shipment_id) return NextResponse.json({ error: "รายการนี้ถูกดำเนินการไปก่อนหน้าแล้ว" }, { status: 400 });
       if (recomputed[0]?.id) await recordPurchaseOrderCommunication({ poId: Number(recomputed[0].id), eventType: "PO_CANCELLED", actor: user, source: "WEB", shipmentId: Number(id), metadata: { reason: "Lab cancelled in-transit shipment" } });
       return NextResponse.json({ success: true, message: "ยกเลิกรายการสำเร็จ" });
@@ -115,7 +115,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       )
       SELECT c.id AS shipment_id, c.po_number, c.rejected_qty, (SELECT po_id FROM po_item_update LIMIT 1) AS po_id
       FROM claimed c
-    `, recomputePurchaseOrderStatusQuery(sql, shipment.po_number ?? null)]);
+    `, recomputePurchaseOrderStatusQuery(sql, shipment.po_number ?? null, scope)]);
     const received = results[pre.length];
     if (!received.length) return NextResponse.json({ error: "รายการนี้ถูกรับเข้าหรือยกเลิกไปก่อนหน้าแล้ว" }, { status: 400 });
     const row = received[0];

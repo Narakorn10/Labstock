@@ -196,7 +196,7 @@
 
 - `getPurchaseOrderSuggestions(sql, options, scope)`: `scope` เป็นพารามิเตอร์บังคับ ตรวจ `assertScope` ก่อนเรียกฐานข้อมูลทุกครั้ง; กรองผ่าน `master_data` (`is_active` + แผนก) และกรอง `inventory` กับ `logs` (ตารางที่ใช้คำนวณยอดและการเบิก) ตามแผนกเดียวกัน
 - CTE `on_order` **ตั้งใจไม่กรอง `purchase_orders` ตามแผนก**: `item_id` เป็น primary key ระดับระบบ จึงถูกแยกแผนกอยู่แล้วเมื่อ join กับ `master_data`; ถ้ากรองจะไม่ตรงกับ `current_open` ใน `purchase-order-creation.ts` และอาจทำให้สร้าง PO ติด 409 ถาวร (ก่อน PR-2)
-- `purchase-order-creation.ts` ยังเป็น legacy (ส่ง `{ mode: "legacy" }`) จนกว่าจะทำ PR-2; ต้องแก้ `on_order` ของ suggestions และ `current_open` ของ creation **พร้อมกัน** (มี `TODO(PR-2)` ในโค้ด)
+- `purchase-order-creation.ts` ยังเป็น legacy (ส่ง `{ mode: "legacy" }`) จนกว่าจะทำ PR-2; ต้องแก้ `on_order` ของ suggestions และ `current_open` ของ creation **พร้อมกัน** (มี `TODO(PR-2)` ในโค้ด) -- **ทำแล้วใน PR-2 ดูหัวข้อ 8**
 - LINE catalog (`/api/liff/orders/catalog/search`) ยังส่ง `{ mode: "legacy" }` = เห็นทุกแผนกไปก่อน จนกว่าจะแก้ `line-liff-ordering.ts` (กลุ่ม 6)
 - `manual.ts` (tracking แบบ MANUAL) กรอง `shipments` ตามแผนก; เลข tracking ของแผนกอื่นให้ผลเหมือนเลขที่ไม่มีอยู่จริง; ผู้ให้บริการภายนอก (THAIPOST/DKSH) ไม่ใช่ข้อมูลของแผนก จึงไม่กรอง
 - ปัญหาเดิมที่ยังไม่ได้แก้: route `/api/tracking/[trackingNo]` ไม่มีการตรวจ role (ผู้ใช้ที่ล็อกอินแล้วเรียกได้ทุกคน); คีย์ rate-limit ของ AI-review (`actor` + `vendor_fingerprint`) ไม่มีแผนกรวมอยู่
@@ -206,3 +206,37 @@
 - ผู้รับแจ้งเตือน PO = สมาชิกของแผนกที่เป็นเจ้าของ PO นั้น
 - หัวใบสั่งซื้อ (`lab_profile`) **ต้องแยกตามแผนก**: ต้องมี migration เพราะ `lab_profile` มี CHECK `id = 1` -- **ไม่อยู่ในงานนี้ และต้องให้เจ้าของอนุมัติก่อนทำ**
 - คำถามเรื่อง Vendor ที่ใช้ร่วมหลายแผนกยังเปิดอยู่ (ยังไม่ตัดสิน)
+
+## 8. กลุ่ม G5 PR-2: ใบสั่งซื้อ (สร้าง / แก้ / รับของ / ปิด) (ทำแล้ว)
+
+ถอด 6 ไฟล์ออกจาก `DEPARTMENT_SCOPE_PENDING` (22 -> 16): `src/app/api/purchase-orders/route.ts`, `src/app/api/purchase-orders/[id]/route.ts`, `src/lib/purchase-order-creation.ts`, `purchase-order-receipt.ts`, `purchase-order-review.ts`, `purchase-order-status.ts`
+
+**สิ่งที่กรองตามแผนกแล้ว**
+
+- ทุกฟังก์ชันเขียน PO (`createPurchaseOrderWithAudit`, `runGuardedPurchaseOrderUpdate`, `closePurchaseOrder`, `applyLabReviewDecision`, `confirmLabReceipt`, `recomputePurchaseOrderStatusQuery`) รับ `scope` เป็นพารามิเตอร์บังคับ และตรวจ (`assertPurchaseOrderScope`) ก่อนส่ง SQL ทุกครั้ง; scope ผิดรูป (undefined, `{}`, ส่ง user ทั้งก้อน, `{mode:"one"}` ไม่มี id) ล้มทันที
+- จุดล็อกของ PO (`assertPurchaseOrderStatusQuery` เป็นคำสั่งแรกของทุก transaction) กรองแผนกด้วย `andDeptWrite`: PO ของแผนกอื่นจะทำให้ transaction ล้มทั้งก้อน (ไม่เขียนอะไร) จึงไม่ต้องกรองซ้ำใน UPDATE ถัดไป
+- สร้าง PO: ใส่ `department_id` ทั้ง 2 ทาง (มี/ไม่มี `storeLiffRequestId`); รายการที่ไม่ใช่ของแผนก (`inactive_items`) กรองใน `LEFT JOIN ... ON`; ส่ง scope จริงให้ `getPurchaseOrderSuggestions`
+- `GET /api/purchase-orders`: ฝั่ง Lab กรองตามแผนกทุกกิ่ง (มีหรือไม่มี `?vendor=`); Admin ที่ดู "ทุกแผนก" เห็นทั้งหมด; โหมด legacy (ปิดสวิตช์) ส่ง SQL เหมือนเดิมทุกตัวอักษร
+- `GET/PATCH /api/purchase-orders/[id]`: ค้นหาด้วย id และ `po_number` กรองตามแผนก (PO ของแผนกอื่น = 404); `current_stock_qty` นับเฉพาะ inventory ของแผนกที่ดู; ทุก action ของ Lab ใน PATCH ใช้ scope เดียวกัน; จัดการ `DEPARTMENT_NOT_FOUND` / `DEPARTMENT_READ_ONLY` เป็น 404 / 409 (ไม่ใช่ 500) ทั้ง GET และ PATCH
+- `andDeptWrite` ที่ UPDATE ตรง 2 จุดใน PATCH (แก้รายการ / อนุมัติของผู้จัดการ) คงไว้เป็นการป้องกันซ้อน (defense-in-depth): **พิสูจน์ด้วย mutation ไม่ได้** เพราะการค้นหา PO ที่กรองไว้แล้วทำให้ PO ของแผนกอื่นไม่ถึงจุดนี้
+
+**ตั้งใจไม่กรอง**
+
+- `on_order` (ใน suggestions) และ `current_open` (ใน creation) **ไม่กรองแผนก** -- เป็นการตัดสินใจของทีม (ไม่ใช่เจ้าของระบบ): `item_id` เป็นคีย์ระดับระบบ และสองจุดนี้ต้องตรงกันเสมอ ไม่งั้นสร้าง PO ติด 409 ถาวร; ถ้าจะกรองต้องแก้ทั้งสองพร้อมกัน (ทดสอบใน `purchase-order-creation.dept.db.test.ts`)
+- `po_seq` (เลขที่ PO) -- เป็นลำดับเดียวทั้งระบบต่อวัน (`po_number` ไม่ซ้ำข้ามแผนก)
+- คำสั่งตรวจ shipments `In Transit` ตอนปิด PO / ยืนยันรับของ -- ไม่กรอง เพราะ shipment ที่ Vendor สร้างยังถูกประทับแผนกเริ่มต้นเสมอ (ดูด้านล่าง) ถ้ากรองจะข้ามการเตือนได้
+- `recomputePurchaseOrderStatusQuery` -- รับและตรวจ scope แต่ **ไม่กรองแผนกใน SQL**: `po_number` ไม่ซ้ำทั้งระบบ ผู้เรียกกรองมาก่อนแล้ว และถ้ากรอง สถานะ PO อาจไม่ถูกอัปเดตเงียบ ๆ เมื่อ shipment ถูกประทับแผนกต่างจาก PO (ทดสอบแล้วว่า PO แผนก B ที่มี shipment ประทับแผนก A ยังอัปเดตสถานะ); CASE ของสถานะไม่ถูกแตะ (`scripts/repair-po-status.mjs` พึ่งอยู่)
+- `loadPrintDetails` (ชื่อผู้สร้าง / ข้อมูลติดต่อ Vendor จาก `vendors` ตามชื่อ) -- ไม่กรอง จนกว่าคำถามเรื่อง Vendor ใช้ร่วมหลายแผนกจะตัดสิน
+
+**พฤติกรรมที่ควรรู้**
+
+- Admin ที่ดู "ทุกแผนก" **สร้างหรือแก้ PO ไม่ได้**: ตอบ 409 `DEPARTMENT_READ_ONLY` ก่อนส่ง SQL ทุกครั้ง (ต้องเลือกแผนกก่อน)
+- Vendor อ่าน/แก้ PO ของบริษัทตัวเอง **ข้ามแผนกได้** (ทั้ง GET list, GET [id], PATCH) -- ยอมรับชั่วคราวเท่านั้น **ยังไม่ได้ตัดสิน** คำถามข้อ 3 (Vendor ใช้ร่วมหลายแผนก) ยังเปิดอยู่; ส่วน Vendor POST (เสนอ PO) ใช้ scope แผนกของตัวเอง
+- หัวใบสั่งซื้อยังใช้ `lab_profile` id=1 ตัวเดียว: PO ของแผนก B จะมีหัวกระดาษของแผนก A จนกว่าจะมี PR แยกที่ทำ `lab_profile` แยกแผนก (ต้องมี migration และเจ้าของอนุมัติ)
+
+**ยังเป็น legacy / ห้ามเปิด `DEPARTMENTS_ENABLED` จนกว่าจะทำ**
+
+- `liff/orders` (POST สร้าง PO จาก LINE, PATCH ตอบรีวิว) และ `vendor/shipments` (POST) ยังส่ง `{ mode: "legacy" }` (ใน `DEPARTMENT_SCOPE_PENDING`): PO ที่สร้างจาก LINE และ shipment ที่ Vendor สร้างจึง **ไม่ถูกประทับแผนกที่ถูกต้อง** (ได้แผนกเริ่มต้น)
+- **ห้ามเปิด `DEPARTMENTS_ENABLED` จนกว่ากลุ่ม 6 (สั่งซื้อผ่าน LIFF) และ `vendor/shipments` POST จะย้ายเสร็จ** (เจ้าของยืนยันแล้ว)
+- เงื่อนไขสำหรับตอนย้าย `vendor/shipments` POST: ต้องประทับ shipment ด้วยแผนกของ **PO นั้น** (ไม่ใช่แผนกเริ่มต้น)
+- PR-3 (`po-communication.ts` และ `purchase-order-overdue.ts` -- การแจ้งเตือน / PO เกินกำหนด) ยังไม่ได้ทำ
