@@ -1,4 +1,6 @@
 import type sqlClient from "./db";
+import { assertPurchaseOrderScope } from "./purchase-order-review";
+import type { DepartmentScope } from "./scoped-db";
 
 type Sql = typeof sqlClient;
 
@@ -11,8 +13,14 @@ export const FULFILLMENT_STATUSES = ["CONFIRMED", "PARTIALLY_SHIPPED", "SHIPPED"
  * Must run as its own statement AFTER the shipment/receipt writes, inside the same
  * `sql.transaction([...])`. Inside a single statement, data-modifying CTEs all read
  * the pre-statement snapshot, so a CTE-embedded recompute lags one step behind.
+ *
+ * `scope` is REQUIRED and validated, but this query deliberately does NOT filter by department: po_number is globally
+ * UNIQUE, so it already names exactly one PO, and every caller has scoped the shipment / PO it works on beforehand. A
+ * department filter here could silently skip the status update when a shipment is stamped with the default department
+ * while its PO belongs to another one (vendor/shipments POST is not migrated yet), leaving the PO status stale.
  */
-export function recomputePurchaseOrderStatusQuery(sql: Sql, poNumber: string | null) {
+export function recomputePurchaseOrderStatusQuery(sql: Sql, poNumber: string | null, scope: DepartmentScope) {
+  assertPurchaseOrderScope(scope, "recomputePurchaseOrderStatusQuery"); // before any SQL
   return sql`
     WITH next AS (
       SELECT p.id, CASE

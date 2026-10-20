@@ -1,5 +1,6 @@
 import type sqlClient from "./db";
-import { PO_HAS_IN_TRANSIT, runGuardedPurchaseOrderUpdate } from "./purchase-order-review";
+import { assertPurchaseOrderScope, PO_HAS_IN_TRANSIT, runGuardedPurchaseOrderUpdate } from "./purchase-order-review";
+import { writeDepartmentId, type DepartmentScope } from "./scoped-db";
 import { LAB_RECEIPT_STATUSES } from "./purchase-order-workflow";
 import { recomputePurchaseOrderStatusQuery } from "./purchase-order-status";
 
@@ -28,14 +29,19 @@ function parseItemIds(value: unknown): number[] | null {
 export async function confirmLabReceipt(sql: Sql, input: {
   po: { id: number; po_number: string; status: string };
   poItemIds: unknown;
+  scope: DepartmentScope;
 }): Promise<LabReceiptResult> {
-  const { po } = input;
+  const { po, scope } = input;
+  assertPurchaseOrderScope(scope, "confirmLabReceipt"); // before any SQL
+  writeDepartmentId(scope); // mode "all" -> DEPARTMENT_READ_ONLY before the first select
   const ids = parseItemIds(input.poItemIds);
   if (!ids) return { ok: false, httpStatus: 400, error: "Select at least one order line that arrived" };
   if (!LAB_RECEIPT_STATUSES.includes(po.status)) {
     return { ok: false, httpStatus: 409, error: "This order cannot be marked as received in its current status" };
   }
 
+  // purchase_order_items is reached through its parent PO, which the caller loaded with the scope and the guard below locks
+  // with the scope, so this select is not filtered by department itself.
   const lines = await sql`
     SELECT id, item_id, item_name, quantity, COALESCE(accepted_qty, 0) AS accepted_qty
     FROM purchase_order_items
@@ -51,7 +57,8 @@ export async function confirmLabReceipt(sql: Sql, input: {
   let result: Awaited<ReturnType<typeof runGuardedPurchaseOrderUpdate>>;
   try {
     result = await runGuardedPurchaseOrderUpdate(sql, po.id, po.status, [
-      // Receiving the same goods through a Vendor shipment too would count them twice.
+      // Receiving the same goods through a Vendor shipment too would count them twice. Intentionally NOT filtered by
+      // department (po_number is globally unique; a shipment may be stamped with another department than its PO).
       sql`
         SELECT labstock_assert(NOT EXISTS (
           SELECT 1 FROM shipments WHERE po_number = ${po.po_number} AND status = 'In Transit'
@@ -75,8 +82,8 @@ export async function confirmLabReceipt(sql: Sql, input: {
         UPDATE purchase_orders SET status = 'CONFIRMED', updated_at = NOW()
         WHERE id = ${po.id} AND status IN ('SUBMITTED', 'ACKNOWLEDGED')
       `,
-      recomputePurchaseOrderStatusQuery(sql, po.po_number),
-    ]);
+      recomputePurchaseOrderStatusQuery(sql, po.po_number, scope),
+    ], scope);
   } catch (error) {
     if (error instanceof Error && error.message.includes(PO_HAS_IN_TRANSIT)) {
       return { ok: false, httpStatus: 409, error: "Receive or cancel the in-transit shipments before confirming receipt" };

@@ -510,7 +510,8 @@ async function fetchSuggestionRows(
   const searchTerm = `%${keyword}%`;
   // The on_order CTE deliberately has NO department filter on purchase_orders: item_id is a global primary key, so
   // on_order is already isolated by the join to master_data m (filtered below). Filtering purchase_orders here would
-  // diverge from purchase-order-creation.ts current_open (TODO(PR-2) there) and could cause a permanent 409.
+  // diverge from purchase-order-creation.ts current_open (also unfiltered, by team decision) and could cause a permanent 409.
+  // If one of the two ever gets a department filter, the other must change in the same commit.
   const commonCtes = policyTableExists
     ? sql`
       WITH inventory_lots AS (

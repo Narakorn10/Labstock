@@ -8,6 +8,7 @@ import { normalizePurchaseOrder } from "@/lib/notifications";
 import { recordPurchaseOrderCommunication } from "@/lib/po-communication";
 import { describeInvalidPurchaseOrderItems, isLabPurchasingRole, validatePurchaseOrderItems } from "@/lib/purchase-order-workflow";
 import { createPurchaseOrderWithAudit, PurchaseOrderCreationError } from "@/lib/purchase-order-creation";
+import { andDept, deptWhere, getDepartmentScope } from "@/lib/scoped-db";
 
 export async function GET(request: Request) {
   const requestId = getRequestId(request);
@@ -21,6 +22,13 @@ export async function GET(request: Request) {
     if (user.role === "Vendor" && !vendor) {
       return apiError("FORBIDDEN", { requestId, message: "ยังไม่ได้ตั้งค่าโปรไฟล์บริษัทของบัญชีนี้", hint: "แจ้งผู้ดูแลระบบให้ผูกบัญชีนี้กับบริษัทผู้ขาย" });
     }
+
+    // Vendor branch: NOT filtered by department. Whether a Vendor is shared across departments (question #3 in
+    // docs/departments-rollout.md) is still open; reading the POs of its own company in every department is only
+    // temporarily accepted, not decided. Lab branches are scoped to the department the user is viewing.
+    const scope = user.role === "Vendor" ? null : await getDepartmentScope(user);
+    // Same SQL text as before for legacy / mode "all": the WHERE only appears for a single department.
+    const allWhere = scope?.mode === "one" ? sql` WHERE ${deptWhere(scope, "po")}` : sql``;
 
     const orders = user.role === "Vendor"
       ? await sql`
@@ -72,7 +80,7 @@ export async function GET(request: Request) {
                 WHERE poi.po_id = po.id
               ), '[]'::jsonb) AS items
             FROM purchase_orders po
-            WHERE po.vendor = ${vendor}
+            WHERE po.vendor = ${vendor}${andDept(scope!, "po")}
             ORDER BY po.created_at DESC
           `
         : await sql`
@@ -89,7 +97,7 @@ export async function GET(request: Request) {
                 LEFT JOIN master_data md ON md.item_id = poi.item_id
                 WHERE poi.po_id = po.id
               ), '[]'::jsonb) AS items
-            FROM purchase_orders po
+            FROM purchase_orders po${allWhere}
             ORDER BY po.created_at DESC
           `;
 
@@ -123,9 +131,14 @@ export async function POST(request: Request) {
       return apiError("FORBIDDEN", { requestId, message: "สร้างใบสั่งซื้อได้เฉพาะ Admin, Manager หรือผู้ขายที่ได้รับมอบหมาย" });
     }
 
+    // After the permission checks above, so a 403 is never replaced by a department error. A Vendor uses its own
+    // resolved scope. Mode "all" (Admin viewing every department) cannot create: createPurchaseOrderWithAudit throws
+    // DEPARTMENT_READ_ONLY before any SQL, and toApiError below maps it to 409.
+    const scope = await getDepartmentScope(user);
     const origin = user.role === "Vendor" ? "VENDOR" : "LAB";
     const created = await createPurchaseOrderWithAudit({
       user,
+      scope,
       vendor,
       items,
       note,

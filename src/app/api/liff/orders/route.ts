@@ -42,6 +42,7 @@ export async function POST(request: Request) {
       origin: "LAB",
       liffRequestId,
       storeLiffRequestId: hasLiffRequestColumn,
+      scope: { mode: "legacy" }, // PENDING กลุ่ม 6 / vendor shipments
     });
     const fullPO = normalizePurchaseOrder(created.purchaseOrder, created.items.map((item) => ({
       item_name: String(item.item_name),

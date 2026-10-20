@@ -3,6 +3,8 @@ import type { AuthenticatedUser } from "./auth-utils";
 import { getPurchaseOrderSuggestions, type PurchaseOrderSuggestion } from "./purchase-order-suggestions";
 import type { PurchaseOrderItemInput } from "./purchase-order-workflow";
 import { PurchaseOrderCreationError } from "./purchase-order-creation-errors";
+import { assertPurchaseOrderScope } from "./purchase-order-review";
+import { andDept, deptInsert, type DepartmentScope } from "./scoped-db";
 
 type CreatePurchaseOrderInput = {
   user: AuthenticatedUser;
@@ -13,6 +15,8 @@ type CreatePurchaseOrderInput = {
   origin: "LAB" | "VENDOR";
   liffRequestId?: string | null;
   storeLiffRequestId?: boolean;
+  /** REQUIRED. Mode "all" cannot create a PO (DEPARTMENT_READ_ONLY); "legacy" keeps the old SQL and the column default. */
+  scope: DepartmentScope;
 };
 
 type AuditedPurchaseOrderItem = {
@@ -85,10 +89,7 @@ async function recomputeItems(input: CreatePurchaseOrderInput): Promise<AuditedP
     itemIds: input.items.map((item) => item.item_id),
     includeUnconfigured: true,
     includeAll: true,
-  },
-  // TODO(PR-2): pass the real department scope when this file is migrated (it must not import scoped-db before then).
-  // The suggestions on_order and the current_open CTEs below must be changed together.
-  { mode: "legacy" });
+  }, input.scope);
   const byItemId = new Map(suggestions.map((suggestion) => [suggestion.item_id, suggestion]));
   const calculatedAt = new Date().toISOString();
 
@@ -105,6 +106,9 @@ async function recomputeItems(input: CreatePurchaseOrderInput): Promise<AuditedP
 }
 
 export async function createPurchaseOrderWithAudit(input: CreatePurchaseOrderInput) {
+  assertPurchaseOrderScope(input.scope, "createPurchaseOrderWithAudit"); // first, before any SQL
+  // Mode "all" throws DEPARTMENT_READ_ONLY here, before the suggestions query runs. legacy -> empty fragments.
+  const dept = deptInsert(input.scope);
   const auditedItems = await recomputeItems(input);
   // The PO number is assigned inside the insert, under a per-day lock, so concurrent
   // creations cannot pick the same number (COUNT+1 outside the transaction could).
@@ -122,6 +126,14 @@ export async function createPurchaseOrderWithAudit(input: CreatePurchaseOrderInp
     ORDER BY item_id
   `;
 
+  // Department notes for the two statements below (kept out of the SQL text so legacy SQL stays byte-identical):
+  // - current_open is deliberately NOT filtered by department (team decision): keep it in step with the on_order CTE in
+  //   purchase-order-suggestions.ts, which is not filtered either (item_id is a system-wide key). If one ever gets a
+  //   department filter the other must too, otherwise the snapshot comparison gives a permanent 409.
+  // - po_seq is unfiltered on purpose: the PO number is one global sequence per day, unique across departments.
+  // - lab_profile id=1 is used for every department: a PO of another department gets this letterhead until a separate PR
+  //   makes the profile per department.
+  // - inactive_items filters master_data inside the LEFT JOIN ... ON (not in the WHERE, which has an OR).
   const query = input.storeLiffRequestId
     ? sql`
       WITH input_rows AS (
@@ -134,10 +146,9 @@ export async function createPurchaseOrderWithAudit(input: CreatePurchaseOrderInp
       ), inactive_items AS (
         SELECT input.item_id
         FROM input_rows input
-        LEFT JOIN master_data master ON master.item_id = input.item_id
+        LEFT JOIN master_data master ON master.item_id = input.item_id${andDept(input.scope, "master")}
         WHERE master.item_id IS NULL OR master.is_active = FALSE
       ), current_open AS (
-        -- TODO(PR-2): keep in step with the on_order CTE in purchase-order-suggestions.ts; change both together.
         SELECT poi.item_id,
           COALESCE(SUM(GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0)) FILTER (WHERE p.expected_date IS NOT NULL), 0) AS on_order_qty,
           COALESCE(SUM(GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0)) FILTER (WHERE p.expected_date IS NULL), 0) AS no_eta_qty
@@ -170,12 +181,12 @@ export async function createPurchaseOrderWithAudit(input: CreatePurchaseOrderInp
         INSERT INTO purchase_orders (
           po_number, vendor, note, expected_date, created_by, status, proposal_origin,
           review_requested_at, liff_request_id, issuer_name, issuer_department,
-          issuer_address, issuer_phone, issuer_email, issuer_logo_url
+          issuer_address, issuer_phone, issuer_email, issuer_logo_url${dept.column}
         ) SELECT
           (SELECT po_number FROM po_seq), ${input.vendor}, ${input.note}, ${input.expectedDate}, ${input.user.username},
           ${status}, ${input.origin}, ${reviewRequestedAt}, ${input.liffRequestId || null},
           issuer.organization_name, issuer.department_name, issuer.address,
-          issuer.phone, issuer.email, issuer.logo_url
+          issuer.phone, issuer.email, issuer.logo_url${dept.value}
         FROM issuer
         WHERE NOT EXISTS (SELECT 1 FROM stale_items)
           AND NOT EXISTS (SELECT 1 FROM inactive_items)
@@ -210,10 +221,9 @@ export async function createPurchaseOrderWithAudit(input: CreatePurchaseOrderInp
       ), inactive_items AS (
         SELECT input.item_id
         FROM input_rows input
-        LEFT JOIN master_data master ON master.item_id = input.item_id
+        LEFT JOIN master_data master ON master.item_id = input.item_id${andDept(input.scope, "master")}
         WHERE master.item_id IS NULL OR master.is_active = FALSE
       ), current_open AS (
-        -- TODO(PR-2): keep in step with the on_order CTE in purchase-order-suggestions.ts; change both together.
         SELECT poi.item_id,
           COALESCE(SUM(GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0)) FILTER (WHERE p.expected_date IS NOT NULL), 0) AS on_order_qty,
           COALESCE(SUM(GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0)) FILTER (WHERE p.expected_date IS NULL), 0) AS no_eta_qty
@@ -246,11 +256,11 @@ export async function createPurchaseOrderWithAudit(input: CreatePurchaseOrderInp
         INSERT INTO purchase_orders (
           po_number, vendor, note, expected_date, created_by, status, proposal_origin,
           review_requested_at, issuer_name, issuer_department, issuer_address,
-          issuer_phone, issuer_email, issuer_logo_url
+          issuer_phone, issuer_email, issuer_logo_url${dept.column}
         ) SELECT
           (SELECT po_number FROM po_seq), ${input.vendor}, ${input.note}, ${input.expectedDate}, ${input.user.username},
           ${status}, ${input.origin}, ${reviewRequestedAt}, issuer.organization_name,
-          issuer.department_name, issuer.address, issuer.phone, issuer.email, issuer.logo_url
+          issuer.department_name, issuer.address, issuer.phone, issuer.email, issuer.logo_url${dept.value}
         FROM issuer
         WHERE NOT EXISTS (SELECT 1 FROM stale_items)
           AND NOT EXISTS (SELECT 1 FROM inactive_items)

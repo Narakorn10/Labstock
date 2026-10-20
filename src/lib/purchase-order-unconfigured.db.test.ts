@@ -34,6 +34,7 @@ const order = (items: Array<Record<string, unknown>>) => ({
   note: null,
   expectedDate: null,
   origin: "LAB" as const,
+  scope: { mode: "legacy" as const },
 });
 
 beforeEach(async () => {

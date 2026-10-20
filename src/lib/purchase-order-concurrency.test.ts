@@ -4,8 +4,10 @@ const mocks = vi.hoisted(() => {
   const sql = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => ({ strings, values })) as unknown as {
     (strings: TemplateStringsArray, ...values: unknown[]): unknown;
     transaction: ReturnType<typeof vi.fn>;
+    unsafe: (text: string) => unknown; // scoped-db builds the department column with sql.unsafe
   };
   sql.transaction = vi.fn();
+  sql.unsafe = (text: string) => ({ strings: [text], values: [] });
   return { sql, getSuggestions: vi.fn() };
 });
 
@@ -37,6 +39,7 @@ const input = {
   note: null,
   expectedDate: null,
   origin: "LAB" as const,
+  scope: { mode: "legacy" as const },
 };
 
 describe("purchase-order concurrency guard", () => {

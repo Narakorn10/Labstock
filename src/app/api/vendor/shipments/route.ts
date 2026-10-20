@@ -148,7 +148,9 @@ export async function POST(request: Request) {
         (SELECT status FROM po) AS status,
         (SELECT id FROM shipped_update) AS po_id,
         EXISTS (SELECT 1 FROM existing) AS duplicate
-    `, recomputePurchaseOrderStatusQuery(sql, poNumber)]);
+    `, recomputePurchaseOrderStatusQuery(sql, poNumber,
+      { mode: "legacy" } // PENDING กลุ่ม 6 / vendor shipments
+    )]);
     const result = saved[0] as Record<string, unknown> | undefined;
     if (result) result.status = recomputed[0]?.status ?? result.status;
     if (!result?.batch_id) return NextResponse.json({ error: "This order is not eligible for shipment" }, { status: 409 });

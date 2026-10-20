@@ -128,7 +128,8 @@ describe("getPurchaseOrderSuggestions by department", () => {
   // with the snapshot taken from THIS function (snapshot_on_order_qty / snapshot_no_eta_qty). The two queries cannot be run
   // side by side without a full creation fixture, so the invariant is pinned in two places instead: this test fixes that
   // on_order is NOT department-filtered (legacy and department scope return the same on-order figures for A's item), and
-  // purchase-order-creation.ts carries TODO(PR-2) comments saying both queries must change together.
+  // purchase-order-creation.ts current_open is unfiltered too (comment there: both queries must change together; the
+  // end-to-end parity is covered by purchase-order-creation.dept.db.test.ts).
   // A PO stamped department B that contains an item owned by A. The on_order CTE must still count it for A (item_id is a
   // global key; filtering purchase_orders by department would diverge from purchase-order-creation.ts and cause a 409).
   // Run in both SQL branches (with and without reagent_order_policy), since each has its own on_order CTE.

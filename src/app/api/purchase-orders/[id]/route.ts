@@ -5,13 +5,18 @@ import { recordPurchaseOrderCommunication } from "@/lib/po-communication";
 import { applyLabReviewDecision, closePurchaseOrder, runGuardedPurchaseOrderUpdate } from "@/lib/purchase-order-review";
 import { confirmLabReceipt } from "@/lib/purchase-order-receipt";
 import { isLabPurchasingRole, validatePurchaseOrderItems } from "@/lib/purchase-order-workflow";
+import { getRequestId } from "@/lib/request-observability";
+import { andDept, andDeptWrite, departmentErrorResponse, getDepartmentScope, writeDepartmentId, type DepartmentScope } from "@/lib/scoped-db";
 
-async function findPurchaseOrder(id: string) {
+// Lookup by id AND by po_number are both scoped. Callers pass a literal legacy scope for the Vendor.
+async function findPurchaseOrder(id: string, scope: DepartmentScope) {
   return Number.isInteger(Number(id))
-    ? sql`SELECT * FROM purchase_orders WHERE id = ${id}`
-    : sql`SELECT * FROM purchase_orders WHERE po_number = ${id}`;
+    ? sql`SELECT * FROM purchase_orders WHERE id = ${id}${andDept(scope)}`
+    : sql`SELECT * FROM purchase_orders WHERE po_number = ${id}${andDept(scope)}`;
 }
 
+// Intentionally NOT filtered by department: vendors are looked up by NAME (the PO only stores the name) and the Vendor
+// shared-across-departments question (#3 in docs/departments-rollout.md) is still open. users is not a department table.
 async function loadPrintDetails(po: Record<string, unknown>) {
   const rows = await sql`
     SELECT
@@ -26,13 +31,18 @@ async function loadPrintDetails(po: Record<string, unknown>) {
 }
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const requestId = getRequestId(request);
   try {
     const user = await getAuthenticatedUser(request);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     if (user.role !== "Vendor" && !isLabPurchasingRole(user.role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
+    // Lab: only POs of the department being viewed (another department's PO answers 404). Vendor: NOT filtered by
+    // department; the Vendor shared-across-departments question (#3) is still open, so reading the POs of its own company
+    // in every department is only temporarily accepted, not decided. The Vendor check below still applies.
+    const readScope: DepartmentScope = user.role === "Vendor" ? { mode: "legacy" } : await getDepartmentScope(user);
     const { id } = await params;
-    const poData = await findPurchaseOrder(id);
+    const poData = await findPurchaseOrder(id, readScope);
     if (poData.length === 0) return NextResponse.json({ error: "Purchase order not found" }, { status: 404 });
 
     const po = poData[0];
@@ -68,7 +78,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
           LEFT JOIN (
             SELECT item_id, SUM(quantity) AS current_qty
             FROM inventory
-            WHERE quantity > 0
+            WHERE quantity > 0${andDept(readScope)}
             GROUP BY item_id
           ) inventory ON inventory.item_id = poi.item_id
           WHERE poi.po_id = ${po.id}
@@ -104,27 +114,36 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
     return NextResponse.json({ ...po, ...printDetails, items });
   } catch (error: unknown) {
+    const departmentResponse = departmentErrorResponse(error, requestId);
+    if (departmentResponse) return departmentResponse;
     console.error("Error fetching purchase order:", error);
     return NextResponse.json({ error: "Failed to fetch purchase order" }, { status: 500 });
   }
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const requestId = getRequestId(request);
   try {
     const user = await getAuthenticatedUser(request);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const isVendor = user.role === "Vendor";
+    const isLab = isLabPurchasingRole(user.role);
+    // Lab: scope first, before the PO lookup and before the body is read. Every Lab action here writes, so mode "all"
+    // (Admin viewing every department) answers 409 DEPARTMENT_READ_ONLY. Vendor (and any other role, which is rejected
+    // with 403 below): NOT filtered by department; Vendor shared-across-departments question (#3) is still open.
+    const scope: DepartmentScope = isLab ? await getDepartmentScope(user) : { mode: "legacy" };
+    if (isLab) writeDepartmentId(scope);
 
     const { id } = await params;
     const body = await request.json();
     let action = String(body.action ?? "");
     let status = String(body.status ?? "");
     const note = String(body.vendor_note ?? body.note ?? "").trim();
-    const poData = await findPurchaseOrder(id);
+    const poData = await findPurchaseOrder(id, scope);
     if (poData.length === 0) return NextResponse.json({ error: "Purchase order not found" }, { status: 404 });
 
     const po = poData[0];
-    const isVendor = user.role === "Vendor";
-    const isLab = isLabPurchasingRole(user.role);
     if ((!isVendor && !isLab) || (isVendor && po.vendor !== user.vendor)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
@@ -146,6 +165,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       const receipt = await confirmLabReceipt(sql, {
         po: { id: Number(po.id), po_number: po.po_number, status: po.status },
         poItemIds: body.item_ids,
+        scope,
       });
       if (!receipt.ok) return NextResponse.json({ error: receipt.error }, { status: receipt.httpStatus });
 
@@ -171,6 +191,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         po: { id: Number(po.id), po_number: po.po_number, status: po.status },
         action,
         reason: note,
+        scope,
       });
       if (!closure.ok) return NextResponse.json({ error: closure.error }, { status: closure.httpStatus });
 
@@ -267,7 +288,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
             updated_at = NOW()
         WHERE id = ${po.id} AND status = ${po.status}
         RETURNING *
-      `]);
+      `], scope); // Vendor: legacy scope (see above), so the guard is not filtered by department
       if (!guarded?.at(-1)?.length) {
         return NextResponse.json({ error: "This order changed before the Vendor response completed" }, { status: 409 });
       }
@@ -310,7 +331,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
           ), updated_order AS (
             UPDATE purchase_orders
             SET note = ${note || null}, expected_date = ${expectedDate}, updated_at = NOW()
-            WHERE id = ${po.id} AND status IN ('PENDING_MANAGER_REVIEW', 'SUBMITTED')
+            WHERE id = ${po.id} AND status IN ('PENDING_MANAGER_REVIEW', 'SUBMITTED')${andDeptWrite(scope)}
             RETURNING id
           ), updated_items AS (
             UPDATE purchase_order_items poi
@@ -351,7 +372,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
               vendor_note = ${rejectingManagerReview ? note : po.vendor_note},
               vendor_response_due_at = ${approvingManagerReview ? new Date(Date.now() + 5 * 86400000).toISOString() : po.vendor_response_due_at},
               updated_at = NOW()
-          WHERE id = ${po.id} AND status = 'PENDING_MANAGER_REVIEW'
+          WHERE id = ${po.id} AND status = 'PENDING_MANAGER_REVIEW'${andDeptWrite(scope)}
           RETURNING *
         `;
         if (!updated.length) return NextResponse.json({ error: "This order was already reviewed." }, { status: 409 });
@@ -371,6 +392,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         po: { id: Number(po.id), status: po.status, confirmed_at: po.confirmed_at },
         decision: status === "CONFIRMED" ? "CONFIRMED" : "REJECTED",
         reviewer: user.username,
+        scope,
       });
       if (!applied) return NextResponse.json({ error: "This order was already reviewed or changed." }, { status: 409 });
       notificationEvent = status === "CONFIRMED" ? "PO_CONFIRMED" : "PO_STATUS_UPDATED";
@@ -390,6 +412,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     });
     return NextResponse.json({ ...updatedRows[0], items });
   } catch (error: unknown) {
+    const departmentResponse = departmentErrorResponse(error, requestId);
+    if (departmentResponse) return departmentResponse;
     console.error("Error updating purchase order:", error);
     return NextResponse.json({ error: "Failed to update purchase order" }, { status: 500 });
   }

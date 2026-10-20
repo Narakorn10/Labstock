@@ -30,6 +30,7 @@ const input = {
   note: null,
   expectedDate: null,
   origin: "LAB" as const,
+  scope: { mode: "legacy" as const },
 };
 
 describe("purchase-order number assignment (real Postgres)", () => {

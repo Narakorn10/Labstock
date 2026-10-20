@@ -48,7 +48,7 @@ describe("Lab confirms receipt of a purchase order (real Postgres)", () => {
   });
 
   it("marks every line received and closes the order when all lines are ticked", async () => {
-    const result = await confirmLabReceipt(sql as never, { po: await loadPo("PO-1"), poItemIds: [1, 2] });
+    const result = await confirmLabReceipt(sql as never, { po: await loadPo("PO-1"), poItemIds: [1, 2], scope: { mode: "legacy" } });
 
     expect(result).toMatchObject({ ok: true, status: "RECEIVED" });
     expect(result.ok && result.items.map((item) => [item.item_id, item.qty])).toEqual([["A", 10], ["B", 4]]);
@@ -59,15 +59,15 @@ describe("Lab confirms receipt of a purchase order (real Postgres)", () => {
   });
 
   it("leaves the order partially received when only some lines are ticked, then closes it on a second round", async () => {
-    const first = await confirmLabReceipt(sql as never, { po: await loadPo("PO-1"), poItemIds: [1] });
+    const first = await confirmLabReceipt(sql as never, { po: await loadPo("PO-1"), poItemIds: [1], scope: { mode: "legacy" } });
     expect(first).toMatchObject({ ok: true, status: "PARTIALLY_RECEIVED" });
 
-    const second = await confirmLabReceipt(sql as never, { po: await loadPo("PO-1"), poItemIds: [2] });
+    const second = await confirmLabReceipt(sql as never, { po: await loadPo("PO-1"), poItemIds: [2], scope: { mode: "legacy" } });
     expect(second).toMatchObject({ ok: true, status: "RECEIVED" });
   });
 
   it("only adds the outstanding amount on a partly received line", async () => {
-    const result = await confirmLabReceipt(sql as never, { po: await loadPo("PO-PART"), poItemIds: [5] });
+    const result = await confirmLabReceipt(sql as never, { po: await loadPo("PO-PART"), poItemIds: [5], scope: { mode: "legacy" } });
 
     expect(result).toMatchObject({ ok: true, status: "PARTIALLY_RECEIVED" });
     expect(result.ok && result.items[0].qty).toBe(4);
@@ -76,29 +76,29 @@ describe("Lab confirms receipt of a purchase order (real Postgres)", () => {
   });
 
   it("accepts an order the Vendor never answered", async () => {
-    const result = await confirmLabReceipt(sql as never, { po: await loadPo("PO-SILENT"), poItemIds: [3] });
+    const result = await confirmLabReceipt(sql as never, { po: await loadPo("PO-SILENT"), poItemIds: [3], scope: { mode: "legacy" } });
 
     expect(result).toMatchObject({ ok: true, status: "RECEIVED" });
   });
 
   it("rejects a line that was already received and changes nothing", async () => {
-    await confirmLabReceipt(sql as never, { po: await loadPo("PO-1"), poItemIds: [1] });
+    await confirmLabReceipt(sql as never, { po: await loadPo("PO-1"), poItemIds: [1], scope: { mode: "legacy" } });
     const before = await linesOf(1);
 
-    const again = await confirmLabReceipt(sql as never, { po: await loadPo("PO-1"), poItemIds: [1, 2] });
+    const again = await confirmLabReceipt(sql as never, { po: await loadPo("PO-1"), poItemIds: [1, 2], scope: { mode: "legacy" } });
 
     expect(again).toMatchObject({ ok: false, httpStatus: 409 });
     expect(await linesOf(1)).toEqual(before);
   });
 
   it("rejects a closed order", async () => {
-    const result = await confirmLabReceipt(sql as never, { po: await loadPo("PO-DONE"), poItemIds: [4] });
+    const result = await confirmLabReceipt(sql as never, { po: await loadPo("PO-DONE"), poItemIds: [4], scope: { mode: "legacy" } });
 
     expect(result).toMatchObject({ ok: false, httpStatus: 409 });
   });
 
   it("rejects a line from another order", async () => {
-    const result = await confirmLabReceipt(sql as never, { po: await loadPo("PO-1"), poItemIds: [3] });
+    const result = await confirmLabReceipt(sql as never, { po: await loadPo("PO-1"), poItemIds: [3], scope: { mode: "legacy" } });
 
     expect(result).toMatchObject({ ok: false, httpStatus: 400 });
     expect((await linesOf(2))[0].accepted_qty).toBe("0");
@@ -106,15 +106,15 @@ describe("Lab confirms receipt of a purchase order (real Postgres)", () => {
 
   it("rejects an empty or invalid selection", async () => {
     const po = await loadPo("PO-1");
-    expect(await confirmLabReceipt(sql as never, { po, poItemIds: [] })).toMatchObject({ ok: false, httpStatus: 400 });
-    expect(await confirmLabReceipt(sql as never, { po, poItemIds: ["x"] })).toMatchObject({ ok: false, httpStatus: 400 });
-    expect(await confirmLabReceipt(sql as never, { po, poItemIds: undefined })).toMatchObject({ ok: false, httpStatus: 400 });
+    expect(await confirmLabReceipt(sql as never, { po, poItemIds: [], scope: { mode: "legacy" } })).toMatchObject({ ok: false, httpStatus: 400 });
+    expect(await confirmLabReceipt(sql as never, { po, poItemIds: ["x"], scope: { mode: "legacy" } })).toMatchObject({ ok: false, httpStatus: 400 });
+    expect(await confirmLabReceipt(sql as never, { po, poItemIds: undefined, scope: { mode: "legacy" } })).toMatchObject({ ok: false, httpStatus: 400 });
   });
 
   it("refuses while a Vendor shipment for the order is still in transit", async () => {
     await sql`INSERT INTO shipments (po_number, item_id, quantity, status) VALUES ('PO-1', 'A', 10, 'In Transit')`;
 
-    const result = await confirmLabReceipt(sql as never, { po: await loadPo("PO-1"), poItemIds: [1] });
+    const result = await confirmLabReceipt(sql as never, { po: await loadPo("PO-1"), poItemIds: [1], scope: { mode: "legacy" } });
 
     expect(result).toMatchObject({ ok: false, httpStatus: 409 });
     expect(Number((await linesOf(1))[0].accepted_qty)).toBe(0);
@@ -124,7 +124,7 @@ describe("Lab confirms receipt of a purchase order (real Postgres)", () => {
     const stale = await loadPo("PO-1");
     await sql`UPDATE purchase_orders SET status = 'CANCELLED' WHERE id = 1`;
 
-    const result = await confirmLabReceipt(sql as never, { po: stale, poItemIds: [1] });
+    const result = await confirmLabReceipt(sql as never, { po: stale, poItemIds: [1], scope: { mode: "legacy" } });
 
     expect(result).toMatchObject({ ok: false, httpStatus: 409 });
     expect(Number((await linesOf(1))[0].accepted_qty)).toBe(0);
