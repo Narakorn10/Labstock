@@ -4,7 +4,8 @@ import { getPurchaseOrderSuggestions, type PurchaseOrderSuggestion } from "./pur
 import type { PurchaseOrderItemInput } from "./purchase-order-workflow";
 import { PurchaseOrderCreationError } from "./purchase-order-creation-errors";
 import { assertPurchaseOrderScope } from "./purchase-order-review";
-import { andDept, deptInsert, type DepartmentScope } from "./scoped-db";
+import { AppError } from "./errors";
+import { andDept, deptInsert, writeDepartmentId, type DepartmentScope } from "./scoped-db";
 
 type CreatePurchaseOrderInput = {
   user: AuthenticatedUser;
@@ -109,6 +110,13 @@ export async function createPurchaseOrderWithAudit(input: CreatePurchaseOrderInp
   assertPurchaseOrderScope(input.scope, "createPurchaseOrderWithAudit"); // first, before any SQL
   // Mode "all" throws DEPARTMENT_READ_ONLY here, before the suggestions query runs. legacy -> empty fragments.
   const dept = deptInsert(input.scope);
+  // Letterhead (lab_profile): legacy keeps `id = 1` byte for byte; mode "one" reads the row of the department (v36 allows
+  // one row per department). No row => refuse (see issuer_rows below), never fall back to the CC letterhead.
+  const letterheadDeptId = writeDepartmentId(input.scope);
+  const issuerWhere = letterheadDeptId === null ? sql`id = 1` : sql`department_id = ${letterheadDeptId}`;
+  // Mode "one" only: the final SELECT also reports how many letterhead rows were found (always 1 result row, because it
+  // only holds scalar subqueries). Empty in legacy so the legacy text does not change by one character.
+  const issuerProbe = letterheadDeptId === null ? sql`` : sql`, (SELECT count(*)::int FROM issuer) AS issuer_rows`;
   const auditedItems = await recomputeItems(input);
   // The PO number is assigned inside the insert, under a per-day lock, so concurrent
   // creations cannot pick the same number (COUNT+1 outside the transaction could).
@@ -131,8 +139,10 @@ export async function createPurchaseOrderWithAudit(input: CreatePurchaseOrderInp
   //   purchase-order-suggestions.ts, which is not filtered either (item_id is a system-wide key). If one ever gets a
   //   department filter the other must too, otherwise the snapshot comparison gives a permanent 409.
   // - po_seq is unfiltered on purpose: the PO number is one global sequence per day, unique across departments.
-  // - lab_profile id=1 is used for every department: a PO of another department gets this letterhead until a separate PR
-  //   makes the profile per department.
+  // - lab_profile: legacy reads id = 1; mode "one" reads the row of the scope's department (issuerWhere). A department
+  //   without a row is refused after the transaction (PO_LETTERHEAD_MISSING). The PO keeps the issuer_* snapshot it got.
+  // - When LIFF moves to scoped creation (group 6) it must also catch AppError: liff/orders/route.ts only catches
+  //   PurchaseOrderCreationError, so PO_LETTERHEAD_MISSING would surface there as a generic 500.
   // - inactive_items filters master_data inside the LEFT JOIN ... ON (not in the WHERE, which has an OR).
   const query = input.storeLiffRequestId
     ? sql`
@@ -172,7 +182,7 @@ export async function createPurchaseOrderWithAudit(input: CreatePurchaseOrderInp
           ) AS department_name,
           address, phone, email, logo_url
         FROM lab_profile
-        WHERE id = 1
+        WHERE ${issuerWhere}
       ), po_seq AS (
         SELECT 'PO-' || ${poDate} || '-' || LPAD((COALESCE(MAX(substring(po_number from '([0-9]+)$')::int), 0) + 1)::text, 3, '0') AS po_number
         FROM purchase_orders
@@ -208,7 +218,7 @@ export async function createPurchaseOrderWithAudit(input: CreatePurchaseOrderInp
       )
       SELECT
         (SELECT to_jsonb(new_po) FROM new_po) AS purchase_order,
-        (SELECT COALESCE(jsonb_agg(to_jsonb(new_items)), '[]'::jsonb) FROM new_items) AS items
+        (SELECT COALESCE(jsonb_agg(to_jsonb(new_items)), '[]'::jsonb) FROM new_items) AS items${issuerProbe}
     `
     : sql`
       WITH input_rows AS (
@@ -247,7 +257,7 @@ export async function createPurchaseOrderWithAudit(input: CreatePurchaseOrderInp
           ) AS department_name,
           address, phone, email, logo_url
         FROM lab_profile
-        WHERE id = 1
+        WHERE ${issuerWhere}
       ), po_seq AS (
         SELECT 'PO-' || ${poDate} || '-' || LPAD((COALESCE(MAX(substring(po_number from '([0-9]+)$')::int), 0) + 1)::text, 3, '0') AS po_number
         FROM purchase_orders
@@ -282,11 +292,17 @@ export async function createPurchaseOrderWithAudit(input: CreatePurchaseOrderInp
       )
       SELECT
         (SELECT to_jsonb(new_po) FROM new_po) AS purchase_order,
-        (SELECT COALESCE(jsonb_agg(to_jsonb(new_items)), '[]'::jsonb) FROM new_items) AS items
+        (SELECT COALESCE(jsonb_agg(to_jsonb(new_items)), '[]'::jsonb) FROM new_items) AS items${issuerProbe}
     `;
 
   const [, , transactionRows] = await sql.transaction([numberLockQuery, lockQuery, query]);
-  const result = transactionRows[0] as { purchase_order?: Record<string, unknown>; items?: Record<string, unknown>[] } | undefined;
+  const result = transactionRows[0] as
+    | { purchase_order?: Record<string, unknown>; items?: Record<string, unknown>[]; issuer_rows?: number }
+    | undefined;
+  // Checked BEFORE the stale/inactive 409: a missing letterhead is a permanent configuration problem and wins when both apply.
+  if (letterheadDeptId !== null && Number(result?.issuer_rows) === 0) {
+    throw new AppError("PO_LETTERHEAD_MISSING", { message: "ยังไม่ได้ตั้งหัวกระดาษใบสั่งซื้อของงานนี้ กรุณาติดต่อผู้ดูแลระบบ" });
+  }
   if (!result?.purchase_order) {
     throw new PurchaseOrderCreationError("สถานะสต็อกหรือ PO ค้างเปลี่ยนไประหว่างคำนวณ กรุณากดแนะนำอัตโนมัติและตรวจสอบอีกครั้ง", 409);
   }

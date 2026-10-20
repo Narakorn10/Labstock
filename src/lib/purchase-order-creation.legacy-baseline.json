@@ -1,0 +1,68 @@
+{
+  "withLiffRequestId": [
+    {
+      "text": "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+      "params": [
+        "purchase_order_number:20260810"
+      ]
+    },
+    {
+      "text": "\n    SELECT pg_advisory_xact_lock(hashtextextended(item_id, 0))\n    FROM unnest($1::text[]) AS locked(item_id)\n    ORDER BY item_id\n  ",
+      "params": [
+        [
+          "CHEM-R-001"
+        ]
+      ]
+    },
+    {
+      "text": "\n      WITH input_rows AS (\n        SELECT * FROM jsonb_to_recordset($1::jsonb) AS item(\n          item_id TEXT, item_name TEXT, quantity NUMERIC, unit TEXT,\n          system_suggested_qty NUMERIC, override_reason TEXT, calculation_version TEXT,\n          calculation_snapshot JSONB, selected_basis TEXT,\n          snapshot_on_order_qty NUMERIC, snapshot_no_eta_qty NUMERIC\n        )\n      ), inactive_items AS (\n        SELECT input.item_id\n        FROM input_rows input\n        LEFT JOIN master_data master ON master.item_id = input.item_id\n        WHERE master.item_id IS NULL OR master.is_active = FALSE\n      ), current_open AS (\n        SELECT poi.item_id,\n          COALESCE(SUM(GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0)) FILTER (WHERE p.expected_date IS NOT NULL), 0) AS on_order_qty,\n          COALESCE(SUM(GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0)) FILTER (WHERE p.expected_date IS NULL), 0) AS no_eta_qty\n        FROM purchase_order_items poi\n        JOIN purchase_orders p ON p.id = poi.po_id\n        JOIN input_rows input ON input.item_id = poi.item_id\n        WHERE p.status IN ('PENDING_MANAGER_REVIEW', 'SUBMITTED', 'ACKNOWLEDGED', 'REVISION_REQUESTED', 'CONFIRMED', 'PARTIALLY_SHIPPED', 'SHIPPED', 'PARTIALLY_RECEIVED')\n        GROUP BY poi.item_id\n      ), stale_items AS (\n        SELECT input.item_id\n        FROM input_rows input\n        LEFT JOIN current_open current ON current.item_id = input.item_id\n        WHERE COALESCE(current.on_order_qty, 0) IS DISTINCT FROM input.snapshot_on_order_qty\n           OR COALESCE(current.no_eta_qty, 0) IS DISTINCT FROM input.snapshot_no_eta_qty\n      ), issuer AS (\n        -- to_jsonb keeps PO creation working before upgrade_v27 adds users.department.\n        SELECT organization_name,\n          COALESCE(\n            NULLIF(TRIM((SELECT to_jsonb(u) ->> 'department' FROM users u WHERE u.username = $2)), ''),\n            department_name\n          ) AS department_name,\n          address, phone, email, logo_url\n        FROM lab_profile\n        WHERE id = 1\n      ), po_seq AS (\n        SELECT 'PO-' || $3 || '-' || LPAD((COALESCE(MAX(substring(po_number from '([0-9]+)$')::int), 0) + 1)::text, 3, '0') AS po_number\n        FROM purchase_orders\n        WHERE po_number ~ $4\n      ), new_po AS (\n        INSERT INTO purchase_orders (\n          po_number, vendor, note, expected_date, created_by, status, proposal_origin,\n          review_requested_at, liff_request_id, issuer_name, issuer_department,\n          issuer_address, issuer_phone, issuer_email, issuer_logo_url\n        ) SELECT\n          (SELECT po_number FROM po_seq), $5, $6, $7, $8,\n          $9, $10, $11, $12,\n          issuer.organization_name, issuer.department_name, issuer.address,\n          issuer.phone, issuer.email, issuer.logo_url\n        FROM issuer\n        WHERE NOT EXISTS (SELECT 1 FROM stale_items)\n          AND NOT EXISTS (SELECT 1 FROM inactive_items)\n        RETURNING *\n      ), new_items AS (\n        INSERT INTO purchase_order_items (\n          po_id, item_id, item_name, quantity, unit, system_suggested_qty,\n          override_reason, calculation_version, calculation_snapshot, selected_basis,\n          reagent_type, job_type, machine_type\n        )\n        SELECT new_po.id, item.item_id, item.item_name, item.quantity, item.unit,\n          item.system_suggested_qty, item.override_reason, item.calculation_version,\n          item.calculation_snapshot, item.selected_basis,\n          master.reagent_type, master.job_type, master.machine_type\n        FROM new_po\n        CROSS JOIN input_rows item\n        JOIN master_data master ON master.item_id = item.item_id\n        RETURNING *\n      )\n      SELECT\n        (SELECT to_jsonb(new_po) FROM new_po) AS purchase_order,\n        (SELECT COALESCE(jsonb_agg(to_jsonb(new_items)), '[]'::jsonb) FROM new_items) AS items\n    ",
+      "params": [
+        "[{\"item_id\":\"CHEM-R-001\",\"item_name\":\"Glucose\",\"quantity\":15,\"unit\":\"box\",\"system_suggested_qty\":15,\"override_reason\":null,\"calculation_version\":\"reagent-order-suggestion-v7-15d-cycle-5d-lead-fefo\",\"calculation_snapshot\":{\"item_id\":\"CHEM-R-001\",\"name\":\"Glucose\",\"unit\":\"box\",\"vendor\":\"Vendor A\",\"min_threshold\":0,\"weekly_target\":0,\"quantity\":0,\"suggested_order_qty\":15,\"system_suggested_order_qty\":15,\"policy_order_qty\":15,\"dynamic_order_qty\":15,\"theoretical_monthly_qty\":null,\"documented_actual_withdrawal_boxes\":null,\"variance_abs_qty\":0,\"variance_percent\":0,\"variance_requires_review\":false,\"confidence\":\"none\",\"data_quality\":{\"observation_span_days\":0,\"observed_calendar_days\":0,\"future_dispense_log_count\":0,\"live_usage_eligible\":false},\"review_reasons\":[\"NO_DISPENSE_HISTORY\",\"STOCKOUT_BEFORE_LEAD_TIME\"],\"auto_selectable\":true,\"policy_configured\":true,\"on_order_qty\":0,\"overdue_on_order_qty\":0,\"committed_no_eta_qty\":0,\"projected_balance_at_horizon\":0,\"minimum_projected_balance\":0,\"safety_stock_boxes\":0,\"monthly_target_boxes\":30,\"planned_order_qty_boxes\":15,\"orders_per_month\":2,\"lead_time_days\":7,\"review_days\":15,\"horizon_days\":15,\"expedite_required\":true,\"stockout_date\":\"2026-08-10\",\"expiry_assessment\":{\"expired_qty_excluded\":0,\"expiring_within_horizon_qty\":0,\"nearest_expiry_date\":null},\"calculation_version\":\"reagent-order-suggestion-v7-15d-cycle-5d-lead-fefo\",\"warnings\":[\"No positive exact front-line dispensing history was found in the last 15 Bangkok calendar dates.\",\"Projected stockout occurs before the lead time window; expedite purchasing or manual intervention is required.\"],\"calculation_breakdown\":{\"demandSource\":\"approved_policy\",\"dailyDemandBoxes\":1,\"bridgeRequirementBoxes\":7,\"endingSafetyGapBoxes\":0,\"rawOrderBoxes\":15,\"orderMultipleBoxes\":1,\"minOrderQtyBoxes\":1},\"calculated_at\":\"2026-08-10T03:04:05.678Z\"},\"selected_basis\":\"POLICY\",\"snapshot_on_order_qty\":0,\"snapshot_no_eta_qty\":0}]",
+        "admin",
+        "20260810",
+        "^PO-20260810-[0-9]+$",
+        "Vendor A",
+        "note",
+        "2026-08-20",
+        "admin",
+        "PENDING_MANAGER_REVIEW",
+        "LAB",
+        "2026-08-10T03:04:05.678Z",
+        "req-1"
+      ]
+    }
+  ],
+  "withoutLiffRequestId": [
+    {
+      "text": "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+      "params": [
+        "purchase_order_number:20260810"
+      ]
+    },
+    {
+      "text": "\n    SELECT pg_advisory_xact_lock(hashtextextended(item_id, 0))\n    FROM unnest($1::text[]) AS locked(item_id)\n    ORDER BY item_id\n  ",
+      "params": [
+        [
+          "CHEM-R-001"
+        ]
+      ]
+    },
+    {
+      "text": "\n      WITH input_rows AS (\n        SELECT * FROM jsonb_to_recordset($1::jsonb) AS item(\n          item_id TEXT, item_name TEXT, quantity NUMERIC, unit TEXT,\n          system_suggested_qty NUMERIC, override_reason TEXT, calculation_version TEXT,\n          calculation_snapshot JSONB, selected_basis TEXT,\n          snapshot_on_order_qty NUMERIC, snapshot_no_eta_qty NUMERIC\n        )\n      ), inactive_items AS (\n        SELECT input.item_id\n        FROM input_rows input\n        LEFT JOIN master_data master ON master.item_id = input.item_id\n        WHERE master.item_id IS NULL OR master.is_active = FALSE\n      ), current_open AS (\n        SELECT poi.item_id,\n          COALESCE(SUM(GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0)) FILTER (WHERE p.expected_date IS NOT NULL), 0) AS on_order_qty,\n          COALESCE(SUM(GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0)) FILTER (WHERE p.expected_date IS NULL), 0) AS no_eta_qty\n        FROM purchase_order_items poi\n        JOIN purchase_orders p ON p.id = poi.po_id\n        JOIN input_rows input ON input.item_id = poi.item_id\n        WHERE p.status IN ('PENDING_MANAGER_REVIEW', 'SUBMITTED', 'ACKNOWLEDGED', 'REVISION_REQUESTED', 'CONFIRMED', 'PARTIALLY_SHIPPED', 'SHIPPED', 'PARTIALLY_RECEIVED')\n        GROUP BY poi.item_id\n      ), stale_items AS (\n        SELECT input.item_id\n        FROM input_rows input\n        LEFT JOIN current_open current ON current.item_id = input.item_id\n        WHERE COALESCE(current.on_order_qty, 0) IS DISTINCT FROM input.snapshot_on_order_qty\n           OR COALESCE(current.no_eta_qty, 0) IS DISTINCT FROM input.snapshot_no_eta_qty\n      ), issuer AS (\n        -- to_jsonb keeps PO creation working before upgrade_v27 adds users.department.\n        SELECT organization_name,\n          COALESCE(\n            NULLIF(TRIM((SELECT to_jsonb(u) ->> 'department' FROM users u WHERE u.username = $2)), ''),\n            department_name\n          ) AS department_name,\n          address, phone, email, logo_url\n        FROM lab_profile\n        WHERE id = 1\n      ), po_seq AS (\n        SELECT 'PO-' || $3 || '-' || LPAD((COALESCE(MAX(substring(po_number from '([0-9]+)$')::int), 0) + 1)::text, 3, '0') AS po_number\n        FROM purchase_orders\n        WHERE po_number ~ $4\n      ), new_po AS (\n        INSERT INTO purchase_orders (\n          po_number, vendor, note, expected_date, created_by, status, proposal_origin,\n          review_requested_at, liff_request_id, issuer_name, issuer_department,\n          issuer_address, issuer_phone, issuer_email, issuer_logo_url\n        ) SELECT\n          (SELECT po_number FROM po_seq), $5, $6, $7, $8,\n          $9, $10, $11, $12,\n          issuer.organization_name, issuer.department_name, issuer.address,\n          issuer.phone, issuer.email, issuer.logo_url\n        FROM issuer\n        WHERE NOT EXISTS (SELECT 1 FROM stale_items)\n          AND NOT EXISTS (SELECT 1 FROM inactive_items)\n        RETURNING *\n      ), new_items AS (\n        INSERT INTO purchase_order_items (\n          po_id, item_id, item_name, quantity, unit, system_suggested_qty,\n          override_reason, calculation_version, calculation_snapshot, selected_basis,\n          reagent_type, job_type, machine_type\n        )\n        SELECT new_po.id, item.item_id, item.item_name, item.quantity, item.unit,\n          item.system_suggested_qty, item.override_reason, item.calculation_version,\n          item.calculation_snapshot, item.selected_basis,\n          master.reagent_type, master.job_type, master.machine_type\n        FROM new_po\n        CROSS JOIN input_rows item\n        JOIN master_data master ON master.item_id = item.item_id\n        RETURNING *\n      )\n      SELECT\n        (SELECT to_jsonb(new_po) FROM new_po) AS purchase_order,\n        (SELECT COALESCE(jsonb_agg(to_jsonb(new_items)), '[]'::jsonb) FROM new_items) AS items\n    ",
+      "params": [
+        "[{\"item_id\":\"CHEM-R-001\",\"item_name\":\"Glucose\",\"quantity\":15,\"unit\":\"box\",\"system_suggested_qty\":15,\"override_reason\":null,\"calculation_version\":\"reagent-order-suggestion-v7-15d-cycle-5d-lead-fefo\",\"calculation_snapshot\":{\"item_id\":\"CHEM-R-001\",\"name\":\"Glucose\",\"unit\":\"box\",\"vendor\":\"Vendor A\",\"min_threshold\":0,\"weekly_target\":0,\"quantity\":0,\"suggested_order_qty\":15,\"system_suggested_order_qty\":15,\"policy_order_qty\":15,\"dynamic_order_qty\":15,\"theoretical_monthly_qty\":null,\"documented_actual_withdrawal_boxes\":null,\"variance_abs_qty\":0,\"variance_percent\":0,\"variance_requires_review\":false,\"confidence\":\"none\",\"data_quality\":{\"observation_span_days\":0,\"observed_calendar_days\":0,\"future_dispense_log_count\":0,\"live_usage_eligible\":false},\"review_reasons\":[\"NO_DISPENSE_HISTORY\",\"STOCKOUT_BEFORE_LEAD_TIME\"],\"auto_selectable\":true,\"policy_configured\":true,\"on_order_qty\":0,\"overdue_on_order_qty\":0,\"committed_no_eta_qty\":0,\"projected_balance_at_horizon\":0,\"minimum_projected_balance\":0,\"safety_stock_boxes\":0,\"monthly_target_boxes\":30,\"planned_order_qty_boxes\":15,\"orders_per_month\":2,\"lead_time_days\":7,\"review_days\":15,\"horizon_days\":15,\"expedite_required\":true,\"stockout_date\":\"2026-08-10\",\"expiry_assessment\":{\"expired_qty_excluded\":0,\"expiring_within_horizon_qty\":0,\"nearest_expiry_date\":null},\"calculation_version\":\"reagent-order-suggestion-v7-15d-cycle-5d-lead-fefo\",\"warnings\":[\"No positive exact front-line dispensing history was found in the last 15 Bangkok calendar dates.\",\"Projected stockout occurs before the lead time window; expedite purchasing or manual intervention is required.\"],\"calculation_breakdown\":{\"demandSource\":\"approved_policy\",\"dailyDemandBoxes\":1,\"bridgeRequirementBoxes\":7,\"endingSafetyGapBoxes\":0,\"rawOrderBoxes\":15,\"orderMultipleBoxes\":1,\"minOrderQtyBoxes\":1},\"calculated_at\":\"2026-08-10T03:04:05.678Z\"},\"selected_basis\":\"POLICY\",\"snapshot_on_order_qty\":0,\"snapshot_no_eta_qty\":0}]",
+        "admin",
+        "20260810",
+        "^PO-20260810-[0-9]+$",
+        "Vendor A",
+        "note",
+        "2026-08-20",
+        "admin",
+        "PENDING_MANAGER_REVIEW",
+        "LAB",
+        "2026-08-10T03:04:05.678Z",
+        "req-1"
+      ]
+    }
+  ]
+}

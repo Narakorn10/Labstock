@@ -40,6 +40,11 @@ export async function applyProdSchema(db: PGlite) {
   await db.exec(PROD_SEED_SQL);
 }
 
+/** Applies ONE migration file (e.g. upgrade_v36_lab_profile_per_department.sql) the same way as the department migrations. */
+export async function applyMigrationFile(db: PGlite, file: string) {
+  await applyFile(db, file);
+}
+
 export async function applyDepartmentMigrations(db: PGlite) {
   for (const file of DEPARTMENT_MIGRATIONS) await applyFile(db, file);
 }
