@@ -396,3 +396,221 @@ describe("v30 default department", () => {
     expect(readFileSync(path.resolve(process.cwd(), "scripts/apply-migration.mjs"), "utf8")).not.toMatch(/LAB/);
   });
 });
+
+// ---------------------------------------------------------------------------------------------------------------
+// v36: lab_profile per department. Kept separate on purpose: v36 is NOT in FORWARD/ROLLBACK above (and not in
+// DEPARTMENT_MIGRATIONS in src/test/department-fixtures.ts), so nothing else is affected until the owner approves it.
+// What PGlite cannot prove: the SET lock_timeout behaviour under concurrent traffic on the real Neon table, and the
+// real constraint name on Neon (unknown; the migration finds the CHECK by its definition, test 4 covers a renamed one).
+// ---------------------------------------------------------------------------------------------------------------
+const V36 = "upgrade_v36_lab_profile_per_department.sql";
+const V36_RB = "upgrade_v36_lab_profile_per_department_rollback.sql";
+
+describe("v36 lab_profile per department", () => {
+  // Fresh production-shaped database with v30-v35 applied (v36 NOT applied yet).
+  async function baseDb() {
+    const db = await newDb();
+    await applyAll(db, FORWARD);
+    return db;
+  }
+  const checkDefs = async (db: PGlite) =>
+    (await db.query<{ conname: string; def: string }>(
+      "SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conrelid = 'public.lab_profile'::regclass AND contype = 'c' ORDER BY conname",
+    )).rows;
+  // Same predicate the migration uses: valid, non-partial, non-expression unique index on exactly (department_id).
+  const fullUniqueCount = (db: PGlite) =>
+    scalar<number>(
+      db,
+      `SELECT count(*)::int AS v FROM pg_index i JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attname = 'department_id'
+       WHERE i.indrelid = 'public.lab_profile'::regclass AND i.indisunique AND i.indisvalid AND i.indnatts = 1
+         AND i.indkey[0] = a.attnum AND i.indpred IS NULL AND i.indexprs IS NULL`,
+    );
+  const constraintExists = async (db: PGlite, name: string) =>
+    (await scalar<number>(db, "SELECT count(*)::int AS v FROM pg_constraint WHERE conrelid = 'public.lab_profile'::regclass AND conname = $1", [name])) === 1;
+  // applyFile's error text contains the whole failing statement (including the RAISE texts), so match only the last
+  // line = the message PostgreSQL actually raised. Otherwise a test could pass even if the check never fired.
+  const raisedMessage = async (promise: Promise<unknown>) => {
+    const error = await promise.then(() => null, (e: Error) => e);
+    expect(error, "expected the migration to throw").not.toBeNull();
+    return (error as Error).message.trim().split("\n").pop() ?? "";
+  };
+  const idOneRow = async (db: PGlite) => (await db.query("SELECT * FROM lab_profile WHERE id = 1")).rows;
+  const hasIdOneCheck = async (db: PGlite) => (await checkDefs(db)).some((c) => /^CHECK \(+id = 1\)+$/.test(c.def));
+
+  it("1. forward drops the id = 1 CHECK, adds the unique constraint, and leaves row id 1 and all counts unchanged", async () => {
+    const db = await baseDb();
+    expect(await hasIdOneCheck(db)).toBe(true);
+    const rowBefore = await idOneRow(db);
+    const countsBefore = await counts(db);
+    await applyFile(db, V36);
+    expect(await hasIdOneCheck(db)).toBe(false);
+    expect(await constraintExists(db, "lab_profile_department_id_key")).toBe(true);
+    expect(await fullUniqueCount(db)).toBe(1);
+    expect(await idOneRow(db)).toEqual(rowBefore);
+    expect(rowBefore).toHaveLength(1);
+    expect(await counts(db)).toEqual(countsBefore);
+    await db.close();
+  }, 60_000);
+
+  it("2. a second department row inserts; a duplicate department_id is rejected (23505); id = 1 still returns CC", async () => {
+    const db = await baseDb();
+    await applyFile(db, V36);
+    await db.query("INSERT INTO lab_profile (id, department_id, organization_name) VALUES (2, 2, 'Molecular')");
+    expect(await scalar(db, "SELECT count(*)::int AS v FROM lab_profile")).toBe(2);
+    await expect(db.query("INSERT INTO lab_profile (id, department_id) VALUES (3, 1)")).rejects.toMatchObject({ code: "23505" });
+    await expect(db.query("INSERT INTO lab_profile (id, department_id) VALUES (4, 2)")).rejects.toMatchObject({ code: "23505" });
+    // Inserting without id fails loudly on the primary key (id DEFAULT 1) - v36 does not change that.
+    await expect(db.query("INSERT INTO lab_profile (department_id) VALUES (2)")).rejects.toMatchObject({ code: "23505" });
+    const { rows } = await db.query<{ id: number; department_id: number }>("SELECT id, department_id FROM lab_profile WHERE id = 1");
+    expect(rows).toEqual([{ id: 1, department_id: await defaultDeptId(db) }]);
+    await db.close();
+  }, 60_000);
+
+  it("3. running forward twice is idempotent (still exactly one qualifying unique)", async () => {
+    const db = await baseDb();
+    await applyFile(db, V36);
+    const rowBefore = await idOneRow(db);
+    await applyFile(db, V36);
+    expect(await fullUniqueCount(db)).toBe(1);
+    expect(await hasIdOneCheck(db)).toBe(false);
+    expect(await idOneRow(db)).toEqual(rowBefore);
+    await db.close();
+  }, 60_000);
+
+  it("4. a CHECK with a different name (weird_name) is still found by its definition and dropped", async () => {
+    const db = await baseDb();
+    await db.exec("ALTER TABLE lab_profile RENAME CONSTRAINT lab_profile_id_check TO weird_name");
+    expect((await checkDefs(db)).map((c) => c.conname)).toContain("weird_name");
+    await applyFile(db, V36);
+    expect(await hasIdOneCheck(db)).toBe(false);
+    expect((await checkDefs(db)).map((c) => c.conname)).not.toContain("weird_name");
+    await db.close();
+  }, 60_000);
+
+  it("5. before v31 (no department_id) it stops with a message about v31", async () => {
+    const db = await newDb();
+    await applyFile(db, FORWARD[0]);
+    expect(await raisedMessage(applyFile(db, V36))).toMatch(/run v31\/v32 first/);
+    expect(await hasIdOneCheck(db)).toBe(true);
+    await db.close();
+  }, 60_000);
+
+  it("6. a failing pre-check (duplicate department_id) throws and leaves no unique behind", async () => {
+    const db = await baseDb();
+    await db.exec("ALTER TABLE lab_profile DROP CONSTRAINT lab_profile_id_check");
+    await db.exec("INSERT INTO lab_profile (id) VALUES (2)"); // department_id defaults to CC -> duplicate of row 1
+    expect(await raisedMessage(applyFile(db, V36))).toMatch(/duplicate department_id/);
+    expect(await fullUniqueCount(db)).toBe(0);
+    expect(await constraintExists(db, "lab_profile_department_id_key")).toBe(false);
+    await db.close();
+  }, 60_000);
+
+  it("7. department_id nullable => forward throws; real v32 state (helper _nn already dropped, real NOT NULL) => passes", async () => {
+    const db = await baseDb();
+    // State right after the real v32: real NOT NULL, the temporary helper constraint is gone.
+    expect(await scalar<boolean>(db, "SELECT attnotnull AS v FROM pg_attribute WHERE attrelid = 'public.lab_profile'::regclass AND attname = 'department_id'")).toBe(true);
+    expect(await constraintExists(db, "lab_profile_department_id_nn")).toBe(false);
+    // Simulate "v32 did not finish": nullable column.
+    await db.exec("ALTER TABLE lab_profile ALTER COLUMN department_id DROP NOT NULL");
+    expect(await raisedMessage(applyFile(db, V36))).toMatch(/run v31\/v32 first/);
+    expect(await hasIdOneCheck(db)).toBe(true);
+    expect(await fullUniqueCount(db)).toBe(0);
+    await db.exec("ALTER TABLE lab_profile ALTER COLUMN department_id SET NOT NULL");
+    await applyFile(db, V36);
+    expect(await fullUniqueCount(db)).toBe(1);
+    await db.close();
+  }, 60_000);
+
+  it("8. an existing PARTIAL unique index on department_id is not counted: v36 still adds the full unique", async () => {
+    const db = await baseDb();
+    await db.exec("CREATE UNIQUE INDEX lab_profile_partial_uq ON lab_profile (department_id) WHERE id > 5");
+    expect(await fullUniqueCount(db)).toBe(0);
+    await applyFile(db, V36);
+    expect(await fullUniqueCount(db)).toBe(1);
+    expect(await constraintExists(db, "lab_profile_department_id_key")).toBe(true);
+    await db.close();
+  }, 60_000);
+
+  it("9. an existing full unique under another name: forward adds no second one, rollback does not drop it", async () => {
+    const db = await baseDb();
+    await db.exec("ALTER TABLE lab_profile ADD CONSTRAINT other_name_uq UNIQUE (department_id)");
+    await applyFile(db, V36);
+    expect(await constraintExists(db, "lab_profile_department_id_key")).toBe(false);
+    expect(await fullUniqueCount(db)).toBe(1);
+    await applyFile(db, V36_RB);
+    expect(await constraintExists(db, "other_name_uq")).toBe(true);
+    expect(await fullUniqueCount(db)).toBe(1);
+    expect(await hasIdOneCheck(db)).toBe(true);
+    await db.close();
+  }, 60_000);
+
+  it("10. another CHECK that covers only column id (not id = 1) makes forward throw and change nothing", async () => {
+    const db = await baseDb();
+    await db.exec("ALTER TABLE lab_profile ADD CONSTRAINT lab_profile_id_positive CHECK (id > 0)");
+    expect(await raisedMessage(applyFile(db, V36))).toMatch(/unexpected CHECK lab_profile_id_positive/);
+    expect(await hasIdOneCheck(db)).toBe(true);
+    expect(await constraintExists(db, "lab_profile_id_positive")).toBe(true);
+    expect(await fullUniqueCount(db)).toBe(0);
+    await db.close();
+  }, 60_000);
+
+  it("11. rollback refuses when a row with id <> 1 exists, and changes nothing", async () => {
+    const db = await baseDb();
+    await applyFile(db, V36);
+    await db.query("INSERT INTO lab_profile (id, department_id) VALUES (2, 2)");
+    expect(await raisedMessage(applyFile(db, V36_RB))).toMatch(/^rollback refused/);
+    expect(await scalar(db, "SELECT count(*)::int AS v FROM lab_profile")).toBe(2);
+    expect(await constraintExists(db, "lab_profile_department_id_key")).toBe(true);
+    expect(await hasIdOneCheck(db)).toBe(false);
+    await db.close();
+  }, 60_000);
+
+  it("12. rollback (run twice) restores the CHECK, drops our unique and leaves row id 1 untouched", async () => {
+    const db = await baseDb();
+    const rowBefore = await idOneRow(db);
+    await applyFile(db, V36);
+    await applyFile(db, V36_RB);
+    await applyFile(db, V36_RB);
+    expect(await hasIdOneCheck(db)).toBe(true);
+    expect(await constraintExists(db, "lab_profile_department_id_key")).toBe(false);
+    expect((await checkDefs(db)).filter((c) => /^CHECK \(+id = 1\)+$/.test(c.def))).toHaveLength(1);
+    await expect(db.query("INSERT INTO lab_profile (id, department_id) VALUES (2, 2)")).rejects.toMatchObject({ code: "23514" });
+    expect(await idOneRow(db)).toEqual(rowBefore);
+    await db.close();
+  }, 60_000);
+
+  it("13. full cycle: v36 rollback then v35..v30 rollbacks, then forward again, ends with identical counts", async () => {
+    const db = await newDb();
+    await applyAll(db, [...FORWARD, V36]);
+    const first = await counts(db);
+    await applyAll(db, [V36_RB, ...ROLLBACK]);
+    await applyAll(db, [...FORWARD, V36]);
+    expect(await counts(db)).toEqual(first);
+    expect(await hasIdOneCheck(db)).toBe(false);
+    expect(await fullUniqueCount(db)).toBe(1);
+    await db.close();
+  }, 120_000);
+
+  it("14. v36 rollback still works after the v31 rollback already dropped department_id (and when the table is gone)", async () => {
+    const db = await baseDb();
+    await applyFile(db, V36);
+    await applyAll(db, ROLLBACK.slice(0, 5)); // v35 .. v31
+    expect(await columnExists(db, "lab_profile", "department_id")).toBe(false);
+    await applyFile(db, V36_RB);
+    expect(await hasIdOneCheck(db)).toBe(true);
+    await applyFile(db, V36_RB);
+    await db.exec("DROP TABLE lab_profile");
+    await applyFile(db, V36_RB); // table missing: finishes quietly
+    await db.close();
+  }, 60_000);
+
+  it("15. static: neither file writes lab_profile rows (INSERT/UPDATE/DELETE/TRUNCATE, comments excluded) or uses uppercase LAB", () => {
+    for (const file of [V36, V36_RB]) {
+      const text = readFileSync(path.resolve(process.cwd(), file), "utf8");
+      const code = text.split("\n").map((line) => line.replace(/--.*$/, "")).join("\n");
+      expect(code, file).not.toMatch(/\b(INSERT|UPDATE|DELETE|TRUNCATE)\b/i);
+      expect(text, file).not.toMatch(/LAB/);
+      expect(text, file).toMatch(/^SET lock_timeout = '3s';$/m);
+    }
+  });
+});
