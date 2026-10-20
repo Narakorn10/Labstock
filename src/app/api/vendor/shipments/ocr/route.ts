@@ -1,11 +1,17 @@
 import { NextResponse } from "next/server";
 import sql from "@/lib/db";
 import { getAuthenticatedUser } from "@/lib/auth-utils";
+import { isDepartmentScopeFailure, toApiError } from "@/lib/api-response";
 import { SHIPMENTS_DISABLED_MESSAGE, SHIPMENTS_ENABLED } from "@/lib/feature-flags";
+import { getRequestId } from "@/lib/request-observability";
+import { getDepartmentScope } from "@/lib/scoped-db";
 import { mapOcrText, type OrderCandidate } from "@/lib/shipment-ocr";
 
 export const runtime = "nodejs";
 
+// Unfiltered by department on purpose (policy A, owner question #3 open): the PO is found by its globally unique po_number
+// and the vendor's company name; the shipments subquery is safe for the same reason (po_number is globally unique) and
+// vendor_item_aliases is keyed by a global item_id. The OCR quota table (shipment_ocr_usage) is global too.
 async function getCandidates(poNumber: string, vendor: string): Promise<OrderCandidate[] | null> {
   const rows = await sql`
     SELECT p.id, poi.item_id, poi.item_name, poi.quantity,
@@ -61,9 +67,12 @@ async function analyzeWithAzure(base64Source: string) {
 
 export async function POST(request: Request) {
   if (!SHIPMENTS_ENABLED) return NextResponse.json({ error: SHIPMENTS_DISABLED_MESSAGE }, { status: 503 });
+  const requestId = getRequestId(request);
   const user = await getAuthenticatedUser(request);
   if (!user || user.role !== "Vendor" || !user.vendor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
+    // Fail closed before any SQL; the candidate query stays unfiltered on purpose (see getCandidates).
+    await getDepartmentScope(user);
     const body = await request.json() as { poNumber?: string; text?: string; base64Source?: string };
     const poNumber = String(body.poNumber ?? "").trim();
     const candidates = await getCandidates(poNumber, user.vendor);
@@ -73,6 +82,8 @@ export async function POST(request: Request) {
     // Raw text is intentionally used only in memory and never persisted or logged.
     return NextResponse.json({ items: mapOcrText(text, candidates), candidates });
   } catch (error: unknown) {
+    // Scope failures first (never leak error.message: DEPARTMENT_SCOPE_MISSING contains the username), then the existing 422 path.
+    if (isDepartmentScopeFailure(error)) return toApiError(error, requestId).response;
     return NextResponse.json({ error: error instanceof Error ? error.message : "OCR failed" }, { status: 422 });
   }
 }
