@@ -45,7 +45,7 @@ describe("overdue purchase-order reminders (real Postgres)", () => {
   });
 
   it("reminds only about unconfirmed Vendor orders while shipments are disabled", async () => {
-    const reminded = await remindOverduePurchaseOrders();
+    const reminded = await remindOverduePurchaseOrders({ mode: "legacy" });
 
     expect(reminded.map((order) => [order.po_number, order.event_type])).toEqual([
       ["PO-SILENT", "VENDOR_RESPONSE_OVERDUE"],
@@ -58,7 +58,7 @@ describe("overdue purchase-order reminders (real Postgres)", () => {
   it("also reminds about late deliveries when shipments are enabled", async () => {
     mocks.shipmentsEnabled = true;
 
-    const reminded = await remindOverduePurchaseOrders();
+    const reminded = await remindOverduePurchaseOrders({ mode: "legacy" });
 
     expect(reminded.map((order) => [order.po_number, order.event_type])).toEqual([
       ["PO-SILENT", "VENDOR_RESPONSE_OVERDUE"],
@@ -71,7 +71,7 @@ describe("overdue purchase-order reminders (real Postgres)", () => {
   it("does not remind the same order twice within a day", async () => {
     await sql`INSERT INTO purchase_order_events (po_id, po_number, event_type) VALUES (1, 'PO-SILENT', 'VENDOR_RESPONSE_OVERDUE')`;
 
-    const reminded = await remindOverduePurchaseOrders();
+    const reminded = await remindOverduePurchaseOrders({ mode: "legacy" });
 
     expect(reminded.map((order) => order.po_number)).toEqual(["PO-NO-DUE-OLD"]);
   });
@@ -86,7 +86,7 @@ describe("overdue purchase-order reminders (real Postgres)", () => {
         (8, 'PO-NO-DUE-OLD', 'VENDOR_RESPONSE_OVERDUE', NOW() - INTERVAL '1 day');
     `);
 
-    const reminded = await remindOverduePurchaseOrders();
+    const reminded = await remindOverduePurchaseOrders({ mode: "legacy" });
 
     expect(reminded.map((order) => order.po_number)).toEqual(["PO-NO-DUE-OLD"]);
   });

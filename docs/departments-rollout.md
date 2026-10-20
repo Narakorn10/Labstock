@@ -167,10 +167,10 @@
 - `getReagentUsageInsights(scope)` และ `drainNotificationOutbox(limit, scope)` บังคับส่ง scope (มีตัวตรวจตอนรันกันส่งผิดช่อง)
 - `/api/notifications/reorder-risk` (cron, ไม่อยู่ใน PENDING เพราะ SQL ในไฟล์นั้นเองไม่ได้แตะตารางของแผนก) ยังส่ง `{ mode: "all" }`
   = คำนวณความเสี่ยงสั่งซื้อจากทุกงานรวมกันเหมือนเดิม และ **coverage test มองไม่เห็นจุดนี้** ต้องแยกเป็นรายงานต่องานในงานภายหลัง
-- `po-communication.ts` (ยังอยู่ใน PENDING) เรียก `drainNotificationOutbox(20, { mode: "all" })` หลังสร้างเหตุการณ์ PO
+- `po-communication.ts` เรียก `drainNotificationOutbox(20, { mode: "all" })` หลังสร้างเหตุการณ์ PO (ออกจาก PENDING แล้วใน G5 PR-3 ดูหัวข้อ 9; ยังเป็น `{ mode: "all" }` เพราะเป็นงานเบื้องหลังที่ไม่มีผู้ใช้)
 - Cron ของ outbox (ใช้ secret ไม่มีผู้ใช้) ส่งแจ้งเตือนของทุกงาน; เจ้าหน้าที่ (Admin/Manager) ที่กดส่งเองจะส่งเฉพาะแถวของงานตัวเอง
   ส่วน Admin ส่วนกลางที่ดู "ทุกงาน" จะส่งได้ทุกงาน
-- แถวแจ้งเตือนใหม่ยังถูกสร้างเป็นงาน CC เสมอ และผู้รับยังเป็น Admin/Manager ทั้งระบบ จนกว่าจะย้ายกลุ่มใบสั่งซื้อ (PO)
+- (เดิม) แถวแจ้งเตือนใหม่ถูกสร้างเป็นงาน CC เสมอ และผู้รับเป็น Admin/Manager ทั้งระบบ -- **แก้แล้วใน G5 PR-3 (หัวข้อ 9)**: ประทับแผนกตาม PO และกรองผู้รับตามสมาชิกแผนก
 - เมื่อเปิดสวิตช์ Admin ส่วนกลางที่ดู "ทุกงาน" **กดส่งซ้ำ (retry) แถว outbox ไม่ได้** (ตอบ 409 DEPARTMENT_READ_ONLY) ต้องสลับไปงานนั้นก่อน
   แถวของงานอื่นจะได้ข้อความ 404 เดียวกับแถวที่ไม่มีอยู่
 
@@ -239,4 +239,30 @@
 - `liff/orders` (POST สร้าง PO จาก LINE, PATCH ตอบรีวิว) และ `vendor/shipments` (POST) ยังส่ง `{ mode: "legacy" }` (ใน `DEPARTMENT_SCOPE_PENDING`): PO ที่สร้างจาก LINE และ shipment ที่ Vendor สร้างจึง **ไม่ถูกประทับแผนกที่ถูกต้อง** (ได้แผนกเริ่มต้น)
 - **ห้ามเปิด `DEPARTMENTS_ENABLED` จนกว่ากลุ่ม 6 (สั่งซื้อผ่าน LIFF) และ `vendor/shipments` POST จะย้ายเสร็จ** (เจ้าของยืนยันแล้ว)
 - เงื่อนไขสำหรับตอนย้าย `vendor/shipments` POST: ต้องประทับ shipment ด้วยแผนกของ **PO นั้น** (ไม่ใช่แผนกเริ่มต้น)
-- PR-3 (`po-communication.ts` และ `purchase-order-overdue.ts` -- การแจ้งเตือน / PO เกินกำหนด) ยังไม่ได้ทำ
+- PR-3 (`po-communication.ts` และ `purchase-order-overdue.ts` -- การแจ้งเตือน / PO เกินกำหนด) **ทำแล้ว ดูหัวข้อ 9**
+
+## 9. กลุ่ม G5 PR-3: การแจ้งเตือน PO และ PO เกินกำหนด (ทำแล้ว)
+
+ถอด 2 ไฟล์ออกจาก `DEPARTMENT_SCOPE_PENDING` (16 -> 14): `src/lib/po-communication.ts`, `src/lib/purchase-order-overdue.ts` (ไม่มี migration; สวิตช์ `DEPARTMENTS_ENABLED` ยังปิด)
+
+**แผนกของการแจ้งเตือนมาจาก PO เอง ไม่ใช่จากผู้เรียก**
+
+- `recordPurchaseOrderCommunication` ไม่มีพารามิเตอร์ scope (ผู้เรียก 9 จุดไม่ต้องแก้) ตัดสินจาก `departmentsReady()`:
+  - ปิดสวิตช์ (legacy): **ไม่มี query เพิ่ม** และ SQL เหมือนเดิมทุกตัวอักษร (มี test เทียบกับโค้ดเดิม)
+  - เปิดสวิตช์: แถว `notification_outbox` ถูกประทับ `department_id` ของ PO (`po.department_id`) ไม่ว่าใครเป็นคนเรียก (cron, Vendor, LINE) ดังนั้น PO ที่สร้างผ่าน LIFF / shipment ของ Vendor จะมีแผนกตาม PO นั้น ๆ (ซึ่งยังเป็นแผนกเริ่มต้นจนกว่ากลุ่ม 6 จะเสร็จ)
+- **ผู้รับ:** Admin/Manager ต้องเป็นสมาชิกแผนกของ PO (`user_departments`) ส่วน Vendor ยังจับด้วยชื่อบริษัทเหมือนเดิม ไม่ต้องมีแถวสมาชิก (แบบเดียวกับ `stock-transactions.ts`)
+- **PO ไม่มี department_id ขณะเปิดสวิตช์:** ไม่ throw (ไม่ให้งานของผู้เรียกพัง) แต่ "ล้มแบบปิด": บันทึกเหตุการณ์ใน timeline ตามปกติ, `console.error` หนึ่งบรรทัด, **ไม่สร้างผู้รับ/แถว outbox เลย** (ไม่ถอยไปส่งให้ทุกคน)
+- `listPurchaseOrderEvents(poId, user, scope, before?, limit)` บังคับส่ง scope (ตรวจ `assertPurchaseOrderScope` ก่อน SQL); PO ของแผนกอื่น = 404 (ไม่ใช่ 403). Vendor ใช้ `{ mode: "legacy" }` (อ่านข้ามแผนกได้ชั่วคราว เหมือน `GET /api/purchase-orders/[id]`)
+- `findOverduePurchaseOrders(scope)` / `remindOverduePurchaseOrders(scope)` ใช้ `andDept` (อ่าน) ไม่ใช่ `andDeptWrite` เพราะไม่ได้แก้ PO เพียงสร้าง event/outbox ที่ประทับแผนกของ PO แต่ละใบเอง จึงปลอดภัยในโหมด "all"; กันสแปม 20 ชม. / สูงสุด 3 ครั้งเหมือนเดิม และ PO ใบหนึ่งล้มก็ยังหยุดทั้งรอบ (พฤติกรรมเดิม)
+- `/api/notifications/purchase-order-overdue`: ใส่ secret ถูก = `{ mode: "all" }`; Admin/Manager ที่ล็อกอิน = scope ของตัวเอง (Manager ห้องเดียวส่งเตือนได้เฉพาะห้องตัวเอง, Admin ส่วนกลางที่ดู "ทุกงาน" ส่งได้ทุกห้องเหมือน cron -- เจ้าของตัดสินใจ); `DEPARTMENT_NOT_FOUND` ฯลฯ ตอบ 404/409 (ไม่ใช่ 500). ไม่แก้ path / `vercel.json`
+- `/api/purchase-orders/[id]/events`: Lab ใช้ `getDepartmentScope`, มี try/catch ด้วย `departmentErrorResponse`
+- แก้คอมเมนต์ใน `notification-outbox.ts` (`isStaleReminder` อ่าน `purchase_orders` ด้วย id ของแถวที่ worker เคลมแล้ว ซึ่งถูกประทับแผนกตอน INSERT จึงไม่ต้องกรอง; ไม่มีการแก้โค้ด)
+
+**ข้อจำกัดที่ยอมรับ / ต้องรู้ก่อนเปิดสวิตช์**
+
+- **Admin ส่วนกลางที่ไม่มีแถว `user_departments` จะไม่ได้รับแจ้งเตือน PO เลย** เมื่อเปิดสวิตช์ (เจ้าของยอมรับ) ผู้ใช้ที่สร้างหลัง backfill ของ v30 ต้อง backfill ให้ครบก่อนเปิดสวิตช์
+- Vendor บริษัทเดียวกันที่มีใน 2 แผนก จะได้แจ้งเตือนของทั้งสองแผนก (ยอมรับชั่วคราว คำถามข้อ 3 ยังเปิดอยู่)
+- ผู้รับใช้ `users.role` ระดับระบบ **ไม่ใช่** role ต่อแผนก (`user_departments.role`): Manager ที่ถูกลด role เฉพาะแผนกยังได้รับแจ้งเตือน (ข้อจำกัดที่ทราบ มี test ล็อกไว้)
+- `/api/notifications/reorder-risk` และการ drain outbox หลังสร้าง event ยังใช้ `{ mode: "all" }` (coverage test มองไม่เห็นจุดเหล่านี้)
+- Admin ส่วนกลางโหมด "all" กดส่งเตือน PO เกินกำหนดได้ (เหมือน cron)
+- **ยังห้ามเปิด `DEPARTMENTS_ENABLED`** จนกว่ากลุ่ม 6 (สั่งซื้อผ่าน LIFF) และ `vendor/shipments` POST จะย้ายเสร็จ
