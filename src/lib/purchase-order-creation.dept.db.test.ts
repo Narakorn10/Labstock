@@ -23,7 +23,7 @@ vi.mock("./purchase-order-suggestions", async (importOriginal) => {
 });
 
 import dbSql from "@/lib/db";
-import { createPurchaseOrderWithAudit, PurchaseOrderCreationError } from "./purchase-order-creation";
+import { createPurchaseOrderWithAudit } from "./purchase-order-creation";
 import * as suggestions from "./purchase-order-suggestions";
 
 const sql = dbSql as unknown as PgliteSql;
@@ -78,7 +78,7 @@ describe.each([
   });
 
   it("scope B with department A's item is rejected and no PO row is created", async () => {
-    await expect(createPurchaseOrderWithAudit(inputB({ vendor: "Vendor A", items: [itemA], ...extra }))).rejects.toBeInstanceOf(PurchaseOrderCreationError);
+    await expect(createPurchaseOrderWithAudit(inputB({ vendor: "Vendor A", items: [itemA], ...extra }))).rejects.toThrow(/ไม่ใช่น้ำยาที่ใช้งานอยู่/); // rejected by the suggestions check, not by the insert
     expect(await poRows()).toEqual([]);
   });
 
