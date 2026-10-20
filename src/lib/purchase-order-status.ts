@@ -16,8 +16,9 @@ export const FULFILLMENT_STATUSES = ["CONFIRMED", "PARTIALLY_SHIPPED", "SHIPPED"
  *
  * `scope` is REQUIRED and validated, but this query deliberately does NOT filter by department: po_number is globally
  * UNIQUE, so it already names exactly one PO, and every caller has scoped the shipment / PO it works on beforehand. A
- * department filter here could silently skip the status update when a shipment is stamped with the default department
- * while its PO belongs to another one (vendor/shipments POST is not migrated yet), leaving the PO status stale.
+ * department filter here could silently skip the status update when a shipment and its PO disagree on the department,
+ * leaving the PO status stale. (vendor/shipments POST stamps the shipment with its PO's department, but this query
+ * stays unfiltered on purpose as a second line of defence.)
  */
 export function recomputePurchaseOrderStatusQuery(sql: Sql, poNumber: string | null, scope: DepartmentScope) {
   assertPurchaseOrderScope(scope, "recomputePurchaseOrderStatusQuery"); // before any SQL
