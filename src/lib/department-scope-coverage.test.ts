@@ -42,8 +42,6 @@ export const DEPARTMENT_SCOPE_PENDING: string[] = [
   "src/app/api/vendor/shipments/route.ts",
   "src/lib/bot-stock-queries.ts",
   "src/lib/line-liff-ordering.ts",
-  "src/lib/po-communication.ts",
-  "src/lib/purchase-order-overdue.ts",
 ];
 
 // Files under src/app (outside src/app/api) that import "@/lib/db" directly. Generated from reality: none today.

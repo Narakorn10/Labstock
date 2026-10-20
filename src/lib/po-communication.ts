@@ -1,6 +1,9 @@
 import sql from "@/lib/db";
 import { after } from "next/server";
 import type { AuthenticatedUser } from "@/lib/auth-utils";
+import { departmentsReady } from "@/lib/departments-flag";
+import { andDept, type DepartmentScope } from "@/lib/scoped-db";
+import { assertPurchaseOrderScope } from "@/lib/purchase-order-review";
 
 export type PurchaseOrderCommunicationEvent =
   | "PO_CREATED"
@@ -57,6 +60,11 @@ export function shouldSendLine(event: PurchaseOrderCommunicationEvent, recipient
   return event === "PO_CREATED" && recipientRole === "Vendor" && action !== "UPDATE_UNACKNOWLEDGED_LAB_ORDER";
 }
 
+/**
+ * The department of a notification is the department of the PO row itself (po.department_id), never a caller scope:
+ * workers, cron and LIFF/Vendor flows have no (or a different) department scope, but the PO always knows its owner.
+ * Flag off (legacy): no extra query, and the SQL below is byte-identical to the pre-departments code.
+ */
 export async function recordPurchaseOrderCommunication(input: {
   poId: number;
   eventType: PurchaseOrderCommunicationEvent;
@@ -81,6 +89,12 @@ export async function recordPurchaseOrderCommunication(input: {
   const fromStatus = input.metadata?.fromStatus ? asString(input.metadata.fromStatus) : null;
   const toStatus = asString(po.status);
   const visibility = eventVisibility(input.actor?.role);
+  // Decided before inserting anything. null = legacy (flag off). Ready but the PO has no valid department: fail closed
+  // (timeline row only, nobody is notified) rather than throwing, so the caller's business action is not broken.
+  const ready = await departmentsReady();
+  const poDepartment = Number(po.department_id);
+  const deptId = ready && Number.isInteger(poDepartment) && poDepartment > 0 ? poDepartment : null;
+  const failClosed = ready && deptId === null;
   const eventRows = await sql`
     INSERT INTO purchase_order_events
       (po_id, po_number, shipment_id, event_type, from_status, to_status, actor_username, actor_role, source, visibility, note, metadata)
@@ -92,7 +106,14 @@ export async function recordPurchaseOrderCommunication(input: {
   `;
   const eventId = Number(eventRows[0]?.id);
 
-  const recipients = await sql`
+  if (failClosed) {
+    console.error("[po-communication] purchase order has no valid department_id; no recipients queued", { poId: input.poId });
+    return { eventId, queued: 0 };
+  }
+
+  // Multi-department: Admin/Manager only when a member of the PO's department. Vendors stay matched by company name only
+  // (no membership row needed; same pattern as stock-transactions.ts). u.role is the system-wide role, not user_departments.role.
+  const recipients = deptId === null ? await sql`
     SELECT n.username, n.email, n.line_user_id, u.role,
       COALESCE(n.notify_po_created, TRUE) AS notify_po_created,
       COALESCE(n.notify_po_confirmed, TRUE) AS notify_po_confirmed,
@@ -106,6 +127,21 @@ export async function recordPurchaseOrderCommunication(input: {
         (u.role IN ('Admin', 'Manager'))
         OR (u.role = 'Vendor' AND u.vendor = ${po.vendor})
       )
+  ` : await sql`
+    SELECT n.username, n.email, n.line_user_id, u.role,
+      COALESCE(n.notify_po_created, TRUE) AS notify_po_created,
+      COALESCE(n.notify_po_confirmed, TRUE) AS notify_po_confirmed,
+      COALESCE(n.notify_po_shipped, TRUE) AS notify_po_shipped,
+      COALESCE(n.notify_po_received, TRUE) AS notify_po_received,
+      COALESCE(n.notify_po_status_updates, TRUE) AS notify_po_status_updates
+    FROM notification_settings n
+    JOIN users u ON u.username = n.username
+    WHERE COALESCE(u.account_status, 'active') = 'active'
+      AND (
+        (u.role IN ('Admin', 'Manager'))
+        OR (u.role = 'Vendor' AND u.vendor = ${po.vendor})
+      )
+      AND (u.role = 'Vendor' OR EXISTS (SELECT 1 FROM user_departments ud WHERE ud.username = n.username AND ud.department_id = ${deptId}))
   `;
 
   let queued = 0;
@@ -135,12 +171,21 @@ export async function recordPurchaseOrderCommunication(input: {
       if (seenAddresses.has(addressKey)) continue;
       seenAddresses.add(addressKey);
       const key = `${eventId}:${asString(recipient.username)}:${channel.channel}`;
-      const result = await sql`
+      // Legacy keeps the column default (department 1); multi-department stamps the PO's own department (appended last).
+      const result = deptId === null ? await sql`
         INSERT INTO notification_outbox
           (event_id, event_type, po_id, shipment_id, recipient_username, recipient_role, channel, recipient_address, payload, idempotency_key)
         VALUES
           (${eventId}, ${input.eventType}, ${input.poId}, ${input.shipmentId ?? null}, ${asString(recipient.username)}, ${role},
            ${channel.channel}, ${channel.address}, ${payload}::jsonb, ${key})
+        ON CONFLICT (idempotency_key) DO NOTHING
+        RETURNING id
+      ` : await sql`
+        INSERT INTO notification_outbox
+          (event_id, event_type, po_id, shipment_id, recipient_username, recipient_role, channel, recipient_address, payload, idempotency_key, department_id)
+        VALUES
+          (${eventId}, ${input.eventType}, ${input.poId}, ${input.shipmentId ?? null}, ${asString(recipient.username)}, ${role},
+           ${channel.channel}, ${channel.address}, ${payload}::jsonb, ${key}, ${deptId})
         ON CONFLICT (idempotency_key) DO NOTHING
         RETURNING id
       `;
@@ -152,7 +197,7 @@ export async function recordPurchaseOrderCommunication(input: {
   try {
     after(async () => {
       const { drainNotificationOutbox } = await import("@/lib/notification-outbox");
-      // System-wide drain on purpose (no user here); keeps the pre-departments behavior until the PO group is scoped.
+      // System-wide drain on purpose: this is a worker job with no user. It only delivers rows already stamped with their own department.
       await drainNotificationOutbox(20, { mode: "all" });
     });
   } catch {
@@ -161,8 +206,9 @@ export async function recordPurchaseOrderCommunication(input: {
   return { eventId, queued };
 }
 
-export async function listPurchaseOrderEvents(poId: number, user: AuthenticatedUser, before?: number, limit = 50) {
-  const poRows = await sql`SELECT vendor FROM purchase_orders WHERE id = ${poId} LIMIT 1`;
+export async function listPurchaseOrderEvents(poId: number, user: AuthenticatedUser, scope: DepartmentScope, before?: number, limit = 50) {
+  assertPurchaseOrderScope(scope, "listPurchaseOrderEvents"); // before any SQL
+  const poRows = await sql`SELECT vendor FROM purchase_orders WHERE id = ${poId}${andDept(scope)} LIMIT 1`;
   if (!poRows.length) return null;
   if (user.role === "Vendor" && poRows[0].vendor !== user.vendor) return "FORBIDDEN" as const;
   const safeLimit = Math.min(Math.max(limit, 1), 100);

@@ -47,7 +47,8 @@ async function isStaleReminder(row: OutboxRow) {
   if (!statuses) return false;
   const poId = Number(poFromPayload(row.payload)?.id);
   if (!Number.isFinite(poId)) return false;
-  // Read by id for a row this worker already claimed, so it is left unscoped here; the PO group scopes purchase_orders.
+  // Read by id for an outbox row this worker already claimed. The row's department was stamped at INSERT (from the PO itself),
+  // so this lookup cannot cross departments and needs no department filter.
   const rows = await sql`SELECT status FROM purchase_orders WHERE id = ${poId} LIMIT 1`;
   return !rows.length || !statuses.includes(String(rows[0].status));
 }
