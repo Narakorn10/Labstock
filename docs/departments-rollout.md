@@ -345,12 +345,12 @@ SELECT conname, conrelid::regclass FROM pg_constraint WHERE confrelid = 'public.
 **เช็กลิสต์ก่อนเปิดสวิตช์**
 
 1. เจ้าของยืนยันนโยบาย A (หรือเลือกแบบอื่น) -- คำถามข้อ 3
-2. ตรวจว่า Vendor ทุกบัญชีมีแถว `user_departments` อย่างน้อย 1 แถวในแผนกที่ active: Vendor ที่ไม่มีแถวจะ **ล็อกอินไม่ได้** เมื่อเปิดสวิตช์ (`department-context.ts:164-169` ปฏิเสธเมื่อไม่มีแผนก) จึงต้องเตรียมแถวสมาชิกก่อน
+2. ตรวจว่า Vendor ทุกบัญชีมีแถว `user_departments` อย่างน้อย 1 แถวในแผนกที่ active: Vendor ที่ไม่มีแถวจะ **ล็อกอินไม่ได้** เมื่อเปิดสวิตช์ (`department-context.ts:163-168` ปฏิเสธเมื่อไม่มีแผนก) จึงต้องเตรียมแถวสมาชิกก่อน
 3. ตรวจแบบอ่านอย่างเดียวว่า `purchase_orders.department_id` ของ PO ที่ยัง CONFIRMED/PARTIALLY_SHIPPED/PARTIALLY_RECEIVED ถูกต้องทุกแถว (ผิดรูปแบบ = POST ตอบ 500 ปลอดภัยแต่ส่งของไม่ได้)
 4. ตรวจบน Neon จริงตอนซ้อมว่า `, department_id` / `, <id>` ที่ต่อท้ายคอลัมน์และ SELECT ของ INSERT ทำงานถูก (เทสต์พิสูจน์ผ่าน PGlite เท่านั้น ไม่เคยรันบน Neon)
 5. **ห้ามเปิด `DEPARTMENTS_ENABLED` จนกว่ากลุ่ม 6 (สั่งซื้อผ่าน LIFF) จะเสร็จ** (กฎเดิมคงไว้)
 
 **ปัญหาเดิมที่รู้อยู่แล้ว และ *ไม่ได้แก้* ในกลุ่มนี้**
 
-- ส่งซ้ำด้วย `clientRequestId` เดิมหลังจาก PO ส่งครบแล้ว จะได้ 409 `SHIPMENT_QUANTITY_EXCEEDED` ไม่ใช่ `duplicate:true` (ตรวจจำนวนก่อนตรวจซ้ำ) -- ส่งซ้ำหลังส่งบางส่วนได้ `duplicate:true` ตามปกติ (มี test)
+- ส่งซ้ำด้วย `clientRequestId` เดิมหลังจาก PO ส่งครบแล้ว ได้ `duplicate:true` (200) ทั้งโหมด legacy และโหมดแผนก (ตรวจโดย bug-hunter บน PGlite: เงื่อนไข `NOT EXISTS (SELECT 1 FROM existing)` ใน `new_batch` ถูกตรวจก่อน จึงไม่ถึงตัวตรวจจำนวน) -- ส่งซ้ำหลังส่งบางส่วนก็ได้ `duplicate:true` (มี test); ยังไม่ได้ตรวจบน Neon จริง
 - CTE `existing` ไม่ผูกกับ `po_number`: ใช้ `clientRequestId` เดียวกันกับ PO อื่นของ Vendor เดียวกัน จะได้ batch เดิมกลับมา
