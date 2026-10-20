@@ -1,13 +1,20 @@
 import { NextResponse } from "next/server";
 import sql from "@/lib/db";
 import { getAuthenticatedUser } from "@/lib/auth-utils";
+import { isDepartmentScopeFailure, toApiError } from "@/lib/api-response";
+import { getRequestId } from "@/lib/request-observability";
+import { getDepartmentScope } from "@/lib/scoped-db";
 
 export async function GET(request: Request) {
+  const requestId = getRequestId(request);
   const user = await getAuthenticatedUser(request);
   if (!user || user.role !== "Vendor") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!user.vendor) return NextResponse.json({ error: "Vendor profile is not configured" }, { status: 403 });
 
   try {
+    // Fail closed: the scope is resolved before any SQL, but the query below is deliberately NOT filtered by department
+    // (unfiltered on purpose, policy A: a Vendor sees the open POs of its company in any department; owner question #3 is still open).
+    await getDepartmentScope(user);
     const orders = await sql`
       SELECT p.id, p.po_number, p.expected_date, p.status, p.vendor,
         json_agg(json_build_object(
@@ -34,6 +41,8 @@ export async function GET(request: Request) {
     `;
     return NextResponse.json(orders);
   } catch (error: unknown) {
+    // Never leak error.message for scope failures (DEPARTMENT_SCOPE_MISSING contains the username).
+    if (isDepartmentScopeFailure(error)) return toApiError(error, requestId).response;
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to load confirmed orders" }, { status: 500 });
   }
 }
