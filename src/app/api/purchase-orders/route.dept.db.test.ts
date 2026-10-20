@@ -17,7 +17,7 @@ vi.mock("@/lib/po-communication", () => ({ recordPurchaseOrderCommunication: moc
 
 import dbSql from "@/lib/db";
 import { resetDepartmentsFlagForTests } from "@/lib/departments-flag";
-import { DEPT_A, DEPT_B, seedTwoDepartments } from "@/test/department-fixtures";
+import { DEPT_A, DEPT_B, applyMigrationFile, seedTwoDepartments } from "@/test/department-fixtures";
 import { addPurchaseOrderTables, insertPurchaseOrder } from "@/test/purchase-order-dept-fixtures";
 import { GET, POST } from "./route";
 
@@ -31,7 +31,13 @@ beforeAll(async () => {
   await seedTwoDepartments(sql);
   await addPurchaseOrderTables(sql);
   await sql.db.exec(`INSERT INTO lab_profile (id, organization_name, department_name) VALUES (1, 'Test Lab', 'Lab Dept') ON CONFLICT DO NOTHING`);
+  // v36 + a letterhead row for department B (without one B cannot create POs: see the PO_LETTERHEAD_MISSING test below).
+  await applyMigrationFile(sql.db, "upgrade_v36_lab_profile_per_department.sql");
+  await insertLabProfileB();
 }, 120_000);
+
+const insertLabProfileB = () =>
+  sql.db.query(`INSERT INTO lab_profile (id, department_id, organization_name, department_name) VALUES (2, $1, 'MB Organization', 'MB Letterhead Dept')`, [DEPT_B]);
 
 afterAll(async () => {
   await sql.db.close();
@@ -124,6 +130,22 @@ describe("POST /api/purchase-orders", () => {
     expect(response.status).toBe(201);
     const created = await response.json() as { po_number: string };
     expect(await departmentOf(created.po_number)).toBe(DEPT_B);
+  });
+
+  it("department B without a letterhead row: 409 PO_LETTERHEAD_MISSING (Thai message and hint) and no PO is added", async () => {
+    await sql.db.exec(`DELETE FROM lab_profile WHERE id = 2`);
+    try {
+      const before = await poCount();
+      const response = await post(labB, { vendor: "MB Vendor", items: [item("MB-000001", "Dept B item 1")] });
+      expect(response.status).toBe(409);
+      const body = await response.json() as { code: string; error: string; hint: string };
+      expect(body).toMatchObject({ code: "PO_LETTERHEAD_MISSING", error: "ยังไม่ได้ตั้งหัวกระดาษใบสั่งซื้อของงานนี้ กรุณาติดต่อผู้ดูแลระบบ" });
+      expect(body.hint).toMatch(/\S/);
+      expect(await poCount()).toBe(before);
+      expect(mocks.recordPurchaseOrderCommunication).not.toHaveBeenCalled();
+    } finally {
+      await insertLabProfileB();
+    }
   });
 
   it("a Lab user in department A cannot order department B's item", async () => {
