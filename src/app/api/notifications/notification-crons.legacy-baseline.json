@@ -1,0 +1,1523 @@
+{
+  "expiringCron": {
+    "status": 200,
+    "body": {
+      "success": true,
+      "notified": 3,
+      "recipients": 5
+    },
+    "statements": [
+      {
+        "text": "\n    ALTER TABLE notification_settings\n    ADD COLUMN IF NOT EXISTS notify_expiring_soon BOOLEAN DEFAULT true\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    CREATE TABLE IF NOT EXISTS expiry_notification_logs (\n      id SERIAL PRIMARY KEY,\n      item_id TEXT NOT NULL,\n      lot_no TEXT NOT NULL,\n      exp_date DATE NOT NULL,\n      notification_type TEXT NOT NULL DEFAULT 'EXPIRING_SOON_30D',\n      notified_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,\n      acknowledged_at TIMESTAMPTZ,\n      acknowledged_by_line_user_id TEXT,\n      UNIQUE (item_id, lot_no, exp_date, notification_type)\n    )\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    ALTER TABLE expiry_notification_logs\n    ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    ALTER TABLE expiry_notification_logs\n    ADD COLUMN IF NOT EXISTS acknowledged_by_line_user_id TEXT\n  ",
+        "params": []
+      },
+      {
+        "text": "\n      SELECT n.username, n.email, n.line_user_id, n.notify_expiring_soon, u.role, u.vendor\n      FROM notification_settings n\n      JOIN users u ON u.username = n.username\n      WHERE n.notify_expiring_soon = true\n        AND COALESCE(u.account_status, 'active') = 'active'\n        AND (n.line_user_id IS NOT NULL OR n.email IS NOT NULL)\n    ",
+        "params": []
+      },
+      {
+        "text": "\n      SELECT\n        i.item_id as \"itemId\",\n        m.name,\n        i.lot_no as \"lotNo\",\n        i.exp_date::date as \"expDate\",\n        i.quantity,\n        m.unit,\n        GREATEST(0, (i.exp_date::date - CURRENT_DATE))::int as \"daysUntilExpiry\",\n        COALESCE(m.vendor, '') as vendor\n      FROM inventory i\n      JOIN master_data m ON m.item_id = i.item_id\n      WHERE i.quantity > 0\n        AND i.exp_date IS NOT NULL\n        AND i.exp_date::date >= CURRENT_DATE\n        AND i.exp_date::date <= CURRENT_DATE + $1 * INTERVAL '1 day'\n        AND NOT EXISTS (\n          SELECT 1\n          FROM expiry_notification_logs log\n          WHERE log.item_id = i.item_id\n            AND log.lot_no = i.lot_no\n            AND log.exp_date = i.exp_date::date\n            AND log.notification_type = $2\n        )\n      ORDER BY i.exp_date ASC, m.name ASC\n    ",
+        "params": [
+          30,
+          "EXPIRING_SOON_30D"
+        ]
+      },
+      {
+        "text": "\n        INSERT INTO expiry_notification_logs (item_id, lot_no, exp_date, notification_type)\n        VALUES ($1, $2, $3, $4)\n        ON CONFLICT (item_id, lot_no, exp_date, notification_type) DO NOTHING\n      ",
+        "params": [
+          "A-1",
+          "L1",
+          "2026-08-20",
+          "EXPIRING_SOON_30D"
+        ]
+      },
+      {
+        "text": "\n        INSERT INTO expiry_notification_logs (item_id, lot_no, exp_date, notification_type)\n        VALUES ($1, $2, $3, $4)\n        ON CONFLICT (item_id, lot_no, exp_date, notification_type) DO NOTHING\n      ",
+        "params": [
+          "B-1",
+          "L2",
+          "2026-08-25",
+          "EXPIRING_SOON_30D"
+        ]
+      },
+      {
+        "text": "\n        INSERT INTO expiry_notification_logs (item_id, lot_no, exp_date, notification_type)\n        VALUES ($1, $2, $3, $4)\n        ON CONFLICT (item_id, lot_no, exp_date, notification_type) DO NOTHING\n      ",
+        "params": [
+          "N-1",
+          "L3",
+          "2026-08-30",
+          "EXPIRING_SOON_30D"
+        ]
+      }
+    ],
+    "line": [
+      {
+        "fn": "pushExpiringSoonAlert",
+        "args": [
+          "U-staff1",
+          [
+            {
+              "itemId": "A-1",
+              "name": "Reagent A1",
+              "lotNo": "L1",
+              "expDate": "2026-08-20",
+              "quantity": 3,
+              "unit": "box",
+              "daysUntilExpiry": 10,
+              "vendor": "Vendor A"
+            },
+            {
+              "itemId": "B-1",
+              "name": "Reagent B1",
+              "lotNo": "L2",
+              "expDate": "2026-08-25",
+              "quantity": 5,
+              "unit": "kit",
+              "daysUntilExpiry": 15,
+              "vendor": "Vendor B"
+            },
+            {
+              "itemId": "N-1",
+              "name": "No vendor item",
+              "lotNo": "L3",
+              "expDate": "2026-08-30",
+              "quantity": 1,
+              "unit": "box",
+              "daysUntilExpiry": 20,
+              "vendor": ""
+            }
+          ]
+        ]
+      },
+      {
+        "fn": "pushExpiringSoonAlert",
+        "args": [
+          "U-venda",
+          [
+            {
+              "itemId": "A-1",
+              "name": "Reagent A1",
+              "lotNo": "L1",
+              "expDate": "2026-08-20",
+              "quantity": 3,
+              "unit": "box",
+              "daysUntilExpiry": 10,
+              "vendor": "Vendor A"
+            }
+          ]
+        ]
+      },
+      {
+        "fn": "pushExpiringSoonAlert",
+        "args": [
+          "U-vendb",
+          [
+            {
+              "itemId": "B-1",
+              "name": "Reagent B1",
+              "lotNo": "L2",
+              "expDate": "2026-08-25",
+              "quantity": 5,
+              "unit": "kit",
+              "daysUntilExpiry": 15,
+              "vendor": "Vendor B"
+            }
+          ]
+        ]
+      }
+    ],
+    "mail": [
+      {
+        "to": "staff1@lab.test",
+        "subject": "Expiring Soon Alert"
+      },
+      {
+        "to": "staff2@lab.test",
+        "subject": "Expiring Soon Alert"
+      },
+      {
+        "to": "vendb@lab.test",
+        "subject": "Expiring Soon Alert"
+      }
+    ]
+  },
+  "expiringNoRecipients": {
+    "status": 200,
+    "body": {
+      "success": true,
+      "notified": 0,
+      "skipped": "No recipients enabled for expiring-soon alerts"
+    },
+    "statements": [
+      {
+        "text": "\n    ALTER TABLE notification_settings\n    ADD COLUMN IF NOT EXISTS notify_expiring_soon BOOLEAN DEFAULT true\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    CREATE TABLE IF NOT EXISTS expiry_notification_logs (\n      id SERIAL PRIMARY KEY,\n      item_id TEXT NOT NULL,\n      lot_no TEXT NOT NULL,\n      exp_date DATE NOT NULL,\n      notification_type TEXT NOT NULL DEFAULT 'EXPIRING_SOON_30D',\n      notified_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,\n      acknowledged_at TIMESTAMPTZ,\n      acknowledged_by_line_user_id TEXT,\n      UNIQUE (item_id, lot_no, exp_date, notification_type)\n    )\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    ALTER TABLE expiry_notification_logs\n    ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    ALTER TABLE expiry_notification_logs\n    ADD COLUMN IF NOT EXISTS acknowledged_by_line_user_id TEXT\n  ",
+        "params": []
+      },
+      {
+        "text": "\n      SELECT n.username, n.email, n.line_user_id, n.notify_expiring_soon, u.role, u.vendor\n      FROM notification_settings n\n      JOIN users u ON u.username = n.username\n      WHERE n.notify_expiring_soon = true\n        AND COALESCE(u.account_status, 'active') = 'active'\n        AND (n.line_user_id IS NOT NULL OR n.email IS NOT NULL)\n    ",
+        "params": []
+      }
+    ],
+    "line": [],
+    "mail": []
+  },
+  "expiringNoLots": {
+    "status": 200,
+    "body": {
+      "success": true,
+      "notified": 0,
+      "skipped": "No new lots expiring within 30 days"
+    },
+    "statements": [
+      {
+        "text": "\n    ALTER TABLE notification_settings\n    ADD COLUMN IF NOT EXISTS notify_expiring_soon BOOLEAN DEFAULT true\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    CREATE TABLE IF NOT EXISTS expiry_notification_logs (\n      id SERIAL PRIMARY KEY,\n      item_id TEXT NOT NULL,\n      lot_no TEXT NOT NULL,\n      exp_date DATE NOT NULL,\n      notification_type TEXT NOT NULL DEFAULT 'EXPIRING_SOON_30D',\n      notified_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,\n      acknowledged_at TIMESTAMPTZ,\n      acknowledged_by_line_user_id TEXT,\n      UNIQUE (item_id, lot_no, exp_date, notification_type)\n    )\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    ALTER TABLE expiry_notification_logs\n    ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    ALTER TABLE expiry_notification_logs\n    ADD COLUMN IF NOT EXISTS acknowledged_by_line_user_id TEXT\n  ",
+        "params": []
+      },
+      {
+        "text": "\n      SELECT n.username, n.email, n.line_user_id, n.notify_expiring_soon, u.role, u.vendor\n      FROM notification_settings n\n      JOIN users u ON u.username = n.username\n      WHERE n.notify_expiring_soon = true\n        AND COALESCE(u.account_status, 'active') = 'active'\n        AND (n.line_user_id IS NOT NULL OR n.email IS NOT NULL)\n    ",
+        "params": []
+      },
+      {
+        "text": "\n      SELECT\n        i.item_id as \"itemId\",\n        m.name,\n        i.lot_no as \"lotNo\",\n        i.exp_date::date as \"expDate\",\n        i.quantity,\n        m.unit,\n        GREATEST(0, (i.exp_date::date - CURRENT_DATE))::int as \"daysUntilExpiry\",\n        COALESCE(m.vendor, '') as vendor\n      FROM inventory i\n      JOIN master_data m ON m.item_id = i.item_id\n      WHERE i.quantity > 0\n        AND i.exp_date IS NOT NULL\n        AND i.exp_date::date >= CURRENT_DATE\n        AND i.exp_date::date <= CURRENT_DATE + $1 * INTERVAL '1 day'\n        AND NOT EXISTS (\n          SELECT 1\n          FROM expiry_notification_logs log\n          WHERE log.item_id = i.item_id\n            AND log.lot_no = i.lot_no\n            AND log.exp_date = i.exp_date::date\n            AND log.notification_type = $2\n        )\n      ORDER BY i.exp_date ASC, m.name ASC\n    ",
+        "params": [
+          30,
+          "EXPIRING_SOON_30D"
+        ]
+      }
+    ],
+    "line": [],
+    "mail": []
+  },
+  "expiringAdmin": {
+    "status": 200,
+    "body": {
+      "success": true,
+      "notified": 3,
+      "recipients": 5
+    },
+    "statements": [
+      {
+        "text": "\n    ALTER TABLE notification_settings\n    ADD COLUMN IF NOT EXISTS notify_expiring_soon BOOLEAN DEFAULT true\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    CREATE TABLE IF NOT EXISTS expiry_notification_logs (\n      id SERIAL PRIMARY KEY,\n      item_id TEXT NOT NULL,\n      lot_no TEXT NOT NULL,\n      exp_date DATE NOT NULL,\n      notification_type TEXT NOT NULL DEFAULT 'EXPIRING_SOON_30D',\n      notified_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,\n      acknowledged_at TIMESTAMPTZ,\n      acknowledged_by_line_user_id TEXT,\n      UNIQUE (item_id, lot_no, exp_date, notification_type)\n    )\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    ALTER TABLE expiry_notification_logs\n    ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    ALTER TABLE expiry_notification_logs\n    ADD COLUMN IF NOT EXISTS acknowledged_by_line_user_id TEXT\n  ",
+        "params": []
+      },
+      {
+        "text": "\n      SELECT n.username, n.email, n.line_user_id, n.notify_expiring_soon, u.role, u.vendor\n      FROM notification_settings n\n      JOIN users u ON u.username = n.username\n      WHERE n.notify_expiring_soon = true\n        AND COALESCE(u.account_status, 'active') = 'active'\n        AND (n.line_user_id IS NOT NULL OR n.email IS NOT NULL)\n    ",
+        "params": []
+      },
+      {
+        "text": "\n      SELECT\n        i.item_id as \"itemId\",\n        m.name,\n        i.lot_no as \"lotNo\",\n        i.exp_date::date as \"expDate\",\n        i.quantity,\n        m.unit,\n        GREATEST(0, (i.exp_date::date - CURRENT_DATE))::int as \"daysUntilExpiry\",\n        COALESCE(m.vendor, '') as vendor\n      FROM inventory i\n      JOIN master_data m ON m.item_id = i.item_id\n      WHERE i.quantity > 0\n        AND i.exp_date IS NOT NULL\n        AND i.exp_date::date >= CURRENT_DATE\n        AND i.exp_date::date <= CURRENT_DATE + $1 * INTERVAL '1 day'\n        AND NOT EXISTS (\n          SELECT 1\n          FROM expiry_notification_logs log\n          WHERE log.item_id = i.item_id\n            AND log.lot_no = i.lot_no\n            AND log.exp_date = i.exp_date::date\n            AND log.notification_type = $2\n        )\n      ORDER BY i.exp_date ASC, m.name ASC\n    ",
+        "params": [
+          30,
+          "EXPIRING_SOON_30D"
+        ]
+      },
+      {
+        "text": "\n        INSERT INTO expiry_notification_logs (item_id, lot_no, exp_date, notification_type)\n        VALUES ($1, $2, $3, $4)\n        ON CONFLICT (item_id, lot_no, exp_date, notification_type) DO NOTHING\n      ",
+        "params": [
+          "A-1",
+          "L1",
+          "2026-08-20",
+          "EXPIRING_SOON_30D"
+        ]
+      },
+      {
+        "text": "\n        INSERT INTO expiry_notification_logs (item_id, lot_no, exp_date, notification_type)\n        VALUES ($1, $2, $3, $4)\n        ON CONFLICT (item_id, lot_no, exp_date, notification_type) DO NOTHING\n      ",
+        "params": [
+          "B-1",
+          "L2",
+          "2026-08-25",
+          "EXPIRING_SOON_30D"
+        ]
+      },
+      {
+        "text": "\n        INSERT INTO expiry_notification_logs (item_id, lot_no, exp_date, notification_type)\n        VALUES ($1, $2, $3, $4)\n        ON CONFLICT (item_id, lot_no, exp_date, notification_type) DO NOTHING\n      ",
+        "params": [
+          "N-1",
+          "L3",
+          "2026-08-30",
+          "EXPIRING_SOON_30D"
+        ]
+      }
+    ],
+    "line": [
+      {
+        "fn": "pushExpiringSoonAlert",
+        "args": [
+          "U-staff1",
+          [
+            {
+              "itemId": "A-1",
+              "name": "Reagent A1",
+              "lotNo": "L1",
+              "expDate": "2026-08-20",
+              "quantity": 3,
+              "unit": "box",
+              "daysUntilExpiry": 10,
+              "vendor": "Vendor A"
+            },
+            {
+              "itemId": "B-1",
+              "name": "Reagent B1",
+              "lotNo": "L2",
+              "expDate": "2026-08-25",
+              "quantity": 5,
+              "unit": "kit",
+              "daysUntilExpiry": 15,
+              "vendor": "Vendor B"
+            },
+            {
+              "itemId": "N-1",
+              "name": "No vendor item",
+              "lotNo": "L3",
+              "expDate": "2026-08-30",
+              "quantity": 1,
+              "unit": "box",
+              "daysUntilExpiry": 20,
+              "vendor": ""
+            }
+          ]
+        ]
+      },
+      {
+        "fn": "pushExpiringSoonAlert",
+        "args": [
+          "U-venda",
+          [
+            {
+              "itemId": "A-1",
+              "name": "Reagent A1",
+              "lotNo": "L1",
+              "expDate": "2026-08-20",
+              "quantity": 3,
+              "unit": "box",
+              "daysUntilExpiry": 10,
+              "vendor": "Vendor A"
+            }
+          ]
+        ]
+      },
+      {
+        "fn": "pushExpiringSoonAlert",
+        "args": [
+          "U-vendb",
+          [
+            {
+              "itemId": "B-1",
+              "name": "Reagent B1",
+              "lotNo": "L2",
+              "expDate": "2026-08-25",
+              "quantity": 5,
+              "unit": "kit",
+              "daysUntilExpiry": 15,
+              "vendor": "Vendor B"
+            }
+          ]
+        ]
+      }
+    ],
+    "mail": [
+      {
+        "to": "staff1@lab.test",
+        "subject": "Expiring Soon Alert"
+      },
+      {
+        "to": "staff2@lab.test",
+        "subject": "Expiring Soon Alert"
+      },
+      {
+        "to": "vendb@lab.test",
+        "subject": "Expiring Soon Alert"
+      }
+    ]
+  },
+  "expiringManagerDenied": {
+    "status": 401,
+    "body": {
+      "error": "Unauthorized"
+    },
+    "statements": [],
+    "line": [],
+    "mail": []
+  },
+  "expiringWrongSecret": {
+    "status": 401,
+    "body": {
+      "error": "Unauthorized"
+    },
+    "statements": [],
+    "line": [],
+    "mail": []
+  },
+  "lowStockCron": {
+    "status": 200,
+    "body": {
+      "success": true,
+      "notifiedVendors": 2,
+      "notifiedItems": 3
+    },
+    "statements": [
+      {
+        "text": "\n    ALTER TABLE notification_settings\n    ADD COLUMN IF NOT EXISTS notify_expiring_soon BOOLEAN DEFAULT true\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    ALTER TABLE notification_settings\n    ADD COLUMN IF NOT EXISTS notify_weekly_summary BOOLEAN DEFAULT true\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    ALTER TABLE notification_settings\n    ADD COLUMN IF NOT EXISTS notify_reorder_risk BOOLEAN DEFAULT true\n  ",
+        "params": []
+      },
+      {
+        "text": "\n      WITH inventory_summary AS (\n        SELECT item_id, SUM(quantity) as current_qty\n        FROM inventory\n        GROUP BY item_id\n      )\n      SELECT\n        m.vendor,\n        m.item_id as \"itemId\",\n        m.name,\n        m.unit,\n        m.min_threshold as \"minThreshold\",\n        COALESCE(i.current_qty, 0) as quantity\n      FROM master_data m\n      LEFT JOIN inventory_summary i ON m.item_id = i.item_id\n      WHERE COALESCE(m.vendor, '') != ''\n        AND COALESCE(i.current_qty, 0) <= m.min_threshold\n      ORDER BY m.vendor ASC, m.name ASC\n    ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT\n          n.username,\n          n.email,\n          n.line_user_id,\n          n.notify_low_stock\n        FROM notification_settings n\n        JOIN users u ON u.username = n.username\n        WHERE COALESCE(u.account_status, 'active') = 'active'\n          AND u.role = 'Vendor'\n          AND u.vendor = $1\n          AND n.notify_low_stock = true\n          AND (n.line_user_id IS NOT NULL OR n.email IS NOT NULL)\n      ",
+        "params": [
+          "Vendor A"
+        ]
+      },
+      {
+        "text": "\n        SELECT\n          n.username,\n          n.email,\n          n.line_user_id,\n          n.notify_low_stock\n        FROM notification_settings n\n        JOIN users u ON u.username = n.username\n        WHERE COALESCE(u.account_status, 'active') = 'active'\n          AND u.role = 'Vendor'\n          AND u.vendor = $1\n          AND n.notify_low_stock = true\n          AND (n.line_user_id IS NOT NULL OR n.email IS NOT NULL)\n      ",
+        "params": [
+          "Vendor B"
+        ]
+      },
+      {
+        "text": "\n        SELECT\n          n.username,\n          n.email,\n          n.line_user_id,\n          n.notify_low_stock\n        FROM notification_settings n\n        JOIN users u ON u.username = n.username\n        WHERE COALESCE(u.account_status, 'active') = 'active'\n          AND u.role = 'Vendor'\n          AND u.vendor = $1\n          AND n.notify_low_stock = true\n          AND (n.line_user_id IS NOT NULL OR n.email IS NOT NULL)\n      ",
+        "params": [
+          "Vendor C"
+        ]
+      }
+    ],
+    "line": [
+      {
+        "fn": "pushLowStockAlert",
+        "args": [
+          "U-venda",
+          [
+            {
+              "itemId": "A-1",
+              "name": "Reagent A1",
+              "quantity": 1,
+              "minThreshold": 5,
+              "unit": "box"
+            },
+            {
+              "itemId": "A-2",
+              "name": "Reagent A2",
+              "quantity": 0,
+              "minThreshold": 4,
+              "unit": "box"
+            }
+          ]
+        ]
+      },
+      {
+        "fn": "pushLowStockAlert",
+        "args": [
+          "U-vendb",
+          [
+            {
+              "itemId": "B-1",
+              "name": "Reagent B1",
+              "quantity": 2,
+              "minThreshold": 2,
+              "unit": "kit"
+            }
+          ]
+        ]
+      }
+    ],
+    "mail": [
+      {
+        "to": "vendb@lab.test",
+        "subject": "Low Stock Alert"
+      }
+    ]
+  },
+  "lowStockManager": {
+    "status": 200,
+    "body": {
+      "success": true,
+      "notifiedVendors": 2,
+      "notifiedItems": 3
+    },
+    "statements": [
+      {
+        "text": "\n    ALTER TABLE notification_settings\n    ADD COLUMN IF NOT EXISTS notify_expiring_soon BOOLEAN DEFAULT true\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    ALTER TABLE notification_settings\n    ADD COLUMN IF NOT EXISTS notify_weekly_summary BOOLEAN DEFAULT true\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    ALTER TABLE notification_settings\n    ADD COLUMN IF NOT EXISTS notify_reorder_risk BOOLEAN DEFAULT true\n  ",
+        "params": []
+      },
+      {
+        "text": "\n      WITH inventory_summary AS (\n        SELECT item_id, SUM(quantity) as current_qty\n        FROM inventory\n        GROUP BY item_id\n      )\n      SELECT\n        m.vendor,\n        m.item_id as \"itemId\",\n        m.name,\n        m.unit,\n        m.min_threshold as \"minThreshold\",\n        COALESCE(i.current_qty, 0) as quantity\n      FROM master_data m\n      LEFT JOIN inventory_summary i ON m.item_id = i.item_id\n      WHERE COALESCE(m.vendor, '') != ''\n        AND COALESCE(i.current_qty, 0) <= m.min_threshold\n      ORDER BY m.vendor ASC, m.name ASC\n    ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT\n          n.username,\n          n.email,\n          n.line_user_id,\n          n.notify_low_stock\n        FROM notification_settings n\n        JOIN users u ON u.username = n.username\n        WHERE COALESCE(u.account_status, 'active') = 'active'\n          AND u.role = 'Vendor'\n          AND u.vendor = $1\n          AND n.notify_low_stock = true\n          AND (n.line_user_id IS NOT NULL OR n.email IS NOT NULL)\n      ",
+        "params": [
+          "Vendor A"
+        ]
+      },
+      {
+        "text": "\n        SELECT\n          n.username,\n          n.email,\n          n.line_user_id,\n          n.notify_low_stock\n        FROM notification_settings n\n        JOIN users u ON u.username = n.username\n        WHERE COALESCE(u.account_status, 'active') = 'active'\n          AND u.role = 'Vendor'\n          AND u.vendor = $1\n          AND n.notify_low_stock = true\n          AND (n.line_user_id IS NOT NULL OR n.email IS NOT NULL)\n      ",
+        "params": [
+          "Vendor B"
+        ]
+      },
+      {
+        "text": "\n        SELECT\n          n.username,\n          n.email,\n          n.line_user_id,\n          n.notify_low_stock\n        FROM notification_settings n\n        JOIN users u ON u.username = n.username\n        WHERE COALESCE(u.account_status, 'active') = 'active'\n          AND u.role = 'Vendor'\n          AND u.vendor = $1\n          AND n.notify_low_stock = true\n          AND (n.line_user_id IS NOT NULL OR n.email IS NOT NULL)\n      ",
+        "params": [
+          "Vendor C"
+        ]
+      }
+    ],
+    "line": [
+      {
+        "fn": "pushLowStockAlert",
+        "args": [
+          "U-venda",
+          [
+            {
+              "itemId": "A-1",
+              "name": "Reagent A1",
+              "quantity": 1,
+              "minThreshold": 5,
+              "unit": "box"
+            },
+            {
+              "itemId": "A-2",
+              "name": "Reagent A2",
+              "quantity": 0,
+              "minThreshold": 4,
+              "unit": "box"
+            }
+          ]
+        ]
+      },
+      {
+        "fn": "pushLowStockAlert",
+        "args": [
+          "U-vendb",
+          [
+            {
+              "itemId": "B-1",
+              "name": "Reagent B1",
+              "quantity": 2,
+              "minThreshold": 2,
+              "unit": "kit"
+            }
+          ]
+        ]
+      }
+    ],
+    "mail": [
+      {
+        "to": "vendb@lab.test",
+        "subject": "Low Stock Alert"
+      }
+    ]
+  },
+  "lowStockNone": {
+    "status": 200,
+    "body": {
+      "success": true,
+      "notifiedVendors": 0,
+      "notifiedItems": 0
+    },
+    "statements": [
+      {
+        "text": "\n    ALTER TABLE notification_settings\n    ADD COLUMN IF NOT EXISTS notify_expiring_soon BOOLEAN DEFAULT true\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    ALTER TABLE notification_settings\n    ADD COLUMN IF NOT EXISTS notify_weekly_summary BOOLEAN DEFAULT true\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    ALTER TABLE notification_settings\n    ADD COLUMN IF NOT EXISTS notify_reorder_risk BOOLEAN DEFAULT true\n  ",
+        "params": []
+      },
+      {
+        "text": "\n      WITH inventory_summary AS (\n        SELECT item_id, SUM(quantity) as current_qty\n        FROM inventory\n        GROUP BY item_id\n      )\n      SELECT\n        m.vendor,\n        m.item_id as \"itemId\",\n        m.name,\n        m.unit,\n        m.min_threshold as \"minThreshold\",\n        COALESCE(i.current_qty, 0) as quantity\n      FROM master_data m\n      LEFT JOIN inventory_summary i ON m.item_id = i.item_id\n      WHERE COALESCE(m.vendor, '') != ''\n        AND COALESCE(i.current_qty, 0) <= m.min_threshold\n      ORDER BY m.vendor ASC, m.name ASC\n    ",
+        "params": []
+      }
+    ],
+    "line": [],
+    "mail": []
+  },
+  "lowStockUserDenied": {
+    "status": 401,
+    "body": {
+      "error": "Unauthorized"
+    },
+    "statements": [],
+    "line": [],
+    "mail": []
+  },
+  "weeklyCronHeaderWeeklySecret": {
+    "status": 200,
+    "body": {
+      "success": true,
+      "notifiedUsers": 2,
+      "notifiedVendors": 3,
+      "lowStockItems": 2,
+      "expiringSoonItems": 1
+    },
+    "statements": [
+      {
+        "text": "\n    ALTER TABLE notification_settings\n    ADD COLUMN IF NOT EXISTS notify_expiring_soon BOOLEAN DEFAULT true\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    ALTER TABLE notification_settings\n    ADD COLUMN IF NOT EXISTS notify_weekly_summary BOOLEAN DEFAULT true\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    ALTER TABLE notification_settings\n    ADD COLUMN IF NOT EXISTS notify_reorder_risk BOOLEAN DEFAULT true\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    WITH inventory_summary AS (\n      SELECT item_id, SUM(quantity) AS current_qty FROM inventory GROUP BY item_id\n    )\n    SELECT m.item_id AS \"itemId\", m.name, m.unit, m.min_threshold AS \"minThreshold\",\n      COALESCE(NULLIF(m.job_type, ''), 'ไม่ระบุงาน') AS \"jobType\", COALESCE(m.vendor, '') AS vendor,\n      COALESCE(i.current_qty, 0) AS quantity\n    FROM master_data m\n    LEFT JOIN inventory_summary i ON i.item_id = m.item_id\n    WHERE COALESCE(i.current_qty, 0) <= m.min_threshold\n    ORDER BY \"jobType\", COALESCE(i.current_qty, 0), m.name\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    SELECT i.item_id AS \"itemId\", m.name, i.lot_no AS \"lotNo\", i.exp_date::date AS \"expDate\",\n      i.quantity, m.unit, GREATEST(0, (i.exp_date::date - CURRENT_DATE))::int AS \"daysUntilExpiry\",\n      COALESCE(NULLIF(m.job_type, ''), 'ไม่ระบุงาน') AS \"jobType\", COALESCE(m.vendor, '') AS vendor\n    FROM inventory i\n    JOIN master_data m ON m.item_id = i.item_id\n    WHERE i.quantity > 0 AND i.exp_date IS NOT NULL\n      AND i.exp_date::date >= CURRENT_DATE AND i.exp_date::date <= CURRENT_DATE + INTERVAL '30 days'\n    ORDER BY i.exp_date ASC, \"jobType\", m.name\n  ",
+        "params": []
+      },
+      {
+        "text": "\n      SELECT n.username, n.email, n.line_user_id, n.notify_weekly_summary, u.role, u.vendor\n      FROM notification_settings n JOIN users u ON u.username = n.username\n      WHERE n.notify_weekly_summary = true AND COALESCE(u.account_status, 'active') = 'active' AND (n.line_user_id IS NOT NULL OR n.email IS NOT NULL)\n    ",
+        "params": []
+      }
+    ],
+    "line": [
+      {
+        "fn": "pushWeeklyStockAlerts",
+        "args": [
+          "U-staff1",
+          {
+            "lowStockItems": [
+              {
+                "itemId": "A-1",
+                "name": "Reagent A1",
+                "unit": "box",
+                "minThreshold": 5,
+                "jobType": "Chem",
+                "vendor": "Vendor A",
+                "quantity": 1
+              },
+              {
+                "itemId": "B-1",
+                "name": "Reagent B1",
+                "unit": "kit",
+                "minThreshold": 2,
+                "jobType": "ไม่ระบุงาน",
+                "vendor": "Vendor B",
+                "quantity": 0
+              }
+            ],
+            "expiringSoonItems": [
+              {
+                "itemId": "A-1",
+                "name": "Reagent A1",
+                "lotNo": "L1",
+                "expDate": "2026-08-20",
+                "quantity": 3,
+                "unit": "box",
+                "daysUntilExpiry": 10,
+                "jobType": "Chem",
+                "vendor": "Vendor A"
+              }
+            ],
+            "orderUrl": "https://lab.test/liff/orders"
+          }
+        ]
+      },
+      {
+        "fn": "pushWeeklyStockAlerts",
+        "args": [
+          "U-venda",
+          {
+            "lowStockItems": [
+              {
+                "itemId": "A-1",
+                "name": "Reagent A1",
+                "unit": "box",
+                "minThreshold": 5,
+                "jobType": "Chem",
+                "vendor": "Vendor A",
+                "quantity": 1
+              }
+            ],
+            "expiringSoonItems": [
+              {
+                "itemId": "A-1",
+                "name": "Reagent A1",
+                "lotNo": "L1",
+                "expDate": "2026-08-20",
+                "quantity": 3,
+                "unit": "box",
+                "daysUntilExpiry": 10,
+                "jobType": "Chem",
+                "vendor": "Vendor A"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "fn": "pushWeeklyStockAlerts",
+        "args": [
+          "U-vendb",
+          {
+            "lowStockItems": [
+              {
+                "itemId": "B-1",
+                "name": "Reagent B1",
+                "unit": "kit",
+                "minThreshold": 2,
+                "jobType": "ไม่ระบุงาน",
+                "vendor": "Vendor B",
+                "quantity": 0
+              }
+            ],
+            "expiringSoonItems": []
+          }
+        ]
+      }
+    ],
+    "mail": [
+      {
+        "to": "staff1@lab.test",
+        "subject": "Weekly stock risk summary"
+      },
+      {
+        "to": "staff2@lab.test",
+        "subject": "Weekly stock risk summary"
+      },
+      {
+        "to": "vendb@lab.test",
+        "subject": "Weekly stock risk summary"
+      },
+      {
+        "to": "vendx@lab.test",
+        "subject": "Weekly stock risk summary"
+      }
+    ]
+  },
+  "weeklyCronHeaderCronSecret": {
+    "status": 200,
+    "body": {
+      "success": true,
+      "notifiedUsers": 2,
+      "notifiedVendors": 3,
+      "lowStockItems": 2,
+      "expiringSoonItems": 1
+    },
+    "statements": [
+      {
+        "text": "\n    ALTER TABLE notification_settings\n    ADD COLUMN IF NOT EXISTS notify_expiring_soon BOOLEAN DEFAULT true\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    ALTER TABLE notification_settings\n    ADD COLUMN IF NOT EXISTS notify_weekly_summary BOOLEAN DEFAULT true\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    ALTER TABLE notification_settings\n    ADD COLUMN IF NOT EXISTS notify_reorder_risk BOOLEAN DEFAULT true\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    WITH inventory_summary AS (\n      SELECT item_id, SUM(quantity) AS current_qty FROM inventory GROUP BY item_id\n    )\n    SELECT m.item_id AS \"itemId\", m.name, m.unit, m.min_threshold AS \"minThreshold\",\n      COALESCE(NULLIF(m.job_type, ''), 'ไม่ระบุงาน') AS \"jobType\", COALESCE(m.vendor, '') AS vendor,\n      COALESCE(i.current_qty, 0) AS quantity\n    FROM master_data m\n    LEFT JOIN inventory_summary i ON i.item_id = m.item_id\n    WHERE COALESCE(i.current_qty, 0) <= m.min_threshold\n    ORDER BY \"jobType\", COALESCE(i.current_qty, 0), m.name\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    SELECT i.item_id AS \"itemId\", m.name, i.lot_no AS \"lotNo\", i.exp_date::date AS \"expDate\",\n      i.quantity, m.unit, GREATEST(0, (i.exp_date::date - CURRENT_DATE))::int AS \"daysUntilExpiry\",\n      COALESCE(NULLIF(m.job_type, ''), 'ไม่ระบุงาน') AS \"jobType\", COALESCE(m.vendor, '') AS vendor\n    FROM inventory i\n    JOIN master_data m ON m.item_id = i.item_id\n    WHERE i.quantity > 0 AND i.exp_date IS NOT NULL\n      AND i.exp_date::date >= CURRENT_DATE AND i.exp_date::date <= CURRENT_DATE + INTERVAL '30 days'\n    ORDER BY i.exp_date ASC, \"jobType\", m.name\n  ",
+        "params": []
+      },
+      {
+        "text": "\n      SELECT n.username, n.email, n.line_user_id, n.notify_weekly_summary, u.role, u.vendor\n      FROM notification_settings n JOIN users u ON u.username = n.username\n      WHERE n.notify_weekly_summary = true AND COALESCE(u.account_status, 'active') = 'active' AND (n.line_user_id IS NOT NULL OR n.email IS NOT NULL)\n    ",
+        "params": []
+      }
+    ],
+    "line": [
+      {
+        "fn": "pushWeeklyStockAlerts",
+        "args": [
+          "U-staff1",
+          {
+            "lowStockItems": [
+              {
+                "itemId": "A-1",
+                "name": "Reagent A1",
+                "unit": "box",
+                "minThreshold": 5,
+                "jobType": "Chem",
+                "vendor": "Vendor A",
+                "quantity": 1
+              },
+              {
+                "itemId": "B-1",
+                "name": "Reagent B1",
+                "unit": "kit",
+                "minThreshold": 2,
+                "jobType": "ไม่ระบุงาน",
+                "vendor": "Vendor B",
+                "quantity": 0
+              }
+            ],
+            "expiringSoonItems": [
+              {
+                "itemId": "A-1",
+                "name": "Reagent A1",
+                "lotNo": "L1",
+                "expDate": "2026-08-20",
+                "quantity": 3,
+                "unit": "box",
+                "daysUntilExpiry": 10,
+                "jobType": "Chem",
+                "vendor": "Vendor A"
+              }
+            ],
+            "orderUrl": "https://lab.test/liff/orders"
+          }
+        ]
+      },
+      {
+        "fn": "pushWeeklyStockAlerts",
+        "args": [
+          "U-venda",
+          {
+            "lowStockItems": [
+              {
+                "itemId": "A-1",
+                "name": "Reagent A1",
+                "unit": "box",
+                "minThreshold": 5,
+                "jobType": "Chem",
+                "vendor": "Vendor A",
+                "quantity": 1
+              }
+            ],
+            "expiringSoonItems": [
+              {
+                "itemId": "A-1",
+                "name": "Reagent A1",
+                "lotNo": "L1",
+                "expDate": "2026-08-20",
+                "quantity": 3,
+                "unit": "box",
+                "daysUntilExpiry": 10,
+                "jobType": "Chem",
+                "vendor": "Vendor A"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "fn": "pushWeeklyStockAlerts",
+        "args": [
+          "U-vendb",
+          {
+            "lowStockItems": [
+              {
+                "itemId": "B-1",
+                "name": "Reagent B1",
+                "unit": "kit",
+                "minThreshold": 2,
+                "jobType": "ไม่ระบุงาน",
+                "vendor": "Vendor B",
+                "quantity": 0
+              }
+            ],
+            "expiringSoonItems": []
+          }
+        ]
+      }
+    ],
+    "mail": [
+      {
+        "to": "staff1@lab.test",
+        "subject": "Weekly stock risk summary"
+      },
+      {
+        "to": "staff2@lab.test",
+        "subject": "Weekly stock risk summary"
+      },
+      {
+        "to": "vendb@lab.test",
+        "subject": "Weekly stock risk summary"
+      },
+      {
+        "to": "vendx@lab.test",
+        "subject": "Weekly stock risk summary"
+      }
+    ]
+  },
+  "weeklyCronBearerWeeklySecret": {
+    "status": 200,
+    "body": {
+      "success": true,
+      "notifiedUsers": 2,
+      "notifiedVendors": 3,
+      "lowStockItems": 2,
+      "expiringSoonItems": 1
+    },
+    "statements": [
+      {
+        "text": "\n    ALTER TABLE notification_settings\n    ADD COLUMN IF NOT EXISTS notify_expiring_soon BOOLEAN DEFAULT true\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    ALTER TABLE notification_settings\n    ADD COLUMN IF NOT EXISTS notify_weekly_summary BOOLEAN DEFAULT true\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    ALTER TABLE notification_settings\n    ADD COLUMN IF NOT EXISTS notify_reorder_risk BOOLEAN DEFAULT true\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    WITH inventory_summary AS (\n      SELECT item_id, SUM(quantity) AS current_qty FROM inventory GROUP BY item_id\n    )\n    SELECT m.item_id AS \"itemId\", m.name, m.unit, m.min_threshold AS \"minThreshold\",\n      COALESCE(NULLIF(m.job_type, ''), 'ไม่ระบุงาน') AS \"jobType\", COALESCE(m.vendor, '') AS vendor,\n      COALESCE(i.current_qty, 0) AS quantity\n    FROM master_data m\n    LEFT JOIN inventory_summary i ON i.item_id = m.item_id\n    WHERE COALESCE(i.current_qty, 0) <= m.min_threshold\n    ORDER BY \"jobType\", COALESCE(i.current_qty, 0), m.name\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    SELECT i.item_id AS \"itemId\", m.name, i.lot_no AS \"lotNo\", i.exp_date::date AS \"expDate\",\n      i.quantity, m.unit, GREATEST(0, (i.exp_date::date - CURRENT_DATE))::int AS \"daysUntilExpiry\",\n      COALESCE(NULLIF(m.job_type, ''), 'ไม่ระบุงาน') AS \"jobType\", COALESCE(m.vendor, '') AS vendor\n    FROM inventory i\n    JOIN master_data m ON m.item_id = i.item_id\n    WHERE i.quantity > 0 AND i.exp_date IS NOT NULL\n      AND i.exp_date::date >= CURRENT_DATE AND i.exp_date::date <= CURRENT_DATE + INTERVAL '30 days'\n    ORDER BY i.exp_date ASC, \"jobType\", m.name\n  ",
+        "params": []
+      },
+      {
+        "text": "\n      SELECT n.username, n.email, n.line_user_id, n.notify_weekly_summary, u.role, u.vendor\n      FROM notification_settings n JOIN users u ON u.username = n.username\n      WHERE n.notify_weekly_summary = true AND COALESCE(u.account_status, 'active') = 'active' AND (n.line_user_id IS NOT NULL OR n.email IS NOT NULL)\n    ",
+        "params": []
+      }
+    ],
+    "line": [
+      {
+        "fn": "pushWeeklyStockAlerts",
+        "args": [
+          "U-staff1",
+          {
+            "lowStockItems": [
+              {
+                "itemId": "A-1",
+                "name": "Reagent A1",
+                "unit": "box",
+                "minThreshold": 5,
+                "jobType": "Chem",
+                "vendor": "Vendor A",
+                "quantity": 1
+              },
+              {
+                "itemId": "B-1",
+                "name": "Reagent B1",
+                "unit": "kit",
+                "minThreshold": 2,
+                "jobType": "ไม่ระบุงาน",
+                "vendor": "Vendor B",
+                "quantity": 0
+              }
+            ],
+            "expiringSoonItems": [
+              {
+                "itemId": "A-1",
+                "name": "Reagent A1",
+                "lotNo": "L1",
+                "expDate": "2026-08-20",
+                "quantity": 3,
+                "unit": "box",
+                "daysUntilExpiry": 10,
+                "jobType": "Chem",
+                "vendor": "Vendor A"
+              }
+            ],
+            "orderUrl": "https://lab.test/liff/orders"
+          }
+        ]
+      },
+      {
+        "fn": "pushWeeklyStockAlerts",
+        "args": [
+          "U-venda",
+          {
+            "lowStockItems": [
+              {
+                "itemId": "A-1",
+                "name": "Reagent A1",
+                "unit": "box",
+                "minThreshold": 5,
+                "jobType": "Chem",
+                "vendor": "Vendor A",
+                "quantity": 1
+              }
+            ],
+            "expiringSoonItems": [
+              {
+                "itemId": "A-1",
+                "name": "Reagent A1",
+                "lotNo": "L1",
+                "expDate": "2026-08-20",
+                "quantity": 3,
+                "unit": "box",
+                "daysUntilExpiry": 10,
+                "jobType": "Chem",
+                "vendor": "Vendor A"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "fn": "pushWeeklyStockAlerts",
+        "args": [
+          "U-vendb",
+          {
+            "lowStockItems": [
+              {
+                "itemId": "B-1",
+                "name": "Reagent B1",
+                "unit": "kit",
+                "minThreshold": 2,
+                "jobType": "ไม่ระบุงาน",
+                "vendor": "Vendor B",
+                "quantity": 0
+              }
+            ],
+            "expiringSoonItems": []
+          }
+        ]
+      }
+    ],
+    "mail": [
+      {
+        "to": "staff1@lab.test",
+        "subject": "Weekly stock risk summary"
+      },
+      {
+        "to": "staff2@lab.test",
+        "subject": "Weekly stock risk summary"
+      },
+      {
+        "to": "vendb@lab.test",
+        "subject": "Weekly stock risk summary"
+      },
+      {
+        "to": "vendx@lab.test",
+        "subject": "Weekly stock risk summary"
+      }
+    ]
+  },
+  "weeklyCronBearerCronSecret": {
+    "status": 200,
+    "body": {
+      "success": true,
+      "notifiedUsers": 2,
+      "notifiedVendors": 3,
+      "lowStockItems": 2,
+      "expiringSoonItems": 1
+    },
+    "statements": [
+      {
+        "text": "\n    ALTER TABLE notification_settings\n    ADD COLUMN IF NOT EXISTS notify_expiring_soon BOOLEAN DEFAULT true\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    ALTER TABLE notification_settings\n    ADD COLUMN IF NOT EXISTS notify_weekly_summary BOOLEAN DEFAULT true\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    ALTER TABLE notification_settings\n    ADD COLUMN IF NOT EXISTS notify_reorder_risk BOOLEAN DEFAULT true\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    WITH inventory_summary AS (\n      SELECT item_id, SUM(quantity) AS current_qty FROM inventory GROUP BY item_id\n    )\n    SELECT m.item_id AS \"itemId\", m.name, m.unit, m.min_threshold AS \"minThreshold\",\n      COALESCE(NULLIF(m.job_type, ''), 'ไม่ระบุงาน') AS \"jobType\", COALESCE(m.vendor, '') AS vendor,\n      COALESCE(i.current_qty, 0) AS quantity\n    FROM master_data m\n    LEFT JOIN inventory_summary i ON i.item_id = m.item_id\n    WHERE COALESCE(i.current_qty, 0) <= m.min_threshold\n    ORDER BY \"jobType\", COALESCE(i.current_qty, 0), m.name\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    SELECT i.item_id AS \"itemId\", m.name, i.lot_no AS \"lotNo\", i.exp_date::date AS \"expDate\",\n      i.quantity, m.unit, GREATEST(0, (i.exp_date::date - CURRENT_DATE))::int AS \"daysUntilExpiry\",\n      COALESCE(NULLIF(m.job_type, ''), 'ไม่ระบุงาน') AS \"jobType\", COALESCE(m.vendor, '') AS vendor\n    FROM inventory i\n    JOIN master_data m ON m.item_id = i.item_id\n    WHERE i.quantity > 0 AND i.exp_date IS NOT NULL\n      AND i.exp_date::date >= CURRENT_DATE AND i.exp_date::date <= CURRENT_DATE + INTERVAL '30 days'\n    ORDER BY i.exp_date ASC, \"jobType\", m.name\n  ",
+        "params": []
+      },
+      {
+        "text": "\n      SELECT n.username, n.email, n.line_user_id, n.notify_weekly_summary, u.role, u.vendor\n      FROM notification_settings n JOIN users u ON u.username = n.username\n      WHERE n.notify_weekly_summary = true AND COALESCE(u.account_status, 'active') = 'active' AND (n.line_user_id IS NOT NULL OR n.email IS NOT NULL)\n    ",
+        "params": []
+      }
+    ],
+    "line": [
+      {
+        "fn": "pushWeeklyStockAlerts",
+        "args": [
+          "U-staff1",
+          {
+            "lowStockItems": [
+              {
+                "itemId": "A-1",
+                "name": "Reagent A1",
+                "unit": "box",
+                "minThreshold": 5,
+                "jobType": "Chem",
+                "vendor": "Vendor A",
+                "quantity": 1
+              },
+              {
+                "itemId": "B-1",
+                "name": "Reagent B1",
+                "unit": "kit",
+                "minThreshold": 2,
+                "jobType": "ไม่ระบุงาน",
+                "vendor": "Vendor B",
+                "quantity": 0
+              }
+            ],
+            "expiringSoonItems": [
+              {
+                "itemId": "A-1",
+                "name": "Reagent A1",
+                "lotNo": "L1",
+                "expDate": "2026-08-20",
+                "quantity": 3,
+                "unit": "box",
+                "daysUntilExpiry": 10,
+                "jobType": "Chem",
+                "vendor": "Vendor A"
+              }
+            ],
+            "orderUrl": "https://lab.test/liff/orders"
+          }
+        ]
+      },
+      {
+        "fn": "pushWeeklyStockAlerts",
+        "args": [
+          "U-venda",
+          {
+            "lowStockItems": [
+              {
+                "itemId": "A-1",
+                "name": "Reagent A1",
+                "unit": "box",
+                "minThreshold": 5,
+                "jobType": "Chem",
+                "vendor": "Vendor A",
+                "quantity": 1
+              }
+            ],
+            "expiringSoonItems": [
+              {
+                "itemId": "A-1",
+                "name": "Reagent A1",
+                "lotNo": "L1",
+                "expDate": "2026-08-20",
+                "quantity": 3,
+                "unit": "box",
+                "daysUntilExpiry": 10,
+                "jobType": "Chem",
+                "vendor": "Vendor A"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "fn": "pushWeeklyStockAlerts",
+        "args": [
+          "U-vendb",
+          {
+            "lowStockItems": [
+              {
+                "itemId": "B-1",
+                "name": "Reagent B1",
+                "unit": "kit",
+                "minThreshold": 2,
+                "jobType": "ไม่ระบุงาน",
+                "vendor": "Vendor B",
+                "quantity": 0
+              }
+            ],
+            "expiringSoonItems": []
+          }
+        ]
+      }
+    ],
+    "mail": [
+      {
+        "to": "staff1@lab.test",
+        "subject": "Weekly stock risk summary"
+      },
+      {
+        "to": "staff2@lab.test",
+        "subject": "Weekly stock risk summary"
+      },
+      {
+        "to": "vendb@lab.test",
+        "subject": "Weekly stock risk summary"
+      },
+      {
+        "to": "vendx@lab.test",
+        "subject": "Weekly stock risk summary"
+      }
+    ]
+  },
+  "weeklyGet": {
+    "status": 200,
+    "body": {
+      "success": true,
+      "notifiedUsers": 2,
+      "notifiedVendors": 3,
+      "lowStockItems": 2,
+      "expiringSoonItems": 1
+    },
+    "statements": [
+      {
+        "text": "\n    ALTER TABLE notification_settings\n    ADD COLUMN IF NOT EXISTS notify_expiring_soon BOOLEAN DEFAULT true\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    ALTER TABLE notification_settings\n    ADD COLUMN IF NOT EXISTS notify_weekly_summary BOOLEAN DEFAULT true\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    ALTER TABLE notification_settings\n    ADD COLUMN IF NOT EXISTS notify_reorder_risk BOOLEAN DEFAULT true\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    WITH inventory_summary AS (\n      SELECT item_id, SUM(quantity) AS current_qty FROM inventory GROUP BY item_id\n    )\n    SELECT m.item_id AS \"itemId\", m.name, m.unit, m.min_threshold AS \"minThreshold\",\n      COALESCE(NULLIF(m.job_type, ''), 'ไม่ระบุงาน') AS \"jobType\", COALESCE(m.vendor, '') AS vendor,\n      COALESCE(i.current_qty, 0) AS quantity\n    FROM master_data m\n    LEFT JOIN inventory_summary i ON i.item_id = m.item_id\n    WHERE COALESCE(i.current_qty, 0) <= m.min_threshold\n    ORDER BY \"jobType\", COALESCE(i.current_qty, 0), m.name\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    SELECT i.item_id AS \"itemId\", m.name, i.lot_no AS \"lotNo\", i.exp_date::date AS \"expDate\",\n      i.quantity, m.unit, GREATEST(0, (i.exp_date::date - CURRENT_DATE))::int AS \"daysUntilExpiry\",\n      COALESCE(NULLIF(m.job_type, ''), 'ไม่ระบุงาน') AS \"jobType\", COALESCE(m.vendor, '') AS vendor\n    FROM inventory i\n    JOIN master_data m ON m.item_id = i.item_id\n    WHERE i.quantity > 0 AND i.exp_date IS NOT NULL\n      AND i.exp_date::date >= CURRENT_DATE AND i.exp_date::date <= CURRENT_DATE + INTERVAL '30 days'\n    ORDER BY i.exp_date ASC, \"jobType\", m.name\n  ",
+        "params": []
+      },
+      {
+        "text": "\n      SELECT n.username, n.email, n.line_user_id, n.notify_weekly_summary, u.role, u.vendor\n      FROM notification_settings n JOIN users u ON u.username = n.username\n      WHERE n.notify_weekly_summary = true AND COALESCE(u.account_status, 'active') = 'active' AND (n.line_user_id IS NOT NULL OR n.email IS NOT NULL)\n    ",
+        "params": []
+      }
+    ],
+    "line": [
+      {
+        "fn": "pushWeeklyStockAlerts",
+        "args": [
+          "U-staff1",
+          {
+            "lowStockItems": [
+              {
+                "itemId": "A-1",
+                "name": "Reagent A1",
+                "unit": "box",
+                "minThreshold": 5,
+                "jobType": "Chem",
+                "vendor": "Vendor A",
+                "quantity": 1
+              },
+              {
+                "itemId": "B-1",
+                "name": "Reagent B1",
+                "unit": "kit",
+                "minThreshold": 2,
+                "jobType": "ไม่ระบุงาน",
+                "vendor": "Vendor B",
+                "quantity": 0
+              }
+            ],
+            "expiringSoonItems": [
+              {
+                "itemId": "A-1",
+                "name": "Reagent A1",
+                "lotNo": "L1",
+                "expDate": "2026-08-20",
+                "quantity": 3,
+                "unit": "box",
+                "daysUntilExpiry": 10,
+                "jobType": "Chem",
+                "vendor": "Vendor A"
+              }
+            ],
+            "orderUrl": "https://lab.test/liff/orders"
+          }
+        ]
+      },
+      {
+        "fn": "pushWeeklyStockAlerts",
+        "args": [
+          "U-venda",
+          {
+            "lowStockItems": [
+              {
+                "itemId": "A-1",
+                "name": "Reagent A1",
+                "unit": "box",
+                "minThreshold": 5,
+                "jobType": "Chem",
+                "vendor": "Vendor A",
+                "quantity": 1
+              }
+            ],
+            "expiringSoonItems": [
+              {
+                "itemId": "A-1",
+                "name": "Reagent A1",
+                "lotNo": "L1",
+                "expDate": "2026-08-20",
+                "quantity": 3,
+                "unit": "box",
+                "daysUntilExpiry": 10,
+                "jobType": "Chem",
+                "vendor": "Vendor A"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "fn": "pushWeeklyStockAlerts",
+        "args": [
+          "U-vendb",
+          {
+            "lowStockItems": [
+              {
+                "itemId": "B-1",
+                "name": "Reagent B1",
+                "unit": "kit",
+                "minThreshold": 2,
+                "jobType": "ไม่ระบุงาน",
+                "vendor": "Vendor B",
+                "quantity": 0
+              }
+            ],
+            "expiringSoonItems": []
+          }
+        ]
+      }
+    ],
+    "mail": [
+      {
+        "to": "staff1@lab.test",
+        "subject": "Weekly stock risk summary"
+      },
+      {
+        "to": "staff2@lab.test",
+        "subject": "Weekly stock risk summary"
+      },
+      {
+        "to": "vendb@lab.test",
+        "subject": "Weekly stock risk summary"
+      },
+      {
+        "to": "vendx@lab.test",
+        "subject": "Weekly stock risk summary"
+      }
+    ]
+  },
+  "weeklyManager": {
+    "status": 200,
+    "body": {
+      "success": true,
+      "notifiedUsers": 2,
+      "notifiedVendors": 3,
+      "lowStockItems": 2,
+      "expiringSoonItems": 1
+    },
+    "statements": [
+      {
+        "text": "\n    ALTER TABLE notification_settings\n    ADD COLUMN IF NOT EXISTS notify_expiring_soon BOOLEAN DEFAULT true\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    ALTER TABLE notification_settings\n    ADD COLUMN IF NOT EXISTS notify_weekly_summary BOOLEAN DEFAULT true\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    ALTER TABLE notification_settings\n    ADD COLUMN IF NOT EXISTS notify_reorder_risk BOOLEAN DEFAULT true\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    WITH inventory_summary AS (\n      SELECT item_id, SUM(quantity) AS current_qty FROM inventory GROUP BY item_id\n    )\n    SELECT m.item_id AS \"itemId\", m.name, m.unit, m.min_threshold AS \"minThreshold\",\n      COALESCE(NULLIF(m.job_type, ''), 'ไม่ระบุงาน') AS \"jobType\", COALESCE(m.vendor, '') AS vendor,\n      COALESCE(i.current_qty, 0) AS quantity\n    FROM master_data m\n    LEFT JOIN inventory_summary i ON i.item_id = m.item_id\n    WHERE COALESCE(i.current_qty, 0) <= m.min_threshold\n    ORDER BY \"jobType\", COALESCE(i.current_qty, 0), m.name\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    SELECT i.item_id AS \"itemId\", m.name, i.lot_no AS \"lotNo\", i.exp_date::date AS \"expDate\",\n      i.quantity, m.unit, GREATEST(0, (i.exp_date::date - CURRENT_DATE))::int AS \"daysUntilExpiry\",\n      COALESCE(NULLIF(m.job_type, ''), 'ไม่ระบุงาน') AS \"jobType\", COALESCE(m.vendor, '') AS vendor\n    FROM inventory i\n    JOIN master_data m ON m.item_id = i.item_id\n    WHERE i.quantity > 0 AND i.exp_date IS NOT NULL\n      AND i.exp_date::date >= CURRENT_DATE AND i.exp_date::date <= CURRENT_DATE + INTERVAL '30 days'\n    ORDER BY i.exp_date ASC, \"jobType\", m.name\n  ",
+        "params": []
+      },
+      {
+        "text": "\n      SELECT n.username, n.email, n.line_user_id, n.notify_weekly_summary, u.role, u.vendor\n      FROM notification_settings n JOIN users u ON u.username = n.username\n      WHERE n.notify_weekly_summary = true AND COALESCE(u.account_status, 'active') = 'active' AND (n.line_user_id IS NOT NULL OR n.email IS NOT NULL)\n    ",
+        "params": []
+      }
+    ],
+    "line": [
+      {
+        "fn": "pushWeeklyStockAlerts",
+        "args": [
+          "U-staff1",
+          {
+            "lowStockItems": [
+              {
+                "itemId": "A-1",
+                "name": "Reagent A1",
+                "unit": "box",
+                "minThreshold": 5,
+                "jobType": "Chem",
+                "vendor": "Vendor A",
+                "quantity": 1
+              },
+              {
+                "itemId": "B-1",
+                "name": "Reagent B1",
+                "unit": "kit",
+                "minThreshold": 2,
+                "jobType": "ไม่ระบุงาน",
+                "vendor": "Vendor B",
+                "quantity": 0
+              }
+            ],
+            "expiringSoonItems": [
+              {
+                "itemId": "A-1",
+                "name": "Reagent A1",
+                "lotNo": "L1",
+                "expDate": "2026-08-20",
+                "quantity": 3,
+                "unit": "box",
+                "daysUntilExpiry": 10,
+                "jobType": "Chem",
+                "vendor": "Vendor A"
+              }
+            ],
+            "orderUrl": "https://lab.test/liff/orders"
+          }
+        ]
+      },
+      {
+        "fn": "pushWeeklyStockAlerts",
+        "args": [
+          "U-venda",
+          {
+            "lowStockItems": [
+              {
+                "itemId": "A-1",
+                "name": "Reagent A1",
+                "unit": "box",
+                "minThreshold": 5,
+                "jobType": "Chem",
+                "vendor": "Vendor A",
+                "quantity": 1
+              }
+            ],
+            "expiringSoonItems": [
+              {
+                "itemId": "A-1",
+                "name": "Reagent A1",
+                "lotNo": "L1",
+                "expDate": "2026-08-20",
+                "quantity": 3,
+                "unit": "box",
+                "daysUntilExpiry": 10,
+                "jobType": "Chem",
+                "vendor": "Vendor A"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "fn": "pushWeeklyStockAlerts",
+        "args": [
+          "U-vendb",
+          {
+            "lowStockItems": [
+              {
+                "itemId": "B-1",
+                "name": "Reagent B1",
+                "unit": "kit",
+                "minThreshold": 2,
+                "jobType": "ไม่ระบุงาน",
+                "vendor": "Vendor B",
+                "quantity": 0
+              }
+            ],
+            "expiringSoonItems": []
+          }
+        ]
+      }
+    ],
+    "mail": [
+      {
+        "to": "staff1@lab.test",
+        "subject": "Weekly stock risk summary"
+      },
+      {
+        "to": "staff2@lab.test",
+        "subject": "Weekly stock risk summary"
+      },
+      {
+        "to": "vendb@lab.test",
+        "subject": "Weekly stock risk summary"
+      },
+      {
+        "to": "vendx@lab.test",
+        "subject": "Weekly stock risk summary"
+      }
+    ]
+  },
+  "weeklyDenied": {
+    "status": 401,
+    "body": {
+      "error": "Unauthorized"
+    },
+    "statements": [],
+    "line": [],
+    "mail": []
+  }
+}
