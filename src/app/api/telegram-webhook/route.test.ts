@@ -141,7 +141,39 @@ describe("Telegram webhook department scope", () => {
     expect(response.status).toBe(200);
     expect(readCalls()).toHaveLength(0);
     expect(mocks.sendTelegramMessage).toHaveBeenCalledWith("123", SAFE_TEXT);
-    const out = JSON.stringify([await response.text(), mocks.sendTelegramMessage.mock.calls, vi.mocked(console.error).mock.calls]);
+    // JSON.stringify(new Error(...)) gives "{}" (message is not enumerable), so turn every logged argument into text first.
+    const asText = (value: unknown) => (value instanceof Error ? `${value.name} ${value.message} ${value.stack}` : String(value));
+    const logged = vi.mocked(console.error).mock.calls.flat().map(asText).join(" ");
+    expect(logged).toContain("could not resolve the department scope");
+    expect(logged).not.toContain("alice");
+    const out = JSON.stringify([await response.text(), mocks.sendTelegramMessage.mock.calls]);
     expect(out).not.toContain("alice");
+  });
+
+  it("switch on, chat not in the allow-list: refused without touching the switch, the CC lookup or any data", async () => {
+    mocks.departmentsReady.mockResolvedValue(true);
+    const { POST } = await loadRoute("expected-secret");
+    const request = new Request("http://localhost/api/telegram-webhook", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-telegram-bot-api-secret-token": "expected-secret" },
+      body: JSON.stringify({ message: { text: "/stock", chat: { id: 999 } } }),
+    });
+    expect((await POST(request)).status).toBe(200);
+    expect(mocks.departmentsReady).not.toHaveBeenCalled();
+    expect(mocks.defaultRoomId).not.toHaveBeenCalled();
+    expect(readCalls()).toHaveLength(0);
+    expect(mocks.sendTelegramMessage).toHaveBeenCalledTimes(1);
+    expect(mocks.sendTelegramMessage.mock.calls[0][0]).toBe("999");
+    expect(mocks.sendTelegramMessage.mock.calls[0][1]).not.toBe(SAFE_TEXT);
+  });
+
+  it("switch on, /help from an allowed chat: no department check, no CC lookup, no data read", async () => {
+    mocks.departmentsReady.mockResolvedValue(true);
+    const { POST } = await loadRoute("expected-secret");
+    expect((await POST(commandRequest("/help"))).status).toBe(200);
+    expect(mocks.sendTelegramMessage).toHaveBeenCalledWith("123", "help");
+    expect(mocks.departmentsReady).not.toHaveBeenCalled();
+    expect(mocks.defaultRoomId).not.toHaveBeenCalled();
+    expect(readCalls()).toHaveLength(0);
   });
 });

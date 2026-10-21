@@ -96,6 +96,28 @@ describe("bot stock queries with a department scope", () => {
     expect(b.filter((id) => !id.startsWith("MB-"))).toEqual([]);
   });
 
+  it("summed quantity ignores inventory rows of the same item_id that sit in another department", async () => {
+    // Same item_id, other department: these rows must never be added to the scoped department's total. The test inserts
+    // and removes its own rows so nothing leaks into the other tests.
+    const qty = (rows: Array<{ itemId: string; quantity: unknown }>, id: string) => String(rows.find((row) => row.itemId === id)?.quantity);
+    await sql.db.exec(`
+      INSERT INTO inventory (item_id, lot_no, exp_date, quantity, received_on, department_id) VALUES
+        ('A-000003', 'LA-IN-B', '2027-01-01', 5, '2026-09-01', ${DEPT_B}),
+        ('MB-000003', 'LB-IN-A', '2027-01-01', 4, '2026-09-01', ${DEPT_A});
+    `);
+    try {
+      // Baseline from the seed: A-000003 = 2 in A, MB-000003 = 1 in B (the extra rows would make 7 and 5).
+      expect(qty(await getLowStockRows(100, scopeA), "A-000003")).toBe("2");
+      expect(qty(await getLowStockRows(100, scopeB), "MB-000003")).toBe("1");
+      expect(qty(await searchStockRows("Shared keyword", 10, scopeA), "A-000003")).toBe("2");
+      expect(qty(await searchStockRows("Shared keyword", 10, scopeB), "MB-000003")).toBe("1");
+      expect(qty(await searchStockRowsByJob("Routine", scopeA), "A-000003")).toBe("2");
+      expect(qty(await searchStockRowsByJob("Routine", scopeB), "MB-000003")).toBe("1");
+    } finally {
+      await sql.db.exec(`DELETE FROM inventory WHERE lot_no IN ('LA-IN-B', 'LB-IN-A');`);
+    }
+  });
+
   it("rejects a malformed scope before sending any SQL", async () => {
     const spy = vi.spyOn(sql.db, "query");
     const bad = [undefined, "legacy", { departmentId: DEPT_A }, { mode: "ONE", departmentId: DEPT_A }] as unknown as DepartmentScope[];
