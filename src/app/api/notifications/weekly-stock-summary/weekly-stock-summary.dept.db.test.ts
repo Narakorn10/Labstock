@@ -125,6 +125,61 @@ describe("weekly-stock-summary by department", () => {
     for (const expDate of sent) expect(expDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
+  describe("a Vendor account whose vendor name is empty (fail closed)", () => {
+    // Vendor-less items in BOTH departments (vendor NULL and ''), each low and with a lot, plus Vendor accounts whose vendor is
+    // NULL / '' / whitespace only, and one whose real name has surrounding whitespace.
+    beforeEach(async () => {
+      await sql.db.exec(`
+        INSERT INTO master_data (item_id, name, unit, vendor, min_threshold, department_id) VALUES
+          ('N-X1', 'No vendor A', 'box', NULL, 5, ${DEPT_A}), ('N-X2', 'Empty vendor B', 'box', '', 5, ${DEPT_B});
+        INSERT INTO inventory (item_id, lot_no, exp_date, quantity) VALUES
+          ('N-X1', 'L-X1', CURRENT_DATE + 10, 3), ('N-X2', 'L-X2', CURRENT_DATE + 10, 3);
+        INSERT INTO users (username, password_hash, name, role, vendor) VALUES
+          ('vendNull', 'x', 'Vendor NULL', 'Vendor', NULL), ('vendEmpty', 'x', 'Vendor empty', 'Vendor', ''),
+          ('vendSpace', 'x', 'Vendor space', 'Vendor', '   '), ('vendPad', 'x', 'Vendor padded', 'Vendor', '  Vendor A  ');
+        INSERT INTO notification_settings (username, line_user_id)
+          SELECT username, 'U-' || username FROM users WHERE username IN ('vendNull', 'vendEmpty', 'vendSpace', 'vendPad');
+      `);
+    });
+
+    afterEach(async () => {
+      await sql.db.exec(`
+        DELETE FROM notification_settings WHERE username IN ('vendNull', 'vendEmpty', 'vendSpace', 'vendPad');
+        DELETE FROM users WHERE username IN ('vendNull', 'vendEmpty', 'vendSpace', 'vendPad');
+        DELETE FROM inventory WHERE item_id IN ('N-X1', 'N-X2');
+        DELETE FROM master_data WHERE item_id IN ('N-X1', 'N-X2');
+      `);
+    });
+
+    const nameless = ["vendNull", "vendEmpty", "vendSpace"];
+
+    it("department mode: they get nothing and are not counted; a padded real name still matches its vendor's items", async () => {
+      const response = await cron();
+
+      // 2 original vendors + vendPad; the three nameless Vendors are not counted. 6 low / 5 expiring = 4+2 and 3+2 items.
+      expect(await response.json()).toMatchObject({ success: true, notifiedVendors: 3, lowStockItems: 6, expiringSoonItems: 5 });
+      const messages = sorted(messagesByUser(mocks.line));
+      for (const username of nameless) expect(messages[username]).toBeUndefined();
+      // staff do see the vendor-less items of their department; no Vendor does
+      expect(JSON.stringify([messages.vendA, messages.vendB, messages.vendPad])).not.toContain("N-X");
+      expect(messages.vendPad).toEqual([["low:N-A1", "low:N-B1", "exp:N-A1", "exp:N-B1"]]);
+      expect(messages.vendA).toEqual([["low:N-A1", "low:N-B1", "exp:N-A1", "exp:N-B1"]]);
+    });
+
+    it("departments off: same result", async () => {
+      vi.stubEnv("DEPARTMENTS_ENABLED", "");
+      resetDepartmentsFlagForTests();
+
+      const response = await cron();
+
+      expect(await response.json()).toMatchObject({ success: true, notifiedVendors: 3 });
+      const messages = messagesByUser(mocks.line);
+      for (const username of nameless) expect(messages[username]).toBeUndefined();
+      expect(JSON.stringify(messages.vendPad)).not.toContain("N-X");
+      expect(messages.vendPad).toHaveLength(1);
+    });
+  });
+
   it("a department with nothing to report still gets its (empty) summary, as legacy always sends", async () => {
     await sql.db.exec(`UPDATE master_data SET min_threshold = -1 WHERE department_id = ${DEPT_B}; DELETE FROM inventory WHERE item_id = 'N-B1';`);
 

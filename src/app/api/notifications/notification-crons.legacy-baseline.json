@@ -616,7 +616,7 @@
     "body": {
       "success": true,
       "notifiedUsers": 2,
-      "notifiedVendors": 3,
+      "notifiedVendors": 2,
       "lowStockItems": 2,
       "expiringSoonItems": 1
     },
@@ -753,10 +753,6 @@
       },
       {
         "to": "vendb@lab.test",
-        "subject": "Weekly stock risk summary"
-      },
-      {
-        "to": "vendx@lab.test",
         "subject": "Weekly stock risk summary"
       }
     ]
@@ -766,7 +762,7 @@
     "body": {
       "success": true,
       "notifiedUsers": 2,
-      "notifiedVendors": 3,
+      "notifiedVendors": 2,
       "lowStockItems": 2,
       "expiringSoonItems": 1
     },
@@ -903,10 +899,6 @@
       },
       {
         "to": "vendb@lab.test",
-        "subject": "Weekly stock risk summary"
-      },
-      {
-        "to": "vendx@lab.test",
         "subject": "Weekly stock risk summary"
       }
     ]
@@ -916,7 +908,7 @@
     "body": {
       "success": true,
       "notifiedUsers": 2,
-      "notifiedVendors": 3,
+      "notifiedVendors": 2,
       "lowStockItems": 2,
       "expiringSoonItems": 1
     },
@@ -1053,10 +1045,6 @@
       },
       {
         "to": "vendb@lab.test",
-        "subject": "Weekly stock risk summary"
-      },
-      {
-        "to": "vendx@lab.test",
         "subject": "Weekly stock risk summary"
       }
     ]
@@ -1066,7 +1054,7 @@
     "body": {
       "success": true,
       "notifiedUsers": 2,
-      "notifiedVendors": 3,
+      "notifiedVendors": 2,
       "lowStockItems": 2,
       "expiringSoonItems": 1
     },
@@ -1203,10 +1191,6 @@
       },
       {
         "to": "vendb@lab.test",
-        "subject": "Weekly stock risk summary"
-      },
-      {
-        "to": "vendx@lab.test",
         "subject": "Weekly stock risk summary"
       }
     ]
@@ -1216,7 +1200,7 @@
     "body": {
       "success": true,
       "notifiedUsers": 2,
-      "notifiedVendors": 3,
+      "notifiedVendors": 2,
       "lowStockItems": 2,
       "expiringSoonItems": 1
     },
@@ -1353,10 +1337,6 @@
       },
       {
         "to": "vendb@lab.test",
-        "subject": "Weekly stock risk summary"
-      },
-      {
-        "to": "vendx@lab.test",
         "subject": "Weekly stock risk summary"
       }
     ]
@@ -1366,7 +1346,7 @@
     "body": {
       "success": true,
       "notifiedUsers": 2,
-      "notifiedVendors": 3,
+      "notifiedVendors": 2,
       "lowStockItems": 2,
       "expiringSoonItems": 1
     },
@@ -1503,10 +1483,6 @@
       },
       {
         "to": "vendb@lab.test",
-        "subject": "Weekly stock risk summary"
-      },
-      {
-        "to": "vendx@lab.test",
         "subject": "Weekly stock risk summary"
       }
     ]
