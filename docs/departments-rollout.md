@@ -120,7 +120,7 @@
 - การแจ้งเตือน "รับเข้า/เบิก" (STOCK_RECEIVED/STOCK_DISPENSED) ไม่ได้ส่งถึงใครอยู่แล้ว ไม่เปลี่ยนแปลง
 - ตัวเขียนสต็อก 4 ตัวถูกย้ายมากรองตามงานแล้ว ได้แก่ งานนับสต็อก (count-work-orders และ 4 route ของมัน),
   การยืม-คืนน้ำยา (reagent-loans), inventory/reconcile และการรับ/ยกเลิก vendor shipment ฝั่งแล็บ (vendor/shipments/[id])
-  ทำให้ `DEPARTMENT_SCOPE_PENDING` ลดจาก 50 เหลือ 46 รายการ (ตรวจนับจริงใน `department-scope-coverage.test.ts` เมื่อ 2026-10-13 ได้ 46 รายการ ไม่ใช่ 45 ที่เคยเขียนไว้) ที่ยังไม่ได้ย้ายและยังเขียนลงงาน CC ตามค่าเริ่มต้นของคอลัมน์
+  ทำให้ `DEPARTMENT_SCOPE_PENDING` ลดจาก 50 เหลือ 46 รายการ (ตรวจนับจริงใน `department-scope-coverage.test.ts` เมื่อ 2026-10-13 ได้ 46 รายการ ไม่ใช่ 45 ที่เคยเขียนไว้; **ปัจจุบันเหลือ 8 รายการ ดูหัวข้อ 12**) ที่ยังไม่ได้ย้ายและยังเขียนลงงาน CC ตามค่าเริ่มต้นของคอลัมน์
   จึง **ห้ามใช้ในงานที่สองจนกว่าจะย้าย** เช่น purchase-orders, master, settings (vendor/shipments ย้ายแล้วในกลุ่ม 7 ดูหัวข้อ 11)
   ข้อนี้คงกฎเดิมไว้: ห้ามสร้างข้อมูลงานที่สองก่อน `DEPARTMENT_SCOPE_PENDING` ว่าง
 
@@ -354,3 +354,36 @@ SELECT conname, conrelid::regclass FROM pg_constraint WHERE confrelid = 'public.
 
 - ส่งซ้ำด้วย `clientRequestId` เดิมหลังจาก PO ส่งครบแล้ว ได้ `duplicate:true` (200) ทั้งโหมด legacy และโหมดแผนก (ตรวจโดย bug-hunter บน PGlite: เงื่อนไข `NOT EXISTS (SELECT 1 FROM existing)` ใน `new_batch` ถูกตรวจก่อน จึงไม่ถึงตัวตรวจจำนวน) -- ส่งซ้ำหลังส่งบางส่วนก็ได้ `duplicate:true` (มี test); ยังไม่ได้ตรวจบน Neon จริง
 - CTE `existing` ไม่ผูกกับ `po_number`: ใช้ `clientRequestId` เดียวกันกับ PO อื่นของ Vendor เดียวกัน จะได้ batch เดิมกลับมา
+
+## 12. กลุ่ม 3: การแจ้งเตือน expiring-soon / vendor-low-stock / weekly-stock-summary (ทำแล้ว)
+
+ถอด 3 ไฟล์ออกจาก `DEPARTMENT_SCOPE_PENDING` (**11 -> 8**, นับจริงจาก `department-scope-coverage.test.ts`): `src/app/api/notifications/expiring-soon/route.ts`, `vendor-low-stock/route.ts`, `weekly-stock-summary/route.ts`. ที่เหลือ 8 รายการ: `auth/register`, `liff/orders/[id]`, `liff/orders/bootstrap`, `liff/orders`, `line-webhook`, `mobile/lookup`, `lib/bot-stock-queries.ts`, `lib/line-liff-ordering.ts`. (ตัวเลข PENDING ในหัวข้อ 6-8 และ 11 เป็นค่า ณ ตอนที่เขียนแต่ละหัวข้อ ไม่ได้แก้ย้อน) ไม่มี migration; สวิตช์ `DEPARTMENTS_ENABLED` ยังปิด
+
+**นโยบาย (เจ้าของตัดสินแล้ว)**
+
+- ผู้รับที่ไม่ใช่ Vendor ทุกคน (เจ้าหน้าที่ / Manager / **Admin**) ใช้กฎเดียวกัน: ได้เฉพาะสินค้าของแผนกที่ตัวเอง **เป็นสมาชิก** (`user_departments`) ไม่มีสิทธิ์พิเศษ "ทุกแผนก" ในการแจ้งเตือน
+- คนที่เป็นสมาชิกหลายแผนกได้ข้อความ **แยกต่อแผนก** (หนึ่งข้อความต่อหนึ่งแผนกที่มีรายการ ไม่รวมเป็นข้อความเดียว)
+- **Vendor ข้ามแผนกชั่วคราว** (เหมือนกลุ่ม 7 / คำถามข้อ 3 ยังไม่ตัดสินสุดท้าย): Vendor ได้เฉพาะสินค้าของ vendor ตัวเองจาก **ทุกแผนก** และส่ง **ครั้งเดียว** ไม่ซ้ำต่อแผนก ไม่ผ่านตัวกรองสมาชิก
+- **ผู้รับที่ไม่ใช่ Vendor และไม่มีแถว `user_departments` เลยจะไม่ได้รับอะไร** (fail closed ไม่ throw ไม่ทำให้ cron ล้ม) log เป็น "จำนวน" เท่านั้น ไม่มีชื่อผู้ใช้ / อีเมล / LINE id; response โหมดแผนกมีฟิลด์ตัวเลข `skippedUsers` / `skippedRecipients` เพิ่ม (โหมด legacy ไม่มี)
+- **ข้อควรทำก่อนเปิดสวิตช์:** Admin และผู้ใช้ที่สร้างหลังรัน backfill ของ v30 แต่ไม่มีแถว `user_departments` จะ **ไม่ได้แจ้งเตือนกลุ่มนี้เลย** ต้อง backfill ให้ครบก่อน (ดูหัวข้อ 2 ข้อ 5 และหัวข้อ 9 ที่ระบุข้อจำกัดเดียวกันของ PO)
+
+**สิทธิ์เรียก / ขอบเขต**
+
+- ชื่อ secret, ชื่อ header และลำดับการตรวจของแต่ละ route **ไม่เปลี่ยน** (expiring-soon: `EXPIRY_NOTIFICATION_CRON_SECRET` + `x-cron-secret`, ผู้ใช้ Admin เท่านั้น; vendor-low-stock: `LOW_STOCK_NOTIFICATION_CRON_SECRET` + `x-cron-secret`, Admin/Manager; weekly: `WEEKLY_STOCK_NOTIFICATION_CRON_SECRET` หรือ `CRON_SECRET` ทั้ง `x-cron-secret` และ `Authorization: Bearer`, Admin/Manager) เปลี่ยนแค่ค่าที่ได้จากการตรวจสิทธิ์: secret ถูก = `{ mode: "all" }` (หรือ `legacy` ตอนสวิตช์ปิด), ผู้ใช้ที่ล็อกอิน = scope ของตัวเอง (Manager ห้องเดียวกดแล้วได้เฉพาะสินค้าของห้องตัวเอง)
+- ผู้ล็อกอินที่ `getDepartmentScope` โยน error: `DEPARTMENT_NOT_FOUND` = 404, `DEPARTMENT_SCOPE_MISSING` = 500 ผ่าน `departmentErrorResponse` (ไม่เผยชื่อผู้ใช้ในตัว response)
+
+**พฤติกรรมแต่ละ route (โหมดแผนก)**
+
+- `vendor-low-stock`: ผู้รับมีแต่ Vendor จึงไม่ดู `user_departments`; กรองเฉพาะสินค้า (`master_data`) ตาม scope. cron ได้ทุกแผนก
+- `expiring-soon`: ผู้รับ staff ต่อแผนกกรองใน SQL (`EXISTS user_departments`). **log (`expiry_notification_logs`) = "พยายามส่งแล้ว"** (ฟังก์ชันส่งกลืน error ราย ผู้รับ จึงบอกไม่ได้ว่าถึงจริง) และโหมดแผนกบันทึกเฉพาะล็อตที่ **มีผู้รับอย่างน้อย 1 คน** (staff ของแผนกนั้นหรือ Vendor ของ vendor นั้น) ล็อตที่ไม่มีผู้รับไม่ถูกบันทึก จึงถูกแจ้งอีกในรอบหน้าเมื่อมีผู้รับ; ถ้าไม่มีล็อตไหนมีผู้รับ ตอบ `success:true` พร้อม `notified:0` และจำนวนที่ข้าม (ไม่ใช่ error). โหมด legacy บันทึกทุกล็อตเหมือนเดิม
+- `weekly-stock-summary`: staff ได้สรุป **ต่อแผนก** และ **ส่งแม้แผนกนั้นไม่มีรายการ** (เหมือน legacy ที่ส่งเสมอ) แต่เฉพาะแผนกที่ผู้รับเป็นสมาชิก. **Vendor ในโหมด "one" (Manager ห้องเดียวกด) ได้เฉพาะของ vendor ตัวเองใน "แผนกที่ scope นั้นเห็น"** (ไม่ใช่ทุกแผนก) ส่วน cron ได้ทุกแผนก -- เป็นพฤติกรรมที่ตั้งใจ มีเทสต์ล็อกไว้. สินค้าที่ `department_id` ผิดรูป/ว่างไม่ถึง staff คนใด (Vendor ยังได้ตามนโยบายข้อ 3)
+- โหมด legacy: ข้อความ SQL + params + จำนวน statement + อาร์กิวเมนต์ที่ส่งเข้าฟังก์ชันแจ้งเตือน + JSON ที่ตอบ **เหมือนเดิมทุกไบต์** (`notification-crons.legacy.test.ts` เทียบกับ `notification-crons.legacy-baseline.json` ที่บันทึกจากโค้ดเดิม; ห้ามสร้าง JSON ใหม่ยกเว้นตั้งใจด้วย `UPDATE_NOTIFICATION_CRONS_BASELINE=1`)
+
+**ต้องยืนยันก่อนปล่อย (นอก repo)**
+
+- `expiring-soon` และ `vendor-low-stock` **ไม่มี cron ใน `vercel.json`** ผู้เรียกจริงอยู่นอก repo (scheduler ภายนอก หรือปุ่มในหน้าเว็บ: `vendor-low-stock` ถูกเรียกจาก `api-client.ts` ด้วย) -> **เจ้าของต้องยืนยัน header / secret ที่ scheduler ภายนอกส่ง** ก่อนปล่อย; ถ้าส่งผ่านชื่อ header อื่นหรือ Bearer จะได้ 401 เหมือนเดิม (ไม่ได้เปลี่ยนพฤติกรรมนี้ในกลุ่มนี้). มีเฉพาะ `weekly-stock-summary` ที่อยู่ใน `vercel.json`
+
+**ข้อจำกัดของหลักฐาน**
+
+- การพิสูจน์ "byte-identical" ทำได้ระดับ **ข้อความ SQL + params ที่ harness ผลิต** (`src/test/pglite-sql.ts` ซึ่งประกอบ fragment ซ้อนเอง) **ไม่ใช่ driver Neon จริง** และ **ยังไม่เคยรันบน Neon** -- ต้องตรวจ query ที่ต่อ fragment (`${...}` ที่ว่างตอน legacy) บน Neon จริงตอนซ้อมก่อนเปิดสวิตช์
+- PGlite คืนชนิด `DATE` เป็น `Date` ส่วน Neon คืนสตริง: เทสต์ expiring-soon ปิด parser ของ DATE ใน harness เพื่อให้ตรงกับ Neon; ตัวเลข id ที่อ่านจากฐานข้อมูลผ่าน `Number()` และทิ้งค่าที่ไม่ใช่จำนวนเต็มบวก
