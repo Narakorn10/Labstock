@@ -11,8 +11,12 @@ import sql from "@/lib/db";
 // nothing was ever confirmed (fresh instance) it counts as READY, because switching the flag on means the owner
 // confirmed that the migrations ran (docs/departments-rollout.md). Either way it is retried after only RETRY_MS, so
 // a later probe that sees the schema missing flips to legacy.
-// Accepted downside: flag switched on BEFORE the migrations AND a database blip at the same moment on a fresh
-// instance: some routes answer 500 once (their department query hits the missing schema) for up to RETRY_MS.
+// Accepted downside: flag switched on BEFORE the migrations are complete AND the readiness check fails at the same moment
+// on a fresh instance: while the answer is "ready", every request of a route whose department query hits the missing
+// schema answers 500 (not just one), for up to RETRY_MS per failed probe; if the probe keeps failing while ordinary
+// queries succeed this can last indefinitely. With v30 applied but not v31-v34 nothing calls markDepartmentsNotReady
+// on the way (user_departments exists), so only the next successful probe flips to legacy. Never enable the flag before
+// v30-v34 have all run (docs/departments-rollout.md, section 5).
 
 const CACHE_MS = 60_000;
 const RETRY_MS = 5_000;
