@@ -5,10 +5,14 @@ import sql from "@/lib/db";
 // The code is deployed BEFORE the migrations run in production, so every department-aware path must be able to
 // fall back to the legacy behavior. With DEPARTMENTS_ENABLED unset this module never touches the database.
 // With the flag on, the schema is checked once per CACHE_MS. Only a CONFIRMED answer is cached for that long:
-// "ready", or "the schema is missing" (the probe saw it missing, or SQLSTATE 42P01/42703). A transient probe error
-// (network blip, timeout) never turns a ready system into "legacy": if it was seen ready it stays ready (so the real
-// query fails loudly instead of silently dropping department filtering); if it was never seen ready the answer is
-// false, retried after only RETRY_MS.
+// "ready", or "the schema is missing" (the probe saw it missing, or SQLSTATE 42P01/42703, or markDepartmentsNotReady).
+// A transient probe error (network blip, timeout) is NOT an answer, and it never silently drops department filtering
+// (fail closed): it keeps the last confirmed answer (ready stays ready, a confirmed absence stays legacy), and when
+// nothing was ever confirmed (fresh instance) it counts as READY, because switching the flag on means the owner
+// confirmed that the migrations ran (docs/departments-rollout.md). Either way it is retried after only RETRY_MS, so
+// a later probe that sees the schema missing flips to legacy.
+// Accepted downside: flag switched on BEFORE the migrations AND a database blip at the same moment on a fresh
+// instance: some routes answer 500 once (their department query hits the missing schema) for up to RETRY_MS.
 
 const CACHE_MS = 60_000;
 const RETRY_MS = 5_000;
@@ -17,7 +21,8 @@ type Cache = { ready: boolean; expiresAt: number; warned: boolean };
 
 let cache: Cache | null = null;
 let pending: Promise<boolean> | null = null;
-let everReady = false;
+// Last CONFIRMED answer: true = ready, false = schema confirmed missing, null = never confirmed (fresh instance).
+let confirmed: boolean | null = null;
 let transientWarned = false;
 // Bumped by markDepartmentsNotReady and the test reset, so a probe that started earlier cannot overwrite the newer state.
 let generation = 0;
@@ -32,7 +37,7 @@ export function setDepartmentsClockForTests(fn?: () => number) {
 export function resetDepartmentsFlagForTests() {
   cache = null;
   pending = null;
-  everReady = false;
+  confirmed = null;
   transientWarned = false;
   generation++;
 }
@@ -53,12 +58,8 @@ function remember(ready: boolean, reason?: string) {
   if (!ready && !alreadyWarned) {
     console.warn(`[departments] DEPARTMENTS_ENABLED but schema not ready: ${reason ?? "unknown"}`);
   }
-  if (ready) {
-    everReady = true;
-    transientWarned = false;
-  } else {
-    everReady = false;
-  }
+  confirmed = ready;
+  if (ready) transientWarned = false;
   cache = { ready, expiresAt: clock() + CACHE_MS, warned: !ready };
 }
 
@@ -66,7 +67,7 @@ async function probeSchema(): Promise<boolean> {
   const gen = generation;
   // A newer markDepartmentsNotReady / reset wins over this (older) probe.
   const settle = (result: boolean, store: () => void) => {
-    if (gen !== generation) return cache?.ready ?? false;
+    if (gen !== generation) return cache?.ready ?? confirmed ?? true;
     store();
     return result;
   };
@@ -107,13 +108,16 @@ async function probeSchema(): Promise<boolean> {
     if (isMissingDepartmentSchemaError(error)) {
       return settle(false, () => remember(false, `check failed (${message})`));
     }
-    // Transient error: not a confirmed absence, so never cache "not ready" for the long period.
-    return settle(everReady, () => {
+    // Transient error: not a confirmed answer, so never cache anything for the long period. Keep the last confirmed
+    // answer; with none (fresh instance) treat as ready (fail closed) and look again after RETRY_MS.
+    const answer = confirmed ?? true;
+    return settle(answer, () => {
       if (!transientWarned) {
         transientWarned = true;
-        console.warn(`[departments] readiness check failed, not caching (${message}); ${everReady ? "keeping ready" : "treating as not ready"}`);
+        const how = confirmed === null ? "treating as ready (unconfirmed)" : confirmed ? "keeping ready" : "keeping not ready";
+        console.warn(`[departments] readiness check failed, not caching (${message}); ${how}`);
       }
-      cache = { ready: everReady, expiresAt: clock() + RETRY_MS, warned: false };
+      cache = { ready: answer, expiresAt: clock() + RETRY_MS, warned: false };
     });
   }
 }
