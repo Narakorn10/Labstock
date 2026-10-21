@@ -91,30 +91,93 @@ describe("departments flag", () => {
     }
   });
 
-  it("a failing check never throws: false + warning (short retry, not cached for 60 s)", async () => {
+  it("a failing check never throws: unconfirmed => true + one warning (short retry, not cached for 60 s)", async () => {
     process.env.DEPARTMENTS_ENABLED = "true";
     mocks.sql.mockRejectedValue(new Error("db down"));
-    await expect(departmentsReady()).resolves.toBe(false);
+    await expect(departmentsReady()).resolves.toBe(true);
     expect(warn).toHaveBeenCalledTimes(1);
+    now += 5_001;
+    await expect(departmentsReady()).resolves.toBe(true);
+    expect(mocks.sql).toHaveBeenCalledTimes(2);
     mocks.sql.mockReset();
     resetDepartmentsFlagForTests();
     mocks.sql.mockResolvedValue([]);
-    await expect(departmentsReady()).resolves.toBe(false);
+    await expect(departmentsReady()).resolves.toBe(false); // an answer without a row is a confirmed "not there"
   });
 
-  it("transient probe error, never seen ready: false, retried after 5 s (not 60 s), warns once", async () => {
+  it("transient probe error, never confirmed: true (fail closed), retried after 5 s (not 60 s), warns once, then follows the real answer", async () => {
     process.env.DEPARTMENTS_ENABLED = "true";
     mocks.sql.mockRejectedValue(new Error("fetch failed"));
-    await expect(departmentsReady()).resolves.toBe(false);
-    await expect(departmentsReady()).resolves.toBe(false);
+    await expect(departmentsReady()).resolves.toBe(true);
+    await expect(departmentsReady()).resolves.toBe(true);
     expect(mocks.sql).toHaveBeenCalledTimes(1);
     now += 5_001;
-    await expect(departmentsReady()).resolves.toBe(false);
+    await expect(departmentsReady()).resolves.toBe(true);
     expect(mocks.sql).toHaveBeenCalledTimes(2);
     expect(warn).toHaveBeenCalledTimes(1); // once, not on every retry
+    // The next probe confirms the schema is missing: now it is false, and that is cached for 60 s.
+    mocks.sql.mockResolvedValue([{ ...READY_ROW, has_user_departments: false }]);
+    now += 5_001;
+    await expect(departmentsReady()).resolves.toBe(false);
+    expect(mocks.sql).toHaveBeenCalledTimes(3);
+    now += 30_000;
+    await expect(departmentsReady()).resolves.toBe(false);
+    expect(mocks.sql).toHaveBeenCalledTimes(3);
+  });
+
+  it("transient probe error, never confirmed, then the schema turns out to be ready: stays true", async () => {
+    process.env.DEPARTMENTS_ENABLED = "true";
+    mocks.sql.mockRejectedValueOnce(new Error("fetch failed"));
+    await expect(departmentsReady()).resolves.toBe(true);
     mocks.sql.mockResolvedValue([READY_ROW]);
     now += 5_001;
     await expect(departmentsReady()).resolves.toBe(true);
+    expect(mocks.sql).toHaveBeenCalledTimes(2);
+  });
+
+  it("confirmed missing (probe sees it missing), then a transient error after 60 s: stays false, never flips to true", async () => {
+    process.env.DEPARTMENTS_ENABLED = "true";
+    mocks.sql.mockResolvedValueOnce([{ ...READY_ROW, scoped_tables: 3 }]);
+    await expect(departmentsReady()).resolves.toBe(false);
+    mocks.sql.mockRejectedValue(new Error("timeout"));
+    now += 60_001;
+    await expect(departmentsReady()).resolves.toBe(false);
+    now += 5_001;
+    await expect(departmentsReady()).resolves.toBe(false);
+    expect(mocks.sql).toHaveBeenCalledTimes(3);
+  });
+
+  it("confirmed missing by SQLSTATE 42P01 / 42703, then a transient error after 60 s: stays false", async () => {
+    process.env.DEPARTMENTS_ENABLED = "true";
+    for (const code of ["42P01", "42703"]) {
+      resetDepartmentsFlagForTests();
+      mocks.sql.mockReset();
+      mocks.sql.mockRejectedValueOnce(Object.assign(new Error("missing"), { code }));
+      await expect(departmentsReady()).resolves.toBe(false);
+      mocks.sql.mockRejectedValue(new Error("timeout"));
+      now += 60_001;
+      await expect(departmentsReady()).resolves.toBe(false);
+    }
+  });
+
+  it("markDepartmentsNotReady is a confirmed 'not ready': a later transient error stays false", async () => {
+    process.env.DEPARTMENTS_ENABLED = "true";
+    markDepartmentsNotReady("column missing"); // before any probe has ever run
+    mocks.sql.mockRejectedValue(new Error("timeout"));
+    now += 60_001;
+    await expect(departmentsReady()).resolves.toBe(false);
+    now += 5_001;
+    await expect(departmentsReady()).resolves.toBe(false);
+  });
+
+  it("a stale probe that fails transiently after a reset also answers true (no false from an empty cache)", async () => {
+    process.env.DEPARTMENTS_ENABLED = "true";
+    let fail!: (error: Error) => void;
+    mocks.sql.mockReturnValueOnce(new Promise((_, reject) => { fail = reject; }));
+    const stale = departmentsReady();
+    resetDepartmentsFlagForTests();
+    fail(new Error("fetch failed"));
+    await expect(stale).resolves.toBe(true);
   });
 
   it("transient probe error after the system was seen ready: stays ready (no silent drop to legacy)", async () => {
