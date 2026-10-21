@@ -22,6 +22,7 @@ vi.mock("@/lib/db", async () => {
 import dbSql from "@/lib/db";
 import * as queries from "./bot-stock-queries";
 
+const legacy = { mode: "legacy" } as const;
 const sql = dbSql as unknown as PgliteSql;
 const BASELINE_PATH = path.resolve(process.cwd(), "src/lib/bot-stock-queries.legacy-baseline.json");
 
@@ -64,20 +65,20 @@ async function capture(run: () => Promise<unknown>, rows: Row[]) {
 describe("bot stock queries with departments off (legacy)", () => {
   it("sends exactly the pre-change statements and returns the same rows", async () => {
     const results = {
-      logsWithRows: await capture(() => queries.getRecentLogRows(5), logRows),
-      logsEmpty: await capture(() => queries.getRecentLogRows(10), []),
-      lowDefaultLimit: await capture(() => queries.getLowStockRows(), stockRows),
-      lowLimit3: await capture(() => queries.getLowStockRows(3), stockRows),
-      lowEmpty: await capture(() => queries.getLowStockRows(10), []),
-      searchByName: await capture(() => queries.searchStockRows("Reagent", 10), stockRows),
-      searchByItemId: await capture(() => queries.searchStockRows("LAB-000001", 10), stockRows.slice(0, 1)),
-      searchByBarcode: await capture(() => queries.searchStockRows("8851234567890", 10), stockRows.slice(0, 1)),
-      searchDefaultLimit: await capture(() => queries.searchStockRows("lab"), stockRows),
-      searchEmptyKeyword: await capture(() => queries.searchStockRows("", 10), stockRows),
-      searchNoMatch: await capture(() => queries.searchStockRows("zzz-none", 10), []),
-      jobWithRows: await capture(() => queries.searchStockRowsByJob("Chem"), stockRows),
-      jobEmptyKeyword: await capture(() => queries.searchStockRowsByJob(""), stockRows),
-      jobNoMatch: await capture(() => queries.searchStockRowsByJob("zzz-none"), []),
+      logsWithRows: await capture(() => queries.getRecentLogRows(5, legacy), logRows),
+      logsEmpty: await capture(() => queries.getRecentLogRows(10, legacy), []),
+      lowDefaultLimit: await capture(() => queries.getLowStockRows(undefined, legacy), stockRows),
+      lowLimit3: await capture(() => queries.getLowStockRows(3, legacy), stockRows),
+      lowEmpty: await capture(() => queries.getLowStockRows(10, legacy), []),
+      searchByName: await capture(() => queries.searchStockRows("Reagent", 10, legacy), stockRows),
+      searchByItemId: await capture(() => queries.searchStockRows("LAB-000001", 10, legacy), stockRows.slice(0, 1)),
+      searchByBarcode: await capture(() => queries.searchStockRows("8851234567890", 10, legacy), stockRows.slice(0, 1)),
+      searchDefaultLimit: await capture(() => queries.searchStockRows("lab", undefined, legacy), stockRows),
+      searchEmptyKeyword: await capture(() => queries.searchStockRows("", 10, legacy), stockRows),
+      searchNoMatch: await capture(() => queries.searchStockRows("zzz-none", 10, legacy), []),
+      jobWithRows: await capture(() => queries.searchStockRowsByJob("Chem", legacy), stockRows),
+      jobEmptyKeyword: await capture(() => queries.searchStockRowsByJob("", legacy), stockRows),
+      jobNoMatch: await capture(() => queries.searchStockRowsByJob("zzz-none", legacy), []),
     };
 
     // Sanity: each call sent exactly one statement and the returned rows are the canned ones.
