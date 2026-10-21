@@ -511,7 +511,7 @@ export function generateExpiringSoonTemplate(items: ExpiringSoonItem[]) {
         },
         {
           type: "text",
-          text: `หมดอายุ: ${new Date(item.expDate).toLocaleDateString("th-TH")}`,
+          text: `หมดอายุ: ${new Date(item.expDate).toLocaleDateString("th-TH", { timeZone: "UTC" })}`,
           size: "sm",
           margin: "sm",
           wrap: true
