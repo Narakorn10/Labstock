@@ -12,6 +12,9 @@ import {
   getRecentLogRows,
   searchStockRows,
 } from "@/lib/bot-stock-queries";
+import { departmentsReady } from "@/lib/departments-flag";
+import { DepartmentScopeError, type DepartmentScope } from "@/lib/scoped-db";
+import { defaultRoomId } from "@/lib/user-rooms";
 
 const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET?.trim() || "";
 
@@ -47,13 +50,44 @@ const parseStockKeyword = (text: string) => {
 
 const helpText = buildTelegramHelpText();
 
+const SCOPE_UNAVAILABLE_TEXT = "ยังใช้คำสั่งนี้ไม่ได้ กรุณาแจ้งผู้ดูแลระบบ";
+
+// Owner policy: Telegram answers for the default room 'CC' only (like a station). Telegram has no user identity (chat ids
+// come from an env allow-list), so there is no per-user department. Never mode "all". If the owner later wants every
+// department, "all" is the simpler option. Departments off => legacy (SQL unchanged). Fails closed: a missing/inactive CC
+// or any error resolving it returns null and the caller answers with a safe message and reads no data.
+async function resolveTelegramScope(): Promise<DepartmentScope | null> {
+  try {
+    if (!(await departmentsReady())) return { mode: "legacy" };
+    const departmentId = await defaultRoomId();
+    if (departmentId === null) {
+      console.error("[Telegram Webhook] departments are ready but the default room CC is missing or inactive.");
+      return null;
+    }
+    return { mode: "one", departmentId };
+  } catch (error: unknown) {
+    console.error("[Telegram Webhook] could not resolve the department scope:", error instanceof Error ? error.name : "unknown error");
+    return null;
+  }
+}
+
 async function sendTransactions(chatId: string, limit: number) {
-  const logs = await getRecentLogRows(limit);
+  const scope = await resolveTelegramScope();
+  if (!scope) {
+    await sendTelegramMessage(chatId, SCOPE_UNAVAILABLE_TEXT);
+    return;
+  }
+  const logs = await getRecentLogRows(limit, scope);
   await sendTelegramMessage(chatId, formatRecentLogsTelegramDigest(logs));
 }
 
 async function sendLowStock(chatId: string) {
-  const rows = await getLowStockRows(10);
+  const scope = await resolveTelegramScope();
+  if (!scope) {
+    await sendTelegramMessage(chatId, SCOPE_UNAVAILABLE_TEXT);
+    return;
+  }
+  const rows = await getLowStockRows(10, scope);
   await sendTelegramMessage(
     chatId,
     formatStockTelegramDigest(rows, "LabStock Low Stock"),
@@ -61,7 +95,12 @@ async function sendLowStock(chatId: string) {
 }
 
 async function sendStockSearch(chatId: string, keyword: string) {
-  const rows = await searchStockRows(keyword, 10);
+  const scope = await resolveTelegramScope();
+  if (!scope) {
+    await sendTelegramMessage(chatId, SCOPE_UNAVAILABLE_TEXT);
+    return;
+  }
+  const rows = await searchStockRows(keyword, 10, scope);
   await sendTelegramMessage(
     chatId,
     formatStockTelegramDigest(rows, `LabStock Stock Search: ${keyword}`),
@@ -141,6 +180,10 @@ export async function POST(request: Request) {
     await sendTelegramMessage(chatId, helpText);
     return NextResponse.json({ ok: true });
   } catch (error: unknown) {
+    if (error instanceof DepartmentScopeError) {
+      console.error(`[Telegram Webhook] department scope error: ${error.code}`);
+      return NextResponse.json({ error: "Telegram webhook failed." }, { status: 500 });
+    }
     console.error("[Telegram Webhook] Error:", error);
     const message = error instanceof Error ? error.message : "Telegram webhook failed.";
     return NextResponse.json({ error: message }, { status: 500 });
