@@ -50,8 +50,13 @@ const DISPENSE = "เบิกไปหน้างาน";
 const RECEIVE = "รับเข้าสต๊อกหลัก";
 
 beforeAll(async () => {
-  // Neon returns DATE columns as plain strings (the insights code reads exp_date as text); PGlite would return Date objects.
-  db = createPgliteSql(new PGlite({ parsers: { [types.DATE]: (value: string) => value } }));
+  // @neondatabase/serverless 1.1.0 registers a parser for DATE (oid 1082; node_modules/@neondatabase/serverless/index.js ~:499)
+  // so a raw DATE comes back as a JS Date at local midnight, not a string. Mimic that so code that String()s a raw DATE fails here.
+  const neonDate = (value: string) => {
+    const [year, month, day] = value.split("-").map(Number);
+    return new Date(year, month - 1, day);
+  };
+  db = createPgliteSql(new PGlite({ parsers: { [types.DATE]: neonDate } }));
   await seedTwoDepartments(db);
   await db.db.exec(`
     CREATE TABLE notification_settings (
@@ -110,6 +115,18 @@ describe("GET /api/usage", () => {
     expect(body.insights.every((row: { itemId: string }) => !row.itemId.startsWith("MB-"))).toBe(true);
     expect(body.insights.map((row: { itemId: string }) => row.itemId)).toContain("A-000002");
     expect(ids(body.expiryRisks)).toEqual(["A-000002", "LAB-000001"]);
+    // expDate must reach the client as a plain YYYY-MM-DD string and daysUntilExpiry must follow the seeded CURRENT_DATE + N.
+    const daysByItem = Object.fromEntries(
+      body.expiryRisks.map((row: { itemId: string; expDate: unknown; daysUntilExpiry: number }) => {
+        expect(typeof row.expDate).toBe("string");
+        expect(row.expDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        return [row.itemId, row.daysUntilExpiry];
+      })
+    );
+    expect(daysByItem["A-000002"]).toBeGreaterThanOrEqual(19);
+    expect(daysByItem["A-000002"]).toBeLessThanOrEqual(20);
+    expect(daysByItem["LAB-000001"]).toBeGreaterThanOrEqual(9);
+    expect(daysByItem["LAB-000001"]).toBeLessThanOrEqual(10);
   });
 
   it("room B sees only its own data", async () => {

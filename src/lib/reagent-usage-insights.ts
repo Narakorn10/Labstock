@@ -128,13 +128,14 @@ export async function getReagentUsageInsights(scope: DepartmentScope) {
       WHERE TRUE${andDept(scope, "m")}
       ORDER BY m.name ASC
     `,
+    // exp_date::text: never select the raw DATE here. The Neon driver returns a JS Date and String(Date) is not YYYY-MM-DD.
     sql`
       SELECT
         i.item_id AS "itemId",
         m.name,
         m.unit,
         i.lot_no AS "lotNo",
-        i.exp_date AS "expDate",
+        i.exp_date::text AS "expDate",
         i.quantity
       FROM inventory i
       JOIN master_data m ON m.item_id = i.item_id
