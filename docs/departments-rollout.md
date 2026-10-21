@@ -121,13 +121,12 @@
 - ตัวเขียนสต็อก 4 ตัวถูกย้ายมากรองตามงานแล้ว ได้แก่ งานนับสต็อก (count-work-orders และ 4 route ของมัน),
   การยืม-คืนน้ำยา (reagent-loans), inventory/reconcile และการรับ/ยกเลิก vendor shipment ฝั่งแล็บ (vendor/shipments/[id])
   ทำให้ `DEPARTMENT_SCOPE_PENDING` ลดจาก 50 เหลือ 46 รายการ (ตรวจนับจริงใน `department-scope-coverage.test.ts` เมื่อ 2026-10-13 ได้ 46 รายการ ไม่ใช่ 45 ที่เคยเขียนไว้) ที่ยังไม่ได้ย้ายและยังเขียนลงงาน CC ตามค่าเริ่มต้นของคอลัมน์
-  จึง **ห้ามใช้ในงานที่สองจนกว่าจะย้าย** เช่น vendor/shipments (POST), purchase-orders, master, settings
+  จึง **ห้ามใช้ในงานที่สองจนกว่าจะย้าย** เช่น purchase-orders, master, settings (vendor/shipments ย้ายแล้วในกลุ่ม 7 ดูหัวข้อ 11)
   ข้อนี้คงกฎเดิมไว้: ห้ามสร้างข้อมูลงานที่สองก่อน `DEPARTMENT_SCOPE_PENDING` ว่าง
 
 **ข้อจำกัดที่ทราบหลังย้ายตัวเขียนสต็อก 4 ตัว (ยอมรับชั่วคราว):**
 
-- งานที่สองรับของจาก vendor shipment ยังไม่ได้ จนกว่าจะย้าย `vendor/shipments` (POST) เพราะ POST ยังสร้างรายการส่งของลงงาน CC เสมอ
-  ผู้ใช้งานที่สองที่กดรับของที่เป็นของงาน CC จะได้ 404 (ปลอดภัย ปฏิเสธไว้ก่อน)
+- **(แก้แล้วในกลุ่ม 7 ดูหัวข้อ 11)** เดิม POST สร้างรายการส่งของลงงาน CC เสมอ ทำให้งานที่สองรับของไม่ได้ (ได้ 404); ตอนนี้ POST ประทับแผนกของ PO แล้ว
 - index เดิม `idx_count_work_orders_one_open_per_owner_job` ยังเป็นแบบทั้งระบบ (ไม่แยกงาน) จึงยังกันไม่ให้เจ้าของคนเดียวกัน
   มีใบงานนับสต็อกสถานะ OPEN ชนิดงานเดียวกันได้พร้อมกันข้ามงาน ถ้าเกิดขึ้น การบันทึกในงานที่สองจะตอบ VALIDATION_FAILED
   (ไม่แตะใบงานของงานแรก) ต้องยกเลิกหรือยืนยันใบงานเดิมก่อน การแก้ต้องทำที่ migration แยก
@@ -224,7 +223,7 @@
 
 - `on_order` (ใน suggestions) และ `current_open` (ใน creation) **ไม่กรองแผนก** -- เป็นการตัดสินใจของทีม (ไม่ใช่เจ้าของระบบ): `item_id` เป็นคีย์ระดับระบบ และสองจุดนี้ต้องตรงกันเสมอ ไม่งั้นสร้าง PO ติด 409 ถาวร; ถ้าจะกรองต้องแก้ทั้งสองพร้อมกัน (ทดสอบใน `purchase-order-creation.dept.db.test.ts`)
 - `po_seq` (เลขที่ PO) -- เป็นลำดับเดียวทั้งระบบต่อวัน (`po_number` ไม่ซ้ำข้ามแผนก)
-- คำสั่งตรวจ shipments `In Transit` ตอนปิด PO / ยืนยันรับของ -- ไม่กรอง เพราะ shipment ที่ Vendor สร้างยังถูกประทับแผนกเริ่มต้นเสมอ (ดูด้านล่าง) ถ้ากรองจะข้ามการเตือนได้
+- คำสั่งตรวจ shipments `In Transit` ตอนปิด PO / ยืนยันรับของ -- ไม่กรอง เพราะตอนเขียนหัวข้อนี้ shipment ที่ Vendor สร้างยังถูกประทับแผนกเริ่มต้นเสมอ (ตอนนี้แก้แล้วในกลุ่ม 7 แต่ข้อมูลเก่ายังเป็นแผนกเริ่มต้น จึงยังคงไม่กรองไว้)
 - `recomputePurchaseOrderStatusQuery` -- รับและตรวจ scope แต่ **ไม่กรองแผนกใน SQL**: `po_number` ไม่ซ้ำทั้งระบบ ผู้เรียกกรองมาก่อนแล้ว และถ้ากรอง สถานะ PO อาจไม่ถูกอัปเดตเงียบ ๆ เมื่อ shipment ถูกประทับแผนกต่างจาก PO (ทดสอบแล้วว่า PO แผนก B ที่มี shipment ประทับแผนก A ยังอัปเดตสถานะ); CASE ของสถานะไม่ถูกแตะ (`scripts/repair-po-status.mjs` พึ่งอยู่)
 - `loadPrintDetails` (ชื่อผู้สร้าง / ข้อมูลติดต่อ Vendor จาก `vendors` ตามชื่อ) -- ไม่กรอง จนกว่าคำถามเรื่อง Vendor ใช้ร่วมหลายแผนกจะตัดสิน
 
@@ -236,9 +235,9 @@
 
 **ยังเป็น legacy / ห้ามเปิด `DEPARTMENTS_ENABLED` จนกว่าจะทำ**
 
-- `liff/orders` (POST สร้าง PO จาก LINE, PATCH ตอบรีวิว) และ `vendor/shipments` (POST) ยังส่ง `{ mode: "legacy" }` (ใน `DEPARTMENT_SCOPE_PENDING`): PO ที่สร้างจาก LINE และ shipment ที่ Vendor สร้างจึง **ไม่ถูกประทับแผนกที่ถูกต้อง** (ได้แผนกเริ่มต้น)
-- **ห้ามเปิด `DEPARTMENTS_ENABLED` จนกว่ากลุ่ม 6 (สั่งซื้อผ่าน LIFF) และ `vendor/shipments` POST จะย้ายเสร็จ** (เจ้าของยืนยันแล้ว)
-- เงื่อนไขสำหรับตอนย้าย `vendor/shipments` POST: ต้องประทับ shipment ด้วยแผนกของ **PO นั้น** (ไม่ใช่แผนกเริ่มต้น)
+- `liff/orders` (POST สร้าง PO จาก LINE, PATCH ตอบรีวิว) ยังส่ง `{ mode: "legacy" }` (ใน `DEPARTMENT_SCOPE_PENDING`): PO ที่สร้างจาก LINE จึง **ไม่ถูกประทับแผนกที่ถูกต้อง** (ได้แผนกเริ่มต้น); ส่วน `vendor/shipments` (POST) **ย้ายแล้วในกลุ่ม 7**
+- **ห้ามเปิด `DEPARTMENTS_ENABLED` จนกว่ากลุ่ม 6 (สั่งซื้อผ่าน LIFF) จะย้ายเสร็จ** (เจ้าของยืนยันแล้ว; `vendor/shipments` POST ทำเสร็จแล้วในกลุ่ม 7)
+- `vendor/shipments` POST ประทับ shipment ด้วยแผนกของ **PO นั้น** (ไม่ใช่แผนกเริ่มต้น) -- ทำแล้วในกลุ่ม 7
 - PR-3 (`po-communication.ts` และ `purchase-order-overdue.ts` -- การแจ้งเตือน / PO เกินกำหนด) **ทำแล้ว ดูหัวข้อ 9**
 
 ## 9. กลุ่ม G5 PR-3: การแจ้งเตือน PO และ PO เกินกำหนด (ทำแล้ว)
@@ -265,7 +264,7 @@
 - ผู้รับใช้ `users.role` ระดับระบบ **ไม่ใช่** role ต่อแผนก (`user_departments.role`): Manager ที่ถูกลด role เฉพาะแผนกยังได้รับแจ้งเตือน (ข้อจำกัดที่ทราบ มี test ล็อกไว้)
 - `/api/notifications/reorder-risk` และการ drain outbox หลังสร้าง event ยังใช้ `{ mode: "all" }` (coverage test มองไม่เห็นจุดเหล่านี้)
 - Admin ส่วนกลางโหมด "all" กดส่งเตือน PO เกินกำหนดได้ (เหมือน cron)
-- **ยังห้ามเปิด `DEPARTMENTS_ENABLED`** จนกว่ากลุ่ม 6 (สั่งซื้อผ่าน LIFF) และ `vendor/shipments` POST จะย้ายเสร็จ
+- **ยังห้ามเปิด `DEPARTMENTS_ENABLED`** จนกว่ากลุ่ม 6 (สั่งซื้อผ่าน LIFF) จะย้ายเสร็จ (`vendor/shipments` POST ทำแล้วในกลุ่ม 7)
 
 ## 10. v36 หัวกระดาษใบสั่งซื้อต่อแผนก (PR-1: ไฟล์ migration / PR-2: โค้ดอ่านตามแผนก)
 
@@ -313,3 +312,45 @@ SELECT conname, conrelid::regclass FROM pg_constraint WHERE confrelid = 'public.
 3. เพิ่มแถวหัวกระดาษ `lab_profile` ให้ **ทุกแผนกที่ต้องสร้าง PO** ด้วย SQL โดยระบุ `id` (ไม่ซ้ำ) และ `department_id` เอง (ยังไม่มีหน้าจอจนกว่า PR-3) เช่น `INSERT INTO lab_profile (id, department_id, organization_name, department_name, address, phone, email) VALUES (...)`
 4. **ห้องที่สร้างทีหลัง** (ผู้ดูแลห้อง v35 สร้างห้องใหม่) ก็ต้องเพิ่มแถวหัวกระดาษเองเช่นกัน -- **ตอนนี้ไม่มีอะไรเตือนเมื่อสร้างห้องใหม่** ห้องนั้นจะสร้าง PO ไม่ได้ (409) จนกว่าจะเพิ่มแถว (เจ้าของอาจต้องการให้มีการแจ้งเตือนภายหลัง)
 5. ตอนซ้อม ให้ตรวจบน Neon จริงว่า SQL ส่วน `department_id = $n` (fragment ที่มีพารามิเตอร์) ทำงานถูกต้อง -- เทสต์ offline พิสูจน์ผ่าน PGlite เท่านั้น อ่านซอร์ส `@neondatabase/serverless` 1.1.0 แล้วต่อ fragment ซ้อนแบบเดียวกัน แต่ยังไม่เคยรันกับ Neon จริง (ตอนปิดสวิตช์ไม่มี fragment ที่มีพารามิเตอร์ `department_id = $n` ใช้เฉพาะตอนเปิดสวิตช์)
+
+## 11. กลุ่ม 7: Vendor shipments (ทำแล้ว)
+
+ถอด 3 ไฟล์ออกจาก `DEPARTMENT_SCOPE_PENDING` (**14 -> 11**, นับจริงจาก `department-scope-coverage.test.ts`): `src/app/api/vendor/shipments/route.ts`, `ocr/route.ts`, `orders/route.ts`. ไม่มี migration; สวิตช์ `DEPARTMENTS_ENABLED` ยังปิด; `SHIPMENTS_ENABLED` ยังเป็น `false` (ฮาร์ดโค้ดใน `feature-flags.ts`) จึงตอบ 503 สำหรับ POST shipments และ OCR ตอนนี้ มีเฉพาะ GET shipments และ GET orders ที่ใช้งานจริง (โค้ดส่วนนี้เปิดเมื่อไรก็ตามที่เปลี่ยนค่า flag ดังนั้นต้องเตรียมตามเช็กลิสต์ด้านล่างก่อน)
+
+**นโยบายชั่วคราว (นโยบาย A -- คำถามข้อ 3 ของเจ้าของยัง *เปิดอยู่*)**
+
+- Vendor กรองด้วย **ชื่อบริษัทเท่านั้น** (`vendor`) ไม่กรองแผนก: Vendor เห็น/ส่งของให้ PO ของบริษัทตัวเองได้ **ทุกแผนก** (GET shipments, GET orders, OCR, POST)
+- shipment ถูกประทับ **แผนกของ PO** (ไม่ใช่แผนกของบัญชี Vendor) ทั้ง `shipment_batches` และ `shipments`
+- โควตา OCR (`shipment_ocr_usage`) เป็นของทั้งระบบ ไม่แยกแผนก
+- Admin ส่วนกลางโหมด "all" **เห็น** shipments ได้ทุกแผนก แต่ **รับของไม่ได้** (PATCH ตอบ 409 `DEPARTMENT_READ_ONLY`)
+- **เจ้าของต้องยืนยันนโยบาย A ก่อนเปิด `SHIPMENTS_ENABLED` และ `DEPARTMENTS_ENABLED`** ถ้าตัดสินเป็นอย่างอื่น (เช่น Vendor แยกต่อแผนก) ต้องแก้โค้ดตามนั้น
+
+**พฤติกรรมของ `vendor/shipments`**
+
+- GET: ทุก role ต้องผ่าน `getDepartmentScope` (fail closed) ฝั่งแล็บ (Manager/Admin) กรองทั้ง `master_data` และ `shipments` ที่เงื่อนไข `JOIN` (โหมด legacy และโหมด "all" ไม่เติมอะไร SQL เหมือนเดิมทุกตัวอักษร); ฝั่ง Vendor ไม่กรองแผนก
+- POST (โหมดแผนก): ตรวจ body ก่อน -> หา PO ของบริษัทนี้ (`SELECT department_id FROM purchase_orders WHERE po_number AND vendor`) -> ไม่พบ = 409 "This order is not eligible for shipment"; `department_id` ผิดรูปแบบ (ไม่ใช่จำนวนเต็มบวก) = 500 โดยไม่มีข้อความและไม่เริ่ม transaction -> ตรวจอายุคงเหลือ (shelf-life) ตามกฎของแผนก **ของ PO** -> transaction
+- **ความต่างที่ตั้งใจ (เฉพาะโหมดแผนก):** PO ที่ไม่พบ จะได้ 409 "not eligible" **ก่อน** 409 shelf-life (ในโหมด legacy ยังเป็นลำดับเดิม: shelf-life ก่อน ไม่มี query เพิ่ม)
+- CTE `po` มีเงื่อนไขแผนกของ PO ซ้ำอีกชั้น กัน PO ย้ายแผนกระหว่างอ่านกับเขียน (ได้ 409 และไม่เขียนอะไร)
+- โหมด "all" เขียนไม่ได้: 409 `DEPARTMENT_READ_ONLY` ก่อนส่ง SQL ใด ๆ
+- ทุก catch ตรวจ `isDepartmentScopeFailure` ก่อน และตอบผ่าน `toApiError` (ไม่เผยชื่อผู้ใช้ใน error)
+
+**จุดที่ตั้งใจไม่กรองแผนก (ทุกจุดมีคอมเมนต์ในโค้ด)**
+
+- CTE `existing` (ตัวกัน POST ซ้ำ) -- unique index ของ v25 (`client_request_id` / `request_fingerprint`) ยังเป็นระดับระบบ ถ้ากรองจะกลายเป็น 500 แทนที่จะตอบ `duplicate:true`
+- ยอดที่ส่งไปแล้วใน CTE `order_items` -- `po_number` ไม่ซ้ำทั้งระบบ ถ้ากรองอาจส่งเกินจำนวนที่สั่ง
+- `vendor_item_aliases` ใน OCR -- `item_id` เป็น PK ระดับระบบ
+- `recomputePurchaseOrderStatusQuery` -- ไม่กรองแผนก (ตามหัวข้อ 8)
+- โควตา OCR (`shipment_ocr_usage`) และ query ฝั่ง Vendor ทั้งหมด (นโยบาย A)
+
+**เช็กลิสต์ก่อนเปิดสวิตช์**
+
+1. เจ้าของยืนยันนโยบาย A (หรือเลือกแบบอื่น) -- คำถามข้อ 3
+2. ตรวจว่า Vendor ทุกบัญชีมีแถว `user_departments` อย่างน้อย 1 แถวในแผนกที่ active: Vendor ที่ไม่มีแถวจะ **ล็อกอินไม่ได้** เมื่อเปิดสวิตช์ (`department-context.ts:163-168` ปฏิเสธเมื่อไม่มีแผนก) จึงต้องเตรียมแถวสมาชิกก่อน
+3. ตรวจแบบอ่านอย่างเดียวว่า `purchase_orders.department_id` ของ PO ที่ยัง CONFIRMED/PARTIALLY_SHIPPED/PARTIALLY_RECEIVED ถูกต้องทุกแถว (ผิดรูปแบบ = POST ตอบ 500 ปลอดภัยแต่ส่งของไม่ได้)
+4. ตรวจบน Neon จริงตอนซ้อมว่า `, department_id` / `, <id>` ที่ต่อท้ายคอลัมน์และ SELECT ของ INSERT ทำงานถูก (เทสต์พิสูจน์ผ่าน PGlite เท่านั้น ไม่เคยรันบน Neon)
+5. **ห้ามเปิด `DEPARTMENTS_ENABLED` จนกว่ากลุ่ม 6 (สั่งซื้อผ่าน LIFF) จะเสร็จ** (กฎเดิมคงไว้)
+
+**ปัญหาเดิมที่รู้อยู่แล้ว และ *ไม่ได้แก้* ในกลุ่มนี้**
+
+- ส่งซ้ำด้วย `clientRequestId` เดิมหลังจาก PO ส่งครบแล้ว ได้ `duplicate:true` (200) ทั้งโหมด legacy และโหมดแผนก (ตรวจโดย bug-hunter บน PGlite: เงื่อนไข `NOT EXISTS (SELECT 1 FROM existing)` ใน `new_batch` ถูกตรวจก่อน จึงไม่ถึงตัวตรวจจำนวน) -- ส่งซ้ำหลังส่งบางส่วนก็ได้ `duplicate:true` (มี test); ยังไม่ได้ตรวจบน Neon จริง
+- CTE `existing` ไม่ผูกกับ `po_number`: ใช้ `clientRequestId` เดียวกันกับ PO อื่นของ Vendor เดียวกัน จะได้ batch เดิมกลับมา

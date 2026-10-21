@@ -1,0 +1,140 @@
+{
+  "getVendor": [
+    {
+      "text": "SELECT s.*, m.name AS reagent_name, m.unit FROM shipments s JOIN master_data m ON s.item_id = m.item_id WHERE s.vendor = $1 ORDER BY s.created_at DESC",
+      "params": [
+        "Vendor A"
+      ]
+    }
+  ],
+  "getManager": [
+    {
+      "text": "SELECT s.*, m.name AS reagent_name, m.unit FROM shipments s JOIN master_data m ON s.item_id = m.item_id ORDER BY s.created_at DESC",
+      "params": []
+    }
+  ],
+  "postWithoutClientRequestId": [
+    {
+      "text": "\n      SELECT item_id, min_shelf_life_days\n      FROM master_data\n      WHERE LOWER(item_id) = ANY($1::text[])\n        AND min_shelf_life_days IS NOT NULL\n    ",
+      "params": [
+        [
+          "x"
+        ]
+      ]
+    },
+    {
+      "text": "\n      WITH lock AS (\n        SELECT pg_advisory_xact_lock(hashtext($1)) AS locked\n      ), existing AS (\n        SELECT id, po_number FROM shipment_batches, lock\n        WHERE vendor = $2\n          AND (($3::text IS NOT NULL AND client_request_id = $4)\n            OR ($5::text IS NULL AND request_fingerprint = $6))\n        LIMIT 1\n      ), po AS (\n        SELECT p.* FROM purchase_orders p, lock\n        WHERE p.po_number = $7 AND p.vendor = $8\n          AND p.status IN ('CONFIRMED', 'PARTIALLY_SHIPPED', 'PARTIALLY_RECEIVED')\n        FOR UPDATE\n      ), order_items AS (\n        SELECT poi.item_id, poi.quantity,\n          COALESCE(SUM(CASE WHEN s.status = 'In Transit' THEN s.quantity WHEN s.status = 'Received' THEN COALESCE(s.accepted_qty, 0) ELSE 0 END), 0) AS committed_qty\n        FROM purchase_order_items poi\n        LEFT JOIN shipments s ON s.po_number = $9 AND s.item_id = poi.item_id AND s.status <> 'Cancelled'\n        WHERE poi.po_id = (SELECT id FROM po)\n        GROUP BY poi.item_id, poi.quantity\n      ), requested AS (\n        SELECT item_id, SUM(qty)::numeric AS qty\n        FROM jsonb_to_recordset($10::jsonb) AS input(item_id text, lot_no text, exp_date text, qty numeric, confidence text, provenance text)\n        GROUP BY item_id\n      ), checked AS (\n        SELECT labstock_assert(\n          EXISTS (SELECT 1 FROM po)\n          AND NOT EXISTS (\n            SELECT 1 FROM requested r\n            LEFT JOIN order_items oi ON oi.item_id = r.item_id\n            WHERE oi.item_id IS NULL OR r.qty > (oi.quantity - oi.committed_qty)\n          ),\n          CASE WHEN NOT EXISTS (SELECT 1 FROM po) THEN 'SHIPMENT_ORDER_NOT_ELIGIBLE' ELSE 'SHIPMENT_QUANTITY_EXCEEDED' END\n        ) AS ok\n      ), new_batch AS (\n        INSERT INTO shipment_batches\n          (po_number, vendor, reference_no, delivery_date, tracking_no, tracking_provider, source_type, source_file_name, source_file_hash, created_by, client_request_id, request_fingerprint)\n        SELECT $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22\n        FROM checked\n        WHERE NOT EXISTS (SELECT 1 FROM existing)\n        RETURNING id, po_number\n      ), new_rows AS (\n        INSERT INTO shipments (shipment_batch_id, reference_no, po_number, tracking_no, tracking_provider, vendor, item_id, lot_no, exp_date, quantity, status, mapping_confidence, mapping_provenance)\n        SELECT new_batch.id, $23, $24, $25, $26, $27, input.item_id, input.lot_no, input.exp_date::date, input.qty, 'In Transit', input.confidence, input.provenance\n        FROM new_batch, jsonb_to_recordset($28::jsonb) AS input(item_id text, lot_no text, exp_date text, qty numeric, confidence text, provenance text)\n        RETURNING id\n      ), shipped_update AS (\n        UPDATE purchase_orders p SET shipped_at = NOW(), updated_at = NOW()\n        WHERE p.id = (SELECT id FROM po) AND EXISTS (SELECT 1 FROM new_batch)\n        RETURNING id\n      )\n      SELECT COALESCE((SELECT id FROM new_batch), (SELECT id FROM existing)) AS batch_id,\n        (SELECT COUNT(*) FROM new_rows)::int AS shipment_count,\n        (SELECT status FROM po) AS status,\n        (SELECT id FROM shipped_update) AS po_id,\n        EXISTS (SELECT 1 FROM existing) AS duplicate\n    ",
+      "params": [
+        "Vendor A:PO-1",
+        "Vendor A",
+        null,
+        null,
+        null,
+        "4b5ec75c23ccb25280839e7d132c6f5768fddd8fb02da24e0e8f3b1699acccf2",
+        "PO-1",
+        "Vendor A",
+        "PO-1",
+        "[{\"item_id\":\"X\",\"lot_no\":\"L1\",\"exp_date\":\"2099-01-01\",\"qty\":4,\"confidence\":\"red\",\"provenance\":\"Manual review\"}]",
+        "PO-1",
+        "Vendor A",
+        "DN-1",
+        "2026-08-12",
+        "TRK",
+        "Kerry",
+        "MANUAL",
+        null,
+        null,
+        "vendor1",
+        null,
+        "4b5ec75c23ccb25280839e7d132c6f5768fddd8fb02da24e0e8f3b1699acccf2",
+        "DN-1",
+        "PO-1",
+        "TRK",
+        "Kerry",
+        "Vendor A",
+        "[{\"item_id\":\"X\",\"lot_no\":\"L1\",\"exp_date\":\"2099-01-01\",\"qty\":4,\"confidence\":\"red\",\"provenance\":\"Manual review\"}]"
+      ]
+    },
+    {
+      "text": "\n    WITH next AS (\n      SELECT p.id, CASE\n        WHEN NOT EXISTS (\n          SELECT 1 FROM purchase_order_items poi\n          WHERE poi.po_id = p.id AND COALESCE(poi.accepted_qty, 0) < poi.quantity\n        ) THEN 'RECEIVED'\n        WHEN EXISTS (\n          SELECT 1 FROM purchase_order_items poi\n          WHERE poi.po_id = p.id AND COALESCE(poi.accepted_qty, 0) > 0\n        ) THEN 'PARTIALLY_RECEIVED'\n        WHEN NOT EXISTS (\n          SELECT 1 FROM purchase_order_items poi\n          LEFT JOIN shipments s ON s.po_number = p.po_number AND s.item_id = poi.item_id AND s.status = 'In Transit'\n          WHERE poi.po_id = p.id\n          GROUP BY poi.id, poi.quantity\n          HAVING COALESCE(SUM(s.quantity), 0) < poi.quantity\n        ) THEN 'SHIPPED'\n        WHEN EXISTS (\n          SELECT 1 FROM shipments s WHERE s.po_number = p.po_number AND s.status = 'In Transit'\n        ) THEN 'PARTIALLY_SHIPPED'\n        ELSE 'CONFIRMED'\n      END AS status\n      FROM purchase_orders p\n      WHERE p.po_number = $1\n        AND p.status IN ('CONFIRMED', 'PARTIALLY_SHIPPED', 'SHIPPED', 'PARTIALLY_RECEIVED')\n    )\n    UPDATE purchase_orders p\n    SET status = next.status,\n        received_at = CASE WHEN next.status = 'RECEIVED' THEN COALESCE(p.received_at, NOW()) ELSE p.received_at END,\n        updated_at = NOW()\n    FROM next\n    WHERE p.id = next.id\n    RETURNING p.id, p.status\n  ",
+      "params": [
+        "PO-1"
+      ]
+    }
+  ],
+  "postWithClientRequestId": [
+    {
+      "text": "\n      SELECT item_id, min_shelf_life_days\n      FROM master_data\n      WHERE LOWER(item_id) = ANY($1::text[])\n        AND min_shelf_life_days IS NOT NULL\n    ",
+      "params": [
+        [
+          "x"
+        ]
+      ]
+    },
+    {
+      "text": "\n      WITH lock AS (\n        SELECT pg_advisory_xact_lock(hashtext($1)) AS locked\n      ), existing AS (\n        SELECT id, po_number FROM shipment_batches, lock\n        WHERE vendor = $2\n          AND (($3::text IS NOT NULL AND client_request_id = $4)\n            OR ($5::text IS NULL AND request_fingerprint = $6))\n        LIMIT 1\n      ), po AS (\n        SELECT p.* FROM purchase_orders p, lock\n        WHERE p.po_number = $7 AND p.vendor = $8\n          AND p.status IN ('CONFIRMED', 'PARTIALLY_SHIPPED', 'PARTIALLY_RECEIVED')\n        FOR UPDATE\n      ), order_items AS (\n        SELECT poi.item_id, poi.quantity,\n          COALESCE(SUM(CASE WHEN s.status = 'In Transit' THEN s.quantity WHEN s.status = 'Received' THEN COALESCE(s.accepted_qty, 0) ELSE 0 END), 0) AS committed_qty\n        FROM purchase_order_items poi\n        LEFT JOIN shipments s ON s.po_number = $9 AND s.item_id = poi.item_id AND s.status <> 'Cancelled'\n        WHERE poi.po_id = (SELECT id FROM po)\n        GROUP BY poi.item_id, poi.quantity\n      ), requested AS (\n        SELECT item_id, SUM(qty)::numeric AS qty\n        FROM jsonb_to_recordset($10::jsonb) AS input(item_id text, lot_no text, exp_date text, qty numeric, confidence text, provenance text)\n        GROUP BY item_id\n      ), checked AS (\n        SELECT labstock_assert(\n          EXISTS (SELECT 1 FROM po)\n          AND NOT EXISTS (\n            SELECT 1 FROM requested r\n            LEFT JOIN order_items oi ON oi.item_id = r.item_id\n            WHERE oi.item_id IS NULL OR r.qty > (oi.quantity - oi.committed_qty)\n          ),\n          CASE WHEN NOT EXISTS (SELECT 1 FROM po) THEN 'SHIPMENT_ORDER_NOT_ELIGIBLE' ELSE 'SHIPMENT_QUANTITY_EXCEEDED' END\n        ) AS ok\n      ), new_batch AS (\n        INSERT INTO shipment_batches\n          (po_number, vendor, reference_no, delivery_date, tracking_no, tracking_provider, source_type, source_file_name, source_file_hash, created_by, client_request_id, request_fingerprint)\n        SELECT $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22\n        FROM checked\n        WHERE NOT EXISTS (SELECT 1 FROM existing)\n        RETURNING id, po_number\n      ), new_rows AS (\n        INSERT INTO shipments (shipment_batch_id, reference_no, po_number, tracking_no, tracking_provider, vendor, item_id, lot_no, exp_date, quantity, status, mapping_confidence, mapping_provenance)\n        SELECT new_batch.id, $23, $24, $25, $26, $27, input.item_id, input.lot_no, input.exp_date::date, input.qty, 'In Transit', input.confidence, input.provenance\n        FROM new_batch, jsonb_to_recordset($28::jsonb) AS input(item_id text, lot_no text, exp_date text, qty numeric, confidence text, provenance text)\n        RETURNING id\n      ), shipped_update AS (\n        UPDATE purchase_orders p SET shipped_at = NOW(), updated_at = NOW()\n        WHERE p.id = (SELECT id FROM po) AND EXISTS (SELECT 1 FROM new_batch)\n        RETURNING id\n      )\n      SELECT COALESCE((SELECT id FROM new_batch), (SELECT id FROM existing)) AS batch_id,\n        (SELECT COUNT(*) FROM new_rows)::int AS shipment_count,\n        (SELECT status FROM po) AS status,\n        (SELECT id FROM shipped_update) AS po_id,\n        EXISTS (SELECT 1 FROM existing) AS duplicate\n    ",
+      "params": [
+        "Vendor A:PO-1",
+        "Vendor A",
+        "client-req-1",
+        "client-req-1",
+        "client-req-1",
+        "4b5ec75c23ccb25280839e7d132c6f5768fddd8fb02da24e0e8f3b1699acccf2",
+        "PO-1",
+        "Vendor A",
+        "PO-1",
+        "[{\"item_id\":\"X\",\"lot_no\":\"L1\",\"exp_date\":\"2099-01-01\",\"qty\":4,\"confidence\":\"red\",\"provenance\":\"Manual review\"}]",
+        "PO-1",
+        "Vendor A",
+        "DN-1",
+        "2026-08-12",
+        "TRK",
+        "Kerry",
+        "MANUAL",
+        null,
+        null,
+        "vendor1",
+        "client-req-1",
+        "4b5ec75c23ccb25280839e7d132c6f5768fddd8fb02da24e0e8f3b1699acccf2",
+        "DN-1",
+        "PO-1",
+        "TRK",
+        "Kerry",
+        "Vendor A",
+        "[{\"item_id\":\"X\",\"lot_no\":\"L1\",\"exp_date\":\"2099-01-01\",\"qty\":4,\"confidence\":\"red\",\"provenance\":\"Manual review\"}]"
+      ]
+    },
+    {
+      "text": "\n    WITH next AS (\n      SELECT p.id, CASE\n        WHEN NOT EXISTS (\n          SELECT 1 FROM purchase_order_items poi\n          WHERE poi.po_id = p.id AND COALESCE(poi.accepted_qty, 0) < poi.quantity\n        ) THEN 'RECEIVED'\n        WHEN EXISTS (\n          SELECT 1 FROM purchase_order_items poi\n          WHERE poi.po_id = p.id AND COALESCE(poi.accepted_qty, 0) > 0\n        ) THEN 'PARTIALLY_RECEIVED'\n        WHEN NOT EXISTS (\n          SELECT 1 FROM purchase_order_items poi\n          LEFT JOIN shipments s ON s.po_number = p.po_number AND s.item_id = poi.item_id AND s.status = 'In Transit'\n          WHERE poi.po_id = p.id\n          GROUP BY poi.id, poi.quantity\n          HAVING COALESCE(SUM(s.quantity), 0) < poi.quantity\n        ) THEN 'SHIPPED'\n        WHEN EXISTS (\n          SELECT 1 FROM shipments s WHERE s.po_number = p.po_number AND s.status = 'In Transit'\n        ) THEN 'PARTIALLY_SHIPPED'\n        ELSE 'CONFIRMED'\n      END AS status\n      FROM purchase_orders p\n      WHERE p.po_number = $1\n        AND p.status IN ('CONFIRMED', 'PARTIALLY_SHIPPED', 'SHIPPED', 'PARTIALLY_RECEIVED')\n    )\n    UPDATE purchase_orders p\n    SET status = next.status,\n        received_at = CASE WHEN next.status = 'RECEIVED' THEN COALESCE(p.received_at, NOW()) ELSE p.received_at END,\n        updated_at = NOW()\n    FROM next\n    WHERE p.id = next.id\n    RETURNING p.id, p.status\n  ",
+      "params": [
+        "PO-1"
+      ]
+    }
+  ],
+  "ocrWithText": [
+    {
+      "text": "\n    SELECT p.id, poi.item_id, poi.item_name, poi.quantity,\n      GREATEST(poi.quantity - COALESCE(shipped.shipped_qty, 0), 0) AS remaining_qty,\n      COALESCE(array_agg(DISTINCT a.alias) FILTER (WHERE a.alias IS NOT NULL), '{}') AS aliases\n    FROM purchase_orders p\n    JOIN purchase_order_items poi ON poi.po_id = p.id\n    LEFT JOIN LATERAL (\n      SELECT COALESCE(SUM(s.quantity), 0) AS shipped_qty FROM shipments s\n      WHERE s.po_number = p.po_number AND s.item_id = poi.item_id AND s.status <> 'Cancelled'\n    ) shipped ON true\n    LEFT JOIN vendor_item_aliases a ON a.vendor = p.vendor AND a.item_id = poi.item_id\n    WHERE p.po_number = $1 AND p.vendor = $2\n      AND p.status IN ('CONFIRMED', 'PARTIALLY_SHIPPED')\n    GROUP BY p.id, poi.id, shipped.shipped_qty\n  ",
+      "params": [
+        "PO-1",
+        "Vendor A"
+      ]
+    }
+  ],
+  "ocrNotFound": [
+    {
+      "text": "\n    SELECT p.id, poi.item_id, poi.item_name, poi.quantity,\n      GREATEST(poi.quantity - COALESCE(shipped.shipped_qty, 0), 0) AS remaining_qty,\n      COALESCE(array_agg(DISTINCT a.alias) FILTER (WHERE a.alias IS NOT NULL), '{}') AS aliases\n    FROM purchase_orders p\n    JOIN purchase_order_items poi ON poi.po_id = p.id\n    LEFT JOIN LATERAL (\n      SELECT COALESCE(SUM(s.quantity), 0) AS shipped_qty FROM shipments s\n      WHERE s.po_number = p.po_number AND s.item_id = poi.item_id AND s.status <> 'Cancelled'\n    ) shipped ON true\n    LEFT JOIN vendor_item_aliases a ON a.vendor = p.vendor AND a.item_id = poi.item_id\n    WHERE p.po_number = $1 AND p.vendor = $2\n      AND p.status IN ('CONFIRMED', 'PARTIALLY_SHIPPED')\n    GROUP BY p.id, poi.id, shipped.shipped_qty\n  ",
+      "params": [
+        "PO-1",
+        "Vendor A"
+      ]
+    }
+  ],
+  "getOrders": [
+    {
+      "text": "\n      SELECT p.id, p.po_number, p.expected_date, p.status, p.vendor,\n        json_agg(json_build_object(\n          'itemId', poi.item_id, 'itemName', poi.item_name, 'unit', poi.unit,\n          'orderedQty', poi.quantity,\n          'remainingQty', GREATEST(poi.quantity - COALESCE(shipped.committed_qty, 0), 0),\n          'acceptedQty', COALESCE(shipped.accepted_qty, 0),\n          'rejectedQty', COALESCE(shipped.rejected_qty, 0)\n        ) ORDER BY poi.id) AS items\n      FROM purchase_orders p\n      JOIN purchase_order_items poi ON poi.po_id = p.id\n      LEFT JOIN LATERAL (\n        SELECT\n          COALESCE(SUM(CASE WHEN s.status = 'In Transit' THEN s.quantity WHEN s.status = 'Received' THEN COALESCE(s.accepted_qty, 0) ELSE 0 END), 0) AS committed_qty,\n          COALESCE(SUM(CASE WHEN s.status = 'Received' THEN COALESCE(s.accepted_qty, 0) ELSE 0 END), 0) AS accepted_qty,\n          COALESCE(SUM(CASE WHEN s.status = 'Received' THEN COALESCE(s.rejected_qty, 0) ELSE 0 END), 0) AS rejected_qty\n        FROM shipments s\n        WHERE s.po_number = p.po_number AND s.item_id = poi.item_id AND s.status <> 'Cancelled'\n      ) shipped ON true\n      WHERE p.vendor = $1\n        AND p.status IN ('CONFIRMED', 'PARTIALLY_SHIPPED', 'PARTIALLY_RECEIVED')\n      GROUP BY p.id\n      ORDER BY p.confirmed_at DESC NULLS LAST, p.created_at DESC\n    ",
+      "params": [
+        "Vendor A"
+      ]
+    }
+  ]
+}
