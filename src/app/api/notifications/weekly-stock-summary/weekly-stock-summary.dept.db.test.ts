@@ -12,9 +12,16 @@ const mocks = vi.hoisted(() => ({
   line: [] as Array<{ fn: string; args: unknown[] }>,
 }));
 
+// @neondatabase/serverless 1.1.0 returns a DATE column (oid 1082) as a JS Date built at local midnight; the parser below
+// mimics that driver so the route is exercised with the same value types as on Neon.
 vi.mock("@/lib/db", async () => {
+  const { PGlite } = await import("@electric-sql/pglite");
   const { createPgliteSql } = await import("@/test/pglite-sql");
-  return { default: createPgliteSql() };
+  const neonDate = (value: string) => {
+    const [year, month, day] = value.split("-").map(Number);
+    return new Date(year, month - 1, day);
+  };
+  return { default: createPgliteSql(new PGlite({ parsers: { 1082: neonDate } })) };
 });
 vi.mock("@/lib/auth-utils", () => ({ getAuthenticatedUser: mocks.getAuthenticatedUser }));
 // notifyUsers destructures all of these from the module, and a vitest factory mock throws on an export it does not define.
@@ -104,6 +111,18 @@ describe("weekly-stock-summary by department", () => {
       expect(logged).not.toContain(name);
     }
     expect(logged).toContain("2 staff recipient(s) skipped");
+  });
+
+  it("the DATE driver returns a Date, yet every expDate pushed (staff and Vendor) is a YYYY-MM-DD string of the real lot day", async () => {
+    await cron();
+
+    const sent = mocks.line
+      .filter((entry) => entry.fn === "pushWeeklyStockAlerts")
+      .flatMap((entry) => (entry.args[1] as { expiringSoonItems: Array<{ expDate: unknown }> }).expiringSoonItems.map((item) => item.expDate));
+    expect(sent.length).toBeGreaterThan(0);
+    const expected = (await sql.db.query<{ day: string }>("SELECT (CURRENT_DATE + 10)::text AS day")).rows[0].day;
+    for (const expDate of sent) expect(expDate).toBe(expected);
+    for (const expDate of sent) expect(expDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
   it("a department with nothing to report still gets its (empty) summary, as legacy always sends", async () => {

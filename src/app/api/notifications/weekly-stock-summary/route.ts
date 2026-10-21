@@ -61,7 +61,7 @@ async function getWeeklyAlerts(scope: DepartmentScope): Promise<WeeklyAlerts> {
     ORDER BY "jobType", COALESCE(i.current_qty, 0), m.name
   `;
   const expiringRows = await sql`
-    SELECT i.item_id AS "itemId", m.name, i.lot_no AS "lotNo", i.exp_date::date AS "expDate",
+    SELECT i.item_id AS "itemId", m.name, i.lot_no AS "lotNo", to_char(i.exp_date::date, 'YYYY-MM-DD') AS "expDate",
       i.quantity, m.unit, GREATEST(0, (i.exp_date::date - CURRENT_DATE))::int AS "daysUntilExpiry",
       COALESCE(NULLIF(m.job_type, ''), 'ไม่ระบุงาน') AS "jobType", COALESCE(m.vendor, '') AS vendor${departmentColumn}
     FROM inventory i

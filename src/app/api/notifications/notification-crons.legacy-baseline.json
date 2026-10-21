@@ -28,7 +28,7 @@
         "params": []
       },
       {
-        "text": "\n      SELECT\n        i.item_id as \"itemId\",\n        m.name,\n        i.lot_no as \"lotNo\",\n        i.exp_date::date as \"expDate\",\n        i.quantity,\n        m.unit,\n        GREATEST(0, (i.exp_date::date - CURRENT_DATE))::int as \"daysUntilExpiry\",\n        COALESCE(m.vendor, '') as vendor\n      FROM inventory i\n      JOIN master_data m ON m.item_id = i.item_id\n      WHERE i.quantity > 0\n        AND i.exp_date IS NOT NULL\n        AND i.exp_date::date >= CURRENT_DATE\n        AND i.exp_date::date <= CURRENT_DATE + $1 * INTERVAL '1 day'\n        AND NOT EXISTS (\n          SELECT 1\n          FROM expiry_notification_logs log\n          WHERE log.item_id = i.item_id\n            AND log.lot_no = i.lot_no\n            AND log.exp_date = i.exp_date::date\n            AND log.notification_type = $2\n        )\n      ORDER BY i.exp_date ASC, m.name ASC\n    ",
+        "text": "\n      SELECT\n        i.item_id as \"itemId\",\n        m.name,\n        i.lot_no as \"lotNo\",\n        to_char(i.exp_date::date, 'YYYY-MM-DD') as \"expDate\",\n        i.quantity,\n        m.unit,\n        GREATEST(0, (i.exp_date::date - CURRENT_DATE))::int as \"daysUntilExpiry\",\n        COALESCE(m.vendor, '') as vendor\n      FROM inventory i\n      JOIN master_data m ON m.item_id = i.item_id\n      WHERE i.quantity > 0\n        AND i.exp_date IS NOT NULL\n        AND i.exp_date::date >= CURRENT_DATE\n        AND i.exp_date::date <= CURRENT_DATE + $1 * INTERVAL '1 day'\n        AND NOT EXISTS (\n          SELECT 1\n          FROM expiry_notification_logs log\n          WHERE log.item_id = i.item_id\n            AND log.lot_no = i.lot_no\n            AND log.exp_date = i.exp_date::date\n            AND log.notification_type = $2\n        )\n      ORDER BY i.exp_date ASC, m.name ASC\n    ",
         "params": [
           30,
           "EXPIRING_SOON_30D"
@@ -214,7 +214,7 @@
         "params": []
       },
       {
-        "text": "\n      SELECT\n        i.item_id as \"itemId\",\n        m.name,\n        i.lot_no as \"lotNo\",\n        i.exp_date::date as \"expDate\",\n        i.quantity,\n        m.unit,\n        GREATEST(0, (i.exp_date::date - CURRENT_DATE))::int as \"daysUntilExpiry\",\n        COALESCE(m.vendor, '') as vendor\n      FROM inventory i\n      JOIN master_data m ON m.item_id = i.item_id\n      WHERE i.quantity > 0\n        AND i.exp_date IS NOT NULL\n        AND i.exp_date::date >= CURRENT_DATE\n        AND i.exp_date::date <= CURRENT_DATE + $1 * INTERVAL '1 day'\n        AND NOT EXISTS (\n          SELECT 1\n          FROM expiry_notification_logs log\n          WHERE log.item_id = i.item_id\n            AND log.lot_no = i.lot_no\n            AND log.exp_date = i.exp_date::date\n            AND log.notification_type = $2\n        )\n      ORDER BY i.exp_date ASC, m.name ASC\n    ",
+        "text": "\n      SELECT\n        i.item_id as \"itemId\",\n        m.name,\n        i.lot_no as \"lotNo\",\n        to_char(i.exp_date::date, 'YYYY-MM-DD') as \"expDate\",\n        i.quantity,\n        m.unit,\n        GREATEST(0, (i.exp_date::date - CURRENT_DATE))::int as \"daysUntilExpiry\",\n        COALESCE(m.vendor, '') as vendor\n      FROM inventory i\n      JOIN master_data m ON m.item_id = i.item_id\n      WHERE i.quantity > 0\n        AND i.exp_date IS NOT NULL\n        AND i.exp_date::date >= CURRENT_DATE\n        AND i.exp_date::date <= CURRENT_DATE + $1 * INTERVAL '1 day'\n        AND NOT EXISTS (\n          SELECT 1\n          FROM expiry_notification_logs log\n          WHERE log.item_id = i.item_id\n            AND log.lot_no = i.lot_no\n            AND log.exp_date = i.exp_date::date\n            AND log.notification_type = $2\n        )\n      ORDER BY i.exp_date ASC, m.name ASC\n    ",
         "params": [
           30,
           "EXPIRING_SOON_30D"
@@ -253,7 +253,7 @@
         "params": []
       },
       {
-        "text": "\n      SELECT\n        i.item_id as \"itemId\",\n        m.name,\n        i.lot_no as \"lotNo\",\n        i.exp_date::date as \"expDate\",\n        i.quantity,\n        m.unit,\n        GREATEST(0, (i.exp_date::date - CURRENT_DATE))::int as \"daysUntilExpiry\",\n        COALESCE(m.vendor, '') as vendor\n      FROM inventory i\n      JOIN master_data m ON m.item_id = i.item_id\n      WHERE i.quantity > 0\n        AND i.exp_date IS NOT NULL\n        AND i.exp_date::date >= CURRENT_DATE\n        AND i.exp_date::date <= CURRENT_DATE + $1 * INTERVAL '1 day'\n        AND NOT EXISTS (\n          SELECT 1\n          FROM expiry_notification_logs log\n          WHERE log.item_id = i.item_id\n            AND log.lot_no = i.lot_no\n            AND log.exp_date = i.exp_date::date\n            AND log.notification_type = $2\n        )\n      ORDER BY i.exp_date ASC, m.name ASC\n    ",
+        "text": "\n      SELECT\n        i.item_id as \"itemId\",\n        m.name,\n        i.lot_no as \"lotNo\",\n        to_char(i.exp_date::date, 'YYYY-MM-DD') as \"expDate\",\n        i.quantity,\n        m.unit,\n        GREATEST(0, (i.exp_date::date - CURRENT_DATE))::int as \"daysUntilExpiry\",\n        COALESCE(m.vendor, '') as vendor\n      FROM inventory i\n      JOIN master_data m ON m.item_id = i.item_id\n      WHERE i.quantity > 0\n        AND i.exp_date IS NOT NULL\n        AND i.exp_date::date >= CURRENT_DATE\n        AND i.exp_date::date <= CURRENT_DATE + $1 * INTERVAL '1 day'\n        AND NOT EXISTS (\n          SELECT 1\n          FROM expiry_notification_logs log\n          WHERE log.item_id = i.item_id\n            AND log.lot_no = i.lot_no\n            AND log.exp_date = i.exp_date::date\n            AND log.notification_type = $2\n        )\n      ORDER BY i.exp_date ASC, m.name ASC\n    ",
         "params": [
           30,
           "EXPIRING_SOON_30D"
@@ -638,7 +638,7 @@
         "params": []
       },
       {
-        "text": "\n    SELECT i.item_id AS \"itemId\", m.name, i.lot_no AS \"lotNo\", i.exp_date::date AS \"expDate\",\n      i.quantity, m.unit, GREATEST(0, (i.exp_date::date - CURRENT_DATE))::int AS \"daysUntilExpiry\",\n      COALESCE(NULLIF(m.job_type, ''), 'ไม่ระบุงาน') AS \"jobType\", COALESCE(m.vendor, '') AS vendor\n    FROM inventory i\n    JOIN master_data m ON m.item_id = i.item_id\n    WHERE i.quantity > 0 AND i.exp_date IS NOT NULL\n      AND i.exp_date::date >= CURRENT_DATE AND i.exp_date::date <= CURRENT_DATE + INTERVAL '30 days'\n    ORDER BY i.exp_date ASC, \"jobType\", m.name\n  ",
+        "text": "\n    SELECT i.item_id AS \"itemId\", m.name, i.lot_no AS \"lotNo\", to_char(i.exp_date::date, 'YYYY-MM-DD') AS \"expDate\",\n      i.quantity, m.unit, GREATEST(0, (i.exp_date::date - CURRENT_DATE))::int AS \"daysUntilExpiry\",\n      COALESCE(NULLIF(m.job_type, ''), 'ไม่ระบุงาน') AS \"jobType\", COALESCE(m.vendor, '') AS vendor\n    FROM inventory i\n    JOIN master_data m ON m.item_id = i.item_id\n    WHERE i.quantity > 0 AND i.exp_date IS NOT NULL\n      AND i.exp_date::date >= CURRENT_DATE AND i.exp_date::date <= CURRENT_DATE + INTERVAL '30 days'\n    ORDER BY i.exp_date ASC, \"jobType\", m.name\n  ",
         "params": []
       },
       {
@@ -788,7 +788,7 @@
         "params": []
       },
       {
-        "text": "\n    SELECT i.item_id AS \"itemId\", m.name, i.lot_no AS \"lotNo\", i.exp_date::date AS \"expDate\",\n      i.quantity, m.unit, GREATEST(0, (i.exp_date::date - CURRENT_DATE))::int AS \"daysUntilExpiry\",\n      COALESCE(NULLIF(m.job_type, ''), 'ไม่ระบุงาน') AS \"jobType\", COALESCE(m.vendor, '') AS vendor\n    FROM inventory i\n    JOIN master_data m ON m.item_id = i.item_id\n    WHERE i.quantity > 0 AND i.exp_date IS NOT NULL\n      AND i.exp_date::date >= CURRENT_DATE AND i.exp_date::date <= CURRENT_DATE + INTERVAL '30 days'\n    ORDER BY i.exp_date ASC, \"jobType\", m.name\n  ",
+        "text": "\n    SELECT i.item_id AS \"itemId\", m.name, i.lot_no AS \"lotNo\", to_char(i.exp_date::date, 'YYYY-MM-DD') AS \"expDate\",\n      i.quantity, m.unit, GREATEST(0, (i.exp_date::date - CURRENT_DATE))::int AS \"daysUntilExpiry\",\n      COALESCE(NULLIF(m.job_type, ''), 'ไม่ระบุงาน') AS \"jobType\", COALESCE(m.vendor, '') AS vendor\n    FROM inventory i\n    JOIN master_data m ON m.item_id = i.item_id\n    WHERE i.quantity > 0 AND i.exp_date IS NOT NULL\n      AND i.exp_date::date >= CURRENT_DATE AND i.exp_date::date <= CURRENT_DATE + INTERVAL '30 days'\n    ORDER BY i.exp_date ASC, \"jobType\", m.name\n  ",
         "params": []
       },
       {
@@ -938,7 +938,7 @@
         "params": []
       },
       {
-        "text": "\n    SELECT i.item_id AS \"itemId\", m.name, i.lot_no AS \"lotNo\", i.exp_date::date AS \"expDate\",\n      i.quantity, m.unit, GREATEST(0, (i.exp_date::date - CURRENT_DATE))::int AS \"daysUntilExpiry\",\n      COALESCE(NULLIF(m.job_type, ''), 'ไม่ระบุงาน') AS \"jobType\", COALESCE(m.vendor, '') AS vendor\n    FROM inventory i\n    JOIN master_data m ON m.item_id = i.item_id\n    WHERE i.quantity > 0 AND i.exp_date IS NOT NULL\n      AND i.exp_date::date >= CURRENT_DATE AND i.exp_date::date <= CURRENT_DATE + INTERVAL '30 days'\n    ORDER BY i.exp_date ASC, \"jobType\", m.name\n  ",
+        "text": "\n    SELECT i.item_id AS \"itemId\", m.name, i.lot_no AS \"lotNo\", to_char(i.exp_date::date, 'YYYY-MM-DD') AS \"expDate\",\n      i.quantity, m.unit, GREATEST(0, (i.exp_date::date - CURRENT_DATE))::int AS \"daysUntilExpiry\",\n      COALESCE(NULLIF(m.job_type, ''), 'ไม่ระบุงาน') AS \"jobType\", COALESCE(m.vendor, '') AS vendor\n    FROM inventory i\n    JOIN master_data m ON m.item_id = i.item_id\n    WHERE i.quantity > 0 AND i.exp_date IS NOT NULL\n      AND i.exp_date::date >= CURRENT_DATE AND i.exp_date::date <= CURRENT_DATE + INTERVAL '30 days'\n    ORDER BY i.exp_date ASC, \"jobType\", m.name\n  ",
         "params": []
       },
       {
@@ -1088,7 +1088,7 @@
         "params": []
       },
       {
-        "text": "\n    SELECT i.item_id AS \"itemId\", m.name, i.lot_no AS \"lotNo\", i.exp_date::date AS \"expDate\",\n      i.quantity, m.unit, GREATEST(0, (i.exp_date::date - CURRENT_DATE))::int AS \"daysUntilExpiry\",\n      COALESCE(NULLIF(m.job_type, ''), 'ไม่ระบุงาน') AS \"jobType\", COALESCE(m.vendor, '') AS vendor\n    FROM inventory i\n    JOIN master_data m ON m.item_id = i.item_id\n    WHERE i.quantity > 0 AND i.exp_date IS NOT NULL\n      AND i.exp_date::date >= CURRENT_DATE AND i.exp_date::date <= CURRENT_DATE + INTERVAL '30 days'\n    ORDER BY i.exp_date ASC, \"jobType\", m.name\n  ",
+        "text": "\n    SELECT i.item_id AS \"itemId\", m.name, i.lot_no AS \"lotNo\", to_char(i.exp_date::date, 'YYYY-MM-DD') AS \"expDate\",\n      i.quantity, m.unit, GREATEST(0, (i.exp_date::date - CURRENT_DATE))::int AS \"daysUntilExpiry\",\n      COALESCE(NULLIF(m.job_type, ''), 'ไม่ระบุงาน') AS \"jobType\", COALESCE(m.vendor, '') AS vendor\n    FROM inventory i\n    JOIN master_data m ON m.item_id = i.item_id\n    WHERE i.quantity > 0 AND i.exp_date IS NOT NULL\n      AND i.exp_date::date >= CURRENT_DATE AND i.exp_date::date <= CURRENT_DATE + INTERVAL '30 days'\n    ORDER BY i.exp_date ASC, \"jobType\", m.name\n  ",
         "params": []
       },
       {
@@ -1238,7 +1238,7 @@
         "params": []
       },
       {
-        "text": "\n    SELECT i.item_id AS \"itemId\", m.name, i.lot_no AS \"lotNo\", i.exp_date::date AS \"expDate\",\n      i.quantity, m.unit, GREATEST(0, (i.exp_date::date - CURRENT_DATE))::int AS \"daysUntilExpiry\",\n      COALESCE(NULLIF(m.job_type, ''), 'ไม่ระบุงาน') AS \"jobType\", COALESCE(m.vendor, '') AS vendor\n    FROM inventory i\n    JOIN master_data m ON m.item_id = i.item_id\n    WHERE i.quantity > 0 AND i.exp_date IS NOT NULL\n      AND i.exp_date::date >= CURRENT_DATE AND i.exp_date::date <= CURRENT_DATE + INTERVAL '30 days'\n    ORDER BY i.exp_date ASC, \"jobType\", m.name\n  ",
+        "text": "\n    SELECT i.item_id AS \"itemId\", m.name, i.lot_no AS \"lotNo\", to_char(i.exp_date::date, 'YYYY-MM-DD') AS \"expDate\",\n      i.quantity, m.unit, GREATEST(0, (i.exp_date::date - CURRENT_DATE))::int AS \"daysUntilExpiry\",\n      COALESCE(NULLIF(m.job_type, ''), 'ไม่ระบุงาน') AS \"jobType\", COALESCE(m.vendor, '') AS vendor\n    FROM inventory i\n    JOIN master_data m ON m.item_id = i.item_id\n    WHERE i.quantity > 0 AND i.exp_date IS NOT NULL\n      AND i.exp_date::date >= CURRENT_DATE AND i.exp_date::date <= CURRENT_DATE + INTERVAL '30 days'\n    ORDER BY i.exp_date ASC, \"jobType\", m.name\n  ",
         "params": []
       },
       {
@@ -1388,7 +1388,7 @@
         "params": []
       },
       {
-        "text": "\n    SELECT i.item_id AS \"itemId\", m.name, i.lot_no AS \"lotNo\", i.exp_date::date AS \"expDate\",\n      i.quantity, m.unit, GREATEST(0, (i.exp_date::date - CURRENT_DATE))::int AS \"daysUntilExpiry\",\n      COALESCE(NULLIF(m.job_type, ''), 'ไม่ระบุงาน') AS \"jobType\", COALESCE(m.vendor, '') AS vendor\n    FROM inventory i\n    JOIN master_data m ON m.item_id = i.item_id\n    WHERE i.quantity > 0 AND i.exp_date IS NOT NULL\n      AND i.exp_date::date >= CURRENT_DATE AND i.exp_date::date <= CURRENT_DATE + INTERVAL '30 days'\n    ORDER BY i.exp_date ASC, \"jobType\", m.name\n  ",
+        "text": "\n    SELECT i.item_id AS \"itemId\", m.name, i.lot_no AS \"lotNo\", to_char(i.exp_date::date, 'YYYY-MM-DD') AS \"expDate\",\n      i.quantity, m.unit, GREATEST(0, (i.exp_date::date - CURRENT_DATE))::int AS \"daysUntilExpiry\",\n      COALESCE(NULLIF(m.job_type, ''), 'ไม่ระบุงาน') AS \"jobType\", COALESCE(m.vendor, '') AS vendor\n    FROM inventory i\n    JOIN master_data m ON m.item_id = i.item_id\n    WHERE i.quantity > 0 AND i.exp_date IS NOT NULL\n      AND i.exp_date::date >= CURRENT_DATE AND i.exp_date::date <= CURRENT_DATE + INTERVAL '30 days'\n    ORDER BY i.exp_date ASC, \"jobType\", m.name\n  ",
         "params": []
       },
       {

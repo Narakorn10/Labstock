@@ -11,12 +11,16 @@ const mocks = vi.hoisted(() => ({
   line: [] as Array<{ fn: string; args: unknown[] }>,
 }));
 
-// Neon returns a DATE as the string "YYYY-MM-DD" and the route stores String(expDate); PGlite would return a JS Date, so
-// the DATE parser (oid 1082) is switched off here to feed the route the same strings.
+// @neondatabase/serverless 1.1.0 returns a DATE column (oid 1082) as a JS Date built at local midnight, not as a string.
+// The parser below mimics that driver so a route that String()s a raw DATE fails here exactly as it does on Neon.
 vi.mock("@/lib/db", async () => {
   const { PGlite } = await import("@electric-sql/pglite");
   const { createPgliteSql } = await import("@/test/pglite-sql");
-  return { default: createPgliteSql(new PGlite({ parsers: { 1082: (value: string) => value } })) };
+  const neonDate = (value: string) => {
+    const [year, month, day] = value.split("-").map(Number);
+    return new Date(year, month - 1, day);
+  };
+  return { default: createPgliteSql(new PGlite({ parsers: { 1082: neonDate } })) };
 });
 vi.mock("@/lib/auth-utils", () => ({ getAuthenticatedUser: mocks.getAuthenticatedUser }));
 // notifyUsers destructures all of these from the module, and a vitest factory mock throws on an export it does not define.
@@ -44,6 +48,11 @@ const adminAll = { username: "admin1", name: "Admin", role: "Admin", scope: "ALL
 const call = (headers: Record<string, string> = {}) => POST(new Request("http://localhost/api/notifications/expiring-soon", { method: "POST", headers }));
 const cron = () => call({ "x-cron-secret": "expiry-secret" });
 const loggedItems = async () => (await sql.db.query<{ item_id: string }>("SELECT item_id FROM expiry_notification_logs ORDER BY item_id")).rows.map((row) => row.item_id);
+// Log rows and inventory lots as text, so the comparison never goes through a JS Date (and so never depends on TZ).
+const loggedDates = async () => (await sql.db.query<{ item_id: string; exp_date: string }>("SELECT item_id, exp_date::text AS exp_date FROM expiry_notification_logs ORDER BY item_id")).rows;
+const lotDates = async () => (await sql.db.query<{ item_id: string; exp_date: string }>("SELECT item_id, exp_date::text AS exp_date FROM inventory ORDER BY item_id")).rows;
+// Every expDate handed to a LINE push (pushExpiringSoonAlert(lineUserId, items)).
+const sentExpDates = () => mocks.line.filter((entry) => entry.fn === "pushExpiringSoonAlert").flatMap((entry) => (entry.args[1] as Array<{ expDate: unknown }>).map((item) => item.expDate));
 const sorted = (messages: Record<string, string[][]>) => Object.fromEntries(Object.entries(messages).map(([user, list]) => [user, list.map((ids) => [...ids]).sort()]));
 
 beforeAll(async () => {
@@ -157,6 +166,42 @@ describe("expiring-soon by department", () => {
       vendA: [["N-A1", "N-B1"]], vendB: [["N-A2", "N-B2"]],
     });
     expect(await loggedItems()).toEqual(all);
+  });
+
+  it("the DATE driver returns a Date: the log gets the exact lot date, the push gets YYYY-MM-DD, and a rerun does not send again", async () => {
+    const response = await cron();
+
+    expect(response.status).toBe(200);
+    const lots = await lotDates();
+    expect(await loggedDates()).toEqual(lots.filter((lot) => lot.item_id !== "N-C1")); // exactly the day of each notified lot
+    expect(sentExpDates().length).toBeGreaterThan(0);
+    for (const expDate of sentExpDates()) expect(expDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+
+    mocks.line.length = 0;
+    const rerun = await cron();
+    expect(rerun.status).toBe(200);
+    expect(await rerun.json()).toMatchObject({ notified: 0, recipients: 0 });
+    expect(mocks.line).toHaveLength(0);
+  });
+
+  it("legacy path (departments off, Vendor via notifyUsersVendorScoped): same date handling, every lot logged once, rerun is silent", async () => {
+    vi.stubEnv("DEPARTMENTS_ENABLED", "");
+    resetDepartmentsFlagForTests();
+
+    const response = await cron();
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ success: true, notified: 5, recipients: 8 });
+    expect(await loggedDates()).toEqual(await lotDates());
+    expect(messagesByUser(mocks.line).vendA).toEqual([["N-A1", "N-B1"]]);
+    expect(sentExpDates().length).toBeGreaterThan(0);
+    for (const expDate of sentExpDates()) expect(expDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+
+    mocks.line.length = 0;
+    const rerun = await cron();
+    expect(rerun.status).toBe(200);
+    expect(await rerun.json()).toMatchObject({ notified: 0 });
+    expect(mocks.line).toHaveLength(0);
   });
 
   it("answers 401 for a Manager and a wrong secret; denied -> 404; missing scope -> 500 without the user name", async () => {
