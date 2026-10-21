@@ -1,0 +1,346 @@
+{
+  "logsWithRows": {
+    "statements": [
+      {
+        "text": "\n    SELECT\n      timestamp,\n      action,\n      item_id as \"itemId\",\n      name,\n      lot_no as \"lotNo\",\n      quantity as qty,\n      username as user\n    FROM logs\n    ORDER BY timestamp DESC, id DESC\n    LIMIT $1\n  ",
+        "params": [
+          5
+        ]
+      }
+    ],
+    "result": [
+      {
+        "timestamp": "2026-08-10T01:02:03.000Z",
+        "action": "RECEIVE",
+        "itemId": "LAB-000001",
+        "name": "Reagent 1",
+        "lotNo": "L1",
+        "qty": "4",
+        "user": "user1"
+      },
+      {
+        "timestamp": "2026-08-09T01:02:03.000Z",
+        "action": "DISPENSE",
+        "itemId": "LAB-000002",
+        "name": "Reagent 2",
+        "lotNo": "L2",
+        "qty": "1",
+        "user": "solo1"
+      }
+    ]
+  },
+  "logsEmpty": {
+    "statements": [
+      {
+        "text": "\n    SELECT\n      timestamp,\n      action,\n      item_id as \"itemId\",\n      name,\n      lot_no as \"lotNo\",\n      quantity as qty,\n      username as user\n    FROM logs\n    ORDER BY timestamp DESC, id DESC\n    LIMIT $1\n  ",
+        "params": [
+          10
+        ]
+      }
+    ],
+    "result": []
+  },
+  "lowDefaultLimit": {
+    "statements": [
+      {
+        "text": "\n    WITH InventorySummary AS (\n      SELECT\n        item_id,\n        SUM(quantity) as current_qty\n      FROM inventory\n      GROUP BY item_id\n    )\n    SELECT\n      m.item_id as \"itemId\",\n      m.name,\n      m.unit,\n      m.min_threshold as \"minThreshold\",\n      COALESCE(i.current_qty, 0) as quantity\n    FROM master_data m\n    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)\n    WHERE COALESCE(i.current_qty, 0) <= m.min_threshold\n    ORDER BY COALESCE(i.current_qty, 0) ASC, m.item_id ASC\n    LIMIT $1\n  ",
+        "params": [
+          10
+        ]
+      }
+    ],
+    "result": [
+      {
+        "itemId": "LAB-000001",
+        "name": "Reagent 1",
+        "unit": "box",
+        "minThreshold": 5,
+        "quantity": "2",
+        "jobType": "Chem",
+        "machineType": "Cobas"
+      },
+      {
+        "itemId": "LAB-000002",
+        "name": "Reagent 2",
+        "unit": "kit",
+        "minThreshold": 3,
+        "quantity": "0",
+        "jobType": "Unassigned job",
+        "machineType": "Unassigned machine"
+      }
+    ]
+  },
+  "lowLimit3": {
+    "statements": [
+      {
+        "text": "\n    WITH InventorySummary AS (\n      SELECT\n        item_id,\n        SUM(quantity) as current_qty\n      FROM inventory\n      GROUP BY item_id\n    )\n    SELECT\n      m.item_id as \"itemId\",\n      m.name,\n      m.unit,\n      m.min_threshold as \"minThreshold\",\n      COALESCE(i.current_qty, 0) as quantity\n    FROM master_data m\n    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)\n    WHERE COALESCE(i.current_qty, 0) <= m.min_threshold\n    ORDER BY COALESCE(i.current_qty, 0) ASC, m.item_id ASC\n    LIMIT $1\n  ",
+        "params": [
+          3
+        ]
+      }
+    ],
+    "result": [
+      {
+        "itemId": "LAB-000001",
+        "name": "Reagent 1",
+        "unit": "box",
+        "minThreshold": 5,
+        "quantity": "2",
+        "jobType": "Chem",
+        "machineType": "Cobas"
+      },
+      {
+        "itemId": "LAB-000002",
+        "name": "Reagent 2",
+        "unit": "kit",
+        "minThreshold": 3,
+        "quantity": "0",
+        "jobType": "Unassigned job",
+        "machineType": "Unassigned machine"
+      }
+    ]
+  },
+  "lowEmpty": {
+    "statements": [
+      {
+        "text": "\n    WITH InventorySummary AS (\n      SELECT\n        item_id,\n        SUM(quantity) as current_qty\n      FROM inventory\n      GROUP BY item_id\n    )\n    SELECT\n      m.item_id as \"itemId\",\n      m.name,\n      m.unit,\n      m.min_threshold as \"minThreshold\",\n      COALESCE(i.current_qty, 0) as quantity\n    FROM master_data m\n    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)\n    WHERE COALESCE(i.current_qty, 0) <= m.min_threshold\n    ORDER BY COALESCE(i.current_qty, 0) ASC, m.item_id ASC\n    LIMIT $1\n  ",
+        "params": [
+          10
+        ]
+      }
+    ],
+    "result": []
+  },
+  "searchByName": {
+    "statements": [
+      {
+        "text": "\n    WITH InventorySummary AS (\n      SELECT\n        item_id,\n        SUM(quantity) as current_qty\n      FROM inventory\n      GROUP BY item_id\n    )\n    SELECT\n      m.item_id as \"itemId\",\n      m.name,\n      COALESCE(NULLIF(m.job_type, ''), 'Unassigned job') as \"jobType\",\n      COALESCE(NULLIF(m.machine_type, ''), 'Unassigned machine') as \"machineType\",\n      m.unit,\n      m.min_threshold as \"minThreshold\",\n      COALESCE(i.current_qty, 0) as quantity\n    FROM master_data m\n    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)\n    WHERE m.item_id ILIKE $1\n       OR m.name ILIKE $2\n       OR COALESCE(m.barcode, '') ILIKE $3\n    ORDER BY m.item_id ASC\n    LIMIT $4\n  ",
+        "params": [
+          "%Reagent%",
+          "%Reagent%",
+          "%Reagent%",
+          10
+        ]
+      }
+    ],
+    "result": [
+      {
+        "itemId": "LAB-000001",
+        "name": "Reagent 1",
+        "unit": "box",
+        "minThreshold": 5,
+        "quantity": "2",
+        "jobType": "Chem",
+        "machineType": "Cobas"
+      },
+      {
+        "itemId": "LAB-000002",
+        "name": "Reagent 2",
+        "unit": "kit",
+        "minThreshold": 3,
+        "quantity": "0",
+        "jobType": "Unassigned job",
+        "machineType": "Unassigned machine"
+      }
+    ]
+  },
+  "searchByItemId": {
+    "statements": [
+      {
+        "text": "\n    WITH InventorySummary AS (\n      SELECT\n        item_id,\n        SUM(quantity) as current_qty\n      FROM inventory\n      GROUP BY item_id\n    )\n    SELECT\n      m.item_id as \"itemId\",\n      m.name,\n      COALESCE(NULLIF(m.job_type, ''), 'Unassigned job') as \"jobType\",\n      COALESCE(NULLIF(m.machine_type, ''), 'Unassigned machine') as \"machineType\",\n      m.unit,\n      m.min_threshold as \"minThreshold\",\n      COALESCE(i.current_qty, 0) as quantity\n    FROM master_data m\n    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)\n    WHERE m.item_id ILIKE $1\n       OR m.name ILIKE $2\n       OR COALESCE(m.barcode, '') ILIKE $3\n    ORDER BY m.item_id ASC\n    LIMIT $4\n  ",
+        "params": [
+          "%LAB-000001%",
+          "%LAB-000001%",
+          "%LAB-000001%",
+          10
+        ]
+      }
+    ],
+    "result": [
+      {
+        "itemId": "LAB-000001",
+        "name": "Reagent 1",
+        "unit": "box",
+        "minThreshold": 5,
+        "quantity": "2",
+        "jobType": "Chem",
+        "machineType": "Cobas"
+      }
+    ]
+  },
+  "searchByBarcode": {
+    "statements": [
+      {
+        "text": "\n    WITH InventorySummary AS (\n      SELECT\n        item_id,\n        SUM(quantity) as current_qty\n      FROM inventory\n      GROUP BY item_id\n    )\n    SELECT\n      m.item_id as \"itemId\",\n      m.name,\n      COALESCE(NULLIF(m.job_type, ''), 'Unassigned job') as \"jobType\",\n      COALESCE(NULLIF(m.machine_type, ''), 'Unassigned machine') as \"machineType\",\n      m.unit,\n      m.min_threshold as \"minThreshold\",\n      COALESCE(i.current_qty, 0) as quantity\n    FROM master_data m\n    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)\n    WHERE m.item_id ILIKE $1\n       OR m.name ILIKE $2\n       OR COALESCE(m.barcode, '') ILIKE $3\n    ORDER BY m.item_id ASC\n    LIMIT $4\n  ",
+        "params": [
+          "%8851234567890%",
+          "%8851234567890%",
+          "%8851234567890%",
+          10
+        ]
+      }
+    ],
+    "result": [
+      {
+        "itemId": "LAB-000001",
+        "name": "Reagent 1",
+        "unit": "box",
+        "minThreshold": 5,
+        "quantity": "2",
+        "jobType": "Chem",
+        "machineType": "Cobas"
+      }
+    ]
+  },
+  "searchDefaultLimit": {
+    "statements": [
+      {
+        "text": "\n    WITH InventorySummary AS (\n      SELECT\n        item_id,\n        SUM(quantity) as current_qty\n      FROM inventory\n      GROUP BY item_id\n    )\n    SELECT\n      m.item_id as \"itemId\",\n      m.name,\n      COALESCE(NULLIF(m.job_type, ''), 'Unassigned job') as \"jobType\",\n      COALESCE(NULLIF(m.machine_type, ''), 'Unassigned machine') as \"machineType\",\n      m.unit,\n      m.min_threshold as \"minThreshold\",\n      COALESCE(i.current_qty, 0) as quantity\n    FROM master_data m\n    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)\n    WHERE m.item_id ILIKE $1\n       OR m.name ILIKE $2\n       OR COALESCE(m.barcode, '') ILIKE $3\n    ORDER BY m.item_id ASC\n    LIMIT $4\n  ",
+        "params": [
+          "%lab%",
+          "%lab%",
+          "%lab%",
+          10
+        ]
+      }
+    ],
+    "result": [
+      {
+        "itemId": "LAB-000001",
+        "name": "Reagent 1",
+        "unit": "box",
+        "minThreshold": 5,
+        "quantity": "2",
+        "jobType": "Chem",
+        "machineType": "Cobas"
+      },
+      {
+        "itemId": "LAB-000002",
+        "name": "Reagent 2",
+        "unit": "kit",
+        "minThreshold": 3,
+        "quantity": "0",
+        "jobType": "Unassigned job",
+        "machineType": "Unassigned machine"
+      }
+    ]
+  },
+  "searchEmptyKeyword": {
+    "statements": [
+      {
+        "text": "\n    WITH InventorySummary AS (\n      SELECT\n        item_id,\n        SUM(quantity) as current_qty\n      FROM inventory\n      GROUP BY item_id\n    )\n    SELECT\n      m.item_id as \"itemId\",\n      m.name,\n      COALESCE(NULLIF(m.job_type, ''), 'Unassigned job') as \"jobType\",\n      COALESCE(NULLIF(m.machine_type, ''), 'Unassigned machine') as \"machineType\",\n      m.unit,\n      m.min_threshold as \"minThreshold\",\n      COALESCE(i.current_qty, 0) as quantity\n    FROM master_data m\n    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)\n    WHERE m.item_id ILIKE $1\n       OR m.name ILIKE $2\n       OR COALESCE(m.barcode, '') ILIKE $3\n    ORDER BY m.item_id ASC\n    LIMIT $4\n  ",
+        "params": [
+          "%%",
+          "%%",
+          "%%",
+          10
+        ]
+      }
+    ],
+    "result": [
+      {
+        "itemId": "LAB-000001",
+        "name": "Reagent 1",
+        "unit": "box",
+        "minThreshold": 5,
+        "quantity": "2",
+        "jobType": "Chem",
+        "machineType": "Cobas"
+      },
+      {
+        "itemId": "LAB-000002",
+        "name": "Reagent 2",
+        "unit": "kit",
+        "minThreshold": 3,
+        "quantity": "0",
+        "jobType": "Unassigned job",
+        "machineType": "Unassigned machine"
+      }
+    ]
+  },
+  "searchNoMatch": {
+    "statements": [
+      {
+        "text": "\n    WITH InventorySummary AS (\n      SELECT\n        item_id,\n        SUM(quantity) as current_qty\n      FROM inventory\n      GROUP BY item_id\n    )\n    SELECT\n      m.item_id as \"itemId\",\n      m.name,\n      COALESCE(NULLIF(m.job_type, ''), 'Unassigned job') as \"jobType\",\n      COALESCE(NULLIF(m.machine_type, ''), 'Unassigned machine') as \"machineType\",\n      m.unit,\n      m.min_threshold as \"minThreshold\",\n      COALESCE(i.current_qty, 0) as quantity\n    FROM master_data m\n    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)\n    WHERE m.item_id ILIKE $1\n       OR m.name ILIKE $2\n       OR COALESCE(m.barcode, '') ILIKE $3\n    ORDER BY m.item_id ASC\n    LIMIT $4\n  ",
+        "params": [
+          "%zzz-none%",
+          "%zzz-none%",
+          "%zzz-none%",
+          10
+        ]
+      }
+    ],
+    "result": []
+  },
+  "jobWithRows": {
+    "statements": [
+      {
+        "text": "\n    WITH InventorySummary AS (\n      SELECT\n        item_id,\n        SUM(quantity) as current_qty\n      FROM inventory\n      GROUP BY item_id\n    )\n    SELECT\n      m.item_id as \"itemId\",\n      m.name,\n      COALESCE(NULLIF(m.job_type, ''), 'Unassigned job') as \"jobType\",\n      COALESCE(NULLIF(m.machine_type, ''), 'Unassigned machine') as \"machineType\",\n      m.unit,\n      m.min_threshold as \"minThreshold\",\n      COALESCE(i.current_qty, 0) as quantity\n    FROM master_data m\n    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)\n    WHERE COALESCE(m.job_type, '') ILIKE $1\n    ORDER BY m.name ASC, m.item_id ASC\n  ",
+        "params": [
+          "%Chem%"
+        ]
+      }
+    ],
+    "result": [
+      {
+        "itemId": "LAB-000001",
+        "name": "Reagent 1",
+        "unit": "box",
+        "minThreshold": 5,
+        "quantity": "2",
+        "jobType": "Chem",
+        "machineType": "Cobas"
+      },
+      {
+        "itemId": "LAB-000002",
+        "name": "Reagent 2",
+        "unit": "kit",
+        "minThreshold": 3,
+        "quantity": "0",
+        "jobType": "Unassigned job",
+        "machineType": "Unassigned machine"
+      }
+    ]
+  },
+  "jobEmptyKeyword": {
+    "statements": [
+      {
+        "text": "\n    WITH InventorySummary AS (\n      SELECT\n        item_id,\n        SUM(quantity) as current_qty\n      FROM inventory\n      GROUP BY item_id\n    )\n    SELECT\n      m.item_id as \"itemId\",\n      m.name,\n      COALESCE(NULLIF(m.job_type, ''), 'Unassigned job') as \"jobType\",\n      COALESCE(NULLIF(m.machine_type, ''), 'Unassigned machine') as \"machineType\",\n      m.unit,\n      m.min_threshold as \"minThreshold\",\n      COALESCE(i.current_qty, 0) as quantity\n    FROM master_data m\n    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)\n    WHERE COALESCE(m.job_type, '') ILIKE $1\n    ORDER BY m.name ASC, m.item_id ASC\n  ",
+        "params": [
+          "%%"
+        ]
+      }
+    ],
+    "result": [
+      {
+        "itemId": "LAB-000001",
+        "name": "Reagent 1",
+        "unit": "box",
+        "minThreshold": 5,
+        "quantity": "2",
+        "jobType": "Chem",
+        "machineType": "Cobas"
+      },
+      {
+        "itemId": "LAB-000002",
+        "name": "Reagent 2",
+        "unit": "kit",
+        "minThreshold": 3,
+        "quantity": "0",
+        "jobType": "Unassigned job",
+        "machineType": "Unassigned machine"
+      }
+    ]
+  },
+  "jobNoMatch": {
+    "statements": [
+      {
+        "text": "\n    WITH InventorySummary AS (\n      SELECT\n        item_id,\n        SUM(quantity) as current_qty\n      FROM inventory\n      GROUP BY item_id\n    )\n    SELECT\n      m.item_id as \"itemId\",\n      m.name,\n      COALESCE(NULLIF(m.job_type, ''), 'Unassigned job') as \"jobType\",\n      COALESCE(NULLIF(m.machine_type, ''), 'Unassigned machine') as \"machineType\",\n      m.unit,\n      m.min_threshold as \"minThreshold\",\n      COALESCE(i.current_qty, 0) as quantity\n    FROM master_data m\n    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)\n    WHERE COALESCE(m.job_type, '') ILIKE $1\n    ORDER BY m.name ASC, m.item_id ASC\n  ",
+        "params": [
+          "%zzz-none%"
+        ]
+      }
+    ],
+    "result": []
+  }
+}
