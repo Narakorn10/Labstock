@@ -8,6 +8,7 @@ import { departmentsReady } from "@/lib/departments-flag";
 import { andDept, departmentErrorResponse, getDepartmentScope, type DepartmentScope } from "@/lib/scoped-db";
 import { getRequestId } from "@/lib/request-observability";
 import { positiveDepartmentId, staffOfDepartment, staffWithoutDepartment } from "@/lib/notification-departments";
+import { itemsForVendor, splitRecipientsByVendor } from "@/lib/vendor-notification-scope";
 
 type ExpiringItem = ExpiringSoonItem & { jobType: string; vendor: string };
 // departmentId is only present in department mode (the legacy payload keeps exactly the original keys).
@@ -61,7 +62,7 @@ async function getWeeklyAlerts(scope: DepartmentScope): Promise<WeeklyAlerts> {
     ORDER BY "jobType", COALESCE(i.current_qty, 0), m.name
   `;
   const expiringRows = await sql`
-    SELECT i.item_id AS "itemId", m.name, i.lot_no AS "lotNo", i.exp_date::date AS "expDate",
+    SELECT i.item_id AS "itemId", m.name, i.lot_no AS "lotNo", to_char(i.exp_date::date, 'YYYY-MM-DD') AS "expDate",
       i.quantity, m.unit, GREATEST(0, (i.exp_date::date - CURRENT_DATE))::int AS "daysUntilExpiry",
       COALESCE(NULLIF(m.job_type, ''), 'ไม่ระบุงาน') AS "jobType", COALESCE(m.vendor, '') AS vendor${departmentColumn}
     FROM inventory i
@@ -154,11 +155,12 @@ export async function POST(request: Request) {
     // can see (cron: every department; a one-department Manager: that department only). TEMPORARY cross-department
     // policy, item 3 in docs/departments-rollout.md.
     let notifiedVendors = 0;
-    for (const row of recipientRows.filter((candidate) => candidate.role === "Vendor")) {
-      const vendor = String(row.vendor ?? "");
+    // Fails closed: a Vendor whose vendor name is empty (NULL, "" or whitespace) is skipped and not counted. Names are compared
+    // trimmed on both sides, so vendors that differ only by leading/trailing whitespace match.
+    for (const { vendor, row } of splitRecipientsByVendor(recipientRows).vendors) {
       const vendorAlerts: WeeklyStockAlertPayload = {
-        lowStockItems: alerts.lowStockItems.filter((item) => item.vendor === vendor),
-        expiringSoonItems: alerts.expiringSoonItems.filter((item) => item.vendor === vendor),
+        lowStockItems: itemsForVendor(alerts.lowStockItems, vendor),
+        expiringSoonItems: itemsForVendor(alerts.expiringSoonItems, vendor),
       };
       await notifyUsers("WEEKLY_STOCK_ALERTS", vendorAlerts, normalizeNotificationSettings([row]));
       notifiedVendors += 1;

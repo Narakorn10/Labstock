@@ -156,7 +156,7 @@ export async function POST(request: Request) {
         i.item_id as "itemId",
         m.name,
         i.lot_no as "lotNo",
-        i.exp_date::date as "expDate",
+        to_char(i.exp_date::date, 'YYYY-MM-DD') as "expDate",
         i.quantity,
         m.unit,
         GREATEST(0, (i.exp_date::date - CURRENT_DATE))::int as "daysUntilExpiry",
@@ -178,6 +178,8 @@ export async function POST(request: Request) {
       ORDER BY i.exp_date ASC, m.name ASC
     `;
 
+    // expDate is a "YYYY-MM-DD" string from to_char: the Neon driver would return a raw DATE as a JS Date, and String() of
+    // that is not a valid date for the expiry_notification_logs INSERT.
     const items: ExpiringLot[] = itemsRows.map((row) => ({
       itemId: String(row.itemId),
       name: String(row.name),

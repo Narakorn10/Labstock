@@ -12,9 +12,16 @@ const mocks = vi.hoisted(() => ({
   line: [] as Array<{ fn: string; args: unknown[] }>,
 }));
 
+// @neondatabase/serverless 1.1.0 returns a DATE column (oid 1082) as a JS Date built at local midnight; the parser below
+// mimics that driver so the route is exercised with the same value types as on Neon.
 vi.mock("@/lib/db", async () => {
+  const { PGlite } = await import("@electric-sql/pglite");
   const { createPgliteSql } = await import("@/test/pglite-sql");
-  return { default: createPgliteSql() };
+  const neonDate = (value: string) => {
+    const [year, month, day] = value.split("-").map(Number);
+    return new Date(year, month - 1, day);
+  };
+  return { default: createPgliteSql(new PGlite({ parsers: { 1082: neonDate } })) };
 });
 vi.mock("@/lib/auth-utils", () => ({ getAuthenticatedUser: mocks.getAuthenticatedUser }));
 // notifyUsers destructures all of these from the module, and a vitest factory mock throws on an export it does not define.
@@ -104,6 +111,73 @@ describe("weekly-stock-summary by department", () => {
       expect(logged).not.toContain(name);
     }
     expect(logged).toContain("2 staff recipient(s) skipped");
+  });
+
+  it("the DATE driver returns a Date, yet every expDate pushed (staff and Vendor) is a YYYY-MM-DD string of the real lot day", async () => {
+    await cron();
+
+    const sent = mocks.line
+      .filter((entry) => entry.fn === "pushWeeklyStockAlerts")
+      .flatMap((entry) => (entry.args[1] as { expiringSoonItems: Array<{ expDate: unknown }> }).expiringSoonItems.map((item) => item.expDate));
+    expect(sent.length).toBeGreaterThan(0);
+    const expected = (await sql.db.query<{ day: string }>("SELECT (CURRENT_DATE + 10)::text AS day")).rows[0].day;
+    for (const expDate of sent) expect(expDate).toBe(expected);
+    for (const expDate of sent) expect(expDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  describe("a Vendor account whose vendor name is empty (fail closed)", () => {
+    // Vendor-less items in BOTH departments (vendor NULL and ''), each low and with a lot, plus Vendor accounts whose vendor is
+    // NULL / '' / whitespace only, and one whose real name has surrounding whitespace.
+    beforeEach(async () => {
+      await sql.db.exec(`
+        INSERT INTO master_data (item_id, name, unit, vendor, min_threshold, department_id) VALUES
+          ('N-X1', 'No vendor A', 'box', NULL, 5, ${DEPT_A}), ('N-X2', 'Empty vendor B', 'box', '', 5, ${DEPT_B});
+        INSERT INTO inventory (item_id, lot_no, exp_date, quantity) VALUES
+          ('N-X1', 'L-X1', CURRENT_DATE + 10, 3), ('N-X2', 'L-X2', CURRENT_DATE + 10, 3);
+        INSERT INTO users (username, password_hash, name, role, vendor) VALUES
+          ('vendNull', 'x', 'Vendor NULL', 'Vendor', NULL), ('vendEmpty', 'x', 'Vendor empty', 'Vendor', ''),
+          ('vendSpace', 'x', 'Vendor space', 'Vendor', '   '), ('vendPad', 'x', 'Vendor padded', 'Vendor', '  Vendor A  ');
+        INSERT INTO notification_settings (username, line_user_id)
+          SELECT username, 'U-' || username FROM users WHERE username IN ('vendNull', 'vendEmpty', 'vendSpace', 'vendPad');
+      `);
+    });
+
+    afterEach(async () => {
+      await sql.db.exec(`
+        DELETE FROM notification_settings WHERE username IN ('vendNull', 'vendEmpty', 'vendSpace', 'vendPad');
+        DELETE FROM users WHERE username IN ('vendNull', 'vendEmpty', 'vendSpace', 'vendPad');
+        DELETE FROM inventory WHERE item_id IN ('N-X1', 'N-X2');
+        DELETE FROM master_data WHERE item_id IN ('N-X1', 'N-X2');
+      `);
+    });
+
+    const nameless = ["vendNull", "vendEmpty", "vendSpace"];
+
+    it("department mode: they get nothing and are not counted; a padded real name still matches its vendor's items", async () => {
+      const response = await cron();
+
+      // 2 original vendors + vendPad; the three nameless Vendors are not counted. 6 low / 5 expiring = 4+2 and 3+2 items.
+      expect(await response.json()).toMatchObject({ success: true, notifiedVendors: 3, lowStockItems: 6, expiringSoonItems: 5 });
+      const messages = sorted(messagesByUser(mocks.line));
+      for (const username of nameless) expect(messages[username]).toBeUndefined();
+      // staff do see the vendor-less items of their department; no Vendor does
+      expect(JSON.stringify([messages.vendA, messages.vendB, messages.vendPad])).not.toContain("N-X");
+      expect(messages.vendPad).toEqual([["low:N-A1", "low:N-B1", "exp:N-A1", "exp:N-B1"]]);
+      expect(messages.vendA).toEqual([["low:N-A1", "low:N-B1", "exp:N-A1", "exp:N-B1"]]);
+    });
+
+    it("departments off: same result", async () => {
+      vi.stubEnv("DEPARTMENTS_ENABLED", "");
+      resetDepartmentsFlagForTests();
+
+      const response = await cron();
+
+      expect(await response.json()).toMatchObject({ success: true, notifiedVendors: 3 });
+      const messages = messagesByUser(mocks.line);
+      for (const username of nameless) expect(messages[username]).toBeUndefined();
+      expect(JSON.stringify(messages.vendPad)).not.toContain("N-X");
+      expect(messages.vendPad).toHaveLength(1);
+    });
   });
 
   it("a department with nothing to report still gets its (empty) summary, as legacy always sends", async () => {

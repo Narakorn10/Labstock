@@ -157,4 +157,18 @@ describe("Flex message templates", () => {
     const text = JSON.stringify(generateExpiringSoonTemplate([expiring]));
     expect(text).toContain("action=ack_expiry&itemId=B&lotNo=LY551&expDate=2026-10-08");
   });
+
+  it("shows the expiry date of a YYYY-MM-DD string on the same day in any server timezone", () => {
+    const originalTz = process.env.TZ;
+    try {
+      for (const tz of ["Asia/Bangkok", "UTC", "America/Los_Angeles"]) {
+        process.env.TZ = tz;
+        const text = JSON.stringify(generateExpiringSoonTemplate([expiring]));
+        expect(text, `TZ=${tz}`).toContain("หมดอายุ: 8/10/2569");
+      }
+    } finally {
+      if (originalTz === undefined) delete process.env.TZ;
+      else process.env.TZ = originalTz;
+    }
+  });
 });

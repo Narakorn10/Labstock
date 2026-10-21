@@ -407,4 +407,12 @@ SELECT conname, conrelid::regclass FROM pg_constraint WHERE confrelid = 'public.
 **ข้อจำกัดของหลักฐาน**
 
 - การพิสูจน์ "byte-identical" ทำได้ระดับ **ข้อความ SQL + params ที่ harness ผลิต** (`src/test/pglite-sql.ts` ซึ่งประกอบ fragment ซ้อนเอง) **ไม่ใช่ driver Neon จริง** และ **ยังไม่เคยรันบน Neon** -- ต้องตรวจ query ที่ต่อ fragment (`${...}` ที่ว่างตอน legacy) บน Neon จริงตอนซ้อมก่อนเปิดสวิตช์
-- PGlite คืนชนิด `DATE` เป็น `Date` ส่วน Neon คืนสตริง: เทสต์ expiring-soon ปิด parser ของ DATE ใน harness เพื่อให้ตรงกับ Neon; ตัวเลข id ที่อ่านจากฐานข้อมูลผ่าน `Number()` และทิ้งค่าที่ไม่ใช่จำนวนเต็มบวก
+- ทั้ง PGlite และ driver `@neondatabase/serverless` 1.1.0 คืนชนิด `DATE` (oid 1082) เป็น `Date` ของ JS (เที่ยงคืนตามเวลาเครื่อง) **ไม่ใช่สตริง** (ข้อความเดิมในเอกสารนี้ที่ว่า "Neon คืนสตริง DATE" ผิด): เทสต์ expiring-soon / weekly-stock-summary ตั้ง parser 1082 ให้เลียนแบบ driver จริง และ route แปลงวันที่เป็นสตริงใน SQL ด้วย `to_char(..., 'YYYY-MM-DD')`; ตัวเลข id ที่อ่านจากฐานข้อมูลผ่าน `Number()` และทิ้งค่าที่ไม่ใช่จำนวนเต็มบวก
+
+**แก้บั๊กหลังรีวิว (fix/notification-cron-bugs ซ้อนบน PR กลุ่ม 3)**
+
+- **วันที่หมดอายุ:** เดิม `expiring-soon` ใช้ `String(row.expDate)` กับค่า `Date` จาก driver ได้สตริงยาว ๆ แบบ "Sat Oct 31 2026 00:00:00 GMT..." ทำให้ INSERT ลง `expiry_notification_logs.exp_date` (ชนิด DATE) ล้ม ส่ง LINE ไปแล้วแต่ไม่มี log และตอบ 500 จึงแจ้งซ้ำทุกรอบ; `weekly-stock-summary` ก็ส่ง `Date` ดิบเข้าข้อความ. แก้โดยเลือกวันที่ด้วย `to_char(i.exp_date::date, 'YYYY-MM-DD')` (WHERE / NOT EXISTS / ORDER BY ไม่เปลี่ยน). **ผลที่เห็น:** ข้อความ LINE/อีเมลแสดง `2026-10-31` แทนสตริง Date ยาว ๆ (ตั้งใจ); ปุ่มรับทราบ (`exp_date = ${expDate}::date`) ใช้ได้เพราะได้ `YYYY-MM-DD`
+- **Vendor ที่ไม่มีชื่อ vendor ใน weekly:** เดิม Vendor ที่ `vendor` เป็น NULL / "" ได้สินค้าที่ไม่มี vendor ของทุกแผนก. แก้ให้ใช้ `splitRecipientsByVendor` + `itemsForVendor` (fail closed): Vendor ที่ชื่อว่างหลัง trim ไม่ถูกส่งและไม่นับใน `notifiedVendors`; ผลข้างเคียง: vendor ที่ต่างกันแค่ช่องว่างหัวท้ายจะ match กันแล้ว (เดิมไม่)
+- **ข้อจำกัดที่รู้และยังไม่แก้ใน PR นี้:** ในโหมดแผนก `notifyByDepartment` ส่งแจ้งเตือนก่อนแล้วค่อยเขียน `expiry_notification_logs` ถ้าเขียน log ล้ม (เช่น ฐานข้อมูลมีปัญหา) จะแจ้งซ้ำรอบถัดไป
+- **ยังไม่แก้:** บั๊ก fail-open ใน `src/lib/departments-flag.ts` (บั๊กข้อ 2) **ต้องแก้ก่อนเปิดสวิตช์แผนก**
+- **ผลต่อ production:** ถ้า `expiry_notification_logs` ยังว่างอยู่ (เพราะ INSERT ล้มมาตลอด) หลัง deploy ล็อตที่อยู่ในหน้าต่าง 30 วันจะถูกแจ้งอีก 1 ครั้งแล้วหยุด เพราะรอบนั้นเขียน log สำเร็จ
