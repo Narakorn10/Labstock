@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { PgliteSql } from "@/test/pglite-sql";
@@ -87,6 +87,12 @@ const weeklyLowRows = [
 const weeklyExpiringRows = [
   { itemId: "A-1", name: "Reagent A1", lotNo: "L1", expDate: "2026-08-20", quantity: "3", unit: "box", daysUntilExpiry: "10", jobType: "Chem", vendor: "Vendor A" },
 ];
+
+// PGlite initialises itself in the background and, while doing so, may call db.query; wait for it so the spy in capture()
+// can only ever see the route's own statements (on a loaded machine a start-up call used to show up as an extra statement).
+beforeAll(async () => {
+  await sql.db.waitReady;
+});
 
 beforeEach(() => {
   vi.spyOn(console, "log").mockImplementation(() => undefined);
@@ -202,7 +208,7 @@ describe("notification crons with departments off (legacy)", () => {
 
     expect(Object.keys(actual)).toEqual(Object.keys(baseline));
     for (const key of Object.keys(baseline) as Array<keyof typeof results>) {
-      expect(actual[key].statements, `${key} statement count`).toHaveLength(baseline[key].statements.length);
+      expect(actual[key].statements.map((query) => query.text), `${key} statements`).toEqual(baseline[key].statements.map((query) => query.text));
       actual[key].statements.forEach((query, index) => {
         expect(query.text, `${key}[${index}] text`).toBe(baseline[key].statements[index].text);
         expect(query.params, `${key}[${index}] params`).toEqual(baseline[key].statements[index].params);
