@@ -30,6 +30,7 @@ import { DEPT_A, DEPT_B, applyMigrationFile, seedTwoDepartments } from "@/test/d
 import { addPurchaseOrderTables, insertPurchaseOrder } from "@/test/purchase-order-dept-fixtures";
 import { POST as bootstrapPOST } from "./bootstrap/route";
 import { POST as catalogPOST } from "./catalog/search/route";
+import { PATCH as orderPATCH } from "./[id]/route";
 
 const sql = dbSql as unknown as PgliteSql;
 const noWork = "บัญชีนี้ยังไม่มีงานที่ใช้งานได้ กรุณาแจ้งผู้ดูแลระบบ";
@@ -106,6 +107,16 @@ const bootstrap = async (username: string) => {
     orders: ((body.orders ?? []) as Array<{ po_number: string }>).map((row) => row.po_number).sort(),
   };
 };
+const patch = async (username: string, id: string | number, body: Record<string, unknown>) => {
+  const response = await orderPATCH(
+    new Request(`http://localhost/api/liff/orders/${id}`, { method: "PATCH", body: JSON.stringify({ idToken: tokenOf(username), ...body }) }),
+    { params: Promise.resolve({ id: String(id) }) },
+  );
+  return json(response);
+};
+const poRow = async (poNumber: string) =>
+  (await sql.db.query<{ id: number; status: string; reviewed_by: string | null; department_id: number }>(
+    `SELECT id, status, reviewed_by, department_id FROM purchase_orders WHERE po_number = $1`, [poNumber])).rows[0];
 const catalog = async (username: string, body: Record<string, unknown>) => {
   const { status, body: rows } = await json(await catalogPOST(req(username, body)));
   return { status, rows: rows as unknown as Array<{ item_id: string }> };
@@ -189,5 +200,50 @@ describe("POST /api/liff/orders/bootstrap (departments on)", () => {
     const { status, body } = await bootstrap("mgrnone");
     expect(status).toBe(403);
     expect(body).toEqual({ error: noWork });
+  });
+});
+
+describe("PATCH /api/liff/orders/[id] (departments on)", () => {
+  it("positive control: a Manager reviews a revision of their own department (by id and by po_number)", async () => {
+    const a = await poRow("PO-A-REV");
+    const byId = await patch("mgra", a.id, { action: "APPROVE_REVISION" });
+    expect(byId.status).toBe(200);
+    expect(byId.body).toMatchObject({ po_number: "PO-A-REV", status: "CONFIRMED" });
+    expect(await poRow("PO-A-REV")).toMatchObject({ status: "CONFIRMED", reviewed_by: "mgra" });
+
+    const byNumber = await patch("mgrb", "PO-B-REV", { action: "REJECT_REVISION" });
+    expect(byNumber.status).toBe(200);
+    expect(await poRow("PO-B-REV")).toMatchObject({ status: "REJECTED", reviewed_by: "mgrb" });
+  });
+
+  it("a PO of another department answers 404 (by id and by po_number) and does not change", async () => {
+    const b = await poRow("PO-B-REV");
+    expect(b).toMatchObject({ status: "REVISION_REQUESTED", department_id: DEPT_B }); // control: it exists, in B, waiting for review
+
+    const byId = await patch("mgra", b.id, { action: "APPROVE_REVISION" });
+    expect(byId.status).toBe(404);
+    expect(byId.body).toEqual({ error: "Purchase order not found." });
+    const byNumber = await patch("mgra", "PO-B-REV", { action: "APPROVE_REVISION" });
+    expect(byNumber.status).toBe(404);
+    expect(byNumber.body).toEqual({ error: "Purchase order not found." });
+
+    expect(await poRow("PO-B-REV")).toMatchObject({ status: "REVISION_REQUESTED", reviewed_by: null });
+    // and the other way round
+    const a = await poRow("PO-A-REV");
+    expect((await patch("mgrb", a.id, { action: "REJECT_REVISION" })).status).toBe(404);
+    expect((await patch("mgrb", "PO-A-REV", { action: "REJECT_REVISION" })).status).toBe(404);
+    expect(await poRow("PO-A-REV")).toMatchObject({ status: "REVISION_REQUESTED", reviewed_by: null });
+  });
+
+  it("a Manager without membership gets 403 and a User/Vendor override cannot review (PO unchanged)", async () => {
+    const none = await patch("mgrnone", "PO-B-REV", { action: "APPROVE_REVISION" });
+    expect(none.status).toBe(403);
+    expect(none.body).toEqual({ error: noWork });
+    for (const username of ["mgr-user-override", "mgr-vendor-override"]) {
+      const denied = await patch(username, "PO-B-REV", { action: "APPROVE_REVISION" });
+      expect(denied.status, username).toBe(403);
+      expect(denied.body, username).toEqual({ error: notAllowed });
+    }
+    expect(await poRow("PO-B-REV")).toMatchObject({ status: "REVISION_REQUESTED", reviewed_by: null });
   });
 });

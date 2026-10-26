@@ -29,7 +29,6 @@ export const DEPARTMENT_TABLES = [
 // Paths are relative to the repo root, forward slashes, sorted.
 export const DEPARTMENT_SCOPE_PENDING: string[] = [
   "src/app/api/auth/register/route.ts",
-  "src/app/api/liff/orders/[id]/route.ts",
   "src/app/api/liff/orders/route.ts",
   "src/app/api/line-webhook/route.ts",
   "src/app/api/mobile/lookup/route.ts",

@@ -3,11 +3,19 @@ import sql from "@/lib/db";
 import { recordPurchaseOrderCommunication } from "@/lib/po-communication";
 import { getLinePurchasingUserFromRequest } from "@/lib/line-liff-ordering";
 import { applyLabReviewDecision } from "@/lib/purchase-order-review";
+import { getRequestId } from "@/lib/request-observability";
+import { andDept, departmentErrorResponse, getDepartmentScope, writeDepartmentId } from "@/lib/scoped-db";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const requestId = getRequestId(request);
   try {
     const auth = await getLinePurchasingUserFromRequest(request);
     if (!auth.ok) return auth.response;
+
+    // The LINE user's own (default) department; legacy while departments are off. Every action here writes, so check
+    // the scope can write before anything else (mode "all" cannot happen from LINE, but the guard stays).
+    const scope = await getDepartmentScope(auth.user);
+    writeDepartmentId(scope);
 
     const { id } = await params;
     const requestedAction = String(auth.body.action ?? "");
@@ -18,8 +26,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     }
 
     const poRows = Number.isInteger(Number(id))
-      ? await sql`SELECT * FROM purchase_orders WHERE id = ${id} LIMIT 1`
-      : await sql`SELECT * FROM purchase_orders WHERE po_number = ${id} LIMIT 1`;
+      ? await sql`SELECT * FROM purchase_orders WHERE id = ${id}${andDept(scope)} LIMIT 1`
+      : await sql`SELECT * FROM purchase_orders WHERE po_number = ${id}${andDept(scope)} LIMIT 1`;
     if (!poRows.length) return NextResponse.json({ error: "Purchase order not found." }, { status: 404 });
 
     const po = poRows[0];
@@ -36,7 +44,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       po: { id: Number(po.id), status: po.status, confirmed_at: po.confirmed_at },
       decision: status,
       reviewer: auth.user.username,
-      scope: { mode: "legacy" }, // PENDING กลุ่ม 6 / vendor shipments
+      scope,
     });
     if (!applied) return NextResponse.json({ error: "This order was already reviewed." }, { status: 409 });
 
@@ -47,6 +55,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ ...updatedRows[0], items });
   } catch (error) {
     console.error("LIFF order review error:", error);
+    const departmentResponse = departmentErrorResponse(error, requestId);
+    if (departmentResponse) return departmentResponse;
     return NextResponse.json({ error: "Unable to review purchase order from LINE." }, { status: 500 });
   }
 }
