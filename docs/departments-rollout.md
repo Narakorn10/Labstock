@@ -416,3 +416,27 @@ SELECT conname, conrelid::regclass FROM pg_constraint WHERE confrelid = 'public.
 - **ข้อจำกัดที่รู้และยังไม่แก้ใน PR นี้:** ในโหมดแผนก `notifyByDepartment` ส่งแจ้งเตือนก่อนแล้วค่อยเขียน `expiry_notification_logs` ถ้าเขียน log ล้ม (เช่น ฐานข้อมูลมีปัญหา) จะแจ้งซ้ำรอบถัดไป
 - **ยังไม่แก้:** บั๊ก fail-open ใน `src/lib/departments-flag.ts` (บั๊กข้อ 2) **ต้องแก้ก่อนเปิดสวิตช์แผนก**
 - **ผลต่อ production:** ถ้า `expiry_notification_logs` ยังว่างอยู่ (เพราะ INSERT ล้มมาตลอด) หลัง deploy ล็อตที่อยู่ในหน้าต่าง 30 วันจะถูกแจ้งอีก 1 ครั้งแล้วหยุด เพราะรอบนั้นเขียน log สำเร็จ
+
+## 13. กลุ่ม 6 (LINE/LIFF/มือถือ)
+
+### PR-A: bot-stock-queries และ Telegram webhook (ทำแล้ว)
+
+ถอด `src/lib/bot-stock-queries.ts` ออกจาก `DEPARTMENT_SCOPE_PENDING` (**8 -> 7**, นับจริงจาก `department-scope-coverage.test.ts`): ที่เหลือ `auth/register`, `liff/orders/[id]`, `liff/orders/bootstrap`, `liff/orders`, `line-webhook`, `mobile/lookup`, `lib/line-liff-ordering.ts`. หลังกลุ่ม 6 ครบทุก PR คาดว่าจะเหลือ 2 (`auth/register`, `mobile/lookup`). ไม่มี migration; สวิตช์ `DEPARTMENTS_ENABLED` ยังปิด
+
+**นโยบาย Telegram (เจ้าของตัดสินแล้ว)**
+
+- Telegram ตอบ **เฉพาะแผนก CC** (เหมือนเครื่องสถานี) เพราะ Telegram ไม่มีตัวตนผู้ใช้ (อนุญาตด้วยรายการ chat id จาก env). สวิตช์เปิด -> `{ mode: "one", departmentId: <id ของ CC> }` โดยหา id ด้วย `defaultRoomId()`; สวิตช์ปิด -> `{ mode: "legacy" }` (ไม่เรียก `defaultRoomId`). **ไม่ส่ง mode "all" ให้ Telegram**
+- ถ้า CC หาย / ไม่ active หรือการหา CC ล้ม: fail closed ตอบ "ยังใช้คำสั่งนี้ไม่ได้ กรุณาแจ้งผู้ดูแลระบบ" ไม่อ่านข้อมูลเลย ไม่ทำให้ handler ล้ม และไม่ log ข้อความ error ดิบ (log แค่ชื่อชนิด error)
+- ทางเลือกที่ง่ายกว่าถ้าเจ้าของเปลี่ยนใจ: **"รวมทุกงาน"** (ส่ง `{ mode: "all" }`) แก้ที่ `resolveTelegramScope` ในไฟล์ route จุดเดียว
+
+**สิ่งที่แก้**
+
+- `getRecentLogRows`, `getLowStockRows`, `searchStockRows`, `searchStockRowsByJob` รับ `scope: DepartmentScope` เป็นพารามิเตอร์บังคับ (ตัวสุดท้าย; มีตัวตรวจตอนรัน ผิดรูปล้มก่อนยิง SQL). กรองทั้ง `master_data`, CTE `inventory` และ `logs`
+- `searchStockRows`: เงื่อนไข `WHERE a OR b OR c` ถ้าต่อ `AND department` ท้ายประโยคจะผูกกับเงื่อนไขสุดท้าย (บาร์โค้ด) เท่านั้น สินค้าแผนกอื่นที่ชื่อ/รหัสตรงจะรั่ว -> โหมด "one" ครอบ OR ด้วยวงเล็บก่อน; โหมดอื่นใช้ SQL เดิมทุกตัวอักษร
+- `line-webhook` ถูกแก้แค่ส่ง `{ mode: "legacy" }` ตรงจุดที่เรียก (3 จุด) **ชั่วคราวจน PR-C** ไม่เปลี่ยน SQL / พฤติกรรมของ webhook
+- โหมด legacy: ข้อความ SQL + params + จำนวน statement + ค่าที่คืน **เหมือนเดิมทุกไบต์** (`bot-stock-queries.legacy.test.ts` เทียบกับ `bot-stock-queries.legacy-baseline.json` ที่บันทึกจากโค้ดเดิมก่อนแก้; ห้ามสร้างใหม่ยกเว้นตั้งใจด้วย `UPDATE_BOT_STOCK_BASELINE=1`)
+
+**ข้อจำกัด**
+
+- หลักฐานมาจาก PGlite (`bot-stock-queries.dept.db.test.ts`) และการ mock ในเทสต์ route **ไม่ใช่ Telegram จริงและไม่ใช่ Neon จริง**; ทดสอบ Telegram จริงไม่ได้จากเครื่อง dev ต้องตรวจตอนซ้อมก่อนเปิดสวิตช์ (รวมถึง fragment ที่ว่างตอน legacy บน Neon)
+- `/api/mobile/lookup` **ไม่ถูกแตะใน PR นี้โดยตั้งใจ** (เป็นงานออกแบบถัดไป; เจ้าของตอบว่าแสดงทุกงานต่อไปชั่วคราว ดูหัวข้อมือถือด้านบน)

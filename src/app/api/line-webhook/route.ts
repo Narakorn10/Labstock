@@ -187,8 +187,8 @@ export async function POST(req: Request) {
         if (stockCommand) {
           if (stockCommand.keyword) {
             const stockRows = stockCommand.searchByJob
-              ? await searchStockRowsByJob(stockCommand.keyword)
-              : await searchStockRows(stockCommand.keyword, 10);
+              ? await searchStockRowsByJob(stockCommand.keyword, { mode: "legacy" }) // legacy until PR-C
+              : await searchStockRows(stockCommand.keyword, 10, { mode: "legacy" });
             await replyStockSummary(
               replyToken,
               stockCommand.searchByJob
@@ -197,7 +197,7 @@ export async function POST(req: Request) {
               stockRows,
             );
           } else {
-            const lowStockData = await getLowStockRows(10);
+            const lowStockData = await getLowStockRows(10, { mode: "legacy" }); // legacy until PR-C
 
             if (lowStockData.length > 0) {
               await replyLowStock(replyToken, lowStockData as LowStockItem[]);
