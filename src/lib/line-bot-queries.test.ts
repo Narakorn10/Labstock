@@ -43,6 +43,10 @@ describe("decideLineBotCommand", () => {
       expect(decideLineBotCommand({ state: "no_work" }, command)).toEqual({ ok: false, message: LINE_BOT_MESSAGES.noWork });
     }
     expect(LINE_BOT_MESSAGES.unlinked).not.toBe(LINE_BOT_MESSAGES.noWork);
+    // Owner-fixed texts (spec 5.4): compare against the literal, not only the constant.
+    expect(LINE_BOT_MESSAGES.noWork).toBe("ยังไม่มีงานที่ใช้งานได้ กรุณาแจ้งผู้ดูแลระบบ");
+    expect(LINE_BOT_MESSAGES.unlinked).toBe('บัญชี LINE นี้ยังไม่ได้ผูกกับบัญชี LabStock กรุณาผูกบัญชีก่อนใช้งานค่ะ (พิมพ์ "id" เพื่อดู LINE User ID)');
+    expect(LINE_BOT_MESSAGES.unlinked).toContain('พิมพ์ "id"');
   });
 
   it("vendor cannot read stock but can read purchasing as that vendor", () => {
