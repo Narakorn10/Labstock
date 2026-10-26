@@ -28,6 +28,7 @@ import { resetDepartmentContextForTests } from "@/lib/department-context";
 import { resetDepartmentsFlagForTests } from "@/lib/departments-flag";
 import { DEPT_A, DEPT_B, applyMigrationFile, seedTwoDepartments } from "@/test/department-fixtures";
 import { addPurchaseOrderTables, insertPurchaseOrder } from "@/test/purchase-order-dept-fixtures";
+import { POST as bootstrapPOST } from "./bootstrap/route";
 import { POST as catalogPOST } from "./catalog/search/route";
 
 const sql = dbSql as unknown as PgliteSql;
@@ -96,6 +97,15 @@ const req = (username: string, body: Record<string, unknown> = {}) =>
   new Request("http://localhost/api/liff/orders", { method: "POST", body: JSON.stringify({ idToken: tokenOf(username), ...body }) });
 const json = async (response: Response) => ({ status: response.status, body: await response.json() as Record<string, unknown> });
 
+const bootstrap = async (username: string) => {
+  const { status, body } = await json(await bootstrapPOST(req(username)));
+  return {
+    status,
+    body,
+    vendors: ((body.vendors ?? []) as Array<{ vendor: string }>).map((row) => row.vendor).sort(),
+    orders: ((body.orders ?? []) as Array<{ po_number: string }>).map((row) => row.po_number).sort(),
+  };
+};
 const catalog = async (username: string, body: Record<string, unknown>) => {
   const { status, body: rows } = await json(await catalogPOST(req(username, body)));
   return { status, rows: rows as unknown as Array<{ item_id: string }> };
@@ -149,5 +159,35 @@ describe("POST /api/liff/orders/catalog/search (departments on)", () => {
       expect(status, username).toBe(403);
       expect(body, username).toEqual({ error: notAllowed });
     }
+  });
+});
+
+describe("POST /api/liff/orders/bootstrap (departments on)", () => {
+  it("a department A Manager sees the vendors and open orders of A only", async () => {
+    const a = await bootstrap("mgra");
+    expect(a.status).toBe(200);
+    expect(a.vendors).toContain("Vendor A"); // positive control
+    expect(a.orders).toEqual(["PO-A", "PO-A-REV"]);
+    expect(a.vendors).not.toContain("MB Vendor");
+  });
+
+  it("a department B Manager sees the vendors and open orders of B only", async () => {
+    const b = await bootstrap("mgrb");
+    expect(b.status).toBe(200);
+    expect(b.vendors).toEqual(["MB Vendor"]); // positive control
+    expect(b.orders).toEqual(["PO-B", "PO-B-REV"]);
+    expect((b.body.orders as Array<{ po_number: string; items: unknown[] }>).every((order) => order.items.length === 1)).toBe(true);
+  });
+
+  it("the user in the answer holds only username, name and role", async () => {
+    const { body } = await bootstrap("mgrb");
+    expect(Object.keys(body.user as object).sort()).toEqual(["name", "role", "username"]);
+    expect(body.user).toEqual({ username: "mgrb", name: "Manager B", role: "Manager" });
+  });
+
+  it("a Manager without membership gets 403 with the Thai message", async () => {
+    const { status, body } = await bootstrap("mgrnone");
+    expect(status).toBe(403);
+    expect(body).toEqual({ error: noWork });
   });
 });

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ sql: vi.fn(), auth: vi.fn() }));
+const mocks = vi.hoisted(() => ({ sql: Object.assign(vi.fn(), { unsafe: vi.fn((text: string) => text) }), auth: vi.fn() }));
 
 vi.mock("@/lib/db", () => ({ default: mocks.sql }));
 vi.mock("@/lib/line-liff-ordering", () => ({ getLinePurchasingUserFromRequest: mocks.auth }));
