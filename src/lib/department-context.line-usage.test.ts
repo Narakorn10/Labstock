@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 
 const ROOT = process.cwd();
 const NAME = "resolveDepartmentForLineUser";
-const ALLOWED = ["src/lib/department-context.ts"];
+const ALLOWED = ["src/lib/department-context.ts", "src/lib/line-liff-ordering.ts"];
 const FORBIDDEN = [
   "src/app/api/mobile/confirm/route.ts",
   "src/app/api/mobile/line-link/route.ts",
