@@ -89,6 +89,8 @@
 2. **Vendor ที่ไม่มีแถว `user_departments`:** ยังดู PO/พัสดุของบริษัทตัวเองใน LINE ได้ เพราะกรองด้วยชื่อบริษัทอย่างเดียว ไม่รั่วข้อมูลของใคร แต่ **หลวมกว่าเว็บ** (เว็บล็อกอินไม่ได้ ดู `docs/departments-rollout.md` หัวข้อ 11)
 3. **guard test `department-context.line-usage.test.ts`:** ไม่ผ่อนกฎเดิม (webhook ยังห้ามอ้างชื่อ `resolveDepartmentForLineUser` และ ALLOWED ไม่เปลี่ยน); แก้ข้อความอธิบายที่ว่า "exactly one caller"; **เพิ่ม** การตรวจว่า `getLineBotAccess` ถูกอ้างจาก `line-webhook/route.ts` ที่เดียว (นอกจากไฟล์นิยาม) กันด่านรั่วไปใช้ที่อื่นโดยไม่ตั้งใจ
 4. **ด่านไม่มี role check ในตัวเอง:** ปล่อยให้ webhook ตรวจ `isLabPurchasingRole` ต่อคำสั่ง เพื่อให้ `id`/`ลงทะเบียน`/สต็อกไม่ถูกบล็อกด้วย role
+5. **(เพิ่มจากการตรวจแผน 26 ต.ค.) Vendor ไม่เห็น PO สถานะ `PENDING_MANAGER_REVIEW`:** เว็บซ่อนสถานะนี้จาก Vendor เสมอ (`purchase-orders/route.ts:63-64`, `[id]/route.ts:49`) LINE ต้องตรงกัน ไม่งั้นใบสั่งซื้อภายในที่ผู้จัดการยังไม่อนุมัติจะไปถึงบริษัทผู้ขาย (พัสดุไม่มีเงื่อนไขนี้ เหมือนเว็บ)
+6. **คำค้น `purchase_order_items` อยู่ใน route ต่อไป** (ไม่ใช่ตารางแผนก; ดึงด้วย `po.id` ของแถวที่กรองแล้ว; ข้อความ SQL มีการเยื้องในตัว template จึงไม่ย้ายเพื่อให้ baseline ตรงทุกตัวอักษร)
 
 ## 6. การทดสอบ (ข้อกำหนด)
 - **baseline legacy ก่อนแก้** (commit แรก, PGlite shim; mock `@neondatabase/serverless` ให้ webhook ใช้ shim; สร้างลายเซ็นจริงด้วย HMAC กับ `LINE_CHANNEL_SECRET` ทดสอบ): จับ SQL text/params/จำนวน/ลำดับ ของทุกทางที่ตอบข้อมูล ตอนสวิตช์ปิด + argument ที่ส่งเข้าฟังก์ชัน reply
