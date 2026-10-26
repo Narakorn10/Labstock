@@ -476,9 +476,10 @@ SELECT conname, conrelid::regclass FROM pg_constraint WHERE confrelid = 'public.
 
 **สิ่งที่แก้**
 
-- บอทมี 3 ทางที่ตอบข้อมูลจริง และทั้งสามผ่านด่านเดียวกัน: (1) ข้อความสต็อก, (2) `PO-...`, (3) เลขพัสดุ (รูปแบบ `AA123456789BB`). ตอนสวิตช์ปิด (production ปัจจุบัน) ใครที่เพิ่มบอทเป็นเพื่อนก็พิมพ์ `PO-...` หรือเลขพัสดุแล้วเห็นข้อมูลได้โดยไม่ต้องผูกบัญชี ซึ่ง PR นี้ไม่เปลี่ยน; ตอนสวิตช์เปิดจะต้องผูกบัญชีและกรองตามแผนก/vendor ตามตารางด้านล่าง (ยังไม่มีผลบน production จนกว่าจะเปิดสวิตช์ ซึ่งยังห้ามเปิด)
-- ด่านตรวจ `getLineBotAccess(lineUserId)` ใน `src/lib/line-liff-ordering.ts` คืนผลแยกกรณี: `legacy` / `unlinked` / `no_work` / `vendor` / `lab` (มี role ที่มีผลจริงในแผนก + scope แผนก default). แล้ว `decideLineBotCommand(access, "stock" | "purchasing")` ใน `src/lib/line-bot-queries.ts` ตัดสินว่าจะตอบอะไร (สต็อก -> scope เข้า `bot-stock-queries.ts` เดิม; PO/พัสดุ -> actor เข้า `findPurchaseOrderForLine` / `findShipmentForLine`). actor เป็นพารามิเตอร์บังคับและมีตัวตรวจตอนรัน (`assertActor`) ผิดรูปล้มก่อนยิง SQL
-- error ในการหาแผนกที่เป็น 42P01/42703 -> `markDepartmentsNotReady` แล้วถอยเป็น legacy (แบบเดียวกับ LIFF สั่งซื้อ); error อื่น rethrow ไม่กลืน
+- บอทมี 3 ทางที่ตอบข้อมูลจริง และทั้งสามผ่านด่านเดียวกัน: (1) ข้อความสต็อก, (2) `PO-...`, (3) เลขพัสดุ (รูปแบบ `AA123456789BB`). ตอนสวิตช์ปิด (production ปัจจุบัน) ใครที่เพิ่มบอทเป็นเพื่อนก็พิมพ์ `PO-...` หรือเลขพัสดุแล้วเห็นข้อมูลได้โดยไม่ต้องผูกบัญชี ซึ่ง PR นี้ไม่เปลี่ยน; ตอนสวิตช์เปิดจะต้องผูกบัญชีเสมอ (ทั้งตอนแผนกพร้อมและยังไม่พร้อม) และกรองตามแผนก/vendor ตามตารางด้านล่าง (ยังไม่มีผลบน production จนกว่าจะเปิดสวิตช์ ซึ่งยังห้ามเปิด)
+- ด่านตรวจ `getLineBotAccess(lineUserId)` ใน `src/lib/line-liff-ordering.ts` คืนผลแยกกรณี: `legacy` (สวิตช์ปิดเท่านั้น) / `degraded` (สวิตช์เปิดแต่แผนกยังไม่พร้อม มี role ของบัญชี) / `unlinked` / `no_work` / `vendor` / `lab` (มี role ที่มีผลจริงในแผนก + scope แผนก default). แล้ว `decideLineBotCommand(access, "stock" | "purchasing")` ใน `src/lib/line-bot-queries.ts` ตัดสินว่าจะตอบอะไร (สต็อก -> scope เข้า `bot-stock-queries.ts` เดิม; PO/พัสดุ -> actor เข้า `findPurchaseOrderForLine` / `findShipmentForLine`). actor เป็นพารามิเตอร์บังคับและมีตัวตรวจตอนรัน (`assertActor`) ผิดรูปล้มก่อนยิง SQL
+- error ในการหาแผนกที่เป็น 42P01/42703 -> `markDepartmentsNotReady` แล้วคืน `degraded` (ไม่ใช่ legacy: legacy ในบอทแปลว่าไม่ตรวจตัวตน); error อื่น rethrow ไม่กลืน
+- **โหมด degraded** (สวิตช์เปิด แต่แผนกยังไม่พร้อม: probe หา schema ไม่เจอ, มี route ใดเรียก `markDepartmentsNotReady` ภายใน 60 วินาที, หรือเจอ 42P01/42703 ตอนหาแผนก): ยังต้องผูกบัญชีที่ active อยู่ (ไม่ผูก/ไม่ active/ไม่มี `source.userId` -> ข้อความให้ผูกบัญชี ไม่ query ข้อมูล); Vendor เห็นเฉพาะของบริษัทตัวเองเหมือนเดิม; เจ้าหน้าที่ได้ข้อมูล **ไม่กรองแผนก** (เพราะไม่รู้แผนก) สต็อกใช้ได้ทุก role ส่วน PO/พัสดุยังต้องเป็น Admin/Manager (role ของบัญชี). คำตัดสินจาก final review: "คนไม่ผูกบัญชีต้องไม่เห็นข้อมูลตอนสวิตช์เปิด" (spec หัวข้อ 2) ชนะ "ถอยเป็น legacy" ในร่างแรกของ spec 5.1
 - webhook ไม่อ้าง `resolveDepartmentForLineUser` โดยตรง (ตามที่ `department-context.line-usage.test.ts` บังคับ) และ SQL ของ postback, `ack_expiry`, `expiry_notification_logs`, การตรวจลายเซ็น, โครง `Promise.all` ไม่เปลี่ยน. คำค้นรายการสินค้าใน PO (`purchase_order_items`) อยู่ใน route ต่อไป ดึงด้วย `po.id` ของแถวที่ผ่านการกรองแล้ว
 - **สวิตช์ปิด:** ทางเดิมไม่เปลี่ยน -- webhook เช็ก `departmentsFlagOn()` (ไม่แตะฐานข้อมูล) แล้วใช้ access แบบ `legacy` ซึ่งได้ scope `{ mode: "legacy" }` และ actor `{ kind: "legacy" }` (SQL `SELECT * FROM purchase_orders WHERE po_number = ...` / `SELECT * FROM shipments WHERE tracking_no = ...` ข้อความเดิม). ข้อความ SQL + params + จำนวน statement + ลำดับ + คำตอบที่ส่งเข้า reply เหมือนเดิมทุกไบต์: `line-webhook.legacy.test.ts` เทียบกับ `line-webhook.legacy-baseline.json` ที่บันทึกจากโค้ดเดิมก่อนแก้ (ห้ามสร้างใหม่ยกเว้นตั้งใจด้วย `UPDATE_LINE_WEBHOOK_BASELINE=1`)
 
@@ -486,13 +487,13 @@ SELECT conname, conrelid::regclass FROM pg_constraint WHERE confrelid = 'public.
 
 | ผู้ใช้ | สต็อก | `PO-...` และเลขพัสดุ |
 |---|---|---|
-| ไม่ผูกบัญชี LINE / บัญชีไม่ active / ไม่มี `source.userId` | ปฏิเสธ: `บัญชี LINE นี้ยังไม่ได้ผูกกับบัญชี LabStock กรุณาผูกบัญชีก่อนใช้งานค่ะ (พิมพ์ "id" เพื่อดู LINE User ID)` ไม่ query ข้อมูล | เหมือนกัน |
+| ไม่ผูกบัญชี LINE / บัญชีไม่ active / ไม่มี `source.userId` (รวมตอนแผนกยังไม่พร้อม) | ปฏิเสธ: `บัญชี LINE นี้ยังไม่ได้ผูกกับบัญชี LabStock กรุณาผูกบัญชีก่อนใช้งานค่ะ (พิมพ์ "id" เพื่อดู LINE User ID)` ไม่ query ข้อมูล | เหมือนกัน |
 | ผูกแล้ว (เจ้าหน้าที่) แต่ไม่มีแผนกที่ใช้งานได้ | `ยังไม่มีงานที่ใช้งานได้ กรุณาแจ้งผู้ดูแลระบบ` ไม่ query ข้อมูล | เหมือนกัน |
 | Admin / Manager (role ที่มีผลจริงในแผนก) | เฉพาะแผนก default ของตัวเอง | เฉพาะแผนก default ของตัวเอง (รวม PO สถานะรอผู้จัดการตรวจของแผนกตัวเอง) |
 | User / Operator / Technician | เฉพาะแผนก default ของตัวเอง | ปฏิเสธ: `สิทธิ์ของคุณไม่สามารถดูใบสั่งซื้อหรือพัสดุผ่านบอทได้ (เฉพาะผู้จัดการและผู้ดูแลระบบ)` ไม่ query ข้อมูล |
 | Vendor | ปฏิเสธ: `บัญชีผู้ขายไม่สามารถดูสต็อกผ่านบอทได้ ใช้ได้เฉพาะการค้นหาใบสั่งซื้อ (PO-...) และเลขพัสดุ` ไม่ query สต็อก | เฉพาะของบริษัทตัวเอง (กรองด้วยชื่อ vendor ข้ามแผนก ไม่กรองแผนก); PO สถานะ `PENDING_MANAGER_REVIEW` ไม่เห็น |
 
-หมายเหตุ: role ที่ใช้ตัดสินคือ role ที่มีผลจริงในแผนก (override ใน `user_departments` ชนะ role ระบบ). ไม่พบ/ไม่มีสิทธิ์ตอบข้อความ "ไม่พบ..." เดียวกัน (ไม่บอกว่าบริษัท/แผนกอื่นมีข้อมูลอยู่). Vendor ที่ `users.vendor` ว่างจะไม่พบอะไรเลย (ไม่ยิง query ข้อมูล)
+ตารางนี้คือตอนแผนกพร้อม; ตอนแผนกยังไม่พร้อม (degraded) ดูหัวข้อ "โหมด degraded" ด้านบน. หมายเหตุ: role ที่ใช้ตัดสินคือ role ที่มีผลจริงในแผนก (override ใน `user_departments` ชนะ role ระบบ). ไม่พบ/ไม่มีสิทธิ์ตอบข้อความ "ไม่พบ..." เดียวกัน (ไม่บอกว่าบริษัท/แผนกอื่นมีข้อมูลอยู่). Vendor ที่ `users.vendor` ว่างจะไม่พบอะไรเลย (ไม่ยิง query ข้อมูล)
 
 **คำสั่งที่ไม่ผ่านด่านโดยตั้งใจ** (ตอบเหมือนเดิมทุกสถานะ)
 
@@ -503,7 +504,7 @@ SELECT conname, conrelid::regclass FROM pg_constraint WHERE confrelid = 'public.
 **เทสต์ที่เพิ่ม**
 
 - `src/app/api/line-webhook/line-webhook.legacy.test.ts` + `line-webhook.legacy-baseline.json` (baseline สวิตช์ปิด)
-- `src/app/api/line-webhook/line-webhook.dept.db.test.ts` (PGlite: 2 แผนก, Vendor 2 บริษัท, control query ว่ามีข้อมูลทั้งสองฝั่งจริง, unlinked/no_work/User/Vendor, คำสั่งที่ไม่ผ่านด่าน, error ของด่าน)
+- `src/app/api/line-webhook/line-webhook.dept.db.test.ts` (PGlite: 2 แผนก, Vendor 2 บริษัท, control query ว่ามีข้อมูลทั้งสองฝั่งจริง, unlinked/no_work/User/Vendor, คำสั่งที่ไม่ผ่านด่าน, error ของด่าน, โหมด degraded ทั้งหลัง `markDepartmentsNotReady` และตอน probe หา schema ไม่เจอ)
 - `src/lib/line-bot-access.test.ts` (ด่าน), `src/lib/line-bot-queries.test.ts` (decision + `assertActor`), `src/lib/line-bot-queries.dept.db.test.ts` (PO/พัสดุบน PGlite)
 - `src/lib/department-context.line-usage.test.ts` แก้ให้ตรวจเพิ่มว่า `getLineBotAccess` ถูกอ้างจากไฟล์ด่านกับ webhook เท่านั้น (รายชื่อไฟล์ที่ได้รับอนุญาตของ `resolveDepartmentForLineUser` ไม่เปลี่ยน)
 
@@ -514,6 +515,7 @@ SELECT conname, conrelid::regclass FROM pg_constraint WHERE confrelid = 'public.
 - role อื่นนอกจาก Admin/Manager ถูกปฏิเสธ PO/พัสดุ (ตรงกับเว็บ); Vendor ดูสต็อกไม่ได้ (เจ้าของตัดสิน)
 - LINE ใช้แผนก default ของผู้ใช้เท่านั้น (ไม่มีตัวเลือกแผนก, ไม่มี "ทุกแผนก") เหมือน LIFF สั่งซื้อ
 - ตอนสวิตช์เปิดและฐานข้อมูลล้ม: ด่านโยน error -> batch ตอบ 500 -> LINE อาจส่ง event ซ้ำ (redelivery) และตอบซ้ำได้ เป็นพฤติกรรมเดิมของ webhook เมื่อ DB ล้ม ไม่ได้เกิดใหม่
-- สวิตช์เปลี่ยนสถานะระหว่างด่านกับคำค้น (แคช 60 วินาที): ล้มแบบปิด ไม่รั่ว
+- สถานะแผนกเปลี่ยนระหว่างด่านกับคำค้น (แคช 60 วินาที): ด่านได้ `lab` แล้วคำค้นยังกรองแผนกนั้น; ด่านได้ `degraded` คำค้นไม่กรองแผนก (ตามที่ตั้งใจ). ทั้งสองกรณีต้องผูกบัญชีแล้ว
+- **ข้อจำกัดที่รู้ (จดไว้ ไม่แก้ใน PR นี้):** (1) คำค้นของผู้ใช้คนเดียวที่เจอคอลัมน์หายทำให้ทั้ง instance เป็น "ยังไม่พร้อม" 60 วินาที (รูปแบบเดิมของ LIFF/`auth-utils`) และ probe ไม่ได้ตรวจ `user_departments.is_default`/`role` -> ช่วงนั้นเจ้าหน้าที่ที่ผูกบัญชีได้ข้อมูลไม่กรองแผนก; (2) ถ้าใช้บอทในห้องแชตกลุ่ม LINE คำตอบจะเห็นทุกคนในกลุ่ม (บอทดูแค่ `source.userId` ของผู้พิมพ์)
 - **หลักฐานทั้งหมดมาจาก PGlite และการ mock ไม่ใช่ Neon จริงและไม่ใช่ LINE จริง**: การต่อ fragment ที่ว่างของ driver Neon และพฤติกรรมของ LINE ต้องตรวจตอนซ้อมก่อนเปิดสวิตช์. จำนวนผู้ใช้ LINE ที่ผูกบัญชีแล้วและ role override ต่อแผนกบน production: ไม่รู้จากข้อมูลที่มี
 - **ยังห้ามเปิด `DEPARTMENTS_ENABLED`**: PR-C เสร็จแล้ว แต่ยังห้ามเปิดจนกว่า ตรวจบน Neon จริง + v36 รันแล้ว + แถวหัวกระดาษ (`lab_profile`) ของทุกแผนกครบ + v30–v34 รันครบ

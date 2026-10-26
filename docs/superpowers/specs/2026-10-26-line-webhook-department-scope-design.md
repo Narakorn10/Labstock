@@ -59,9 +59,11 @@
 
 ### 5.1 ด่านตรวจ: `getLineBotAccess(lineUserId)` ใน `src/lib/line-liff-ordering.ts`
 คืนผลแบบแยกกรณี (ไม่ใช่ boolean) เพื่อกันกลืนสถานะ:
-- สวิตช์ปิด (`!(await departmentsReady())`) → `{ state: "legacy" }` **ไม่ยิง SQL เพิ่มเลย** (ต้องพิสูจน์ด้วยจำนวน statement เทียบ baseline)
-- สวิตช์เปิด: `getLineLinkedUserAccess` (มีอยู่แล้ว) → `unlinked` / `inactive` → state เดียวกันคือ "ไม่ผูก" ; `active` เป็น **Vendor** → `{ state: "vendor", vendor }` **ไม่หาแผนกเลย ไม่ยิง SQL เพิ่ม** (Vendor ไม่ใช้สต็อก และ PO/พัสดุกรองด้วยชื่อบริษัท); `active` เป็นเจ้าหน้าที่ → เรียก `resolveDepartmentForLineUser(lineUserId, user.username)` → `null` = `no_work`; ได้ user → `{ state: "lab", role: <role ที่มีผลจริงในแผนก>, scope: {mode:"one", departmentId} }`
-- error ของการหาแผนกที่เป็น 42P01/42703 (schema ยังไม่พร้อม) → `markDepartmentsNotReady(...)` แล้วถอยเป็น `legacy` (แบบเดียวกับ LIFF สั่งซื้อ); error อื่น rethrow (ไม่กลืน)
+- สวิตช์ปิด (`!departmentsFlagOn()`, อ่าน env อย่างเดียว) → `{ state: "legacy" }` **ไม่ยิง SQL เพิ่มเลย** (ต้องพิสูจน์ด้วยจำนวน statement เทียบ baseline). `legacy` ใช้กับสวิตช์ปิดเท่านั้น (แก้ตามคำตัดสินด้านล่าง)
+- สวิตช์เปิด (ทั้งตอนแผนกพร้อมและยังไม่พร้อม): ไม่มี `lineUserId` → "ไม่ผูก"; `getLineLinkedUserAccess` (มีอยู่แล้ว) → `unlinked` / `inactive` → state เดียวกันคือ "ไม่ผูก" ; `active` เป็น **Vendor** → `{ state: "vendor", vendor }` **ไม่หาแผนกเลย ไม่ยิง SQL เพิ่ม** (Vendor ไม่ใช้สต็อก และ PO/พัสดุกรองด้วยชื่อบริษัท); `active` เป็นเจ้าหน้าที่ → ถ้า `departmentsReady()` เป็นเท็จ (probe หา schema ไม่เจอ หรือมี route ใดเรียก `markDepartmentsNotReady` ภายใน 60 วินาที) → `{ state: "degraded", role: <role ของบัญชี> }` ไม่หาแผนก; ถ้าพร้อม → เรียก `resolveDepartmentForLineUser(lineUserId, user.username)` → `null` = `no_work`; ได้ user → `{ state: "lab", role: <role ที่มีผลจริงในแผนก>, scope: {mode:"one", departmentId} }`
+- error ของการหาแผนกที่เป็น 42P01/42703 (schema ยังไม่พร้อม) → `markDepartmentsNotReady(...)` แล้วคืน `{ state: "degraded", role }` (**ไม่ใช่** `legacy`); error อื่น rethrow (ไม่กลืน)
+- `degraded` (สวิตช์เปิดแต่แผนกยังไม่พร้อม): บัญชีผูกแล้วและ active แต่ไม่รู้แผนก จึงตอบแบบไม่กรองแผนก (scope `{mode:"legacy"}` / actor `{kind:"legacy"}`); สต็อกใช้ได้ทุก role ของเจ้าหน้าที่; PO/พัสดุยังต้อง `isLabPurchasingRole(role)` (User/Operator/Technician ถูกปฏิเสธ); Vendor ไม่เข้า `degraded` (ได้ `vendor` ตามปกติ เห็นเฉพาะบริษัทตัวเอง)
+- **คำตัดสิน (Ruling, final review 26 ต.ค.):** ร่างแรกของข้อนี้ให้ "ถอยเป็น legacy" ตอนแผนกยังไม่พร้อม แต่ใน webhook `legacy` แปลว่าไม่ตรวจตัวตนเลย ทำให้ตอนสวิตช์เปิด คนแปลกหน้าที่ไม่ผูกบัญชี (หรือ event ที่ไม่มี `source.userId`) เห็น PO/พัสดุ/สต็อกได้ ซึ่งขัดกับ "สิ่งที่ถือว่าล้มเหลว" ในหัวข้อ 2 (ผู้ใช้ที่ยังไม่ผูกบัญชีเห็นข้อมูลตอนสวิตช์เปิด). หัวข้อ 2 ชนะ: จึงเพิ่มสถานะ `degraded` แทนการถอยเป็น `legacy`
 - ด่านคืน role ที่มีผลจริงมาให้ webhook: คำสั่ง PO/พัสดุตรวจ `isLabPurchasingRole(role)` ก่อนเรียกคำค้น (User → ข้อความปฏิเสธ); คำสั่งสต็อกไม่ตรวจ role (ทุก role ของเจ้าหน้าที่ใช้ได้); `state: "vendor"` ใช้สต็อกไม่ได้
 
 ### 5.2 คำค้นใหม่ `src/lib/line-bot-queries.ts`
@@ -101,7 +103,8 @@
 ## 7. ความเสี่ยงและสิ่งที่ยังไม่รู้
 - ทดสอบได้เฉพาะ PGlite/mock **ยังไม่เคยรันบน Neon หรือ LINE จริง** (การต่อ fragment ว่างของ driver Neon และพฤติกรรมของ LINE ต้องตรวจตอนซ้อม)
 - ตอนสวิตช์เปิดและฐานข้อมูลกระตุก: ด่านโยน error → batch ตอบ 500 → LINE อาจส่ง event ซ้ำ (redelivery) ตอบซ้ำได้ — เป็นพฤติกรรมเดิมของ webhook เมื่อ DB ล้ม ไม่ได้เกิดใหม่ แต่ต้องจดไว้
-- สวิตช์เปลี่ยนสถานะระหว่างด่านกับคำค้น (แคช 60 วินาที): ล้มแบบปิด ไม่รั่ว (เหมือน race ที่จดไว้ใน PR-B)
+- สถานะแผนกเปลี่ยนระหว่างด่านกับคำค้น (แคช 60 วินาที): ด่านได้ `lab` แล้วคำค้นยังกรองด้วย `andDept` ของแผนกนั้น (ไม่ขึ้นกับสถานะพร้อม); ด่านได้ `degraded` คำค้นไม่กรองแผนกตามที่ตั้งใจ. ทั้งสองกรณีต้องผูกบัญชีแล้ว (ไม่มีทางที่คนไม่ผูกบัญชีเห็นข้อมูลตอนสวิตช์เปิด)
+- **ข้อจำกัดที่รู้ (จดไว้ ไม่แก้ใน PR นี้):** (1) คำค้นของผู้ใช้ LINE คนเดียวที่เจอคอลัมน์หาย (42703) ทำให้ทั้ง instance ถูกตั้งเป็น "ยังไม่พร้อม" 60 วินาที (รูปแบบเดิมของ LIFF/`auth-utils`); probe ไม่ได้ตรวจ `user_departments.is_default`/`role` จึงอาจพร้อมตาม probe แต่ล้มตอนหาแผนก -> ช่วงนั้นเจ้าหน้าที่ที่ผูกบัญชีได้ข้อมูลไม่กรองแผนก (`degraded`); (2) ถ้าใช้บอทในห้องแชตกลุ่ม LINE คำตอบจะเห็นทุกคนในกลุ่ม (บอทดูแค่ `source.userId` ของผู้พิมพ์)
 - จำนวนผู้ใช้ LINE จริงที่ผูกบัญชีแล้ว และ role override ต่อแผนกบน production: ไม่รู้จากข้อมูลที่มี
 - Vendor ที่ไม่มี `user_departments` ล็อกอินเว็บไม่ได้อยู่แล้ว (เอกสารข้อ 11) แต่ใน LINE ยังไม่ทราบว่ามีกี่บัญชี
 
