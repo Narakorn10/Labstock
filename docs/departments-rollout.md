@@ -449,7 +449,9 @@ SELECT conname, conrelid::regclass FROM pg_constraint WHERE confrelid = 'public.
 
 - LINE ใช้ **แผนก default ของผู้ใช้เท่านั้น (ชั่วคราว)**: ไม่รับแผนกจาก request, ไม่มี "ทุกแผนก", ไม่มีตัวสลับแผนกใน LIFF. สวิตช์เปิด -> `resolveDepartmentForLineUser(lineUserId, username)` ใน `department-context.ts` (ต้อง `line_user_id` และ `username` ตรงแถวเดียวกัน, บัญชี active, ไม่ตรวจ `token_expiry`, ไม่มีทางได้ scope ALL; ใช้ได้เฉพาะ `line-liff-ordering.ts` ตามที่ `department-context.line-usage.test.ts` บังคับ)
 - ด่านแรกยังตรวจ role ระบบ (Admin/Manager) ตามเดิม แล้วตรวจ role ที่มีผลจริงของแผนก **ซ้ำ**: global Vendor หรือ role ของแผนกที่ไม่ใช่ Admin/Manager (เช่น override เป็น User/Vendor) -> 403 ข้อความเดิม
-- ไม่มีแถวสมาชิกแผนก / แผนกถูกปิด / บัญชีไม่ active -> 403 "บัญชีนี้ยังไม่มีงานที่ใช้งานได้ กรุณาแจ้งผู้ดูแลระบบ"
+- ไม่มีแถวสมาชิกแผนก / แผนกถูกปิด -> 403 "บัญชีนี้ยังไม่มีงานที่ใช้งานได้ กรุณาแจ้งผู้ดูแลระบบ" (ข้อความไทย)
+- บัญชีไม่ active (หรือไม่ได้ผูก LINE / role ระบบไม่ใช่ Admin/Manager) ถูกด่านแรก (`getLineLinkedUserAccess` ใน `line-liff-auth.ts`) ตัดออกก่อนถึงขั้นหาแผนก -> 403 ข้อความอังกฤษเดิม "Only linked Admin or Manager users can order reagents from LINE." (ไม่ใช่ข้อความไทย)
+- race ต่ำมาก: ด่านแรกกับ `getDepartmentScope` อ่านแคชสวิตช์แผนกแยกกัน 2 ครั้ง ถ้าแคชหมดอายุพอดีระหว่างสองจุดอาจได้ 500 หนึ่ง request (fail closed, ไม่รั่วข้อมูลข้ามแผนก; `liff-orders.scope.test.ts` ล็อกรูปแบบ 500 นี้)
 - error ฐานข้อมูลอื่น ๆ ในการหาแผนก -> 500 (ไม่กลืน); 42P01/42703 -> กลับไปใช้ทาง legacy พร้อม `markDepartmentsNotReady`
 
 **สิ่งที่แก้**
