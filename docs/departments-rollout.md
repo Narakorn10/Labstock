@@ -257,7 +257,7 @@
 **ยังเป็น legacy / ห้ามเปิด `DEPARTMENTS_ENABLED` จนกว่าจะทำ**
 
 - `liff/orders` (POST สร้าง PO จาก LINE, PATCH ตอบรีวิว) **ย้ายแล้วในกลุ่ม 6 PR-B** (หัวข้อ 13): สร้าง/ตอบรีวิว PO ในแผนก default ของผู้ใช้ LINE (เดิมส่ง `{ mode: "legacy" }` ทำให้ PO ที่สร้างจาก LINE ไม่ถูกประทับแผนกที่ถูกต้อง); ส่วน `vendor/shipments` (POST) ย้ายแล้วในกลุ่ม 7
-- **ห้ามเปิด `DEPARTMENTS_ENABLED`**: LIFF สั่งซื้อย้ายเสร็จแล้ว (กลุ่ม 6 PR-B) แต่ยังต้องรอ PR-C (`line-webhook`) + ตรวจบน Neon จริง + v36 + แถวหัวกระดาษ (`lab_profile`) ของทุกแผนก (เจ้าของยืนยันแล้ว; `vendor/shipments` POST ทำเสร็จแล้วในกลุ่ม 7)
+- **ห้ามเปิด `DEPARTMENTS_ENABLED`**: LIFF สั่งซื้อ (กลุ่ม 6 PR-B) และบอท LINE `line-webhook` (กลุ่ม 6 PR-C) ย้ายเสร็จแล้ว แต่ยังห้ามเปิดจนกว่า ตรวจบน Neon จริง + v36 รันแล้ว + แถวหัวกระดาษ (`lab_profile`) ของทุกแผนกครบ + v30–v34 รันครบ (เจ้าของยืนยันแล้ว; `vendor/shipments` POST ทำเสร็จแล้วในกลุ่ม 7)
 - `vendor/shipments` POST ประทับ shipment ด้วยแผนกของ **PO นั้น** (ไม่ใช่แผนกเริ่มต้น) -- ทำแล้วในกลุ่ม 7
 - PR-3 (`po-communication.ts` และ `purchase-order-overdue.ts` -- การแจ้งเตือน / PO เกินกำหนด) **ทำแล้ว ดูหัวข้อ 9**
 
@@ -285,7 +285,7 @@
 - ผู้รับใช้ `users.role` ระดับระบบ **ไม่ใช่** role ต่อแผนก (`user_departments.role`): Manager ที่ถูกลด role เฉพาะแผนกยังได้รับแจ้งเตือน (ข้อจำกัดที่ทราบ มี test ล็อกไว้)
 - `/api/notifications/reorder-risk` และการ drain outbox หลังสร้าง event ยังใช้ `{ mode: "all" }` (coverage test มองไม่เห็นจุดเหล่านี้)
 - Admin ส่วนกลางโหมด "all" กดส่งเตือน PO เกินกำหนดได้ (เหมือน cron)
-- **ยังห้ามเปิด `DEPARTMENTS_ENABLED`** แม้ LIFF สั่งซื้อย้ายแล้ว (กลุ่ม 6 PR-B): ต้องรอ PR-C (`line-webhook`) + ตรวจบน Neon จริง + v36 + แถวหัวกระดาษของทุกแผนก (`vendor/shipments` POST ทำแล้วในกลุ่ม 7)
+- **ยังห้ามเปิด `DEPARTMENTS_ENABLED`** แม้ LIFF สั่งซื้อ (กลุ่ม 6 PR-B) และ `line-webhook` (กลุ่ม 6 PR-C) ย้ายแล้ว: PR-C เสร็จแล้ว แต่ยังห้ามเปิดจนกว่า ตรวจบน Neon จริง + v36 รันแล้ว + แถวหัวกระดาษของทุกแผนกครบ + v30–v34 รันครบ (`vendor/shipments` POST ทำแล้วในกลุ่ม 7)
 
 ## 10. v36 หัวกระดาษใบสั่งซื้อต่อแผนก (PR-1: ไฟล์ migration / PR-2: โค้ดอ่านตามแผนก)
 
@@ -369,7 +369,7 @@ SELECT conname, conrelid::regclass FROM pg_constraint WHERE confrelid = 'public.
 2. ตรวจว่า Vendor ทุกบัญชีมีแถว `user_departments` อย่างน้อย 1 แถวในแผนกที่ active: Vendor ที่ไม่มีแถวจะ **ล็อกอินไม่ได้** เมื่อเปิดสวิตช์ (`department-context.ts:163-168` ปฏิเสธเมื่อไม่มีแผนก) จึงต้องเตรียมแถวสมาชิกก่อน
 3. ตรวจแบบอ่านอย่างเดียวว่า `purchase_orders.department_id` ของ PO ที่ยัง CONFIRMED/PARTIALLY_SHIPPED/PARTIALLY_RECEIVED ถูกต้องทุกแถว (ผิดรูปแบบ = POST ตอบ 500 ปลอดภัยแต่ส่งของไม่ได้)
 4. ตรวจบน Neon จริงตอนซ้อมว่า `, department_id` / `, <id>` ที่ต่อท้ายคอลัมน์และ SELECT ของ INSERT ทำงานถูก (เทสต์พิสูจน์ผ่าน PGlite เท่านั้น ไม่เคยรันบน Neon)
-5. **ห้ามเปิด `DEPARTMENTS_ENABLED` จนกว่า PR-C (`line-webhook`) จะเสร็จ + ตรวจบน Neon จริง + v36 + แถวหัวกระดาษของทุกแผนก** (กฎเดิมคงไว้; LIFF สั่งซื้อย้ายเสร็จแล้วในกลุ่ม 6 PR-B)
+5. **ห้ามเปิด `DEPARTMENTS_ENABLED` จนกว่า ตรวจบน Neon จริง + v36 รันแล้ว + แถวหัวกระดาษของทุกแผนกครบ + v30–v34 รันครบ** (กฎเดิมคงไว้; PR-C เสร็จแล้ว แต่ยังห้ามเปิด; LIFF สั่งซื้อย้ายเสร็จแล้วในกลุ่ม 6 PR-B)
 
 **ปัญหาเดิมที่รู้อยู่แล้ว และ *ไม่ได้แก้* ในกลุ่มนี้**
 
@@ -433,7 +433,7 @@ SELECT conname, conrelid::regclass FROM pg_constraint WHERE confrelid = 'public.
 
 - `getRecentLogRows`, `getLowStockRows`, `searchStockRows`, `searchStockRowsByJob` รับ `scope: DepartmentScope` เป็นพารามิเตอร์บังคับ (ตัวสุดท้าย; มีตัวตรวจตอนรัน ผิดรูปล้มก่อนยิง SQL). กรองทั้ง `master_data`, CTE `inventory` และ `logs`
 - `searchStockRows`: เงื่อนไข `WHERE a OR b OR c` ถ้าต่อ `AND department` ท้ายประโยคจะผูกกับเงื่อนไขสุดท้าย (บาร์โค้ด) เท่านั้น สินค้าแผนกอื่นที่ชื่อ/รหัสตรงจะรั่ว -> โหมด "one" ครอบ OR ด้วยวงเล็บก่อน; โหมดอื่นใช้ SQL เดิมทุกตัวอักษร
-- `line-webhook` ถูกแก้แค่ส่ง `{ mode: "legacy" }` ตรงจุดที่เรียก (3 จุด) **ชั่วคราวจน PR-C** ไม่เปลี่ยน SQL / พฤติกรรมของ webhook
+- `line-webhook` ถูกแก้แค่ส่ง `{ mode: "legacy" }` ตรงจุดที่เรียก (3 จุด) **ชั่วคราวจน PR-C** ไม่เปลี่ยน SQL / พฤติกรรมของ webhook (ณ PR-A; PR-C ทำเสร็จแล้ว ดูหัวข้อ PR-C ด้านล่าง)
 - โหมด legacy: ข้อความ SQL + params + จำนวน statement + ค่าที่คืน **เหมือนเดิมทุกไบต์** (`bot-stock-queries.legacy.test.ts` เทียบกับ `bot-stock-queries.legacy-baseline.json` ที่บันทึกจากโค้ดเดิมก่อนแก้; ห้ามสร้างใหม่ยกเว้นตั้งใจด้วย `UPDATE_BOT_STOCK_BASELINE=1`)
 
 **ข้อจำกัด**
@@ -468,4 +468,52 @@ SELECT conname, conrelid::regclass FROM pg_constraint WHERE confrelid = 'public.
 - ปุ่ม "อนุมัติได้ที่หน้าเว็บ" (`liff-order-workflow.tsx` บรรทัด ~482-483) อาจเจอ 404 ถ้า session เว็บของผู้ใช้อยู่คนละแผนกกับแผนก default ที่ LINE ใช้
 - dedupe `liff_request_id` กรองตามแผนก แต่ unique index เป็นแบบทั้งระบบ: ถ้าส่ง `liffRequestId` ที่แผนกอื่นใช้แล้ว จะชน unique (23505) -> ตอบ 500 "Unable to submit purchase order from LINE." (ไม่เปิดเผย PO ของแผนกอื่น; ยอมรับได้ เพราะ id สร้างจากฝั่ง client แบบสุ่ม)
 - หลักฐานมาจาก PGlite (`liff-orders.dept.db.test.ts`, `liff-orders.legacy.test.ts`) และการ mock **ไม่ใช่ Neon จริงและไม่ใช่ LINE จริง** (`verifyLineIdToken` ถูก mock); ต้องตรวจบน Neon ตอนซ้อมก่อนเปิดสวิตช์ (รวมถึง fragment ที่ว่างตอน legacy)
-- ยังไม่เปิดสวิตช์ได้: ต้องรอ PR-C (`line-webhook`) + ตรวจบน Neon + v36 + แถวหัวกระดาษของทุกแผนก
+- ยังไม่เปิดสวิตช์ได้ (ณ PR-B ต้องรอ PR-C; ตอนนี้ PR-C เสร็จแล้ว แต่ยังต้องรอ ตรวจบน Neon + v36 + แถวหัวกระดาษของทุกแผนก + v30–v34)
+
+### PR-C: line-webhook (บอท LINE) กรองตามแผนก/vendor (ทำแล้ว)
+
+ถอด `src/app/api/line-webhook/route.ts` ออกจาก `DEPARTMENT_SCOPE_PENDING` (**3 -> 2**, นับจริงจาก `department-scope-coverage.test.ts`). ที่เหลือ 2 ตั้งใจค้าง: `src/app/api/auth/register/route.ts`, `src/app/api/mobile/lookup/route.ts`. ไม่มี migration, ไม่มี env ใหม่; สวิตช์ `DEPARTMENTS_ENABLED` ยังปิด (production ตอนนี้ตอบเหมือนเดิมทุกอย่าง)
+
+**สิ่งที่แก้**
+
+- บอทมี 3 ทางที่ตอบข้อมูลจริง และทั้งสามผ่านด่านเดียวกัน: (1) ข้อความสต็อก, (2) `PO-...`, (3) เลขพัสดุ (รูปแบบ `AA123456789BB`). ก่อนหน้านี้ใครที่เพิ่มบอทเป็นเพื่อนก็พิมพ์ `PO-...` หรือเลขพัสดุแล้วเห็นข้อมูลได้โดยไม่ต้องผูกบัญชี
+- ด่านตรวจ `getLineBotAccess(lineUserId)` ใน `src/lib/line-liff-ordering.ts` คืนผลแยกกรณี: `legacy` / `unlinked` / `no_work` / `vendor` / `lab` (มี role ที่มีผลจริงในแผนก + scope แผนก default). แล้ว `decideLineBotCommand(access, "stock" | "purchasing")` ใน `src/lib/line-bot-queries.ts` ตัดสินว่าจะตอบอะไร (สต็อก -> scope เข้า `bot-stock-queries.ts` เดิม; PO/พัสดุ -> actor เข้า `findPurchaseOrderForLine` / `findShipmentForLine`). actor เป็นพารามิเตอร์บังคับและมีตัวตรวจตอนรัน (`assertActor`) ผิดรูปล้มก่อนยิง SQL
+- error ในการหาแผนกที่เป็น 42P01/42703 -> `markDepartmentsNotReady` แล้วถอยเป็น legacy (แบบเดียวกับ LIFF สั่งซื้อ); error อื่น rethrow ไม่กลืน
+- webhook ไม่อ้าง `resolveDepartmentForLineUser` โดยตรง (ตามที่ `department-context.line-usage.test.ts` บังคับ) และ SQL ของ postback, `ack_expiry`, `expiry_notification_logs`, การตรวจลายเซ็น, โครง `Promise.all` ไม่เปลี่ยน. คำค้นรายการสินค้าใน PO (`purchase_order_items`) อยู่ใน route ต่อไป ดึงด้วย `po.id` ของแถวที่ผ่านการกรองแล้ว
+- **สวิตช์ปิด:** ทางเดิมไม่เปลี่ยน -- webhook เช็ก `departmentsFlagOn()` (ไม่แตะฐานข้อมูล) แล้วใช้ access แบบ `legacy` ซึ่งได้ scope `{ mode: "legacy" }` และ actor `{ kind: "legacy" }` (SQL `SELECT * FROM purchase_orders WHERE po_number = ...` / `SELECT * FROM shipments WHERE tracking_no = ...` ข้อความเดิม). ข้อความ SQL + params + จำนวน statement + ลำดับ + คำตอบที่ส่งเข้า reply เหมือนเดิมทุกไบต์: `line-webhook.legacy.test.ts` เทียบกับ `line-webhook.legacy-baseline.json` ที่บันทึกจากโค้ดเดิมก่อนแก้ (ห้ามสร้างใหม่ยกเว้นตั้งใจด้วย `UPDATE_LINE_WEBHOOK_BASELINE=1`)
+
+**ใครเห็นอะไร (สวิตช์เปิด)**
+
+| ผู้ใช้ | สต็อก | `PO-...` และเลขพัสดุ |
+|---|---|---|
+| ไม่ผูกบัญชี LINE / บัญชีไม่ active / ไม่มี `source.userId` | ปฏิเสธ: `บัญชี LINE นี้ยังไม่ได้ผูกกับบัญชี LabStock กรุณาผูกบัญชีก่อนใช้งานค่ะ (พิมพ์ "id" เพื่อดู LINE User ID)` ไม่ query ข้อมูล | เหมือนกัน |
+| ผูกแล้ว (เจ้าหน้าที่) แต่ไม่มีแผนกที่ใช้งานได้ | `ยังไม่มีงานที่ใช้งานได้ กรุณาแจ้งผู้ดูแลระบบ` ไม่ query ข้อมูล | เหมือนกัน |
+| Admin / Manager (role ที่มีผลจริงในแผนก) | เฉพาะแผนก default ของตัวเอง | เฉพาะแผนก default ของตัวเอง (รวม PO สถานะรอผู้จัดการตรวจของแผนกตัวเอง) |
+| User / Operator / Technician | เฉพาะแผนก default ของตัวเอง | ปฏิเสธ: `สิทธิ์ของคุณไม่สามารถดูใบสั่งซื้อหรือพัสดุผ่านบอทได้ (เฉพาะผู้จัดการและผู้ดูแลระบบ)` ไม่ query ข้อมูล |
+| Vendor | ปฏิเสธ: `บัญชีผู้ขายไม่สามารถดูสต็อกผ่านบอทได้ ใช้ได้เฉพาะการค้นหาใบสั่งซื้อ (PO-...) และเลขพัสดุ` ไม่ query สต็อก | เฉพาะของบริษัทตัวเอง (กรองด้วยชื่อ vendor ข้ามแผนก ไม่กรองแผนก); PO สถานะ `PENDING_MANAGER_REVIEW` ไม่เห็น |
+
+หมายเหตุ: role ที่ใช้ตัดสินคือ role ที่มีผลจริงในแผนก (override ใน `user_departments` ชนะ role ระบบ). ไม่พบ/ไม่มีสิทธิ์ตอบข้อความ "ไม่พบ..." เดียวกัน (ไม่บอกว่าบริษัท/แผนกอื่นมีข้อมูลอยู่). Vendor ที่ `users.vendor` ว่างจะไม่พบอะไรเลย (ไม่ยิง query ข้อมูล)
+
+**คำสั่งที่ไม่ผ่านด่านโดยตั้งใจ** (ตอบเหมือนเดิมทุกสถานะ)
+
+- `id`, `ลงทะเบียน` (ผู้ใช้ที่ยังไม่ผูกบัญชีต้องใช้ได้ เพราะเป็นทางผูกบัญชี), `help`, `เมนู`, `order`, `เบิก` (เมนูเบิก), `สั่งซื้อ`
+- `ปฏิเสธ PO-...: เหตุผล` ของ Vendor (มีการตรวจการผูกบัญชี Vendor ของมันเองอยู่แล้ว ไม่เปลี่ยน)
+- postback ทั้งหมด รวม `ack_expiry` (SQL และพฤติกรรมไม่เปลี่ยน; ปัญหาเดิมที่ `ack_expiry` ไม่ตรวจว่าผู้กดผูกบัญชีหรือไม่ ไม่ได้แก้ใน PR นี้)
+
+**เทสต์ที่เพิ่ม**
+
+- `src/app/api/line-webhook/line-webhook.legacy.test.ts` + `line-webhook.legacy-baseline.json` (baseline สวิตช์ปิด)
+- `src/app/api/line-webhook/line-webhook.dept.db.test.ts` (PGlite: 2 แผนก, Vendor 2 บริษัท, control query ว่ามีข้อมูลทั้งสองฝั่งจริง, unlinked/no_work/User/Vendor, คำสั่งที่ไม่ผ่านด่าน, error ของด่าน)
+- `src/lib/line-bot-access.test.ts` (ด่าน), `src/lib/line-bot-queries.test.ts` (decision + `assertActor`), `src/lib/line-bot-queries.dept.db.test.ts` (PO/พัสดุบน PGlite)
+- `src/lib/department-context.line-usage.test.ts` แก้ให้ตรวจเพิ่มว่า `getLineBotAccess` ถูกอ้างจากไฟล์ด่านกับ webhook เท่านั้น (รายชื่อไฟล์ที่ได้รับอนุญาตของ `resolveDepartmentForLineUser` ไม่เปลี่ยน)
+
+**ข้อจำกัดและการตัดสินที่รู้**
+
+- **Vendor ที่ไม่มีแถว `user_departments`** ยังดู PO/พัสดุของบริษัทตัวเองผ่าน LINE ได้ เพราะกรองด้วยชื่อบริษัทอย่างเดียว ไม่รั่วข้อมูลของใคร แต่หลวมกว่าเว็บที่ล็อกอินไม่ได้ (ดูหัวข้อ 11); ยังไม่ทราบว่ามีกี่บัญชีแบบนี้
+- Vendor ไม่เห็น PO สถานะ `PENDING_MANAGER_REVIEW` (ตรงกับเว็บ); พัสดุไม่มีเงื่อนไขนี้ (เหมือนเว็บ)
+- role อื่นนอกจาก Admin/Manager ถูกปฏิเสธ PO/พัสดุ (ตรงกับเว็บ); Vendor ดูสต็อกไม่ได้ (เจ้าของตัดสิน)
+- LINE ใช้แผนก default ของผู้ใช้เท่านั้น (ไม่มีตัวเลือกแผนก, ไม่มี "ทุกแผนก") เหมือน LIFF สั่งซื้อ
+- ตอนสวิตช์เปิดและฐานข้อมูลล้ม: ด่านโยน error -> batch ตอบ 500 -> LINE อาจส่ง event ซ้ำ (redelivery) และตอบซ้ำได้ เป็นพฤติกรรมเดิมของ webhook เมื่อ DB ล้ม ไม่ได้เกิดใหม่
+- สวิตช์เปลี่ยนสถานะระหว่างด่านกับคำค้น (แคช 60 วินาที): ล้มแบบปิด ไม่รั่ว
+- **หลักฐานทั้งหมดมาจาก PGlite และการ mock ไม่ใช่ Neon จริงและไม่ใช่ LINE จริง**: การต่อ fragment ที่ว่างของ driver Neon และพฤติกรรมของ LINE ต้องตรวจตอนซ้อมก่อนเปิดสวิตช์. จำนวนผู้ใช้ LINE ที่ผูกบัญชีแล้วและ role override ต่อแผนกบน production: ไม่รู้จากข้อมูลที่มี
+- **ยังห้ามเปิด `DEPARTMENTS_ENABLED`**: PR-C เสร็จแล้ว แต่ยังห้ามเปิดจนกว่า ตรวจบน Neon จริง + v36 รันแล้ว + แถวหัวกระดาษ (`lab_profile`) ของทุกแผนกครบ + v30–v34 รันครบ
