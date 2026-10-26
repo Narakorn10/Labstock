@@ -118,6 +118,8 @@ describe("assertActor fails closed", () => {
     { kind: "lab" },
     { kind: "lab", scope: { mode: "legacy" } },
     { kind: "lab", scope: { mode: "all" } },
+    { kind: "lab", scope: { mode: "all", departmentId: 1 } },
+    { kind: "lab", scope: { mode: "legacy", departmentId: 1 } },
     { kind: "lab", scope: { mode: "one" } },
     { kind: "lab", scope: { mode: "one", departmentId: 0 } },
     { kind: "lab", scope: { mode: "one", departmentId: -1 } },
