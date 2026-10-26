@@ -41,7 +41,7 @@ vi.mock("@/lib/line-bot", () => {
 
 import dbSql from "@/lib/db";
 import { resetDepartmentContextForTests } from "@/lib/department-context";
-import { resetDepartmentsFlagForTests } from "@/lib/departments-flag";
+import { markDepartmentsNotReady, resetDepartmentsFlagForTests } from "@/lib/departments-flag";
 import { LINE_BOT_MESSAGES } from "@/lib/line-bot-queries";
 import { DEPT_A, DEPT_B, seedTwoDepartments } from "@/test/department-fixtures";
 import { addPurchaseOrderTables, insertPurchaseOrder } from "@/test/purchase-order-dept-fixtures";
@@ -421,7 +421,7 @@ describe("gate failures", () => {
     expect(result.dataStatements).toEqual([]);
   });
 
-  it("a missing department schema (42P01 / 42703) answers like the legacy bot (unscoped) and does not fail", async () => {
+  it("a missing department schema (42P01 / 42703) in the lookup: a linked Manager gets degraded answers (unfiltered) and the request does not fail; a stranger stays refused", async () => {
     for (const code of ["42P01", "42703"]) {
       resetDepartmentsFlagForTests();
       const result = await say("PO-B-V1", "mgra", (text) => {
@@ -429,6 +429,72 @@ describe("gate failures", () => {
       });
       expect(result.status, code).toBe(200);
       expect(poOf(result), code).toMatchObject({ po_number: "PO-B-V1" });
+      // The fallback is NOT legacy: identity is still required while the switch is on (spec section 2 and the 5.1 ruling).
+      const stranger = await say("PO-B-V1", "unlinked-id");
+      expect(stranger.texts, code).toEqual([LINE_BOT_MESSAGES.unlinked]);
+      expect(stranger.dataStatements, code).toEqual([]);
     }
   });
+});
+
+// Switch ON but departments not ready ("degraded"): either a route called markDepartmentsNotReady within the last 60 s, or the
+// readiness probe itself hits a missing table. The bot still requires a linked, active account; staff get UNFILTERED answers (no
+// department is known), PO/shipments still need Admin/Manager, a Vendor still sees only its own company.
+describe("switch on, departments not ready (degraded)", () => {
+  const PROBE = /to_regclass\('public\.user_departments'\)/;
+  const modes: Array<[string, () => void, Intercept | undefined]> = [
+    ["after markDepartmentsNotReady", () => markDepartmentsNotReady("test: another route saw a missing column"), undefined],
+    ["when the probe cannot find the schema", () => undefined, (text) => {
+      if (PROBE.test(text)) throw Object.assign(new Error('relation "user_departments" does not exist'), { code: "42P01" });
+    }],
+  ];
+
+  for (const [mode, prepare, intercept] of modes) {
+    describe(mode, () => {
+      beforeEach(() => {
+        prepare();
+      });
+      const ask = (text: string, username: string | null) => say(text, username, intercept);
+
+      it("control: degraded is really in effect (mgra, a Manager of A, gets the PO, shipment and stock of department B, unfiltered)", async () => {
+        const po = await ask("PO-B-V1", "mgra");
+        expect(po.status).toBe(200);
+        expect(poOf(po)).toMatchObject({ po_number: "PO-B-V1", vendor: "V1" });
+        if (intercept) expect(po.statements.some((text) => PROBE.test(text))).toBe(true);
+        expect(po.statements.some((text) => /LATERAL/.test(text))).toBe(false);
+        expect(trackingOf(await ask("BB222222222TH", "mgra"))).toMatchObject({ trackingNo: "BB222222222TH" });
+        expect(stockOf(await ask("stock dept b item", "mgra"))).toEqual(["MB-000001", "MB-000002"]);
+      });
+
+      const identities: Array<[string, string | null]> = [["unlinked LINE id", "unlinked-id"], ["inactive account", "inactive-account"], ["no source.userId", null]];
+      for (const [identityName, username] of identities) {
+        it.each(["PO-A-V1", "PO-B-V1", "AA111111111TH", "stock", "stock reagent", "stock งาน routine"])(`${identityName}: "%s" answers the unlinked message and reads no data`, async (text) => {
+          const result = await ask(text, username);
+          expect(result.status).toBe(200);
+          expect(result.texts).toEqual([LINE_BOT_MESSAGES.unlinked]);
+          expect(result.calls).toEqual(["lineClient.replyMessage"]);
+          expect(result.dataStatements).toEqual([]);
+        });
+      }
+
+      it("a linked User is refused PO and shipments (no data read) but may search stock (unfiltered)", async () => {
+        for (const text of ["PO-A-V1", "PO-B-V1", "AA111111111TH", "BB222222222TH"]) {
+          const result = await ask(text, "user-a");
+          expect(result.texts, text).toEqual([LINE_BOT_MESSAGES.purchasingDenied]);
+          expect(result.dataStatements, text).toEqual([]);
+        }
+        expect(stockOf(await ask("stock reagent 1", "user-a"))).toEqual(["LAB-000001"]);
+        expect(stockOf(await ask("stock dept b item", "user-a"))).toEqual(["MB-000001", "MB-000002"]);
+      });
+
+      it("a Vendor sees only its own company's PO and shipment, and no stock", async () => {
+        expect(poOf(await ask("PO-B-V1", "vendor-v1"))).toMatchObject({ po_number: "PO-B-V1", vendor: "V1" });
+        expect((await ask("PO-B-V2", "vendor-v1")).texts).toEqual([notFoundPO("PO-B-V2")]);
+        expect((await ask("CC333333333TH", "vendor-v1")).texts).toEqual([notFoundShipment("CC333333333TH")]);
+        const stock = await ask("stock", "vendor-v1");
+        expect(stock.texts).toEqual([LINE_BOT_MESSAGES.vendorStockDenied]);
+        expect(stock.dataStatements).toEqual([]);
+      });
+    });
+  }
 });

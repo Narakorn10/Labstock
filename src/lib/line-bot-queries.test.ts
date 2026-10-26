@@ -75,6 +75,26 @@ describe("decideLineBotCommand", () => {
       expect(decideLineBotCommand(lab(role), "stock")).toEqual({ ok: true, command: "stock", scope });
     }
   });
+
+  // degraded: switch on, departments not ready. The account is linked and active (checked by the gate), but no department is
+  // known, so the data is unfiltered (legacy statements); purchasing still needs Admin/Manager.
+  it("degraded: every linked role may read stock, unfiltered", () => {
+    for (const role of ["Admin", "Manager", "User", "Operator", "Technician"]) {
+      expect(decideLineBotCommand({ state: "degraded", role }, "stock")).toEqual({ ok: true, command: "stock", scope: { mode: "legacy" } });
+    }
+  });
+
+  it("degraded: Manager/Admin may read purchasing with the legacy actor", () => {
+    for (const role of ["Manager", "Admin"]) {
+      expect(decideLineBotCommand({ state: "degraded", role }, "purchasing")).toEqual({ ok: true, command: "purchasing", actor: { kind: "legacy" } });
+    }
+  });
+
+  it("degraded: User/Operator/Technician (and an unknown role) are denied purchasing", () => {
+    for (const role of ["User", "Operator", "Technician", "Vendor", ""]) {
+      expect(decideLineBotCommand({ state: "degraded", role }, "purchasing"), role).toEqual({ ok: false, message: LINE_BOT_MESSAGES.purchasingDenied });
+    }
+  });
 });
 
 describe("legacy statement text", () => {

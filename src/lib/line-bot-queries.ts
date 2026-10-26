@@ -4,8 +4,8 @@ import { isLabPurchasingRole } from "@/lib/purchase-order-workflow";
 import { andDept, type DepartmentScope } from "@/lib/scoped-db";
 
 // PO / tracking lookups and the command decision for the LINE webhook. The actor says whose eyes the lookup runs with:
-// legacy (departments off) keeps the original statements, a lab actor stays inside one department, a vendor actor sees only
-// its own vendor (across departments, like the vendor web pages).
+// legacy (switch off, or switch on with departments not ready for a linked Admin/Manager) keeps the original statements, a lab
+// actor stays inside one department, a vendor actor sees only its own vendor (across departments, like the vendor web pages).
 
 export type LineBotActor =
   | { kind: "legacy" }
@@ -30,6 +30,13 @@ export function decideLineBotCommand(access: LineBotAccess, command: "stock" | "
       return command === "stock"
         ? { ok: true, command: "stock", scope: { mode: "legacy" } }
         : { ok: true, command: "purchasing", actor: { kind: "legacy" } };
+    case "degraded":
+      // Switch on, departments not ready: the account is linked and active, but no department is known, so the answers are
+      // unfiltered (legacy statements). Purchasing still needs Admin/Manager.
+      if (command === "stock") return { ok: true, command: "stock", scope: { mode: "legacy" } };
+      return isLabPurchasingRole(access.role)
+        ? { ok: true, command: "purchasing", actor: { kind: "legacy" } }
+        : { ok: false, message: LINE_BOT_MESSAGES.purchasingDenied };
     case "unlinked":
       return { ok: false, message: LINE_BOT_MESSAGES.unlinked };
     case "no_work":
