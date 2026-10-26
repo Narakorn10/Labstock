@@ -1,0 +1,1146 @@
+{
+  "bootstrap": {
+    "status": 200,
+    "body": {
+      "user": {
+        "username": "mgr1",
+        "name": "Manager One",
+        "role": "Manager",
+        "vendor": null
+      },
+      "vendors": [
+        {
+          "vendor": "Vendor A",
+          "item_count": 2
+        }
+      ],
+      "orders": [
+        {
+          "id": 7,
+          "po_number": "PO-20260801-007",
+          "status": "SUBMITTED",
+          "items": [
+            {
+              "id": 1,
+              "po_id": 7,
+              "item_id": "X"
+            }
+          ]
+        }
+      ]
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'line_user_id'\n    ) AS exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-line-1"
+        ]
+      },
+      {
+        "text": "\n      SELECT vendor, COUNT(*)::int AS item_count\n      FROM master_data\n      WHERE vendor IS NOT NULL AND TRIM(vendor) <> ''\n      GROUP BY vendor\n      ORDER BY vendor\n    ",
+        "params": []
+      },
+      {
+        "text": "\n      SELECT p.*\n      FROM purchase_orders p\n      WHERE p.status IN ('PENDING_MANAGER_REVIEW', 'SUBMITTED', 'ACKNOWLEDGED', 'PENDING_LAB_REVIEW', 'REVISION_REQUESTED', 'CONFIRMED', 'PARTIALLY_SHIPPED', 'SHIPPED')\n      ORDER BY p.updated_at DESC NULLS LAST, p.created_at DESC\n      LIMIT 30\n    ",
+        "params": []
+      },
+      {
+        "text": "SELECT * FROM purchase_order_items WHERE po_id = $1 ORDER BY id",
+        "params": [
+          7
+        ]
+      }
+    ],
+    "suggestionsCalls": [],
+    "communicationCalls": []
+  },
+  "catalogSuggestOnly": {
+    "status": 200,
+    "body": [
+      {
+        "item_id": "X",
+        "name": "Reagent X",
+        "unit": "box",
+        "vendor": "Vendor A",
+        "policy_order_qty": 4,
+        "dynamic_order_qty": 4,
+        "on_order_qty": 0,
+        "committed_no_eta_qty": 0,
+        "calculation_version": "v5",
+        "policy_configured": true
+      }
+    ],
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'line_user_id'\n    ) AS exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-line-1"
+        ]
+      }
+    ],
+    "suggestionsCalls": [
+      {
+        "options": {
+          "vendor": "Vendor A",
+          "keyword": "",
+          "includeAll": false,
+          "includeUnconfigured": false,
+          "limit": 300
+        },
+        "scope": {
+          "mode": "legacy"
+        }
+      }
+    ],
+    "communicationCalls": []
+  },
+  "catalogKeyword": {
+    "status": 200,
+    "body": [
+      {
+        "item_id": "X",
+        "name": "Reagent X",
+        "unit": "box",
+        "vendor": "Vendor A",
+        "policy_order_qty": 4,
+        "dynamic_order_qty": 4,
+        "on_order_qty": 0,
+        "committed_no_eta_qty": 0,
+        "calculation_version": "v5",
+        "policy_configured": true
+      }
+    ],
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'line_user_id'\n    ) AS exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-line-1"
+        ]
+      }
+    ],
+    "suggestionsCalls": [
+      {
+        "options": {
+          "vendor": "Vendor A",
+          "keyword": "abc",
+          "includeAll": true,
+          "includeUnconfigured": true,
+          "limit": 50
+        },
+        "scope": {
+          "mode": "legacy"
+        }
+      }
+    ],
+    "communicationCalls": []
+  },
+  "catalogBrowseAll": {
+    "status": 200,
+    "body": [
+      {
+        "item_id": "X",
+        "name": "Reagent X",
+        "unit": "box",
+        "vendor": "Vendor A",
+        "policy_order_qty": 4,
+        "dynamic_order_qty": 4,
+        "on_order_qty": 0,
+        "committed_no_eta_qty": 0,
+        "calculation_version": "v5",
+        "policy_configured": true
+      }
+    ],
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'line_user_id'\n    ) AS exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-line-1"
+        ]
+      }
+    ],
+    "suggestionsCalls": [
+      {
+        "options": {
+          "vendor": "Vendor A",
+          "keyword": "",
+          "includeAll": true,
+          "includeUnconfigured": true,
+          "limit": 300
+        },
+        "scope": {
+          "mode": "legacy"
+        }
+      }
+    ],
+    "communicationCalls": []
+  },
+  "catalogNoVendor": {
+    "status": 400,
+    "body": {
+      "error": "Choose a Vendor first."
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'line_user_id'\n    ) AS exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-line-1"
+        ]
+      }
+    ],
+    "suggestionsCalls": [],
+    "communicationCalls": []
+  },
+  "postDedupeFound": {
+    "status": 200,
+    "body": {
+      "id": 5,
+      "po_number": "PO-20260801-002",
+      "vendor": "Vendor A",
+      "status": "PENDING_MANAGER_REVIEW",
+      "items": [
+        {
+          "id": 1,
+          "po_id": 5,
+          "item_id": "X"
+        }
+      ],
+      "deduplicated": true
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'line_user_id'\n    ) AS exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-line-1"
+        ]
+      },
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'purchase_orders' AND column_name = 'liff_request_id'\n    ) AS exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT * FROM purchase_orders\n        WHERE liff_request_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "req-1"
+        ]
+      },
+      {
+        "text": "SELECT * FROM purchase_order_items WHERE po_id = $1 ORDER BY id",
+        "params": [
+          5
+        ]
+      }
+    ],
+    "suggestionsCalls": [],
+    "communicationCalls": []
+  },
+  "postCreateAfterDedupeMiss": {
+    "status": 201,
+    "body": {
+      "id": 9,
+      "po_number": "PO-20260810-001",
+      "vendor": "Vendor A",
+      "status": "PENDING_MANAGER_REVIEW",
+      "expected_date": "2026-08-20",
+      "items": [
+        {
+          "item_name": "Reagent X",
+          "quantity": 4,
+          "unit": "box"
+        }
+      ]
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'line_user_id'\n    ) AS exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-line-1"
+        ]
+      },
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'purchase_orders' AND column_name = 'liff_request_id'\n    ) AS exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT * FROM purchase_orders\n        WHERE liff_request_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "req-2"
+        ]
+      },
+      {
+        "text": "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+        "params": [
+          "purchase_order_number:20260810"
+        ]
+      },
+      {
+        "text": "\n    SELECT pg_advisory_xact_lock(hashtextextended(item_id, 0))\n    FROM unnest($1::text[]) AS locked(item_id)\n    ORDER BY item_id\n  ",
+        "params": [
+          [
+            "X"
+          ]
+        ]
+      },
+      {
+        "text": "\n      WITH input_rows AS (\n        SELECT * FROM jsonb_to_recordset($1::jsonb) AS item(\n          item_id TEXT, item_name TEXT, quantity NUMERIC, unit TEXT,\n          system_suggested_qty NUMERIC, override_reason TEXT, calculation_version TEXT,\n          calculation_snapshot JSONB, selected_basis TEXT,\n          snapshot_on_order_qty NUMERIC, snapshot_no_eta_qty NUMERIC\n        )\n      ), inactive_items AS (\n        SELECT input.item_id\n        FROM input_rows input\n        LEFT JOIN master_data master ON master.item_id = input.item_id\n        WHERE master.item_id IS NULL OR master.is_active = FALSE\n      ), current_open AS (\n        SELECT poi.item_id,\n          COALESCE(SUM(GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0)) FILTER (WHERE p.expected_date IS NOT NULL), 0) AS on_order_qty,\n          COALESCE(SUM(GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0)) FILTER (WHERE p.expected_date IS NULL), 0) AS no_eta_qty\n        FROM purchase_order_items poi\n        JOIN purchase_orders p ON p.id = poi.po_id\n        JOIN input_rows input ON input.item_id = poi.item_id\n        WHERE p.status IN ('PENDING_MANAGER_REVIEW', 'SUBMITTED', 'ACKNOWLEDGED', 'REVISION_REQUESTED', 'CONFIRMED', 'PARTIALLY_SHIPPED', 'SHIPPED', 'PARTIALLY_RECEIVED')\n        GROUP BY poi.item_id\n      ), stale_items AS (\n        SELECT input.item_id\n        FROM input_rows input\n        LEFT JOIN current_open current ON current.item_id = input.item_id\n        WHERE COALESCE(current.on_order_qty, 0) IS DISTINCT FROM input.snapshot_on_order_qty\n           OR COALESCE(current.no_eta_qty, 0) IS DISTINCT FROM input.snapshot_no_eta_qty\n      ), issuer AS (\n        -- to_jsonb keeps PO creation working before upgrade_v27 adds users.department.\n        SELECT organization_name,\n          COALESCE(\n            NULLIF(TRIM((SELECT to_jsonb(u) ->> 'department' FROM users u WHERE u.username = $2)), ''),\n            department_name\n          ) AS department_name,\n          address, phone, email, logo_url\n        FROM lab_profile\n        WHERE id = 1\n      ), po_seq AS (\n        SELECT 'PO-' || $3 || '-' || LPAD((COALESCE(MAX(substring(po_number from '([0-9]+)$')::int), 0) + 1)::text, 3, '0') AS po_number\n        FROM purchase_orders\n        WHERE po_number ~ $4\n      ), new_po AS (\n        INSERT INTO purchase_orders (\n          po_number, vendor, note, expected_date, created_by, status, proposal_origin,\n          review_requested_at, liff_request_id, issuer_name, issuer_department,\n          issuer_address, issuer_phone, issuer_email, issuer_logo_url\n        ) SELECT\n          (SELECT po_number FROM po_seq), $5, $6, $7, $8,\n          $9, $10, $11, $12,\n          issuer.organization_name, issuer.department_name, issuer.address,\n          issuer.phone, issuer.email, issuer.logo_url\n        FROM issuer\n        WHERE NOT EXISTS (SELECT 1 FROM stale_items)\n          AND NOT EXISTS (SELECT 1 FROM inactive_items)\n        RETURNING *\n      ), new_items AS (\n        INSERT INTO purchase_order_items (\n          po_id, item_id, item_name, quantity, unit, system_suggested_qty,\n          override_reason, calculation_version, calculation_snapshot, selected_basis,\n          reagent_type, job_type, machine_type\n        )\n        SELECT new_po.id, item.item_id, item.item_name, item.quantity, item.unit,\n          item.system_suggested_qty, item.override_reason, item.calculation_version,\n          item.calculation_snapshot, item.selected_basis,\n          master.reagent_type, master.job_type, master.machine_type\n        FROM new_po\n        CROSS JOIN input_rows item\n        JOIN master_data master ON master.item_id = item.item_id\n        RETURNING *\n      )\n      SELECT\n        (SELECT to_jsonb(new_po) FROM new_po) AS purchase_order,\n        (SELECT COALESCE(jsonb_agg(to_jsonb(new_items)), '[]'::jsonb) FROM new_items) AS items\n    ",
+        "params": [
+          "[{\"item_id\":\"X\",\"item_name\":\"Reagent X\",\"quantity\":4,\"unit\":\"box\",\"system_suggested_qty\":4,\"override_reason\":null,\"calculation_version\":\"v5\",\"calculation_snapshot\":{\"item_id\":\"X\",\"name\":\"Reagent X\",\"unit\":\"box\",\"vendor\":\"Vendor A\",\"policy_order_qty\":4,\"dynamic_order_qty\":4,\"on_order_qty\":0,\"committed_no_eta_qty\":0,\"calculation_version\":\"v5\",\"policy_configured\":true,\"calculated_at\":\"2026-08-10T03:04:05.678Z\"},\"selected_basis\":\"POLICY\",\"snapshot_on_order_qty\":0,\"snapshot_no_eta_qty\":0}]",
+          "mgr1",
+          "20260810",
+          "^PO-20260810-[0-9]+$",
+          "Vendor A",
+          "n1",
+          "2026-08-20",
+          "mgr1",
+          "PENDING_MANAGER_REVIEW",
+          "LAB",
+          "2026-08-10T03:04:05.678Z",
+          "req-2"
+        ]
+      }
+    ],
+    "suggestionsCalls": [
+      {
+        "options": {
+          "vendor": "Vendor A",
+          "itemIds": [
+            "X"
+          ],
+          "includeUnconfigured": true,
+          "includeAll": true
+        },
+        "scope": {
+          "mode": "legacy"
+        }
+      }
+    ],
+    "communicationCalls": [
+      {
+        "poId": 9,
+        "eventType": "PO_REVIEW_REQUIRED",
+        "actor": {
+          "username": "mgr1",
+          "name": "Manager One",
+          "role": "Manager",
+          "vendor": null
+        },
+        "source": "LIFF",
+        "metadata": {
+          "origin": "LAB"
+        }
+      }
+    ]
+  },
+  "postWithoutLiffRequestId": {
+    "status": 201,
+    "body": {
+      "id": 9,
+      "po_number": "PO-20260810-001",
+      "vendor": "Vendor A",
+      "status": "PENDING_MANAGER_REVIEW",
+      "expected_date": "2026-08-20",
+      "items": [
+        {
+          "item_name": "Reagent X",
+          "quantity": 4,
+          "unit": "box"
+        }
+      ]
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'line_user_id'\n    ) AS exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-line-1"
+        ]
+      },
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'purchase_orders' AND column_name = 'liff_request_id'\n    ) AS exists\n  ",
+        "params": []
+      },
+      {
+        "text": "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+        "params": [
+          "purchase_order_number:20260810"
+        ]
+      },
+      {
+        "text": "\n    SELECT pg_advisory_xact_lock(hashtextextended(item_id, 0))\n    FROM unnest($1::text[]) AS locked(item_id)\n    ORDER BY item_id\n  ",
+        "params": [
+          [
+            "X"
+          ]
+        ]
+      },
+      {
+        "text": "\n      WITH input_rows AS (\n        SELECT * FROM jsonb_to_recordset($1::jsonb) AS item(\n          item_id TEXT, item_name TEXT, quantity NUMERIC, unit TEXT,\n          system_suggested_qty NUMERIC, override_reason TEXT, calculation_version TEXT,\n          calculation_snapshot JSONB, selected_basis TEXT,\n          snapshot_on_order_qty NUMERIC, snapshot_no_eta_qty NUMERIC\n        )\n      ), inactive_items AS (\n        SELECT input.item_id\n        FROM input_rows input\n        LEFT JOIN master_data master ON master.item_id = input.item_id\n        WHERE master.item_id IS NULL OR master.is_active = FALSE\n      ), current_open AS (\n        SELECT poi.item_id,\n          COALESCE(SUM(GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0)) FILTER (WHERE p.expected_date IS NOT NULL), 0) AS on_order_qty,\n          COALESCE(SUM(GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0)) FILTER (WHERE p.expected_date IS NULL), 0) AS no_eta_qty\n        FROM purchase_order_items poi\n        JOIN purchase_orders p ON p.id = poi.po_id\n        JOIN input_rows input ON input.item_id = poi.item_id\n        WHERE p.status IN ('PENDING_MANAGER_REVIEW', 'SUBMITTED', 'ACKNOWLEDGED', 'REVISION_REQUESTED', 'CONFIRMED', 'PARTIALLY_SHIPPED', 'SHIPPED', 'PARTIALLY_RECEIVED')\n        GROUP BY poi.item_id\n      ), stale_items AS (\n        SELECT input.item_id\n        FROM input_rows input\n        LEFT JOIN current_open current ON current.item_id = input.item_id\n        WHERE COALESCE(current.on_order_qty, 0) IS DISTINCT FROM input.snapshot_on_order_qty\n           OR COALESCE(current.no_eta_qty, 0) IS DISTINCT FROM input.snapshot_no_eta_qty\n      ), issuer AS (\n        -- to_jsonb keeps PO creation working before upgrade_v27 adds users.department.\n        SELECT organization_name,\n          COALESCE(\n            NULLIF(TRIM((SELECT to_jsonb(u) ->> 'department' FROM users u WHERE u.username = $2)), ''),\n            department_name\n          ) AS department_name,\n          address, phone, email, logo_url\n        FROM lab_profile\n        WHERE id = 1\n      ), po_seq AS (\n        SELECT 'PO-' || $3 || '-' || LPAD((COALESCE(MAX(substring(po_number from '([0-9]+)$')::int), 0) + 1)::text, 3, '0') AS po_number\n        FROM purchase_orders\n        WHERE po_number ~ $4\n      ), new_po AS (\n        INSERT INTO purchase_orders (\n          po_number, vendor, note, expected_date, created_by, status, proposal_origin,\n          review_requested_at, liff_request_id, issuer_name, issuer_department,\n          issuer_address, issuer_phone, issuer_email, issuer_logo_url\n        ) SELECT\n          (SELECT po_number FROM po_seq), $5, $6, $7, $8,\n          $9, $10, $11, $12,\n          issuer.organization_name, issuer.department_name, issuer.address,\n          issuer.phone, issuer.email, issuer.logo_url\n        FROM issuer\n        WHERE NOT EXISTS (SELECT 1 FROM stale_items)\n          AND NOT EXISTS (SELECT 1 FROM inactive_items)\n        RETURNING *\n      ), new_items AS (\n        INSERT INTO purchase_order_items (\n          po_id, item_id, item_name, quantity, unit, system_suggested_qty,\n          override_reason, calculation_version, calculation_snapshot, selected_basis,\n          reagent_type, job_type, machine_type\n        )\n        SELECT new_po.id, item.item_id, item.item_name, item.quantity, item.unit,\n          item.system_suggested_qty, item.override_reason, item.calculation_version,\n          item.calculation_snapshot, item.selected_basis,\n          master.reagent_type, master.job_type, master.machine_type\n        FROM new_po\n        CROSS JOIN input_rows item\n        JOIN master_data master ON master.item_id = item.item_id\n        RETURNING *\n      )\n      SELECT\n        (SELECT to_jsonb(new_po) FROM new_po) AS purchase_order,\n        (SELECT COALESCE(jsonb_agg(to_jsonb(new_items)), '[]'::jsonb) FROM new_items) AS items\n    ",
+        "params": [
+          "[{\"item_id\":\"X\",\"item_name\":\"Reagent X\",\"quantity\":4,\"unit\":\"box\",\"system_suggested_qty\":4,\"override_reason\":null,\"calculation_version\":\"v5\",\"calculation_snapshot\":{\"item_id\":\"X\",\"name\":\"Reagent X\",\"unit\":\"box\",\"vendor\":\"Vendor A\",\"policy_order_qty\":4,\"dynamic_order_qty\":4,\"on_order_qty\":0,\"committed_no_eta_qty\":0,\"calculation_version\":\"v5\",\"policy_configured\":true,\"calculated_at\":\"2026-08-10T03:04:05.678Z\"},\"selected_basis\":\"POLICY\",\"snapshot_on_order_qty\":0,\"snapshot_no_eta_qty\":0}]",
+          "mgr1",
+          "20260810",
+          "^PO-20260810-[0-9]+$",
+          "Vendor A",
+          "n1",
+          "2026-08-20",
+          "mgr1",
+          "PENDING_MANAGER_REVIEW",
+          "LAB",
+          "2026-08-10T03:04:05.678Z",
+          null
+        ]
+      }
+    ],
+    "suggestionsCalls": [
+      {
+        "options": {
+          "vendor": "Vendor A",
+          "itemIds": [
+            "X"
+          ],
+          "includeUnconfigured": true,
+          "includeAll": true
+        },
+        "scope": {
+          "mode": "legacy"
+        }
+      }
+    ],
+    "communicationCalls": [
+      {
+        "poId": 9,
+        "eventType": "PO_REVIEW_REQUIRED",
+        "actor": {
+          "username": "mgr1",
+          "name": "Manager One",
+          "role": "Manager",
+          "vendor": null
+        },
+        "source": "LIFF",
+        "metadata": {
+          "origin": "LAB"
+        }
+      }
+    ]
+  },
+  "postNoLiffColumn": {
+    "status": 201,
+    "body": {
+      "id": 9,
+      "po_number": "PO-20260810-001",
+      "vendor": "Vendor A",
+      "status": "PENDING_MANAGER_REVIEW",
+      "expected_date": "2026-08-20",
+      "items": [
+        {
+          "item_name": "Reagent X",
+          "quantity": 4,
+          "unit": "box"
+        }
+      ]
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'line_user_id'\n    ) AS exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-line-1"
+        ]
+      },
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'purchase_orders' AND column_name = 'liff_request_id'\n    ) AS exists\n  ",
+        "params": []
+      },
+      {
+        "text": "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+        "params": [
+          "purchase_order_number:20260810"
+        ]
+      },
+      {
+        "text": "\n    SELECT pg_advisory_xact_lock(hashtextextended(item_id, 0))\n    FROM unnest($1::text[]) AS locked(item_id)\n    ORDER BY item_id\n  ",
+        "params": [
+          [
+            "X"
+          ]
+        ]
+      },
+      {
+        "text": "\n      WITH input_rows AS (\n        SELECT * FROM jsonb_to_recordset($1::jsonb) AS item(\n          item_id TEXT, item_name TEXT, quantity NUMERIC, unit TEXT,\n          system_suggested_qty NUMERIC, override_reason TEXT, calculation_version TEXT,\n          calculation_snapshot JSONB, selected_basis TEXT,\n          snapshot_on_order_qty NUMERIC, snapshot_no_eta_qty NUMERIC\n        )\n      ), inactive_items AS (\n        SELECT input.item_id\n        FROM input_rows input\n        LEFT JOIN master_data master ON master.item_id = input.item_id\n        WHERE master.item_id IS NULL OR master.is_active = FALSE\n      ), current_open AS (\n        SELECT poi.item_id,\n          COALESCE(SUM(GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0)) FILTER (WHERE p.expected_date IS NOT NULL), 0) AS on_order_qty,\n          COALESCE(SUM(GREATEST(poi.quantity - COALESCE(poi.received_qty, 0), 0)) FILTER (WHERE p.expected_date IS NULL), 0) AS no_eta_qty\n        FROM purchase_order_items poi\n        JOIN purchase_orders p ON p.id = poi.po_id\n        JOIN input_rows input ON input.item_id = poi.item_id\n        WHERE p.status IN ('PENDING_MANAGER_REVIEW', 'SUBMITTED', 'ACKNOWLEDGED', 'REVISION_REQUESTED', 'CONFIRMED', 'PARTIALLY_SHIPPED', 'SHIPPED', 'PARTIALLY_RECEIVED')\n        GROUP BY poi.item_id\n      ), stale_items AS (\n        SELECT input.item_id\n        FROM input_rows input\n        LEFT JOIN current_open current ON current.item_id = input.item_id\n        WHERE COALESCE(current.on_order_qty, 0) IS DISTINCT FROM input.snapshot_on_order_qty\n           OR COALESCE(current.no_eta_qty, 0) IS DISTINCT FROM input.snapshot_no_eta_qty\n      ), issuer AS (\n        -- to_jsonb keeps PO creation working before upgrade_v27 adds users.department.\n        SELECT organization_name,\n          COALESCE(\n            NULLIF(TRIM((SELECT to_jsonb(u) ->> 'department' FROM users u WHERE u.username = $2)), ''),\n            department_name\n          ) AS department_name,\n          address, phone, email, logo_url\n        FROM lab_profile\n        WHERE id = 1\n      ), po_seq AS (\n        SELECT 'PO-' || $3 || '-' || LPAD((COALESCE(MAX(substring(po_number from '([0-9]+)$')::int), 0) + 1)::text, 3, '0') AS po_number\n        FROM purchase_orders\n        WHERE po_number ~ $4\n      ), new_po AS (\n        INSERT INTO purchase_orders (\n          po_number, vendor, note, expected_date, created_by, status, proposal_origin,\n          review_requested_at, issuer_name, issuer_department, issuer_address,\n          issuer_phone, issuer_email, issuer_logo_url\n        ) SELECT\n          (SELECT po_number FROM po_seq), $5, $6, $7, $8,\n          $9, $10, $11, issuer.organization_name,\n          issuer.department_name, issuer.address, issuer.phone, issuer.email, issuer.logo_url\n        FROM issuer\n        WHERE NOT EXISTS (SELECT 1 FROM stale_items)\n          AND NOT EXISTS (SELECT 1 FROM inactive_items)\n        RETURNING *\n      ), new_items AS (\n        INSERT INTO purchase_order_items (\n          po_id, item_id, item_name, quantity, unit, system_suggested_qty,\n          override_reason, calculation_version, calculation_snapshot, selected_basis,\n          reagent_type, job_type, machine_type\n        )\n        SELECT new_po.id, item.item_id, item.item_name, item.quantity, item.unit,\n          item.system_suggested_qty, item.override_reason, item.calculation_version,\n          item.calculation_snapshot, item.selected_basis,\n          master.reagent_type, master.job_type, master.machine_type\n        FROM new_po\n        CROSS JOIN input_rows item\n        JOIN master_data master ON master.item_id = item.item_id\n        RETURNING *\n      )\n      SELECT\n        (SELECT to_jsonb(new_po) FROM new_po) AS purchase_order,\n        (SELECT COALESCE(jsonb_agg(to_jsonb(new_items)), '[]'::jsonb) FROM new_items) AS items\n    ",
+        "params": [
+          "[{\"item_id\":\"X\",\"item_name\":\"Reagent X\",\"quantity\":4,\"unit\":\"box\",\"system_suggested_qty\":4,\"override_reason\":null,\"calculation_version\":\"v5\",\"calculation_snapshot\":{\"item_id\":\"X\",\"name\":\"Reagent X\",\"unit\":\"box\",\"vendor\":\"Vendor A\",\"policy_order_qty\":4,\"dynamic_order_qty\":4,\"on_order_qty\":0,\"committed_no_eta_qty\":0,\"calculation_version\":\"v5\",\"policy_configured\":true,\"calculated_at\":\"2026-08-10T03:04:05.678Z\"},\"selected_basis\":\"POLICY\",\"snapshot_on_order_qty\":0,\"snapshot_no_eta_qty\":0}]",
+          "mgr1",
+          "20260810",
+          "^PO-20260810-[0-9]+$",
+          "Vendor A",
+          "n1",
+          "2026-08-20",
+          "mgr1",
+          "PENDING_MANAGER_REVIEW",
+          "LAB",
+          "2026-08-10T03:04:05.678Z"
+        ]
+      }
+    ],
+    "suggestionsCalls": [
+      {
+        "options": {
+          "vendor": "Vendor A",
+          "itemIds": [
+            "X"
+          ],
+          "includeUnconfigured": true,
+          "includeAll": true
+        },
+        "scope": {
+          "mode": "legacy"
+        }
+      }
+    ],
+    "communicationCalls": [
+      {
+        "poId": 9,
+        "eventType": "PO_REVIEW_REQUIRED",
+        "actor": {
+          "username": "mgr1",
+          "name": "Manager One",
+          "role": "Manager",
+          "vendor": null
+        },
+        "source": "LIFF",
+        "metadata": {
+          "origin": "LAB"
+        }
+      }
+    ]
+  },
+  "postVendorEmpty": {
+    "status": 400,
+    "body": {
+      "error": "กรุณาเลือก Vendor"
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'line_user_id'\n    ) AS exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-line-1"
+        ]
+      }
+    ],
+    "suggestionsCalls": [],
+    "communicationCalls": []
+  },
+  "patchNumericId": {
+    "status": 200,
+    "body": {
+      "id": 3,
+      "po_number": "PO-20260801-003",
+      "vendor": "Vendor A",
+      "status": "REVISION_REQUESTED",
+      "confirmed_at": null,
+      "items": [
+        {
+          "id": 1,
+          "po_id": 3
+        }
+      ]
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'line_user_id'\n    ) AS exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-line-1"
+        ]
+      },
+      {
+        "text": "SELECT * FROM purchase_orders WHERE id = $1 LIMIT 1",
+        "params": [
+          "3"
+        ]
+      },
+      {
+        "text": "\n    SELECT labstock_assert(EXISTS (\n      SELECT 1 FROM purchase_orders WHERE id = $1 AND status = $2 FOR UPDATE\n    ), $3) AS ok\n  ",
+        "params": [
+          3,
+          "REVISION_REQUESTED",
+          "PO_STATE_CHANGED"
+        ]
+      },
+      {
+        "text": "\n    UPDATE purchase_orders\n    SET status = $1, reviewed_at = NOW(), reviewed_by = $2,\n        confirmed_at = $3,\n        updated_at = NOW()\n    WHERE id = $4\n  ",
+        "params": [
+          "CONFIRMED",
+          "mgr1",
+          "2026-08-10T03:04:05.678Z",
+          3
+        ]
+      },
+      {
+        "text": "UPDATE purchase_order_items SET quantity = COALESCE(revision_qty, quantity), revision_qty = NULL, revision_reason = NULL WHERE po_id = $1",
+        "params": [
+          3
+        ]
+      },
+      {
+        "text": "SELECT * FROM purchase_orders WHERE id = $1",
+        "params": [
+          3
+        ]
+      },
+      {
+        "text": "SELECT * FROM purchase_order_items WHERE po_id = $1 ORDER BY id",
+        "params": [
+          3
+        ]
+      }
+    ],
+    "suggestionsCalls": [],
+    "communicationCalls": [
+      {
+        "poId": 3,
+        "eventType": "PO_CONFIRMED",
+        "actor": {
+          "username": "mgr1",
+          "name": "Manager One",
+          "role": "Manager",
+          "vendor": null
+        },
+        "source": "LIFF",
+        "metadata": {
+          "fromStatus": "REVISION_REQUESTED"
+        }
+      }
+    ]
+  },
+  "patchPoNumber": {
+    "status": 200,
+    "body": {
+      "id": 3,
+      "po_number": "PO-20260801-003",
+      "vendor": "Vendor A",
+      "status": "REVISION_REQUESTED",
+      "confirmed_at": null,
+      "items": [
+        {
+          "id": 1,
+          "po_id": 3
+        }
+      ]
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'line_user_id'\n    ) AS exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-line-1"
+        ]
+      },
+      {
+        "text": "SELECT * FROM purchase_orders WHERE po_number = $1 LIMIT 1",
+        "params": [
+          "PO-20260801-003"
+        ]
+      },
+      {
+        "text": "\n    SELECT labstock_assert(EXISTS (\n      SELECT 1 FROM purchase_orders WHERE id = $1 AND status = $2 FOR UPDATE\n    ), $3) AS ok\n  ",
+        "params": [
+          3,
+          "REVISION_REQUESTED",
+          "PO_STATE_CHANGED"
+        ]
+      },
+      {
+        "text": "\n    UPDATE purchase_orders\n    SET status = $1, reviewed_at = NOW(), reviewed_by = $2,\n        confirmed_at = $3,\n        updated_at = NOW()\n    WHERE id = $4\n  ",
+        "params": [
+          "REJECTED",
+          "mgr1",
+          null,
+          3
+        ]
+      },
+      {
+        "text": "UPDATE purchase_order_items SET revision_qty = NULL, revision_reason = NULL WHERE po_id = $1",
+        "params": [
+          3
+        ]
+      },
+      {
+        "text": "SELECT * FROM purchase_orders WHERE id = $1",
+        "params": [
+          3
+        ]
+      },
+      {
+        "text": "SELECT * FROM purchase_order_items WHERE po_id = $1 ORDER BY id",
+        "params": [
+          3
+        ]
+      }
+    ],
+    "suggestionsCalls": [],
+    "communicationCalls": [
+      {
+        "poId": 3,
+        "eventType": "PO_STATUS_UPDATED",
+        "actor": {
+          "username": "mgr1",
+          "name": "Manager One",
+          "role": "Manager",
+          "vendor": null
+        },
+        "source": "LIFF",
+        "metadata": {
+          "fromStatus": "REVISION_REQUESTED"
+        }
+      }
+    ]
+  },
+  "patchLegacyStatus": {
+    "status": 200,
+    "body": {
+      "id": 3,
+      "po_number": "PO-20260801-003",
+      "vendor": "Vendor A",
+      "status": "PENDING_LAB_REVIEW",
+      "confirmed_at": null,
+      "items": [
+        {
+          "id": 1,
+          "po_id": 3
+        }
+      ]
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'line_user_id'\n    ) AS exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-line-1"
+        ]
+      },
+      {
+        "text": "SELECT * FROM purchase_orders WHERE id = $1 LIMIT 1",
+        "params": [
+          "3"
+        ]
+      },
+      {
+        "text": "\n    SELECT labstock_assert(EXISTS (\n      SELECT 1 FROM purchase_orders WHERE id = $1 AND status = $2 FOR UPDATE\n    ), $3) AS ok\n  ",
+        "params": [
+          3,
+          "PENDING_LAB_REVIEW",
+          "PO_STATE_CHANGED"
+        ]
+      },
+      {
+        "text": "\n    UPDATE purchase_orders\n    SET status = $1, reviewed_at = NOW(), reviewed_by = $2,\n        confirmed_at = $3,\n        updated_at = NOW()\n    WHERE id = $4\n  ",
+        "params": [
+          "CONFIRMED",
+          "mgr1",
+          "2026-08-10T03:04:05.678Z",
+          3
+        ]
+      },
+      {
+        "text": "SELECT * FROM purchase_orders WHERE id = $1",
+        "params": [
+          3
+        ]
+      },
+      {
+        "text": "SELECT * FROM purchase_order_items WHERE po_id = $1 ORDER BY id",
+        "params": [
+          3
+        ]
+      }
+    ],
+    "suggestionsCalls": [],
+    "communicationCalls": [
+      {
+        "poId": 3,
+        "eventType": "PO_CONFIRMED",
+        "actor": {
+          "username": "mgr1",
+          "name": "Manager One",
+          "role": "Manager",
+          "vendor": null
+        },
+        "source": "LIFF",
+        "metadata": {
+          "fromStatus": "PENDING_LAB_REVIEW"
+        }
+      }
+    ]
+  },
+  "patchNotFound": {
+    "status": 404,
+    "body": {
+      "error": "Purchase order not found."
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'line_user_id'\n    ) AS exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-line-1"
+        ]
+      },
+      {
+        "text": "SELECT * FROM purchase_orders WHERE id = $1 LIMIT 1",
+        "params": [
+          "999"
+        ]
+      }
+    ],
+    "suggestionsCalls": [],
+    "communicationCalls": []
+  },
+  "patchNotAwaitingReview": {
+    "status": 409,
+    "body": {
+      "error": "This order is not awaiting Lab review."
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'line_user_id'\n    ) AS exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-line-1"
+        ]
+      },
+      {
+        "text": "SELECT * FROM purchase_orders WHERE id = $1 LIMIT 1",
+        "params": [
+          "3"
+        ]
+      }
+    ],
+    "suggestionsCalls": [],
+    "communicationCalls": []
+  },
+  "patchActionOnLabReview": {
+    "status": 409,
+    "body": {
+      "error": "Revision actions are only valid after a Vendor requests a revision."
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'line_user_id'\n    ) AS exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-line-1"
+        ]
+      },
+      {
+        "text": "SELECT * FROM purchase_orders WHERE id = $1 LIMIT 1",
+        "params": [
+          "3"
+        ]
+      }
+    ],
+    "suggestionsCalls": [],
+    "communicationCalls": []
+  },
+  "patchBadAction": {
+    "status": 400,
+    "body": {
+      "error": "Only APPROVE_REVISION or REJECT_REVISION is allowed from LINE review."
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'line_user_id'\n    ) AS exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-line-1"
+        ]
+      }
+    ],
+    "suggestionsCalls": [],
+    "communicationCalls": []
+  },
+  "authInvalidToken": {
+    "status": 401,
+    "body": {
+      "error": "LINE authentication failed."
+    },
+    "statements": [],
+    "suggestionsCalls": [],
+    "communicationCalls": []
+  },
+  "authNoLineColumn": {
+    "status": 400,
+    "body": {
+      "error": "LINE LIFF ordering is not enabled yet. Run upgrade_v9_line_liff_auth.sql first."
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'line_user_id'\n    ) AS exists\n  ",
+        "params": []
+      }
+    ],
+    "suggestionsCalls": [],
+    "communicationCalls": []
+  },
+  "authNotLinked": {
+    "status": 403,
+    "body": {
+      "error": "Only linked Admin or Manager users can order reagents from LINE."
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'line_user_id'\n    ) AS exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-line-1"
+        ]
+      }
+    ],
+    "suggestionsCalls": [],
+    "communicationCalls": []
+  },
+  "authRoleUser": {
+    "status": 403,
+    "body": {
+      "error": "Only linked Admin or Manager users can order reagents from LINE."
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'line_user_id'\n    ) AS exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-line-1"
+        ]
+      }
+    ],
+    "suggestionsCalls": [],
+    "communicationCalls": []
+  },
+  "authRoleVendor": {
+    "status": 403,
+    "body": {
+      "error": "Only linked Admin or Manager users can order reagents from LINE."
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'line_user_id'\n    ) AS exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-line-1"
+        ]
+      }
+    ],
+    "suggestionsCalls": [],
+    "communicationCalls": []
+  },
+  "authSuspended": {
+    "status": 403,
+    "body": {
+      "error": "Only linked Admin or Manager users can order reagents from LINE."
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'line_user_id'\n    ) AS exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-line-1"
+        ]
+      }
+    ],
+    "suggestionsCalls": [],
+    "communicationCalls": []
+  },
+  "authAdmin": {
+    "status": 200,
+    "body": {
+      "user": {
+        "username": "admin1",
+        "name": "Manager One",
+        "role": "Admin",
+        "vendor": null
+      },
+      "vendors": [],
+      "orders": []
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'line_user_id'\n    ) AS exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-line-1"
+        ]
+      },
+      {
+        "text": "\n      SELECT vendor, COUNT(*)::int AS item_count\n      FROM master_data\n      WHERE vendor IS NOT NULL AND TRIM(vendor) <> ''\n      GROUP BY vendor\n      ORDER BY vendor\n    ",
+        "params": []
+      },
+      {
+        "text": "\n      SELECT p.*\n      FROM purchase_orders p\n      WHERE p.status IN ('PENDING_MANAGER_REVIEW', 'SUBMITTED', 'ACKNOWLEDGED', 'PENDING_LAB_REVIEW', 'REVISION_REQUESTED', 'CONFIRMED', 'PARTIALLY_SHIPPED', 'SHIPPED')\n      ORDER BY p.updated_at DESC NULLS LAST, p.created_at DESC\n      LIMIT 30\n    ",
+        "params": []
+      }
+    ],
+    "suggestionsCalls": [],
+    "communicationCalls": []
+  }
+}
