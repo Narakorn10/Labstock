@@ -29,12 +29,8 @@ export const DEPARTMENT_TABLES = [
 // Paths are relative to the repo root, forward slashes, sorted.
 export const DEPARTMENT_SCOPE_PENDING: string[] = [
   "src/app/api/auth/register/route.ts",
-  "src/app/api/liff/orders/[id]/route.ts",
-  "src/app/api/liff/orders/bootstrap/route.ts",
-  "src/app/api/liff/orders/route.ts",
   "src/app/api/line-webhook/route.ts",
   "src/app/api/mobile/lookup/route.ts",
-  "src/lib/line-liff-ordering.ts",
 ];
 
 // Files under src/app (outside src/app/api) that import "@/lib/db" directly. Generated from reality: none today.

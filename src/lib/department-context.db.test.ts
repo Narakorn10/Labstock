@@ -29,7 +29,7 @@ vi.mock("@/auth", () => ({ auth: h.auth }));
 
 import { getAuthenticatedUser } from "./auth-utils";
 import { isCurrentAuthSession } from "./auth-service";
-import { effectiveRole, resetDepartmentContextForTests, resolveDepartmentForVerifiedUser, resolveUserDepartment } from "./department-context";
+import { effectiveRole, resetDepartmentContextForTests, resolveDepartmentForLineUser, resolveDepartmentForVerifiedUser, resolveUserDepartment } from "./department-context";
 import { resetDepartmentsFlagForTests } from "./departments-flag";
 
 const sha256 = (value: string) => crypto.createHash("sha256").update(value).digest("hex");
@@ -544,6 +544,89 @@ describe("resolveDepartmentForVerifiedUser (PIN / LINE approvers on /api/mobile/
     try {
       await expect(resolve("solo2")).resolves.toMatchObject({ scope: 2 });
       await expect(resolveUserDepartment({ token: "raw-solo2", tokenHash: sha256("raw-solo2"), requested: null, explicit: false })).resolves.toBeNull();
+    } finally {
+      await migrated.db.exec("UPDATE users SET token_expiry = NULL WHERE username = 'solo2'");
+    }
+  });
+});
+
+describe("resolveDepartmentForLineUser (LIFF ordering: verified LINE id + linked username)", () => {
+  const resolve = (lineUserId: string, username: string) => resolveDepartmentForLineUser(lineUserId, username);
+
+  beforeAll(async () => {
+    await migrated.db.exec(`
+      UPDATE users SET line_user_id = 'U-' || username WHERE username IN ('solo1', 'solo2', 'user1', 'admin1', 'vendor1', 'newbie');
+    `);
+  });
+
+  afterAll(async () => {
+    await migrated.db.exec("UPDATE users SET line_user_id = NULL WHERE line_user_id LIKE 'U-%'");
+  });
+
+  beforeEach(() => {
+    selectDb(migrated);
+  });
+
+  it("a member gets the default department", async () => {
+    await expect(resolve("U-user1", "user1")).resolves.toMatchObject({ username: "user1", scope: 1, departmentId: 1, role: "User", globalRole: "User" });
+    expect(await resolve("U-user1", "user1")).not.toHaveProperty("departmentDenied");
+  });
+
+  it("the per-department role override is exported as the role", async () => {
+    await expect(resolve("U-solo2", "solo2")).resolves.toMatchObject({ scope: 2, role: "Technician", globalRole: "User" });
+  });
+
+  it("no membership row => null", async () => {
+    await expect(resolve("U-newbie", "newbie")).resolves.toBeNull();
+  });
+
+  it("an account that is not active => null", async () => {
+    await migrated.db.exec("UPDATE users SET account_status = 'suspended' WHERE username = 'solo1'");
+    try {
+      await expect(resolve("U-solo1", "solo1")).resolves.toBeNull();
+    } finally {
+      await migrated.db.exec("UPDATE users SET account_status = 'active' WHERE username = 'solo1'");
+    }
+  });
+
+  it("a LINE id and a username that do not belong to the same row => null (both must match)", async () => {
+    await expect(resolve("U-solo1", "solo2")).resolves.toBeNull();
+    await expect(resolve("U-nobody", "solo1")).resolves.toBeNull();
+    await expect(resolve("U-solo1", "nobody")).resolves.toBeNull();
+    await expect(resolve("U-solo1", "SOLO1")).resolves.toBeNull();
+  });
+
+  it("a global Admin without membership rows gets the lowest-id active department, and never ALL", async () => {
+    const withMembership = await resolve("U-admin1", "admin1");
+    expect(withMembership).toMatchObject({ role: "Admin", scope: 1 });
+    expect(withMembership?.scope).not.toBe("ALL");
+
+    await migrated.db.exec("DELETE FROM user_departments WHERE username = 'admin1'");
+    try {
+      const noMembership = await resolve("U-admin1", "admin1");
+      expect(noMembership).toMatchObject({ role: "Admin", scope: 1, departmentId: 1 });
+      expect(noMembership?.scope).not.toBe("ALL");
+      await migrated.db.exec("UPDATE departments SET is_active = false WHERE id = 1");
+      await expect(resolve("U-admin1", "admin1")).resolves.toMatchObject({ scope: 2 });
+    } finally {
+      await migrated.db.exec("UPDATE departments SET is_active = true WHERE id = 1");
+      await migrated.db.exec("INSERT INTO user_departments (username, department_id, role, is_default) VALUES ('admin1', 1, NULL, true)");
+    }
+  });
+
+  it("a deactivated department locks a single-department member out (null)", async () => {
+    await migrated.db.exec("UPDATE departments SET is_active = false WHERE id = 2");
+    try {
+      await expect(resolve("U-solo2", "solo2")).resolves.toBeNull();
+    } finally {
+      await migrated.db.exec("UPDATE departments SET is_active = true WHERE id = 2");
+    }
+  });
+
+  it("ignores an expired token_expiry (the LINE id token is the credential)", async () => {
+    await migrated.db.exec("UPDATE users SET token_expiry = '2000-01-01' WHERE username = 'solo2'");
+    try {
+      await expect(resolve("U-solo2", "solo2")).resolves.toMatchObject({ scope: 2 });
     } finally {
       await migrated.db.exec("UPDATE users SET token_expiry = NULL WHERE username = 'solo2'");
     }

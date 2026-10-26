@@ -217,7 +217,7 @@
 - `getPurchaseOrderSuggestions(sql, options, scope)`: `scope` เป็นพารามิเตอร์บังคับ ตรวจ `assertScope` ก่อนเรียกฐานข้อมูลทุกครั้ง; กรองผ่าน `master_data` (`is_active` + แผนก) และกรอง `inventory` กับ `logs` (ตารางที่ใช้คำนวณยอดและการเบิก) ตามแผนกเดียวกัน
 - CTE `on_order` **ตั้งใจไม่กรอง `purchase_orders` ตามแผนก**: `item_id` เป็น primary key ระดับระบบ จึงถูกแยกแผนกอยู่แล้วเมื่อ join กับ `master_data`; ถ้ากรองจะไม่ตรงกับ `current_open` ใน `purchase-order-creation.ts` และอาจทำให้สร้าง PO ติด 409 ถาวร (ก่อน PR-2)
 - `purchase-order-creation.ts` ยังเป็น legacy (ส่ง `{ mode: "legacy" }`) จนกว่าจะทำ PR-2; ต้องแก้ `on_order` ของ suggestions และ `current_open` ของ creation **พร้อมกัน** (มี `TODO(PR-2)` ในโค้ด) -- **ทำแล้วใน PR-2 ดูหัวข้อ 8**
-- LINE catalog (`/api/liff/orders/catalog/search`) ยังส่ง `{ mode: "legacy" }` = เห็นทุกแผนกไปก่อน จนกว่าจะแก้ `line-liff-ordering.ts` (กลุ่ม 6)
+- LINE catalog (`/api/liff/orders/catalog/search`) **กรองตามแผนก default ของผู้ใช้ LINE แล้ว** (กลุ่ม 6 PR-B, หัวข้อ 13; เดิมส่ง `{ mode: "legacy" }` = เห็นทุกแผนก)
 - `manual.ts` (tracking แบบ MANUAL) กรอง `shipments` ตามแผนก; เลข tracking ของแผนกอื่นให้ผลเหมือนเลขที่ไม่มีอยู่จริง; ผู้ให้บริการภายนอก (THAIPOST/DKSH) ไม่ใช่ข้อมูลของแผนก จึงไม่กรอง
 - ปัญหาเดิมที่ยังไม่ได้แก้: route `/api/tracking/[trackingNo]` ไม่มีการตรวจ role (ผู้ใช้ที่ล็อกอินแล้วเรียกได้ทุกคน); คีย์ rate-limit ของ AI-review (`actor` + `vendor_fingerprint`) ไม่มีแผนกรวมอยู่
 
@@ -256,8 +256,8 @@
 
 **ยังเป็น legacy / ห้ามเปิด `DEPARTMENTS_ENABLED` จนกว่าจะทำ**
 
-- `liff/orders` (POST สร้าง PO จาก LINE, PATCH ตอบรีวิว) ยังส่ง `{ mode: "legacy" }` (ใน `DEPARTMENT_SCOPE_PENDING`): PO ที่สร้างจาก LINE จึง **ไม่ถูกประทับแผนกที่ถูกต้อง** (ได้แผนกเริ่มต้น); ส่วน `vendor/shipments` (POST) **ย้ายแล้วในกลุ่ม 7**
-- **ห้ามเปิด `DEPARTMENTS_ENABLED` จนกว่ากลุ่ม 6 (สั่งซื้อผ่าน LIFF) จะย้ายเสร็จ** (เจ้าของยืนยันแล้ว; `vendor/shipments` POST ทำเสร็จแล้วในกลุ่ม 7)
+- `liff/orders` (POST สร้าง PO จาก LINE, PATCH ตอบรีวิว) **ย้ายแล้วในกลุ่ม 6 PR-B** (หัวข้อ 13): สร้าง/ตอบรีวิว PO ในแผนก default ของผู้ใช้ LINE (เดิมส่ง `{ mode: "legacy" }` ทำให้ PO ที่สร้างจาก LINE ไม่ถูกประทับแผนกที่ถูกต้อง); ส่วน `vendor/shipments` (POST) ย้ายแล้วในกลุ่ม 7
+- **ห้ามเปิด `DEPARTMENTS_ENABLED`**: LIFF สั่งซื้อย้ายเสร็จแล้ว (กลุ่ม 6 PR-B) แต่ยังต้องรอ PR-C (`line-webhook`) + ตรวจบน Neon จริง + v36 + แถวหัวกระดาษ (`lab_profile`) ของทุกแผนก (เจ้าของยืนยันแล้ว; `vendor/shipments` POST ทำเสร็จแล้วในกลุ่ม 7)
 - `vendor/shipments` POST ประทับ shipment ด้วยแผนกของ **PO นั้น** (ไม่ใช่แผนกเริ่มต้น) -- ทำแล้วในกลุ่ม 7
 - PR-3 (`po-communication.ts` และ `purchase-order-overdue.ts` -- การแจ้งเตือน / PO เกินกำหนด) **ทำแล้ว ดูหัวข้อ 9**
 
@@ -285,7 +285,7 @@
 - ผู้รับใช้ `users.role` ระดับระบบ **ไม่ใช่** role ต่อแผนก (`user_departments.role`): Manager ที่ถูกลด role เฉพาะแผนกยังได้รับแจ้งเตือน (ข้อจำกัดที่ทราบ มี test ล็อกไว้)
 - `/api/notifications/reorder-risk` และการ drain outbox หลังสร้าง event ยังใช้ `{ mode: "all" }` (coverage test มองไม่เห็นจุดเหล่านี้)
 - Admin ส่วนกลางโหมด "all" กดส่งเตือน PO เกินกำหนดได้ (เหมือน cron)
-- **ยังห้ามเปิด `DEPARTMENTS_ENABLED`** จนกว่ากลุ่ม 6 (สั่งซื้อผ่าน LIFF) จะย้ายเสร็จ (`vendor/shipments` POST ทำแล้วในกลุ่ม 7)
+- **ยังห้ามเปิด `DEPARTMENTS_ENABLED`** แม้ LIFF สั่งซื้อย้ายแล้ว (กลุ่ม 6 PR-B): ต้องรอ PR-C (`line-webhook`) + ตรวจบน Neon จริง + v36 + แถวหัวกระดาษของทุกแผนก (`vendor/shipments` POST ทำแล้วในกลุ่ม 7)
 
 ## 10. v36 หัวกระดาษใบสั่งซื้อต่อแผนก (PR-1: ไฟล์ migration / PR-2: โค้ดอ่านตามแผนก)
 
@@ -321,7 +321,7 @@ SELECT conname, conrelid::regclass FROM pg_constraint WHERE confrelid = 'public.
 - แผนกที่ **ไม่มีแถว** `lab_profile`: ปฏิเสธการสร้าง PO ด้วย HTTP 409 รหัส `PO_LETTERHEAD_MISSING` ข้อความ "ยังไม่ได้ตั้งหัวกระดาษใบสั่งซื้อของงานนี้ กรุณาติดต่อผู้ดูแลระบบ" ไม่สร้างแถว PO/รายการเลย และ **ไม่ใช้หัวกระดาษของ CC แทน** (ถ้ามีทั้งหัวกระดาษขาดและรายการค้าง/ไม่ใช้งาน จะแจ้งหัวกระดาษขาดก่อน เพราะเป็นปัญหาตั้งค่าถาวร)
 - ทำงานได้ทั้งตอนที่ยังไม่รัน v36 (แผนก A ได้แถว `id = 1` ปกติ แผนกอื่นถูกปฏิเสธ เพราะยังเพิ่มแถวที่สองไม่ได้) และหลังรัน v36
 - PO เดิมเก็บ `issuer_*` ตามที่บันทึกไว้ตอนสร้าง ไม่เปลี่ยนเมื่อแก้ `lab_profile` ภายหลัง
-- `liff/orders` ยังเป็น legacy (`DEPARTMENT_SCOPE_PENDING`) และจับเฉพาะ `PurchaseOrderCreationError`: เมื่อย้าย LIFF เป็น scope (กลุ่ม 6) ต้องจับ `AppError` ด้วย ไม่เช่นนั้น `PO_LETTERHEAD_MISSING` จะกลายเป็น 500
+- `liff/orders` ย้ายเป็น scope แล้ว (กลุ่ม 6 PR-B) และจับ `AppError` แล้ว: `PO_LETTERHEAD_MISSING` ตอบ 409 พร้อมข้อความไทยใน `body.error` (หน้า LIFF อ่านจากช่องนี้) ไม่เป็น 500 อีก
 - หลังลบ CHECK แล้ว `id` ยังเป็น PK ที่มี DEFAULT 1 และ `department_id` มี DEFAULT เป็น CC (จาก v31): การเพิ่มแถวของแผนกอื่นต้องระบุ `id` และ `department_id` เอง ไม่เช่นนั้นจะชน PK/unique (ล้มดัง ๆ ไม่เขียนผิดเงียบ ๆ)
 - หน้า Admin จัดการหัวกระดาษต่อแผนกทำใน PR-3
 - PGlite (ที่ใช้ในเทสต์) พิสูจน์พฤติกรรม `lock_timeout` ภายใต้ทราฟฟิกจริงไม่ได้ เทสต์ครอบคลุมตรรกะ SQL เท่านั้น
@@ -369,7 +369,7 @@ SELECT conname, conrelid::regclass FROM pg_constraint WHERE confrelid = 'public.
 2. ตรวจว่า Vendor ทุกบัญชีมีแถว `user_departments` อย่างน้อย 1 แถวในแผนกที่ active: Vendor ที่ไม่มีแถวจะ **ล็อกอินไม่ได้** เมื่อเปิดสวิตช์ (`department-context.ts:163-168` ปฏิเสธเมื่อไม่มีแผนก) จึงต้องเตรียมแถวสมาชิกก่อน
 3. ตรวจแบบอ่านอย่างเดียวว่า `purchase_orders.department_id` ของ PO ที่ยัง CONFIRMED/PARTIALLY_SHIPPED/PARTIALLY_RECEIVED ถูกต้องทุกแถว (ผิดรูปแบบ = POST ตอบ 500 ปลอดภัยแต่ส่งของไม่ได้)
 4. ตรวจบน Neon จริงตอนซ้อมว่า `, department_id` / `, <id>` ที่ต่อท้ายคอลัมน์และ SELECT ของ INSERT ทำงานถูก (เทสต์พิสูจน์ผ่าน PGlite เท่านั้น ไม่เคยรันบน Neon)
-5. **ห้ามเปิด `DEPARTMENTS_ENABLED` จนกว่ากลุ่ม 6 (สั่งซื้อผ่าน LIFF) จะเสร็จ** (กฎเดิมคงไว้)
+5. **ห้ามเปิด `DEPARTMENTS_ENABLED` จนกว่า PR-C (`line-webhook`) จะเสร็จ + ตรวจบน Neon จริง + v36 + แถวหัวกระดาษของทุกแผนก** (กฎเดิมคงไว้; LIFF สั่งซื้อย้ายเสร็จแล้วในกลุ่ม 6 PR-B)
 
 **ปัญหาเดิมที่รู้อยู่แล้ว และ *ไม่ได้แก้* ในกลุ่มนี้**
 
@@ -440,3 +440,32 @@ SELECT conname, conrelid::regclass FROM pg_constraint WHERE confrelid = 'public.
 
 - หลักฐานมาจาก PGlite (`bot-stock-queries.dept.db.test.ts`) และการ mock ในเทสต์ route **ไม่ใช่ Telegram จริงและไม่ใช่ Neon จริง**; ทดสอบ Telegram จริงไม่ได้จากเครื่อง dev ต้องตรวจตอนซ้อมก่อนเปิดสวิตช์ (รวมถึง fragment ที่ว่างตอน legacy บน Neon)
 - `/api/mobile/lookup` **ไม่ถูกแตะใน PR นี้โดยตั้งใจ** (เป็นงานออกแบบถัดไป; เจ้าของตอบว่าแสดงทุกงานต่อไปชั่วคราว ดูหัวข้อมือถือด้านบน)
+
+### PR-B: LIFF สั่งซื้อกรองตามแผนก (ทำแล้ว)
+
+ถอด 4 ไฟล์ออกจาก `DEPARTMENT_SCOPE_PENDING` (**7 -> 3**, นับจริงจาก `department-scope-coverage.test.ts`): `src/app/api/liff/orders/bootstrap/route.ts`, `orders/[id]/route.ts`, `orders/route.ts`, `src/lib/line-liff-ordering.ts` (ตัว `catalog/search` ไม่เคยอยู่ในรายการเพราะไม่มี SQL ของตารางแผนกเอง). ที่เหลือ 3: `auth/register`, `line-webhook`, `mobile/lookup`. ไม่มี migration; สวิตช์ `DEPARTMENTS_ENABLED` ยังปิด
+
+**นโยบาย (เจ้าของตัดสินแล้ว)**
+
+- LINE ใช้ **แผนก default ของผู้ใช้เท่านั้น (ชั่วคราว)**: ไม่รับแผนกจาก request, ไม่มี "ทุกแผนก", ไม่มีตัวสลับแผนกใน LIFF. สวิตช์เปิด -> `resolveDepartmentForLineUser(lineUserId, username)` ใน `department-context.ts` (ต้อง `line_user_id` และ `username` ตรงแถวเดียวกัน, บัญชี active, ไม่ตรวจ `token_expiry`, ไม่มีทางได้ scope ALL; ใช้ได้เฉพาะ `line-liff-ordering.ts` ตามที่ `department-context.line-usage.test.ts` บังคับ)
+- ด่านแรกยังตรวจ role ระบบ (Admin/Manager) ตามเดิม แล้วตรวจ role ที่มีผลจริงของแผนก **ซ้ำ**: global Vendor หรือ role ของแผนกที่ไม่ใช่ Admin/Manager (เช่น override เป็น User/Vendor) -> 403 ข้อความเดิม
+- ไม่มีแถวสมาชิกแผนก / แผนกถูกปิด -> 403 "บัญชีนี้ยังไม่มีงานที่ใช้งานได้ กรุณาแจ้งผู้ดูแลระบบ" (ข้อความไทย)
+- บัญชีไม่ active (หรือไม่ได้ผูก LINE / role ระบบไม่ใช่ Admin/Manager) ถูกด่านแรก (`getLineLinkedUserAccess` ใน `line-liff-auth.ts`) ตัดออกก่อนถึงขั้นหาแผนก -> 403 ข้อความอังกฤษเดิม "Only linked Admin or Manager users can order reagents from LINE." (ไม่ใช่ข้อความไทย)
+- race ต่ำมาก: ด่านแรกกับ `getDepartmentScope` อ่านแคชสวิตช์แผนกแยกกัน 2 ครั้ง ถ้าแคชหมดอายุพอดีระหว่างสองจุดอาจได้ 500 หนึ่ง request (fail closed, ไม่รั่วข้อมูลข้ามแผนก; `liff-orders.scope.test.ts` ล็อกรูปแบบ 500 นี้)
+- error ฐานข้อมูลอื่น ๆ ในการหาแผนก -> 500 (ไม่กลืน); 42P01/42703 -> กลับไปใช้ทาง legacy พร้อม `markDepartmentsNotReady`
+
+**สิ่งที่แก้**
+
+- `catalog/search`: ส่ง scope จริงเข้า `getPurchaseOrderSuggestions`; `bootstrap`: กรอง vendor (จาก `master_data`) และ PO ล่าสุดตามแผนก, โหมดแผนก (`one`) ตัด `user` เหลือ `{username, name, role}` (legacy คืน `auth.user` ตามเดิม)
+- `orders/[id]` (PATCH): ค้น PO ทั้งด้วย id และ `po_number` พร้อมกรองแผนก (PO แผนกอื่น -> 404 "Purchase order not found."), ส่ง scope จริงเข้า `applyLabReviewDecision`
+- `orders` (POST): dedupe `liff_request_id` กรองตามแผนก, ส่ง scope เข้า `createPurchaseOrderWithAudit`; จับ `AppError` (`PO_LETTERHEAD_MISSING` -> 409, `body.error` เป็นข้อความไทยที่ `liff-order-workflow.tsx` อ่านได้)
+- ลบ `generatePONumber` (ไม่มีผู้เรียก; เลข PO ออกในธุรกรรมสร้าง PO)
+- สวิตช์ปิด: ข้อความ SQL + params + จำนวน statement + status + body เหมือนเดิมทุกไบต์ (`liff-orders.legacy.test.ts` เทียบกับ `liff-orders.legacy-baseline.json` ที่บันทึกจากโค้ดเดิมก่อนแก้; ห้ามสร้างใหม่ยกเว้นตั้งใจด้วย `UPDATE_LIFF_ORDERS_BASELINE=1`)
+
+**ข้อจำกัดที่รู้**
+
+- ผู้ใช้ role ระบบ `User` ที่ได้ role Manager เฉพาะแผนก (override ใน `user_departments`) **สั่งซื้อผ่าน LINE ไม่ได้** (ประตูแรกตรวจ role ระบบ) ต่างจากเว็บที่ใช้ role ของแผนก; เป็นความต่างที่ตั้งใจ ชั่วคราว
+- ปุ่ม "อนุมัติได้ที่หน้าเว็บ" (`liff-order-workflow.tsx` บรรทัด ~482-483) อาจเจอ 404 ถ้า session เว็บของผู้ใช้อยู่คนละแผนกกับแผนก default ที่ LINE ใช้
+- dedupe `liff_request_id` กรองตามแผนก แต่ unique index เป็นแบบทั้งระบบ: ถ้าส่ง `liffRequestId` ที่แผนกอื่นใช้แล้ว จะชน unique (23505) -> ตอบ 500 "Unable to submit purchase order from LINE." (ไม่เปิดเผย PO ของแผนกอื่น; ยอมรับได้ เพราะ id สร้างจากฝั่ง client แบบสุ่ม)
+- หลักฐานมาจาก PGlite (`liff-orders.dept.db.test.ts`, `liff-orders.legacy.test.ts`) และการ mock **ไม่ใช่ Neon จริงและไม่ใช่ LINE จริง** (`verifyLineIdToken` ถูก mock); ต้องตรวจบน Neon ตอนซ้อมก่อนเปิดสวิตช์ (รวมถึง fragment ที่ว่างตอน legacy)
+- ยังไม่เปิดสวิตช์ได้: ต้องรอ PR-C (`line-webhook`) + ตรวจบน Neon + v36 + แถวหัวกระดาษของทุกแผนก

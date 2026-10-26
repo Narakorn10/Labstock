@@ -117,6 +117,24 @@ export async function resolveDepartmentForVerifiedUser(verified: AuthenticatedUs
   return resolveCore(sql`u.username = ${verified.username}`, null, false, false);
 }
 
+/**
+ * For a LINE user whose LINE id token was ALREADY verified (LIFF ordering, src/lib/line-liff-ordering.ts): resolves the
+ * department scope of the linked account. Pass the LINE user id (the verified `sub`) and the username the LINE link
+ * resolved to; BOTH must match the same row, so a stale username can never borrow another account's department.
+ *
+ * - same rules as the PIN/LINE approver lookup: account_status = 'active', default department (else the lowest-id active
+ *   department the user belongs to; an Admin without membership rows gets the lowest-id active department);
+ * - never returns scope "ALL" (LINE always works in exactly one department; the department is never taken from the request);
+ * - token_expiry is not checked (the LINE id token verification is the credential here);
+ * - null when there is no usable department or no active account.
+ *
+ * Only line-liff-ordering.ts may use this (see department-context.line-usage.test.ts).
+ * Throws on database errors like resolveUserDepartment.
+ */
+export async function resolveDepartmentForLineUser(lineUserId: string, username: string): Promise<AuthenticatedUser | null> {
+  return resolveCore(sql`u.line_user_id = ${lineUserId} AND u.username = ${username}`, null, false, false);
+}
+
 async function resolveCore(lookup: ReturnType<typeof sql>, requested: RequestedDepartment, explicit: boolean, checkTokenExpiry: boolean): Promise<AuthenticatedUser | null> {
   const requestedValid = typeof requested === "number" && Number.isInteger(requested) && requested >= 1 && requested <= MAX_INT4;
   const requestedId = requestedValid ? (requested as number) : null;
