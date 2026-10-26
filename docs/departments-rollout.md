@@ -476,7 +476,7 @@ SELECT conname, conrelid::regclass FROM pg_constraint WHERE confrelid = 'public.
 
 **สิ่งที่แก้**
 
-- บอทมี 3 ทางที่ตอบข้อมูลจริง และทั้งสามผ่านด่านเดียวกัน: (1) ข้อความสต็อก, (2) `PO-...`, (3) เลขพัสดุ (รูปแบบ `AA123456789BB`). ก่อนหน้านี้ใครที่เพิ่มบอทเป็นเพื่อนก็พิมพ์ `PO-...` หรือเลขพัสดุแล้วเห็นข้อมูลได้โดยไม่ต้องผูกบัญชี
+- บอทมี 3 ทางที่ตอบข้อมูลจริง และทั้งสามผ่านด่านเดียวกัน: (1) ข้อความสต็อก, (2) `PO-...`, (3) เลขพัสดุ (รูปแบบ `AA123456789BB`). ตอนสวิตช์ปิด (production ปัจจุบัน) ใครที่เพิ่มบอทเป็นเพื่อนก็พิมพ์ `PO-...` หรือเลขพัสดุแล้วเห็นข้อมูลได้โดยไม่ต้องผูกบัญชี ซึ่ง PR นี้ไม่เปลี่ยน; ตอนสวิตช์เปิดจะต้องผูกบัญชีและกรองตามแผนก/vendor ตามตารางด้านล่าง (ยังไม่มีผลบน production จนกว่าจะเปิดสวิตช์ ซึ่งยังห้ามเปิด)
 - ด่านตรวจ `getLineBotAccess(lineUserId)` ใน `src/lib/line-liff-ordering.ts` คืนผลแยกกรณี: `legacy` / `unlinked` / `no_work` / `vendor` / `lab` (มี role ที่มีผลจริงในแผนก + scope แผนก default). แล้ว `decideLineBotCommand(access, "stock" | "purchasing")` ใน `src/lib/line-bot-queries.ts` ตัดสินว่าจะตอบอะไร (สต็อก -> scope เข้า `bot-stock-queries.ts` เดิม; PO/พัสดุ -> actor เข้า `findPurchaseOrderForLine` / `findShipmentForLine`). actor เป็นพารามิเตอร์บังคับและมีตัวตรวจตอนรัน (`assertActor`) ผิดรูปล้มก่อนยิง SQL
 - error ในการหาแผนกที่เป็น 42P01/42703 -> `markDepartmentsNotReady` แล้วถอยเป็น legacy (แบบเดียวกับ LIFF สั่งซื้อ); error อื่น rethrow ไม่กลืน
 - webhook ไม่อ้าง `resolveDepartmentForLineUser` โดยตรง (ตามที่ `department-context.line-usage.test.ts` บังคับ) และ SQL ของ postback, `ack_expiry`, `expiry_notification_logs`, การตรวจลายเซ็น, โครง `Promise.all` ไม่เปลี่ยน. คำค้นรายการสินค้าใน PO (`purchase_order_items`) อยู่ใน route ต่อไป ดึงด้วย `po.id` ของแถวที่ผ่านการกรองแล้ว
@@ -509,7 +509,7 @@ SELECT conname, conrelid::regclass FROM pg_constraint WHERE confrelid = 'public.
 
 **ข้อจำกัดและการตัดสินที่รู้**
 
-- **Vendor ที่ไม่มีแถว `user_departments`** ยังดู PO/พัสดุของบริษัทตัวเองผ่าน LINE ได้ เพราะกรองด้วยชื่อบริษัทอย่างเดียว ไม่รั่วข้อมูลของใคร แต่หลวมกว่าเว็บที่ล็อกอินไม่ได้ (ดูหัวข้อ 11); ยังไม่ทราบว่ามีกี่บัญชีแบบนี้
+- **Vendor ที่ไม่มีแถว `user_departments`** (ตอนสวิตช์เปิด) ยังดู PO/พัสดุของบริษัทตัวเองผ่าน LINE ได้ เพราะกรองด้วยชื่อบริษัทอย่างเดียว ไม่รั่วข้อมูลของใคร แต่หลวมกว่าเว็บที่ล็อกอินไม่ได้ (ดูหัวข้อ 11); ยังไม่ทราบว่ามีกี่บัญชีแบบนี้
 - Vendor ไม่เห็น PO สถานะ `PENDING_MANAGER_REVIEW` (ตรงกับเว็บ); พัสดุไม่มีเงื่อนไขนี้ (เหมือนเว็บ)
 - role อื่นนอกจาก Admin/Manager ถูกปฏิเสธ PO/พัสดุ (ตรงกับเว็บ); Vendor ดูสต็อกไม่ได้ (เจ้าของตัดสิน)
 - LINE ใช้แผนก default ของผู้ใช้เท่านั้น (ไม่มีตัวเลือกแผนก, ไม่มี "ทุกแผนก") เหมือน LIFF สั่งซื้อ
