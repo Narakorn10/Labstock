@@ -3,7 +3,7 @@ import sql from "@/lib/db";
 import { AuthenticatedUser } from "@/lib/auth-utils";
 import { resolveDepartmentForLineUser } from "@/lib/department-context";
 import { departmentsReady, isMissingDepartmentSchemaError, markDepartmentsNotReady } from "@/lib/departments-flag";
-import { getLineLinkedPurchasingUser, hasUserLineIdColumn, verifyLineIdToken } from "@/lib/line-liff-auth";
+import { getLineLinkedPurchasingUser, getLineLinkedUserAccess, hasUserLineIdColumn, verifyLineIdToken } from "@/lib/line-liff-auth";
 import { isLabPurchasingRole } from "@/lib/purchase-order-workflow";
 
 export async function getLinePurchasingUserFromRequest(request: Request): Promise<
@@ -51,6 +51,39 @@ export async function getLinePurchasingUserFromRequest(request: Request): Promis
   }
 
   return { ok: true, user, lineUserId: identity.sub, body };
+}
+
+export type LineBotAccess =
+  | { state: "legacy" }
+  | { state: "unlinked" }
+  | { state: "no_work" }
+  | { state: "vendor"; vendor: string }
+  | { state: "lab"; role: string; scope: { mode: "one"; departmentId: number } };
+
+// The LINE bot gate. The webhook signature is already verified by the caller, so lineUserId is trusted. Departments off: "legacy"
+// (nothing is queried). Departments on: the bot works only in the LINE user's own default department; the role returned is the one
+// in effect there (a per-department override can differ from the account role). The gate has no role check of its own.
+export async function getLineBotAccess(lineUserId: string | null): Promise<LineBotAccess> {
+  if (!await departmentsReady()) return { state: "legacy" };
+  if (!lineUserId) return { state: "unlinked" };
+
+  const access = await getLineLinkedUserAccess(lineUserId);
+  if (access.state !== "active") return { state: "unlinked" };
+  const user = access.user;
+  if (user.role === "Vendor") return { state: "vendor", vendor: String(user.vendor ?? "") };
+
+  let scoped: AuthenticatedUser | null | undefined;
+  try {
+    scoped = await resolveDepartmentForLineUser(lineUserId, user.username);
+  } catch (e) {
+    if (!isMissingDepartmentSchemaError(e)) throw e;
+    markDepartmentsNotReady("line bot lookup failed; using legacy path");
+    return { state: "legacy" };
+  }
+  if (!scoped) return { state: "no_work" };
+  if (scoped.globalRole === "Vendor") return { state: "unlinked" };
+  if (typeof scoped.scope !== "number") return { state: "no_work" };
+  return { state: "lab", role: scoped.role, scope: { mode: "one", departmentId: scoped.scope } };
 }
 
 export async function purchaseOrderHasLiffRequestColumn() {
