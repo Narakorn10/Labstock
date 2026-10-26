@@ -1,0 +1,3413 @@
+{
+  "stockKeyword:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    WITH InventorySummary AS (\n      SELECT\n        item_id,\n        SUM(quantity) as current_qty\n      FROM inventory\n      GROUP BY item_id\n    )\n    SELECT\n      m.item_id as \"itemId\",\n      m.name,\n      COALESCE(NULLIF(m.job_type, ''), 'Unassigned job') as \"jobType\",\n      COALESCE(NULLIF(m.machine_type, ''), 'Unassigned machine') as \"machineType\",\n      m.unit,\n      m.min_threshold as \"minThreshold\",\n      COALESCE(i.current_qty, 0) as quantity\n    FROM master_data m\n    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)\n    WHERE m.item_id ILIKE $1\n       OR m.name ILIKE $2\n       OR COALESCE(m.barcode, '') ILIKE $3\n    ORDER BY m.item_id ASC\n    LIMIT $4\n  ",
+        "params": [
+          "%abc%",
+          "%abc%",
+          "%abc%",
+          10
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "replyStockSummary",
+        "args": [
+          "rt-1",
+          "ผลค้นหาสต๊อกสำหรับ \"abc\"",
+          [
+            {
+              "itemId": "X1",
+              "name": "Reagent X",
+              "jobType": "Hematology",
+              "machineType": "M1",
+              "unit": "box",
+              "minThreshold": 5,
+              "quantity": "3"
+            }
+          ]
+        ]
+      }
+    ]
+  },
+  "stockJob:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    WITH InventorySummary AS (\n      SELECT\n        item_id,\n        SUM(quantity) as current_qty\n      FROM inventory\n      GROUP BY item_id\n    )\n    SELECT\n      m.item_id as \"itemId\",\n      m.name,\n      COALESCE(NULLIF(m.job_type, ''), 'Unassigned job') as \"jobType\",\n      COALESCE(NULLIF(m.machine_type, ''), 'Unassigned machine') as \"machineType\",\n      m.unit,\n      m.min_threshold as \"minThreshold\",\n      COALESCE(i.current_qty, 0) as quantity\n    FROM master_data m\n    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)\n    WHERE COALESCE(m.job_type, '') ILIKE $1\n    ORDER BY m.name ASC, m.item_id ASC\n  ",
+        "params": [
+          "%hematology%"
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "replyStockSummary",
+        "args": [
+          "rt-1",
+          "สต๊อกงาน \"hematology\" ทั้งหมด 1 รายการ",
+          [
+            {
+              "itemId": "X1",
+              "name": "Reagent X",
+              "jobType": "Hematology",
+              "machineType": "M1",
+              "unit": "box",
+              "minThreshold": 5,
+              "quantity": "3"
+            }
+          ]
+        ]
+      }
+    ]
+  },
+  "stockRemaining:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    WITH InventorySummary AS (\n      SELECT\n        item_id,\n        SUM(quantity) as current_qty\n      FROM inventory\n      GROUP BY item_id\n    )\n    SELECT\n      m.item_id as \"itemId\",\n      m.name,\n      COALESCE(NULLIF(m.job_type, ''), 'Unassigned job') as \"jobType\",\n      COALESCE(NULLIF(m.machine_type, ''), 'Unassigned machine') as \"machineType\",\n      m.unit,\n      m.min_threshold as \"minThreshold\",\n      COALESCE(i.current_qty, 0) as quantity\n    FROM master_data m\n    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)\n    WHERE m.item_id ILIKE $1\n       OR m.name ILIKE $2\n       OR COALESCE(m.barcode, '') ILIKE $3\n    ORDER BY m.item_id ASC\n    LIMIT $4\n  ",
+        "params": [
+          "%abc%",
+          "%abc%",
+          "%abc%",
+          10
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "replyStockSummary",
+        "args": [
+          "rt-1",
+          "ผลค้นหาสต๊อกสำหรับ \"abc\"",
+          [
+            {
+              "itemId": "X1",
+              "name": "Reagent X",
+              "jobType": "Hematology",
+              "machineType": "M1",
+              "unit": "box",
+              "minThreshold": 5,
+              "quantity": "3"
+            }
+          ]
+        ]
+      }
+    ]
+  },
+  "stockRemainingQuestion:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    WITH InventorySummary AS (\n      SELECT\n        item_id,\n        SUM(quantity) as current_qty\n      FROM inventory\n      GROUP BY item_id\n    )\n    SELECT\n      m.item_id as \"itemId\",\n      m.name,\n      COALESCE(NULLIF(m.job_type, ''), 'Unassigned job') as \"jobType\",\n      COALESCE(NULLIF(m.machine_type, ''), 'Unassigned machine') as \"machineType\",\n      m.unit,\n      m.min_threshold as \"minThreshold\",\n      COALESCE(i.current_qty, 0) as quantity\n    FROM master_data m\n    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)\n    WHERE m.item_id ILIKE $1\n       OR m.name ILIKE $2\n       OR COALESCE(m.barcode, '') ILIKE $3\n    ORDER BY m.item_id ASC\n    LIMIT $4\n  ",
+        "params": [
+          "%abc%",
+          "%abc%",
+          "%abc%",
+          10
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "replyStockSummary",
+        "args": [
+          "rt-1",
+          "ผลค้นหาสต๊อกสำหรับ \"abc\"",
+          [
+            {
+              "itemId": "X1",
+              "name": "Reagent X",
+              "jobType": "Hematology",
+              "machineType": "M1",
+              "unit": "box",
+              "minThreshold": 5,
+              "quantity": "3"
+            }
+          ]
+        ]
+      }
+    ]
+  },
+  "stockBareWithLow:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    WITH InventorySummary AS (\n      SELECT\n        item_id,\n        SUM(quantity) as current_qty\n      FROM inventory\n      GROUP BY item_id\n    )\n    SELECT\n      m.item_id as \"itemId\",\n      m.name,\n      m.unit,\n      m.min_threshold as \"minThreshold\",\n      COALESCE(i.current_qty, 0) as quantity\n    FROM master_data m\n    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)\n    WHERE COALESCE(i.current_qty, 0) <= m.min_threshold\n    ORDER BY COALESCE(i.current_qty, 0) ASC, m.item_id ASC\n    LIMIT $1\n  ",
+        "params": [
+          10
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "replyLowStock",
+        "args": [
+          "rt-1",
+          [
+            {
+              "itemId": "X1",
+              "name": "Reagent X",
+              "jobType": "Hematology",
+              "machineType": "M1",
+              "unit": "box",
+              "minThreshold": 5,
+              "quantity": "3"
+            }
+          ]
+        ]
+      }
+    ]
+  },
+  "stockBareNoLow:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    WITH InventorySummary AS (\n      SELECT\n        item_id,\n        SUM(quantity) as current_qty\n      FROM inventory\n      GROUP BY item_id\n    )\n    SELECT\n      m.item_id as \"itemId\",\n      m.name,\n      m.unit,\n      m.min_threshold as \"minThreshold\",\n      COALESCE(i.current_qty, 0) as quantity\n    FROM master_data m\n    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)\n    WHERE COALESCE(i.current_qty, 0) <= m.min_threshold\n    ORDER BY COALESCE(i.current_qty, 0) ASC, m.item_id ASC\n    LIMIT $1\n  ",
+        "params": [
+          10
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "ขณะนี้ไม่มีรายการน้ำยาที่ต่ำกว่าระดับ Min Stock ค่ะ"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "stockThaiTone:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    WITH InventorySummary AS (\n      SELECT\n        item_id,\n        SUM(quantity) as current_qty\n      FROM inventory\n      GROUP BY item_id\n    )\n    SELECT\n      m.item_id as \"itemId\",\n      m.name,\n      m.unit,\n      m.min_threshold as \"minThreshold\",\n      COALESCE(i.current_qty, 0) as quantity\n    FROM master_data m\n    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)\n    WHERE COALESCE(i.current_qty, 0) <= m.min_threshold\n    ORDER BY COALESCE(i.current_qty, 0) ASC, m.item_id ASC\n    LIMIT $1\n  ",
+        "params": [
+          10
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "replyLowStock",
+        "args": [
+          "rt-1",
+          [
+            {
+              "itemId": "X1",
+              "name": "Reagent X",
+              "jobType": "Hematology",
+              "machineType": "M1",
+              "unit": "box",
+              "minThreshold": 5,
+              "quantity": "3"
+            }
+          ]
+        ]
+      }
+    ]
+  },
+  "poFoundWithItems:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "SELECT * FROM purchase_orders WHERE po_number = $1",
+        "params": [
+          "PO-20260801-001"
+        ]
+      },
+      {
+        "text": "\n              SELECT item_name, quantity, unit\n              FROM purchase_order_items\n              WHERE po_id = $1\n            ",
+        "params": [
+          7
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "replyPODetail",
+        "args": [
+          "rt-1",
+          {
+            "id": 7,
+            "po_number": "PO-20260801-001",
+            "vendor": "Vendor A",
+            "status": "SUBMITTED",
+            "expected_date": "2026-08-20",
+            "items": [
+              {
+                "item_name": "Reagent X",
+                "quantity": 4,
+                "unit": "box"
+              },
+              {
+                "item_name": "Reagent Y",
+                "quantity": 2,
+                "unit": "pack"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "poFoundNoItems:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "SELECT * FROM purchase_orders WHERE po_number = $1",
+        "params": [
+          "PO-20260801-001"
+        ]
+      },
+      {
+        "text": "\n              SELECT item_name, quantity, unit\n              FROM purchase_order_items\n              WHERE po_id = $1\n            ",
+        "params": [
+          7
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "replyPODetail",
+        "args": [
+          "rt-1",
+          {
+            "id": 7,
+            "po_number": "PO-20260801-001",
+            "vendor": "Vendor A",
+            "status": "SUBMITTED",
+            "expected_date": "2026-08-20",
+            "items": []
+          }
+        ]
+      }
+    ]
+  },
+  "poNotFound:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "SELECT * FROM purchase_orders WHERE po_number = $1",
+        "params": [
+          "PO-99999999-999"
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "ไม่พบใบสั่งซื้อหมายเลข PO-99999999-999 ในระบบค่ะ"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "poLowercase:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "SELECT * FROM purchase_orders WHERE po_number = $1",
+        "params": [
+          "PO-20260801-001"
+        ]
+      },
+      {
+        "text": "\n              SELECT item_name, quantity, unit\n              FROM purchase_order_items\n              WHERE po_id = $1\n            ",
+        "params": [
+          7
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "replyPODetail",
+        "args": [
+          "rt-1",
+          {
+            "id": 7,
+            "po_number": "PO-20260801-001",
+            "vendor": "Vendor A",
+            "status": "SUBMITTED",
+            "expected_date": "2026-08-20",
+            "items": [
+              {
+                "item_name": "Reagent X",
+                "quantity": 4,
+                "unit": "box"
+              },
+              {
+                "item_name": "Reagent Y",
+                "quantity": 2,
+                "unit": "pack"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "poLowercaseNotFound:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "SELECT * FROM purchase_orders WHERE po_number = $1",
+        "params": [
+          "PO-XXX"
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "ไม่พบใบสั่งซื้อหมายเลข PO-XXX ในระบบค่ะ"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "trackingFound:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "SELECT * FROM shipments WHERE tracking_no = $1",
+        "params": [
+          "AB123456789TH"
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "replyTrackingStatus",
+        "args": [
+          "rt-1",
+          {
+            "provider": "Thailand Post",
+            "trackingNo": "AB123456789TH",
+            "status": "IN_TRANSIT",
+            "statusText": "พัสดุอยู่ในระบบ",
+            "lastUpdate": "2026-08-10T03:04:05.678Z",
+            "history": []
+          }
+        ]
+      }
+    ]
+  },
+  "trackingNotFound:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "SELECT * FROM shipments WHERE tracking_no = $1",
+        "params": [
+          "AB123456789TH"
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "ไม่พบข้อมูลพัสดุ AB123456789TH ในระบบค่ะ"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "help:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": [
+      {
+        "call": "replyHelp",
+        "args": [
+          "rt-1"
+        ]
+      }
+    ]
+  },
+  "menu:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": [
+      {
+        "call": "replyHelp",
+        "args": [
+          "rt-1"
+        ]
+      }
+    ]
+  },
+  "order:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": [
+      {
+        "call": "replyOrderingMenu",
+        "args": [
+          "rt-1"
+        ]
+      }
+    ]
+  },
+  "dispense:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": [
+      {
+        "call": "replyDispenseMenu",
+        "args": [
+          "rt-1"
+        ]
+      }
+    ]
+  },
+  "id:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": []
+  },
+  "register:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": []
+  },
+  "purchaseOrderLink:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "กรุณาเข้าสู่ระบบเพื่อสร้างใบสั่งซื้อ: https://app.test/orders"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "unmatched:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": [
+      {
+        "call": "replyHelp",
+        "args": [
+          "rt-1"
+        ]
+      }
+    ]
+  },
+  "vendorReject:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "บัญชี LINE นี้ยังไม่ได้ผูกกับบัญชี Vendor ที่ใช้งานอยู่ค่ะ"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "ackExpiry:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    CREATE TABLE IF NOT EXISTS expiry_notification_logs (\n      id SERIAL PRIMARY KEY,\n      item_id TEXT NOT NULL,\n      lot_no TEXT NOT NULL,\n      exp_date DATE NOT NULL,\n      notification_type TEXT NOT NULL DEFAULT 'EXPIRING_SOON_30D',\n      notified_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,\n      acknowledged_at TIMESTAMPTZ,\n      acknowledged_by_line_user_id TEXT,\n      UNIQUE (item_id, lot_no, exp_date, notification_type)\n    )\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    ALTER TABLE expiry_notification_logs\n    ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    ALTER TABLE expiry_notification_logs\n    ADD COLUMN IF NOT EXISTS acknowledged_by_line_user_id TEXT\n  ",
+        "params": []
+      },
+      {
+        "text": "\n            UPDATE expiry_notification_logs\n            SET acknowledged_at = COALESCE(acknowledged_at, NOW()),\n                acknowledged_by_line_user_id = COALESCE(acknowledged_by_line_user_id, $1)\n            WHERE item_id = $2\n              AND lot_no = $3\n              AND exp_date = $4::date\n              AND notification_type = $5\n          ",
+        "params": [
+          null,
+          "X1",
+          "L1",
+          "2026-09-01",
+          "EXPIRING_SOON_30D"
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "รับทราบน้ำยา Lot L1 เรียบร้อยแล้ว"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "ackExpiryMissingParam:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": []
+  },
+  "acknowledgePo:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": []
+  },
+  "acknowledgePoNoId:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": []
+  },
+  "confirmVendorPo:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": []
+  },
+  "startVendorReject:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": []
+  },
+  "confirmPo:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "กรุณาเปิดเว็บเพื่อดำเนินการกับ PO PO-1: https://order.test/liff"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "rejectPo:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "กรุณาเปิดเว็บเพื่อดำเนินการกับ PO PO-1: https://order.test/liff"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "rejectPoNoId:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "กรุณาเปิดเว็บเพื่อดำเนินการกับ PO นี้: https://order.test/liff"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "unknownAction:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": []
+  },
+  "nonTextMessage:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": []
+  },
+  "followEvent:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": []
+  },
+  "textNoReplyToken:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": []
+  },
+  "postbackNoReplyToken:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": []
+  },
+  "batch:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    WITH InventorySummary AS (\n      SELECT\n        item_id,\n        SUM(quantity) as current_qty\n      FROM inventory\n      GROUP BY item_id\n    )\n    SELECT\n      m.item_id as \"itemId\",\n      m.name,\n      COALESCE(NULLIF(m.job_type, ''), 'Unassigned job') as \"jobType\",\n      COALESCE(NULLIF(m.machine_type, ''), 'Unassigned machine') as \"machineType\",\n      m.unit,\n      m.min_threshold as \"minThreshold\",\n      COALESCE(i.current_qty, 0) as quantity\n    FROM master_data m\n    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)\n    WHERE m.item_id ILIKE $1\n       OR m.name ILIKE $2\n       OR COALESCE(m.barcode, '') ILIKE $3\n    ORDER BY m.item_id ASC\n    LIMIT $4\n  ",
+        "params": [
+          "%abc%",
+          "%abc%",
+          "%abc%",
+          10
+        ]
+      },
+      {
+        "text": "\n    CREATE TABLE IF NOT EXISTS expiry_notification_logs (\n      id SERIAL PRIMARY KEY,\n      item_id TEXT NOT NULL,\n      lot_no TEXT NOT NULL,\n      exp_date DATE NOT NULL,\n      notification_type TEXT NOT NULL DEFAULT 'EXPIRING_SOON_30D',\n      notified_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,\n      acknowledged_at TIMESTAMPTZ,\n      acknowledged_by_line_user_id TEXT,\n      UNIQUE (item_id, lot_no, exp_date, notification_type)\n    )\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    ALTER TABLE expiry_notification_logs\n    ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    ALTER TABLE expiry_notification_logs\n    ADD COLUMN IF NOT EXISTS acknowledged_by_line_user_id TEXT\n  ",
+        "params": []
+      },
+      {
+        "text": "\n            UPDATE expiry_notification_logs\n            SET acknowledged_at = COALESCE(acknowledged_at, NOW()),\n                acknowledged_by_line_user_id = COALESCE(acknowledged_by_line_user_id, $1)\n            WHERE item_id = $2\n              AND lot_no = $3\n              AND exp_date = $4::date\n              AND notification_type = $5\n          ",
+        "params": [
+          null,
+          "X1",
+          "L1",
+          "2026-09-01",
+          "EXPIRING_SOON_30D"
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "replyHelp",
+        "args": [
+          "rt-1"
+        ]
+      },
+      {
+        "call": "replyStockSummary",
+        "args": [
+          "rt-1",
+          "ผลค้นหาสต๊อกสำหรับ \"abc\"",
+          [
+            {
+              "itemId": "X1",
+              "name": "Reagent X",
+              "jobType": "Hematology",
+              "machineType": "M1",
+              "unit": "box",
+              "minThreshold": 5,
+              "quantity": "3"
+            }
+          ]
+        ]
+      },
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "กรุณาเปิดเว็บเพื่อดำเนินการกับ PO PO-1: https://order.test/liff"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "รับทราบน้ำยา Lot L1 เรียบร้อยแล้ว"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "emptyBatch:noUserId": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": []
+  },
+  "stockKeyword:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    WITH InventorySummary AS (\n      SELECT\n        item_id,\n        SUM(quantity) as current_qty\n      FROM inventory\n      GROUP BY item_id\n    )\n    SELECT\n      m.item_id as \"itemId\",\n      m.name,\n      COALESCE(NULLIF(m.job_type, ''), 'Unassigned job') as \"jobType\",\n      COALESCE(NULLIF(m.machine_type, ''), 'Unassigned machine') as \"machineType\",\n      m.unit,\n      m.min_threshold as \"minThreshold\",\n      COALESCE(i.current_qty, 0) as quantity\n    FROM master_data m\n    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)\n    WHERE m.item_id ILIKE $1\n       OR m.name ILIKE $2\n       OR COALESCE(m.barcode, '') ILIKE $3\n    ORDER BY m.item_id ASC\n    LIMIT $4\n  ",
+        "params": [
+          "%abc%",
+          "%abc%",
+          "%abc%",
+          10
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "replyStockSummary",
+        "args": [
+          "rt-1",
+          "ผลค้นหาสต๊อกสำหรับ \"abc\"",
+          [
+            {
+              "itemId": "X1",
+              "name": "Reagent X",
+              "jobType": "Hematology",
+              "machineType": "M1",
+              "unit": "box",
+              "minThreshold": 5,
+              "quantity": "3"
+            }
+          ]
+        ]
+      }
+    ]
+  },
+  "stockJob:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    WITH InventorySummary AS (\n      SELECT\n        item_id,\n        SUM(quantity) as current_qty\n      FROM inventory\n      GROUP BY item_id\n    )\n    SELECT\n      m.item_id as \"itemId\",\n      m.name,\n      COALESCE(NULLIF(m.job_type, ''), 'Unassigned job') as \"jobType\",\n      COALESCE(NULLIF(m.machine_type, ''), 'Unassigned machine') as \"machineType\",\n      m.unit,\n      m.min_threshold as \"minThreshold\",\n      COALESCE(i.current_qty, 0) as quantity\n    FROM master_data m\n    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)\n    WHERE COALESCE(m.job_type, '') ILIKE $1\n    ORDER BY m.name ASC, m.item_id ASC\n  ",
+        "params": [
+          "%hematology%"
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "replyStockSummary",
+        "args": [
+          "rt-1",
+          "สต๊อกงาน \"hematology\" ทั้งหมด 1 รายการ",
+          [
+            {
+              "itemId": "X1",
+              "name": "Reagent X",
+              "jobType": "Hematology",
+              "machineType": "M1",
+              "unit": "box",
+              "minThreshold": 5,
+              "quantity": "3"
+            }
+          ]
+        ]
+      }
+    ]
+  },
+  "stockRemaining:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    WITH InventorySummary AS (\n      SELECT\n        item_id,\n        SUM(quantity) as current_qty\n      FROM inventory\n      GROUP BY item_id\n    )\n    SELECT\n      m.item_id as \"itemId\",\n      m.name,\n      COALESCE(NULLIF(m.job_type, ''), 'Unassigned job') as \"jobType\",\n      COALESCE(NULLIF(m.machine_type, ''), 'Unassigned machine') as \"machineType\",\n      m.unit,\n      m.min_threshold as \"minThreshold\",\n      COALESCE(i.current_qty, 0) as quantity\n    FROM master_data m\n    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)\n    WHERE m.item_id ILIKE $1\n       OR m.name ILIKE $2\n       OR COALESCE(m.barcode, '') ILIKE $3\n    ORDER BY m.item_id ASC\n    LIMIT $4\n  ",
+        "params": [
+          "%abc%",
+          "%abc%",
+          "%abc%",
+          10
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "replyStockSummary",
+        "args": [
+          "rt-1",
+          "ผลค้นหาสต๊อกสำหรับ \"abc\"",
+          [
+            {
+              "itemId": "X1",
+              "name": "Reagent X",
+              "jobType": "Hematology",
+              "machineType": "M1",
+              "unit": "box",
+              "minThreshold": 5,
+              "quantity": "3"
+            }
+          ]
+        ]
+      }
+    ]
+  },
+  "stockRemainingQuestion:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    WITH InventorySummary AS (\n      SELECT\n        item_id,\n        SUM(quantity) as current_qty\n      FROM inventory\n      GROUP BY item_id\n    )\n    SELECT\n      m.item_id as \"itemId\",\n      m.name,\n      COALESCE(NULLIF(m.job_type, ''), 'Unassigned job') as \"jobType\",\n      COALESCE(NULLIF(m.machine_type, ''), 'Unassigned machine') as \"machineType\",\n      m.unit,\n      m.min_threshold as \"minThreshold\",\n      COALESCE(i.current_qty, 0) as quantity\n    FROM master_data m\n    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)\n    WHERE m.item_id ILIKE $1\n       OR m.name ILIKE $2\n       OR COALESCE(m.barcode, '') ILIKE $3\n    ORDER BY m.item_id ASC\n    LIMIT $4\n  ",
+        "params": [
+          "%abc%",
+          "%abc%",
+          "%abc%",
+          10
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "replyStockSummary",
+        "args": [
+          "rt-1",
+          "ผลค้นหาสต๊อกสำหรับ \"abc\"",
+          [
+            {
+              "itemId": "X1",
+              "name": "Reagent X",
+              "jobType": "Hematology",
+              "machineType": "M1",
+              "unit": "box",
+              "minThreshold": 5,
+              "quantity": "3"
+            }
+          ]
+        ]
+      }
+    ]
+  },
+  "stockBareWithLow:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    WITH InventorySummary AS (\n      SELECT\n        item_id,\n        SUM(quantity) as current_qty\n      FROM inventory\n      GROUP BY item_id\n    )\n    SELECT\n      m.item_id as \"itemId\",\n      m.name,\n      m.unit,\n      m.min_threshold as \"minThreshold\",\n      COALESCE(i.current_qty, 0) as quantity\n    FROM master_data m\n    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)\n    WHERE COALESCE(i.current_qty, 0) <= m.min_threshold\n    ORDER BY COALESCE(i.current_qty, 0) ASC, m.item_id ASC\n    LIMIT $1\n  ",
+        "params": [
+          10
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "replyLowStock",
+        "args": [
+          "rt-1",
+          [
+            {
+              "itemId": "X1",
+              "name": "Reagent X",
+              "jobType": "Hematology",
+              "machineType": "M1",
+              "unit": "box",
+              "minThreshold": 5,
+              "quantity": "3"
+            }
+          ]
+        ]
+      }
+    ]
+  },
+  "stockBareNoLow:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    WITH InventorySummary AS (\n      SELECT\n        item_id,\n        SUM(quantity) as current_qty\n      FROM inventory\n      GROUP BY item_id\n    )\n    SELECT\n      m.item_id as \"itemId\",\n      m.name,\n      m.unit,\n      m.min_threshold as \"minThreshold\",\n      COALESCE(i.current_qty, 0) as quantity\n    FROM master_data m\n    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)\n    WHERE COALESCE(i.current_qty, 0) <= m.min_threshold\n    ORDER BY COALESCE(i.current_qty, 0) ASC, m.item_id ASC\n    LIMIT $1\n  ",
+        "params": [
+          10
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "ขณะนี้ไม่มีรายการน้ำยาที่ต่ำกว่าระดับ Min Stock ค่ะ"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "stockThaiTone:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    WITH InventorySummary AS (\n      SELECT\n        item_id,\n        SUM(quantity) as current_qty\n      FROM inventory\n      GROUP BY item_id\n    )\n    SELECT\n      m.item_id as \"itemId\",\n      m.name,\n      m.unit,\n      m.min_threshold as \"minThreshold\",\n      COALESCE(i.current_qty, 0) as quantity\n    FROM master_data m\n    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)\n    WHERE COALESCE(i.current_qty, 0) <= m.min_threshold\n    ORDER BY COALESCE(i.current_qty, 0) ASC, m.item_id ASC\n    LIMIT $1\n  ",
+        "params": [
+          10
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "replyLowStock",
+        "args": [
+          "rt-1",
+          [
+            {
+              "itemId": "X1",
+              "name": "Reagent X",
+              "jobType": "Hematology",
+              "machineType": "M1",
+              "unit": "box",
+              "minThreshold": 5,
+              "quantity": "3"
+            }
+          ]
+        ]
+      }
+    ]
+  },
+  "poFoundWithItems:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "SELECT * FROM purchase_orders WHERE po_number = $1",
+        "params": [
+          "PO-20260801-001"
+        ]
+      },
+      {
+        "text": "\n              SELECT item_name, quantity, unit\n              FROM purchase_order_items\n              WHERE po_id = $1\n            ",
+        "params": [
+          7
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "replyPODetail",
+        "args": [
+          "rt-1",
+          {
+            "id": 7,
+            "po_number": "PO-20260801-001",
+            "vendor": "Vendor A",
+            "status": "SUBMITTED",
+            "expected_date": "2026-08-20",
+            "items": [
+              {
+                "item_name": "Reagent X",
+                "quantity": 4,
+                "unit": "box"
+              },
+              {
+                "item_name": "Reagent Y",
+                "quantity": 2,
+                "unit": "pack"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "poFoundNoItems:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "SELECT * FROM purchase_orders WHERE po_number = $1",
+        "params": [
+          "PO-20260801-001"
+        ]
+      },
+      {
+        "text": "\n              SELECT item_name, quantity, unit\n              FROM purchase_order_items\n              WHERE po_id = $1\n            ",
+        "params": [
+          7
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "replyPODetail",
+        "args": [
+          "rt-1",
+          {
+            "id": 7,
+            "po_number": "PO-20260801-001",
+            "vendor": "Vendor A",
+            "status": "SUBMITTED",
+            "expected_date": "2026-08-20",
+            "items": []
+          }
+        ]
+      }
+    ]
+  },
+  "poNotFound:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "SELECT * FROM purchase_orders WHERE po_number = $1",
+        "params": [
+          "PO-99999999-999"
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "ไม่พบใบสั่งซื้อหมายเลข PO-99999999-999 ในระบบค่ะ"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "poLowercase:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "SELECT * FROM purchase_orders WHERE po_number = $1",
+        "params": [
+          "PO-20260801-001"
+        ]
+      },
+      {
+        "text": "\n              SELECT item_name, quantity, unit\n              FROM purchase_order_items\n              WHERE po_id = $1\n            ",
+        "params": [
+          7
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "replyPODetail",
+        "args": [
+          "rt-1",
+          {
+            "id": 7,
+            "po_number": "PO-20260801-001",
+            "vendor": "Vendor A",
+            "status": "SUBMITTED",
+            "expected_date": "2026-08-20",
+            "items": [
+              {
+                "item_name": "Reagent X",
+                "quantity": 4,
+                "unit": "box"
+              },
+              {
+                "item_name": "Reagent Y",
+                "quantity": 2,
+                "unit": "pack"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "poLowercaseNotFound:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "SELECT * FROM purchase_orders WHERE po_number = $1",
+        "params": [
+          "PO-XXX"
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "ไม่พบใบสั่งซื้อหมายเลข PO-XXX ในระบบค่ะ"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "trackingFound:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "SELECT * FROM shipments WHERE tracking_no = $1",
+        "params": [
+          "AB123456789TH"
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "replyTrackingStatus",
+        "args": [
+          "rt-1",
+          {
+            "provider": "Thailand Post",
+            "trackingNo": "AB123456789TH",
+            "status": "IN_TRANSIT",
+            "statusText": "พัสดุอยู่ในระบบ",
+            "lastUpdate": "2026-08-10T03:04:05.678Z",
+            "history": []
+          }
+        ]
+      }
+    ]
+  },
+  "trackingNotFound:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "SELECT * FROM shipments WHERE tracking_no = $1",
+        "params": [
+          "AB123456789TH"
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "ไม่พบข้อมูลพัสดุ AB123456789TH ในระบบค่ะ"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "help:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": [
+      {
+        "call": "replyHelp",
+        "args": [
+          "rt-1"
+        ]
+      }
+    ]
+  },
+  "menu:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": [
+      {
+        "call": "replyHelp",
+        "args": [
+          "rt-1"
+        ]
+      }
+    ]
+  },
+  "order:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": [
+      {
+        "call": "replyOrderingMenu",
+        "args": [
+          "rt-1"
+        ]
+      }
+    ]
+  },
+  "dispense:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": [
+      {
+        "call": "replyDispenseMenu",
+        "args": [
+          "rt-1"
+        ]
+      }
+    ]
+  },
+  "id:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "LINE User ID ของคุณคือ:\nU-unlinked\n\nกรุณาคัดลอกไปวางในเมนู \"ตั้งค่าการแจ้งเตือน\" ในระบบ LabStock เพื่อเปิดรับการแจ้งเตือนค่ะ"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "register:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "LINE User ID ของคุณคือ:\nU-unlinked\n\nกรุณาคัดลอกไปวางในเมนู \"ตั้งค่าการแจ้งเตือน\" ในระบบ LabStock เพื่อเปิดรับการแจ้งเตือนค่ะ"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "purchaseOrderLink:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "กรุณาเข้าสู่ระบบเพื่อสร้างใบสั่งซื้อ: https://app.test/orders"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "unmatched:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": [
+      {
+        "call": "replyHelp",
+        "args": [
+          "rt-1"
+        ]
+      }
+    ]
+  },
+  "vendorReject:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-unlinked"
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "บัญชี LINE นี้ยังไม่ได้ผูกกับบัญชี Vendor ที่ใช้งานอยู่ค่ะ"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "ackExpiry:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-unlinked"
+        ]
+      },
+      {
+        "text": "SELECT username, role FROM users WHERE line_user_id = $1 LIMIT 1",
+        "params": [
+          "U-unlinked"
+        ]
+      },
+      {
+        "text": "\n    CREATE TABLE IF NOT EXISTS expiry_notification_logs (\n      id SERIAL PRIMARY KEY,\n      item_id TEXT NOT NULL,\n      lot_no TEXT NOT NULL,\n      exp_date DATE NOT NULL,\n      notification_type TEXT NOT NULL DEFAULT 'EXPIRING_SOON_30D',\n      notified_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,\n      acknowledged_at TIMESTAMPTZ,\n      acknowledged_by_line_user_id TEXT,\n      UNIQUE (item_id, lot_no, exp_date, notification_type)\n    )\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    ALTER TABLE expiry_notification_logs\n    ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    ALTER TABLE expiry_notification_logs\n    ADD COLUMN IF NOT EXISTS acknowledged_by_line_user_id TEXT\n  ",
+        "params": []
+      },
+      {
+        "text": "\n            UPDATE expiry_notification_logs\n            SET acknowledged_at = COALESCE(acknowledged_at, NOW()),\n                acknowledged_by_line_user_id = COALESCE(acknowledged_by_line_user_id, $1)\n            WHERE item_id = $2\n              AND lot_no = $3\n              AND exp_date = $4::date\n              AND notification_type = $5\n          ",
+        "params": [
+          "U-unlinked",
+          "X1",
+          "L1",
+          "2026-09-01",
+          "EXPIRING_SOON_30D"
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "รับทราบน้ำยา Lot L1 เรียบร้อยแล้ว"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "ackExpiryMissingParam:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-unlinked"
+        ]
+      },
+      {
+        "text": "SELECT username, role FROM users WHERE line_user_id = $1 LIMIT 1",
+        "params": [
+          "U-unlinked"
+        ]
+      }
+    ],
+    "replies": []
+  },
+  "acknowledgePo:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-unlinked"
+        ]
+      },
+      {
+        "text": "SELECT username, role FROM users WHERE line_user_id = $1 LIMIT 1",
+        "params": [
+          "U-unlinked"
+        ]
+      }
+    ],
+    "replies": []
+  },
+  "acknowledgePoNoId:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-unlinked"
+        ]
+      },
+      {
+        "text": "SELECT username, role FROM users WHERE line_user_id = $1 LIMIT 1",
+        "params": [
+          "U-unlinked"
+        ]
+      }
+    ],
+    "replies": []
+  },
+  "confirmVendorPo:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-unlinked"
+        ]
+      },
+      {
+        "text": "SELECT username, role FROM users WHERE line_user_id = $1 LIMIT 1",
+        "params": [
+          "U-unlinked"
+        ]
+      }
+    ],
+    "replies": []
+  },
+  "startVendorReject:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-unlinked"
+        ]
+      },
+      {
+        "text": "SELECT username, role FROM users WHERE line_user_id = $1 LIMIT 1",
+        "params": [
+          "U-unlinked"
+        ]
+      }
+    ],
+    "replies": []
+  },
+  "confirmPo:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-unlinked"
+        ]
+      },
+      {
+        "text": "SELECT username, role FROM users WHERE line_user_id = $1 LIMIT 1",
+        "params": [
+          "U-unlinked"
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "กรุณาเปิดเว็บเพื่อดำเนินการกับ PO PO-1: https://order.test/liff"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "rejectPo:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-unlinked"
+        ]
+      },
+      {
+        "text": "SELECT username, role FROM users WHERE line_user_id = $1 LIMIT 1",
+        "params": [
+          "U-unlinked"
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "กรุณาเปิดเว็บเพื่อดำเนินการกับ PO PO-1: https://order.test/liff"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "rejectPoNoId:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-unlinked"
+        ]
+      },
+      {
+        "text": "SELECT username, role FROM users WHERE line_user_id = $1 LIMIT 1",
+        "params": [
+          "U-unlinked"
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "กรุณาเปิดเว็บเพื่อดำเนินการกับ PO นี้: https://order.test/liff"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "unknownAction:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-unlinked"
+        ]
+      },
+      {
+        "text": "SELECT username, role FROM users WHERE line_user_id = $1 LIMIT 1",
+        "params": [
+          "U-unlinked"
+        ]
+      }
+    ],
+    "replies": []
+  },
+  "nonTextMessage:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": []
+  },
+  "followEvent:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": []
+  },
+  "textNoReplyToken:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": []
+  },
+  "postbackNoReplyToken:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": []
+  },
+  "batch:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    WITH InventorySummary AS (\n      SELECT\n        item_id,\n        SUM(quantity) as current_qty\n      FROM inventory\n      GROUP BY item_id\n    )\n    SELECT\n      m.item_id as \"itemId\",\n      m.name,\n      COALESCE(NULLIF(m.job_type, ''), 'Unassigned job') as \"jobType\",\n      COALESCE(NULLIF(m.machine_type, ''), 'Unassigned machine') as \"machineType\",\n      m.unit,\n      m.min_threshold as \"minThreshold\",\n      COALESCE(i.current_qty, 0) as quantity\n    FROM master_data m\n    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)\n    WHERE m.item_id ILIKE $1\n       OR m.name ILIKE $2\n       OR COALESCE(m.barcode, '') ILIKE $3\n    ORDER BY m.item_id ASC\n    LIMIT $4\n  ",
+        "params": [
+          "%abc%",
+          "%abc%",
+          "%abc%",
+          10
+        ]
+      },
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-unlinked"
+        ]
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-unlinked"
+        ]
+      },
+      {
+        "text": "SELECT username, role FROM users WHERE line_user_id = $1 LIMIT 1",
+        "params": [
+          "U-unlinked"
+        ]
+      },
+      {
+        "text": "SELECT username, role FROM users WHERE line_user_id = $1 LIMIT 1",
+        "params": [
+          "U-unlinked"
+        ]
+      },
+      {
+        "text": "\n    CREATE TABLE IF NOT EXISTS expiry_notification_logs (\n      id SERIAL PRIMARY KEY,\n      item_id TEXT NOT NULL,\n      lot_no TEXT NOT NULL,\n      exp_date DATE NOT NULL,\n      notification_type TEXT NOT NULL DEFAULT 'EXPIRING_SOON_30D',\n      notified_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,\n      acknowledged_at TIMESTAMPTZ,\n      acknowledged_by_line_user_id TEXT,\n      UNIQUE (item_id, lot_no, exp_date, notification_type)\n    )\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    ALTER TABLE expiry_notification_logs\n    ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    ALTER TABLE expiry_notification_logs\n    ADD COLUMN IF NOT EXISTS acknowledged_by_line_user_id TEXT\n  ",
+        "params": []
+      },
+      {
+        "text": "\n            UPDATE expiry_notification_logs\n            SET acknowledged_at = COALESCE(acknowledged_at, NOW()),\n                acknowledged_by_line_user_id = COALESCE(acknowledged_by_line_user_id, $1)\n            WHERE item_id = $2\n              AND lot_no = $3\n              AND exp_date = $4::date\n              AND notification_type = $5\n          ",
+        "params": [
+          "U-unlinked",
+          "X1",
+          "L1",
+          "2026-09-01",
+          "EXPIRING_SOON_30D"
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "replyHelp",
+        "args": [
+          "rt-1"
+        ]
+      },
+      {
+        "call": "replyStockSummary",
+        "args": [
+          "rt-1",
+          "ผลค้นหาสต๊อกสำหรับ \"abc\"",
+          [
+            {
+              "itemId": "X1",
+              "name": "Reagent X",
+              "jobType": "Hematology",
+              "machineType": "M1",
+              "unit": "box",
+              "minThreshold": 5,
+              "quantity": "3"
+            }
+          ]
+        ]
+      },
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "LINE User ID ของคุณคือ:\nU-unlinked\n\nกรุณาคัดลอกไปวางในเมนู \"ตั้งค่าการแจ้งเตือน\" ในระบบ LabStock เพื่อเปิดรับการแจ้งเตือนค่ะ"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "กรุณาเปิดเว็บเพื่อดำเนินการกับ PO PO-1: https://order.test/liff"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "รับทราบน้ำยา Lot L1 เรียบร้อยแล้ว"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "emptyBatch:unlinked": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": []
+  },
+  "stockKeyword:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    WITH InventorySummary AS (\n      SELECT\n        item_id,\n        SUM(quantity) as current_qty\n      FROM inventory\n      GROUP BY item_id\n    )\n    SELECT\n      m.item_id as \"itemId\",\n      m.name,\n      COALESCE(NULLIF(m.job_type, ''), 'Unassigned job') as \"jobType\",\n      COALESCE(NULLIF(m.machine_type, ''), 'Unassigned machine') as \"machineType\",\n      m.unit,\n      m.min_threshold as \"minThreshold\",\n      COALESCE(i.current_qty, 0) as quantity\n    FROM master_data m\n    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)\n    WHERE m.item_id ILIKE $1\n       OR m.name ILIKE $2\n       OR COALESCE(m.barcode, '') ILIKE $3\n    ORDER BY m.item_id ASC\n    LIMIT $4\n  ",
+        "params": [
+          "%abc%",
+          "%abc%",
+          "%abc%",
+          10
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "replyStockSummary",
+        "args": [
+          "rt-1",
+          "ผลค้นหาสต๊อกสำหรับ \"abc\"",
+          [
+            {
+              "itemId": "X1",
+              "name": "Reagent X",
+              "jobType": "Hematology",
+              "machineType": "M1",
+              "unit": "box",
+              "minThreshold": 5,
+              "quantity": "3"
+            }
+          ]
+        ]
+      }
+    ]
+  },
+  "stockJob:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    WITH InventorySummary AS (\n      SELECT\n        item_id,\n        SUM(quantity) as current_qty\n      FROM inventory\n      GROUP BY item_id\n    )\n    SELECT\n      m.item_id as \"itemId\",\n      m.name,\n      COALESCE(NULLIF(m.job_type, ''), 'Unassigned job') as \"jobType\",\n      COALESCE(NULLIF(m.machine_type, ''), 'Unassigned machine') as \"machineType\",\n      m.unit,\n      m.min_threshold as \"minThreshold\",\n      COALESCE(i.current_qty, 0) as quantity\n    FROM master_data m\n    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)\n    WHERE COALESCE(m.job_type, '') ILIKE $1\n    ORDER BY m.name ASC, m.item_id ASC\n  ",
+        "params": [
+          "%hematology%"
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "replyStockSummary",
+        "args": [
+          "rt-1",
+          "สต๊อกงาน \"hematology\" ทั้งหมด 1 รายการ",
+          [
+            {
+              "itemId": "X1",
+              "name": "Reagent X",
+              "jobType": "Hematology",
+              "machineType": "M1",
+              "unit": "box",
+              "minThreshold": 5,
+              "quantity": "3"
+            }
+          ]
+        ]
+      }
+    ]
+  },
+  "stockRemaining:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    WITH InventorySummary AS (\n      SELECT\n        item_id,\n        SUM(quantity) as current_qty\n      FROM inventory\n      GROUP BY item_id\n    )\n    SELECT\n      m.item_id as \"itemId\",\n      m.name,\n      COALESCE(NULLIF(m.job_type, ''), 'Unassigned job') as \"jobType\",\n      COALESCE(NULLIF(m.machine_type, ''), 'Unassigned machine') as \"machineType\",\n      m.unit,\n      m.min_threshold as \"minThreshold\",\n      COALESCE(i.current_qty, 0) as quantity\n    FROM master_data m\n    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)\n    WHERE m.item_id ILIKE $1\n       OR m.name ILIKE $2\n       OR COALESCE(m.barcode, '') ILIKE $3\n    ORDER BY m.item_id ASC\n    LIMIT $4\n  ",
+        "params": [
+          "%abc%",
+          "%abc%",
+          "%abc%",
+          10
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "replyStockSummary",
+        "args": [
+          "rt-1",
+          "ผลค้นหาสต๊อกสำหรับ \"abc\"",
+          [
+            {
+              "itemId": "X1",
+              "name": "Reagent X",
+              "jobType": "Hematology",
+              "machineType": "M1",
+              "unit": "box",
+              "minThreshold": 5,
+              "quantity": "3"
+            }
+          ]
+        ]
+      }
+    ]
+  },
+  "stockRemainingQuestion:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    WITH InventorySummary AS (\n      SELECT\n        item_id,\n        SUM(quantity) as current_qty\n      FROM inventory\n      GROUP BY item_id\n    )\n    SELECT\n      m.item_id as \"itemId\",\n      m.name,\n      COALESCE(NULLIF(m.job_type, ''), 'Unassigned job') as \"jobType\",\n      COALESCE(NULLIF(m.machine_type, ''), 'Unassigned machine') as \"machineType\",\n      m.unit,\n      m.min_threshold as \"minThreshold\",\n      COALESCE(i.current_qty, 0) as quantity\n    FROM master_data m\n    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)\n    WHERE m.item_id ILIKE $1\n       OR m.name ILIKE $2\n       OR COALESCE(m.barcode, '') ILIKE $3\n    ORDER BY m.item_id ASC\n    LIMIT $4\n  ",
+        "params": [
+          "%abc%",
+          "%abc%",
+          "%abc%",
+          10
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "replyStockSummary",
+        "args": [
+          "rt-1",
+          "ผลค้นหาสต๊อกสำหรับ \"abc\"",
+          [
+            {
+              "itemId": "X1",
+              "name": "Reagent X",
+              "jobType": "Hematology",
+              "machineType": "M1",
+              "unit": "box",
+              "minThreshold": 5,
+              "quantity": "3"
+            }
+          ]
+        ]
+      }
+    ]
+  },
+  "stockBareWithLow:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    WITH InventorySummary AS (\n      SELECT\n        item_id,\n        SUM(quantity) as current_qty\n      FROM inventory\n      GROUP BY item_id\n    )\n    SELECT\n      m.item_id as \"itemId\",\n      m.name,\n      m.unit,\n      m.min_threshold as \"minThreshold\",\n      COALESCE(i.current_qty, 0) as quantity\n    FROM master_data m\n    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)\n    WHERE COALESCE(i.current_qty, 0) <= m.min_threshold\n    ORDER BY COALESCE(i.current_qty, 0) ASC, m.item_id ASC\n    LIMIT $1\n  ",
+        "params": [
+          10
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "replyLowStock",
+        "args": [
+          "rt-1",
+          [
+            {
+              "itemId": "X1",
+              "name": "Reagent X",
+              "jobType": "Hematology",
+              "machineType": "M1",
+              "unit": "box",
+              "minThreshold": 5,
+              "quantity": "3"
+            }
+          ]
+        ]
+      }
+    ]
+  },
+  "stockBareNoLow:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    WITH InventorySummary AS (\n      SELECT\n        item_id,\n        SUM(quantity) as current_qty\n      FROM inventory\n      GROUP BY item_id\n    )\n    SELECT\n      m.item_id as \"itemId\",\n      m.name,\n      m.unit,\n      m.min_threshold as \"minThreshold\",\n      COALESCE(i.current_qty, 0) as quantity\n    FROM master_data m\n    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)\n    WHERE COALESCE(i.current_qty, 0) <= m.min_threshold\n    ORDER BY COALESCE(i.current_qty, 0) ASC, m.item_id ASC\n    LIMIT $1\n  ",
+        "params": [
+          10
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "ขณะนี้ไม่มีรายการน้ำยาที่ต่ำกว่าระดับ Min Stock ค่ะ"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "stockThaiTone:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    WITH InventorySummary AS (\n      SELECT\n        item_id,\n        SUM(quantity) as current_qty\n      FROM inventory\n      GROUP BY item_id\n    )\n    SELECT\n      m.item_id as \"itemId\",\n      m.name,\n      m.unit,\n      m.min_threshold as \"minThreshold\",\n      COALESCE(i.current_qty, 0) as quantity\n    FROM master_data m\n    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)\n    WHERE COALESCE(i.current_qty, 0) <= m.min_threshold\n    ORDER BY COALESCE(i.current_qty, 0) ASC, m.item_id ASC\n    LIMIT $1\n  ",
+        "params": [
+          10
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "replyLowStock",
+        "args": [
+          "rt-1",
+          [
+            {
+              "itemId": "X1",
+              "name": "Reagent X",
+              "jobType": "Hematology",
+              "machineType": "M1",
+              "unit": "box",
+              "minThreshold": 5,
+              "quantity": "3"
+            }
+          ]
+        ]
+      }
+    ]
+  },
+  "poFoundWithItems:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "SELECT * FROM purchase_orders WHERE po_number = $1",
+        "params": [
+          "PO-20260801-001"
+        ]
+      },
+      {
+        "text": "\n              SELECT item_name, quantity, unit\n              FROM purchase_order_items\n              WHERE po_id = $1\n            ",
+        "params": [
+          7
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "replyPODetail",
+        "args": [
+          "rt-1",
+          {
+            "id": 7,
+            "po_number": "PO-20260801-001",
+            "vendor": "Vendor A",
+            "status": "SUBMITTED",
+            "expected_date": "2026-08-20",
+            "items": [
+              {
+                "item_name": "Reagent X",
+                "quantity": 4,
+                "unit": "box"
+              },
+              {
+                "item_name": "Reagent Y",
+                "quantity": 2,
+                "unit": "pack"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "poFoundNoItems:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "SELECT * FROM purchase_orders WHERE po_number = $1",
+        "params": [
+          "PO-20260801-001"
+        ]
+      },
+      {
+        "text": "\n              SELECT item_name, quantity, unit\n              FROM purchase_order_items\n              WHERE po_id = $1\n            ",
+        "params": [
+          7
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "replyPODetail",
+        "args": [
+          "rt-1",
+          {
+            "id": 7,
+            "po_number": "PO-20260801-001",
+            "vendor": "Vendor A",
+            "status": "SUBMITTED",
+            "expected_date": "2026-08-20",
+            "items": []
+          }
+        ]
+      }
+    ]
+  },
+  "poNotFound:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "SELECT * FROM purchase_orders WHERE po_number = $1",
+        "params": [
+          "PO-99999999-999"
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "ไม่พบใบสั่งซื้อหมายเลข PO-99999999-999 ในระบบค่ะ"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "poLowercase:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "SELECT * FROM purchase_orders WHERE po_number = $1",
+        "params": [
+          "PO-20260801-001"
+        ]
+      },
+      {
+        "text": "\n              SELECT item_name, quantity, unit\n              FROM purchase_order_items\n              WHERE po_id = $1\n            ",
+        "params": [
+          7
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "replyPODetail",
+        "args": [
+          "rt-1",
+          {
+            "id": 7,
+            "po_number": "PO-20260801-001",
+            "vendor": "Vendor A",
+            "status": "SUBMITTED",
+            "expected_date": "2026-08-20",
+            "items": [
+              {
+                "item_name": "Reagent X",
+                "quantity": 4,
+                "unit": "box"
+              },
+              {
+                "item_name": "Reagent Y",
+                "quantity": 2,
+                "unit": "pack"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "poLowercaseNotFound:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "SELECT * FROM purchase_orders WHERE po_number = $1",
+        "params": [
+          "PO-XXX"
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "ไม่พบใบสั่งซื้อหมายเลข PO-XXX ในระบบค่ะ"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "trackingFound:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "SELECT * FROM shipments WHERE tracking_no = $1",
+        "params": [
+          "AB123456789TH"
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "replyTrackingStatus",
+        "args": [
+          "rt-1",
+          {
+            "provider": "Thailand Post",
+            "trackingNo": "AB123456789TH",
+            "status": "IN_TRANSIT",
+            "statusText": "พัสดุอยู่ในระบบ",
+            "lastUpdate": "2026-08-10T03:04:05.678Z",
+            "history": []
+          }
+        ]
+      }
+    ]
+  },
+  "trackingNotFound:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "SELECT * FROM shipments WHERE tracking_no = $1",
+        "params": [
+          "AB123456789TH"
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "ไม่พบข้อมูลพัสดุ AB123456789TH ในระบบค่ะ"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "help:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": [
+      {
+        "call": "replyHelp",
+        "args": [
+          "rt-1"
+        ]
+      }
+    ]
+  },
+  "menu:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": [
+      {
+        "call": "replyHelp",
+        "args": [
+          "rt-1"
+        ]
+      }
+    ]
+  },
+  "order:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": [
+      {
+        "call": "replyOrderingMenu",
+        "args": [
+          "rt-1"
+        ]
+      }
+    ]
+  },
+  "dispense:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": [
+      {
+        "call": "replyDispenseMenu",
+        "args": [
+          "rt-1"
+        ]
+      }
+    ]
+  },
+  "id:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "LINE User ID ของคุณคือ:\nU-vendor\n\nกรุณาคัดลอกไปวางในเมนู \"ตั้งค่าการแจ้งเตือน\" ในระบบ LabStock เพื่อเปิดรับการแจ้งเตือนค่ะ"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "register:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "LINE User ID ของคุณคือ:\nU-vendor\n\nกรุณาคัดลอกไปวางในเมนู \"ตั้งค่าการแจ้งเตือน\" ในระบบ LabStock เพื่อเปิดรับการแจ้งเตือนค่ะ"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "purchaseOrderLink:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "กรุณาเข้าสู่ระบบเพื่อสร้างใบสั่งซื้อ: https://app.test/orders"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "unmatched:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": [
+      {
+        "call": "replyHelp",
+        "args": [
+          "rt-1"
+        ]
+      }
+    ]
+  },
+  "vendorReject:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-vendor"
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "รับเหตุผลการปฏิเสธของ PO PO-1 แล้ว (เหตุผล) กรุณาเปิดเว็บเพื่อส่งเหตุผลอย่างเป็นทางการ: https://order.test/liff"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "ackExpiry:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-vendor"
+        ]
+      },
+      {
+        "text": "SELECT username, role FROM users WHERE line_user_id = $1 LIMIT 1",
+        "params": [
+          "U-vendor"
+        ]
+      },
+      {
+        "text": "\n    CREATE TABLE IF NOT EXISTS expiry_notification_logs (\n      id SERIAL PRIMARY KEY,\n      item_id TEXT NOT NULL,\n      lot_no TEXT NOT NULL,\n      exp_date DATE NOT NULL,\n      notification_type TEXT NOT NULL DEFAULT 'EXPIRING_SOON_30D',\n      notified_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,\n      acknowledged_at TIMESTAMPTZ,\n      acknowledged_by_line_user_id TEXT,\n      UNIQUE (item_id, lot_no, exp_date, notification_type)\n    )\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    ALTER TABLE expiry_notification_logs\n    ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    ALTER TABLE expiry_notification_logs\n    ADD COLUMN IF NOT EXISTS acknowledged_by_line_user_id TEXT\n  ",
+        "params": []
+      },
+      {
+        "text": "\n            UPDATE expiry_notification_logs\n            SET acknowledged_at = COALESCE(acknowledged_at, NOW()),\n                acknowledged_by_line_user_id = COALESCE(acknowledged_by_line_user_id, $1)\n            WHERE item_id = $2\n              AND lot_no = $3\n              AND exp_date = $4::date\n              AND notification_type = $5\n          ",
+        "params": [
+          "U-vendor",
+          "X1",
+          "L1",
+          "2026-09-01",
+          "EXPIRING_SOON_30D"
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "รับทราบน้ำยา Lot L1 เรียบร้อยแล้ว"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "ackExpiryMissingParam:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-vendor"
+        ]
+      },
+      {
+        "text": "SELECT username, role FROM users WHERE line_user_id = $1 LIMIT 1",
+        "params": [
+          "U-vendor"
+        ]
+      }
+    ],
+    "replies": []
+  },
+  "acknowledgePo:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-vendor"
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "กรุณาเปิดเว็บเพื่อยืนยัน PO PO-1 (การกดปุ่มใน LINE จะไม่เปลี่ยนสถานะโดยตรง): https://order.test/liff"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "acknowledgePoNoId:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-vendor"
+        ]
+      },
+      {
+        "text": "SELECT username, role FROM users WHERE line_user_id = $1 LIMIT 1",
+        "params": [
+          "U-vendor"
+        ]
+      }
+    ],
+    "replies": []
+  },
+  "confirmVendorPo:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-vendor"
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "กรุณาเปิดเว็บเพื่อยืนยัน PO PO-1 (การกดปุ่มใน LINE จะไม่เปลี่ยนสถานะโดยตรง): https://order.test/liff"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "startVendorReject:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-vendor"
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "โปรดส่งเหตุผลการปฏิเสธในรูปแบบ: ปฏิเสธ PO-1: <เหตุผล>"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "confirmPo:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-vendor"
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "กรุณาเปิดเว็บเพื่อยืนยัน PO PO-1 (การกดปุ่มใน LINE จะไม่เปลี่ยนสถานะโดยตรง): https://order.test/liff"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "rejectPo:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-vendor"
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "โปรดส่งเหตุผลการปฏิเสธในรูปแบบ: ปฏิเสธ PO-1: <เหตุผล>"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "rejectPoNoId:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-vendor"
+        ]
+      },
+      {
+        "text": "SELECT username, role FROM users WHERE line_user_id = $1 LIMIT 1",
+        "params": [
+          "U-vendor"
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "กรุณาเปิดเว็บเพื่อดำเนินการกับ PO นี้: https://order.test/liff"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "unknownAction:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-vendor"
+        ]
+      },
+      {
+        "text": "SELECT username, role FROM users WHERE line_user_id = $1 LIMIT 1",
+        "params": [
+          "U-vendor"
+        ]
+      }
+    ],
+    "replies": []
+  },
+  "nonTextMessage:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": []
+  },
+  "followEvent:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": []
+  },
+  "textNoReplyToken:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": []
+  },
+  "postbackNoReplyToken:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": []
+  },
+  "batch:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    WITH InventorySummary AS (\n      SELECT\n        item_id,\n        SUM(quantity) as current_qty\n      FROM inventory\n      GROUP BY item_id\n    )\n    SELECT\n      m.item_id as \"itemId\",\n      m.name,\n      COALESCE(NULLIF(m.job_type, ''), 'Unassigned job') as \"jobType\",\n      COALESCE(NULLIF(m.machine_type, ''), 'Unassigned machine') as \"machineType\",\n      m.unit,\n      m.min_threshold as \"minThreshold\",\n      COALESCE(i.current_qty, 0) as quantity\n    FROM master_data m\n    LEFT JOIN InventorySummary i ON LOWER(m.item_id) = LOWER(i.item_id)\n    WHERE m.item_id ILIKE $1\n       OR m.name ILIKE $2\n       OR COALESCE(m.barcode, '') ILIKE $3\n    ORDER BY m.item_id ASC\n    LIMIT $4\n  ",
+        "params": [
+          "%abc%",
+          "%abc%",
+          "%abc%",
+          10
+        ]
+      },
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-vendor"
+        ]
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-vendor"
+        ]
+      },
+      {
+        "text": "SELECT username, role FROM users WHERE line_user_id = $1 LIMIT 1",
+        "params": [
+          "U-vendor"
+        ]
+      },
+      {
+        "text": "\n    CREATE TABLE IF NOT EXISTS expiry_notification_logs (\n      id SERIAL PRIMARY KEY,\n      item_id TEXT NOT NULL,\n      lot_no TEXT NOT NULL,\n      exp_date DATE NOT NULL,\n      notification_type TEXT NOT NULL DEFAULT 'EXPIRING_SOON_30D',\n      notified_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,\n      acknowledged_at TIMESTAMPTZ,\n      acknowledged_by_line_user_id TEXT,\n      UNIQUE (item_id, lot_no, exp_date, notification_type)\n    )\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    ALTER TABLE expiry_notification_logs\n    ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ\n  ",
+        "params": []
+      },
+      {
+        "text": "\n    ALTER TABLE expiry_notification_logs\n    ADD COLUMN IF NOT EXISTS acknowledged_by_line_user_id TEXT\n  ",
+        "params": []
+      },
+      {
+        "text": "\n            UPDATE expiry_notification_logs\n            SET acknowledged_at = COALESCE(acknowledged_at, NOW()),\n                acknowledged_by_line_user_id = COALESCE(acknowledged_by_line_user_id, $1)\n            WHERE item_id = $2\n              AND lot_no = $3\n              AND exp_date = $4::date\n              AND notification_type = $5\n          ",
+        "params": [
+          "U-vendor",
+          "X1",
+          "L1",
+          "2026-09-01",
+          "EXPIRING_SOON_30D"
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "replyHelp",
+        "args": [
+          "rt-1"
+        ]
+      },
+      {
+        "call": "replyStockSummary",
+        "args": [
+          "rt-1",
+          "ผลค้นหาสต๊อกสำหรับ \"abc\"",
+          [
+            {
+              "itemId": "X1",
+              "name": "Reagent X",
+              "jobType": "Hematology",
+              "machineType": "M1",
+              "unit": "box",
+              "minThreshold": 5,
+              "quantity": "3"
+            }
+          ]
+        ]
+      },
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "LINE User ID ของคุณคือ:\nU-vendor\n\nกรุณาคัดลอกไปวางในเมนู \"ตั้งค่าการแจ้งเตือน\" ในระบบ LabStock เพื่อเปิดรับการแจ้งเตือนค่ะ"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "กรุณาเปิดเว็บเพื่อยืนยัน PO PO-1 (การกดปุ่มใน LINE จะไม่เปลี่ยนสถานะโดยตรง): https://order.test/liff"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "รับทราบน้ำยา Lot L1 เรียบร้อยแล้ว"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "emptyBatch:vendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [],
+    "replies": []
+  },
+  "vendorRejectVendorWithoutVendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-vendor-empty"
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "บัญชี LINE นี้ยังไม่ได้ผูกกับบัญชี Vendor ที่ใช้งานอยู่ค่ะ"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "startVendorRejectVendorWithoutVendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-vendor-empty"
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "บัญชี LINE นี้ยังไม่ได้ผูกกับบัญชี Vendor ที่ใช้งานอยู่ค่ะ"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "rejectPoVendorWithoutVendor": {
+    "status": 200,
+    "body": {
+      "success": true
+    },
+    "statements": [
+      {
+        "text": "\n    SELECT EXISTS (\n      SELECT 1\n      FROM information_schema.columns\n      WHERE table_name = 'users' AND column_name = 'account_status'\n    ) as exists\n  ",
+        "params": []
+      },
+      {
+        "text": "\n        SELECT username, name, role, vendor, account_status\n        FROM users\n        WHERE line_user_id = $1\n        LIMIT 1\n      ",
+        "params": [
+          "U-vendor-empty"
+        ]
+      }
+    ],
+    "replies": [
+      {
+        "call": "lineClient.replyMessage",
+        "args": [
+          {
+            "replyToken": "rt-1",
+            "messages": [
+              {
+                "type": "text",
+                "text": "บัญชี LINE นี้ยังไม่ได้ผูกกับบัญชี Vendor ที่ใช้งานอยู่ค่ะ"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "signatureWrong": {
+    "status": 401,
+    "body": {
+      "error": "Invalid signature"
+    },
+    "statements": [],
+    "replies": []
+  },
+  "signatureMissing": {
+    "status": 401,
+    "body": {
+      "error": "Invalid signature"
+    },
+    "statements": [],
+    "replies": []
+  }
+}

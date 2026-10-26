@@ -4,8 +4,9 @@ import { describe, expect, it } from "vitest";
 
 // resolveDepartmentForLineUser trusts that the LINE id token was ALREADY verified and that the username comes from the LINE link
 // (users.line_user_id), not from the request. It ignores sessions, tokens and requested departments, and only works in the default
-// department. It must therefore be used by exactly one caller: the LIFF ordering gate (src/lib/line-liff-ordering.ts).
-// Any other route that handles a LINE user (the webhook, other LIFF routes, mobile approvals) must NOT start using it by accident.
+// department. It must therefore be called only from the LINE gate file (src/lib/line-liff-ordering.ts), which serves the LIFF ordering
+// route and the bot gate getLineBotAccess; the webhook reaches it only through that gate and never imports it directly.
+// Any other route that handles a LINE user (other LIFF routes, mobile approvals) must NOT start using it by accident.
 
 const ROOT = process.cwd();
 const NAME = "resolveDepartmentForLineUser";
@@ -54,6 +55,11 @@ describe("resolveDepartmentForLineUser has a single caller", () => {
       return reexport.test(text) || namespaceImport.test(text);
     });
     expect(offenders).toEqual([]);
+  });
+
+  it("getLineBotAccess is only referenced by the gate file and the webhook", () => {
+    const mentions = sourceFiles.filter((rel) => read(rel).includes("getLineBotAccess")).sort();
+    expect(mentions).toEqual(["src/app/api/line-webhook/route.ts", "src/lib/line-liff-ordering.ts"]);
   });
 
   it.each(FORBIDDEN)("%s exists and does not use it", (rel) => {

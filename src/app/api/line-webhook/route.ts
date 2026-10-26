@@ -5,10 +5,17 @@ import { getLowStockRows, searchStockRows, searchStockRowsByJob } from "@/lib/bo
 import { getLineOrderUrl, replyDispenseMenu, replyHelp, replyLowStock, replyOrderingMenu, replyPODetail, replyStockSummary, replyTrackingStatus } from "@/lib/line-bot";
 import { LowStockItem, PurchaseOrder, TrackingResult } from "@/lib/line-flex-templates";
 import { getLineLinkedUser } from "@/lib/line-liff-auth";
+import { departmentsFlagOn } from "@/lib/departments-flag";
+import { getLineBotAccess, type LineBotAccess } from "@/lib/line-liff-ordering";
+import { decideLineBotCommand, findPurchaseOrderForLine, findShipmentForLine } from "@/lib/line-bot-queries";
 
 const sql = neon(process.env.DATABASE_URL || "");
 const channelSecret = process.env.LINE_CHANNEL_SECRET;
 const expiryNotificationType = "EXPIRING_SOON_30D";
+
+// Departments off: the bot behaves as before. The gate is not even awaited in that case, so the legacy statement order of a
+// batch of events is unchanged (an extra await would reorder concurrent events).
+const legacyAccess: LineBotAccess = { state: "legacy" };
 
 type ReplyTextMessage = {
   type: "text";
@@ -185,10 +192,18 @@ export async function POST(req: Request) {
 
         const stockCommand = parseStockCommand(text);
         if (stockCommand) {
+          const stockDecision = decideLineBotCommand(departmentsFlagOn() ? await getLineBotAccess(event.source?.userId ?? null) : legacyAccess, "stock");
+          if (!stockDecision.ok) {
+            await sendReply(replyToken, { type: "text", text: stockDecision.message });
+            return;
+          }
+          if (stockDecision.command !== "stock") return;
+          const stockScope = stockDecision.scope;
+
           if (stockCommand.keyword) {
             const stockRows = stockCommand.searchByJob
-              ? await searchStockRowsByJob(stockCommand.keyword, { mode: "legacy" }) // legacy until PR-C
-              : await searchStockRows(stockCommand.keyword, 10, { mode: "legacy" });
+              ? await searchStockRowsByJob(stockCommand.keyword, stockScope)
+              : await searchStockRows(stockCommand.keyword, 10, stockScope);
             await replyStockSummary(
               replyToken,
               stockCommand.searchByJob
@@ -197,7 +212,7 @@ export async function POST(req: Request) {
               stockRows,
             );
           } else {
-            const lowStockData = await getLowStockRows(10, { mode: "legacy" }); // legacy until PR-C
+            const lowStockData = await getLowStockRows(10, stockScope);
 
             if (lowStockData.length > 0) {
               await replyLowStock(replyToken, lowStockData as LowStockItem[]);
@@ -213,10 +228,16 @@ export async function POST(req: Request) {
 
         if (text.toUpperCase().startsWith("PO-")) {
           const poNumber = text.toUpperCase();
-          const poData = await sql`SELECT * FROM purchase_orders WHERE po_number = ${poNumber}`;
+          const poDecision = decideLineBotCommand(departmentsFlagOn() ? await getLineBotAccess(event.source?.userId ?? null) : legacyAccess, "purchasing");
+          if (!poDecision.ok) {
+            await sendReply(replyToken, { type: "text", text: poDecision.message });
+            return;
+          }
+          if (poDecision.command !== "purchasing") return;
+          const poFound = await findPurchaseOrderForLine(poNumber, poDecision.actor);
 
-          if (poData.length > 0) {
-            const poRow = poData[0] as PurchaseOrderRow;
+          if (poFound) {
+            const poRow = poFound as PurchaseOrderRow;
             const itemsDataRows = await sql`
               SELECT item_name, quantity, unit
               FROM purchase_order_items
@@ -246,13 +267,19 @@ export async function POST(req: Request) {
         }
 
         if (/^[A-Z]{2}[0-9]{9}[A-Z]{2}$/.test(text)) {
-          const shipments = await sql`SELECT * FROM shipments WHERE tracking_no = ${text}`;
+          const shipmentDecision = decideLineBotCommand(departmentsFlagOn() ? await getLineBotAccess(event.source?.userId ?? null) : legacyAccess, "purchasing");
+          if (!shipmentDecision.ok) {
+            await sendReply(replyToken, { type: "text", text: shipmentDecision.message });
+            return;
+          }
+          if (shipmentDecision.command !== "purchasing") return;
+          const shipment = await findShipmentForLine(text, shipmentDecision.actor);
 
-          if (shipments.length > 0) {
+          if (shipment) {
             const tracking: TrackingResult = {
-              provider: shipments[0].tracking_provider || "Unknown",
+              provider: (shipment.tracking_provider as string | null) || "Unknown",
               trackingNo: text,
-              status: shipments[0].tracking_status || "UNKNOWN",
+              status: (shipment.tracking_status as string | null) || "UNKNOWN",
               statusText: "พัสดุอยู่ในระบบ",
               lastUpdate: new Date().toISOString(),
               history: [],
