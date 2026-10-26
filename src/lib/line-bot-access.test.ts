@@ -51,8 +51,11 @@ describe("getLineBotAccess", () => {
     expect(mocks.resolveDepartmentForLineUser).not.toHaveBeenCalled();
   });
 
-  it.each(["unlinked", "inactive"])("a %s account is unlinked", async (state) => {
-    mocks.getLineLinkedUserAccess.mockResolvedValue({ state, user: state === "inactive" ? linkedUser : null });
+  it.each([
+    ["unlinked", { state: "unlinked" }],
+    ["inactive", { state: "inactive", accountStatus: "disabled" }],
+  ])("a %s account is unlinked", async (_name, access) => {
+    mocks.getLineLinkedUserAccess.mockResolvedValue(access);
     await expect(getLineBotAccess("U-1")).resolves.toEqual({ state: "unlinked" });
     expect(mocks.resolveDepartmentForLineUser).not.toHaveBeenCalled();
   });
@@ -88,8 +91,13 @@ describe("getLineBotAccess", () => {
     await expect(getLineBotAccess("U-1")).resolves.toEqual({ state: "unlinked" });
   });
 
-  it("missing schema error falls back to legacy and marks not ready", async () => {
-    mocks.resolveDepartmentForLineUser.mockRejectedValue(Object.assign(new Error("missing"), { code: "42P01" }));
+  it.each(["ALL", null])("a resolved scope of %j is no_work (never a lab scope)", async (scope) => {
+    mocks.resolveDepartmentForLineUser.mockResolvedValue(scoped({ scope }));
+    await expect(getLineBotAccess("U-1")).resolves.toEqual({ state: "no_work" });
+  });
+
+  it.each(["42P01", "42703"])("missing schema error %s falls back to legacy and marks not ready", async (code) => {
+    mocks.resolveDepartmentForLineUser.mockRejectedValue(Object.assign(new Error("missing"), { code }));
     await expect(getLineBotAccess("U-1")).resolves.toEqual({ state: "legacy" });
     expect(mocks.markDepartmentsNotReady).toHaveBeenCalledTimes(1);
   });

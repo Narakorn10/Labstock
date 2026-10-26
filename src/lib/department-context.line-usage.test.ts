@@ -59,8 +59,7 @@ describe("resolveDepartmentForLineUser has a single caller", () => {
 
   it("getLineBotAccess is only referenced by the gate file and the webhook", () => {
     const mentions = sourceFiles.filter((rel) => read(rel).includes("getLineBotAccess")).sort();
-    // Task 4 adds src/app/api/line-webhook/route.ts here.
-    expect(mentions).toEqual(["src/lib/line-liff-ordering.ts"]);
+    expect(mentions).toEqual(["src/app/api/line-webhook/route.ts", "src/lib/line-liff-ordering.ts"]);
   });
 
   it.each(FORBIDDEN)("%s exists and does not use it", (rel) => {
