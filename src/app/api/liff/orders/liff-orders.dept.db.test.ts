@@ -30,6 +30,7 @@ import { DEPT_A, DEPT_B, applyMigrationFile, seedTwoDepartments } from "@/test/d
 import { addPurchaseOrderTables, insertPurchaseOrder } from "@/test/purchase-order-dept-fixtures";
 import { POST as bootstrapPOST } from "./bootstrap/route";
 import { POST as catalogPOST } from "./catalog/search/route";
+import { POST as ordersPOST } from "./route";
 import { PATCH as orderPATCH } from "./[id]/route";
 
 const sql = dbSql as unknown as PgliteSql;
@@ -43,6 +44,7 @@ const notAllowed = "Only linked Admin or Manager users can order reagents from L
 //   mgr-vendor-override  global Manager, B default with user_departments.role = 'Vendor'
 //   mgrnone              Manager, no membership row
 //   admin1               global Admin (seed), member of A
+//   user1                global User (seed), member of A: cannot order from LINE
 beforeAll(async () => {
   vi.stubEnv("DEPARTMENTS_ENABLED", "true");
   await seedTwoDepartments(sql);
@@ -63,7 +65,7 @@ beforeAll(async () => {
       ('mgrb', ${DEPT_B}, NULL, true),
       ('mgr-user-override', ${DEPT_B}, 'User', true),
       ('mgr-vendor-override', ${DEPT_B}, 'Vendor', true);
-    UPDATE users SET line_user_id = 'U-' || username WHERE username IN ('mgra', 'mgrb', 'mgr-user-override', 'mgr-vendor-override', 'mgrnone', 'admin1');
+    UPDATE users SET line_user_id = 'U-' || username WHERE username IN ('mgra', 'mgrb', 'mgr-user-override', 'mgr-vendor-override', 'mgrnone', 'admin1', 'user1');
   `);
 }, 120_000);
 
@@ -114,6 +116,10 @@ const patch = async (username: string, id: string | number, body: Record<string,
   );
   return json(response);
 };
+const create = async (username: string, body: Record<string, unknown>) => json(await ordersPOST(req(username, body)));
+const poCount = async () => Number((await sql.db.query<{ n: number }>("SELECT count(*)::int AS n FROM purchase_orders")).rows[0].n);
+const orderB = { vendor: "MB Vendor", items: [{ item_id: "MB-000001", item_name: "Dept B item 1", quantity: 3, unit: "box", override_reason: "test" }] };
+const orderA = { vendor: "Vendor A", items: [{ item_id: "A-000002", item_name: "Dept A extra item", quantity: 2, unit: "box", override_reason: "test" }] };
 const poRow = async (poNumber: string) =>
   (await sql.db.query<{ id: number; status: string; reviewed_by: string | null; department_id: number }>(
     `SELECT id, status, reviewed_by, department_id FROM purchase_orders WHERE po_number = $1`, [poNumber])).rows[0];
@@ -245,5 +251,172 @@ describe("PATCH /api/liff/orders/[id] (departments on)", () => {
       expect(denied.body, username).toEqual({ error: notAllowed });
     }
     expect(await poRow("PO-B-REV")).toMatchObject({ status: "REVISION_REQUESTED", reviewed_by: null });
+  });
+});
+
+describe("POST /api/liff/orders (departments on)", () => {
+  it("creates the PO in the department of the LINE user (B => department_id 2, A => department_id 1)", async () => {
+    const b = await create("mgrb", orderB);
+    expect(b.status).toBe(201);
+    const created = await poRow(String(b.body.po_number));
+    expect(created).toMatchObject({ status: "PENDING_MANAGER_REVIEW", department_id: DEPT_B });
+    // the letterhead snapshot comes from the row of department B (v36), not from CC
+    const issuer = (await sql.db.query<{ issuer_name: string }>("SELECT issuer_name FROM purchase_orders WHERE id = $1", [created.id])).rows[0];
+    expect(issuer.issuer_name).toBe("MB Organization");
+
+    const a = await create("mgra", orderA);
+    expect(a.status).toBe(201);
+    expect(await poRow(String(a.body.po_number))).toMatchObject({ department_id: DEPT_A });
+    expect(mocks.recordPurchaseOrderCommunication).toHaveBeenCalledTimes(2);
+  });
+
+  it("a vendor / item of another department answers 400 and creates nothing", async () => {
+    const before = await poCount();
+    const crossB = await create("mgra", orderB); // positive control above: mgrb can order exactly this
+    expect(crossB.status).toBe(400);
+    expect(String(crossB.body.error)).toContain("MB Vendor");
+    const crossA = await create("mgrb", orderA);
+    expect(crossA.status).toBe(400);
+    expect(await poCount()).toBe(before);
+  });
+
+  it("a department without a letterhead row answers 409 PO_LETTERHEAD_MISSING with a readable Thai body.error and creates nothing", async () => {
+    await sql.db.query("DELETE FROM lab_profile WHERE department_id = $1", [DEPT_B]);
+    try {
+      const before = await poCount();
+      const result = await create("mgrb", orderB);
+      expect(result.status).toBe(409);
+      expect(result.body).toMatchObject({ code: "PO_LETTERHEAD_MISSING", error: "ยังไม่ได้ตั้งหัวกระดาษใบสั่งซื้อของงานนี้ กรุณาติดต่อผู้ดูแลระบบ" });
+      expect(typeof result.body.hint).toBe("string");
+      expect(typeof result.body.requestId).toBe("string");
+      expect(await poCount()).toBe(before);
+      // control: department A still has its letterhead and can create
+      expect((await create("mgra", orderA)).status).toBe(201);
+    } finally {
+      await sql.db.query("INSERT INTO lab_profile (id, department_id, organization_name, department_name) VALUES (2, $1, 'MB Organization', 'MB Letterhead Dept')", [DEPT_B]);
+    }
+  });
+
+  it("a role override of User / Vendor and a Manager without membership cannot create (403, nothing created)", async () => {
+    const before = await poCount();
+    for (const username of ["mgr-user-override", "mgr-vendor-override"]) {
+      const denied = await create(username, orderB);
+      expect(denied.status, username).toBe(403);
+      expect(denied.body, username).toEqual({ error: notAllowed });
+    }
+    const none = await create("mgrnone", orderB);
+    expect(none.status).toBe(403);
+    expect(none.body).toEqual({ error: noWork });
+    expect(await poCount()).toBe(before);
+  });
+
+  it("the 400 for an empty vendor / items still comes before any department work", async () => {
+    expect((await create("mgrb", { ...orderB, vendor: " " })).status).toBe(400);
+    expect((await create("mgrb", { vendor: "MB Vendor", items: [] })).status).toBe(400);
+  });
+
+  describe("liffRequestId dedupe", () => {
+    beforeEach(async () => {
+      await sql.db.exec(`UPDATE purchase_orders SET liff_request_id = 'dup-B' WHERE po_number = 'PO-B'`);
+    });
+
+    it("the same department gets the existing PO back (deduplicated)", async () => {
+      const result = await create("mgrb", { ...orderB, liffRequestId: "dup-B" });
+      expect(result.status).toBe(200);
+      expect(result.body).toMatchObject({ po_number: "PO-B", deduplicated: true });
+    });
+
+    it("a request id used by another department is not looked up across departments: 500, no PO number of B in the body, no new row", async () => {
+      const before = await poCount();
+      const result = await create("mgra", { ...orderA, liffRequestId: "dup-B" });
+      expect(result.status).toBe(500); // the unique index on liff_request_id is global: accepted, documented in departments-rollout.md
+      expect(JSON.stringify(result.body)).not.toContain("PO-B");
+      expect(result.body).toEqual({ error: "Unable to submit purchase order from LINE." });
+      expect(await poCount()).toBe(before);
+    });
+  });
+});
+
+describe("Admin, closed departments, database errors and auth (departments on)", () => {
+  it("a global Admin without a membership row works in the lowest-id active department (never ALL) and can write", async () => {
+    await sql.db.exec(`DELETE FROM user_departments WHERE username = 'admin1'`);
+    try {
+      const view = await bootstrap("admin1");
+      expect(view.status).toBe(200);
+      expect(view.orders).toEqual(["PO-A", "PO-A-REV"]);
+      expect(view.vendors).not.toContain("MB Vendor");
+      expect(view.body.user).toEqual({ username: "admin1", name: "Admin One", role: "Admin" });
+
+      const created = await create("admin1", orderA);
+      expect(created.status).toBe(201);
+      expect(await poRow(String(created.body.po_number))).toMatchObject({ department_id: DEPT_A });
+      expect((await patch("admin1", "PO-A-REV", { action: "APPROVE_REVISION" })).status).toBe(200);
+      expect((await patch("admin1", "PO-B-REV", { action: "APPROVE_REVISION" })).status).toBe(404);
+    } finally {
+      await sql.db.exec(`INSERT INTO user_departments (username, department_id, role, is_default) VALUES ('admin1', ${DEPT_A}, NULL, true)`);
+    }
+  });
+
+  it("a deactivated department locks its members out (403 with the Thai message) on every route", async () => {
+    expect((await bootstrap("mgrb")).status).toBe(200); // control: B works while active
+    await sql.db.exec(`UPDATE departments SET is_active = false WHERE id = ${DEPT_B}`);
+    try {
+      expect(await json(await bootstrapPOST(req("mgrb")))).toEqual({ status: 403, body: { error: noWork } });
+      expect(await json(await catalogPOST(req("mgrb", { vendor: "MB Vendor" })))).toEqual({ status: 403, body: { error: noWork } });
+      expect(await create("mgrb", orderB)).toEqual({ status: 403, body: { error: noWork } });
+      expect(await patch("mgrb", "PO-B-REV", { action: "APPROVE_REVISION" })).toEqual({ status: 403, body: { error: noWork } });
+      expect((await bootstrap("mgra")).status).toBe(200); // A is unaffected
+    } finally {
+      await sql.db.exec(`UPDATE departments SET is_active = true WHERE id = ${DEPT_B}`);
+    }
+  });
+
+  it("a generic database error in the department lookup answers 500 with each route's own message and never reaches the data queries", async () => {
+    const original = sql.db.query.bind(sql.db) as (text: string, params?: unknown[]) => Promise<unknown>;
+    const seen: string[] = [];
+    vi.spyOn(sql.db, "query").mockImplementation((async (text: string, params?: unknown[]) => {
+      seen.push(text);
+      if (/LATERAL/.test(text)) throw Object.assign(new Error("statement timeout"), { code: "57014" });
+      return original(text, params);
+    }) as never);
+
+    const reviewRequest = new Request("http://localhost/x", { method: "PATCH", body: JSON.stringify({ idToken: tokenOf("mgrb"), action: "APPROVE_REVISION" }) });
+    const results = [
+      [await bootstrapPOST(req("mgrb")), "Unable to load LINE ordering workspace."],
+      [await catalogPOST(req("mgrb", { vendor: "MB Vendor" })), "Unable to search reagent catalog."],
+      [await ordersPOST(req("mgrb", orderB)), "Unable to submit purchase order from LINE."],
+      [await orderPATCH(reviewRequest, { params: Promise.resolve({ id: "PO-B-REV" }) }), "Unable to review purchase order from LINE."],
+    ] as const;
+    for (const [response, message] of results) {
+      expect(await json(response)).toEqual({ status: 500, body: { error: message } });
+    }
+    vi.restoreAllMocks();
+    expect(seen.some((text) => /LATERAL/.test(text))).toBe(true); // control: the failing lookup really ran
+    expect(seen.filter((text) => /FROM\s+(master_data|purchase_orders)\b/i.test(text))).toEqual([]);
+    expect(await poRow("PO-B-REV")).toMatchObject({ status: "REVISION_REQUESTED" });
+  });
+
+  it.each(["true", ""])("auth answers are the same with DEPARTMENTS_ENABLED=%j: 401 bad token, 400 no LINE column, 403 unlinked / not an ordering role", async (flag) => {
+    vi.stubEnv("DEPARTMENTS_ENABLED", flag);
+    resetDepartmentsFlagForTests();
+    try {
+      expect(await json(await bootstrapPOST(req("mgrb", { idToken: "bad" })))).toEqual({ status: 401, body: { error: "LINE authentication failed." } });
+      const unlinked = new Request("http://localhost/x", { method: "POST", body: JSON.stringify({ idToken: "tok:U-nobody" }) });
+      expect(await json(await bootstrapPOST(unlinked))).toEqual({ status: 403, body: { error: notAllowed } });
+      expect(await json(await bootstrapPOST(req("user1")))).toEqual({ status: 403, body: { error: notAllowed } });
+
+      const original = sql.db.query.bind(sql.db) as (text: string, params?: unknown[]) => Promise<unknown>;
+      vi.spyOn(sql.db, "query").mockImplementation((async (text: string, params?: unknown[]) =>
+        /column_name = 'line_user_id'/.test(text) ? { rows: [{ exists: false }] } : original(text, params)) as never);
+      expect(await json(await bootstrapPOST(req("mgrb")))).toEqual({
+        status: 400,
+        body: { error: "LINE LIFF ordering is not enabled yet. Run upgrade_v9_line_liff_auth.sql first." },
+      });
+      vi.restoreAllMocks();
+      expect((await bootstrap("mgrb")).status).toBe(200); // control: a valid user still works in this mode
+    } finally {
+      vi.stubEnv("DEPARTMENTS_ENABLED", "true");
+      resetDepartmentsFlagForTests();
+    }
   });
 });

@@ -141,8 +141,8 @@ export async function createPurchaseOrderWithAudit(input: CreatePurchaseOrderInp
   // - po_seq is unfiltered on purpose: the PO number is one global sequence per day, unique across departments.
   // - lab_profile: legacy reads id = 1; mode "one" reads the row of the scope's department (issuerWhere). A department
   //   without a row is refused after the transaction (PO_LETTERHEAD_MISSING). The PO keeps the issuer_* snapshot it got.
-  // - When LIFF moves to scoped creation (group 6) it must also catch AppError: liff/orders/route.ts only catches
-  //   PurchaseOrderCreationError, so PO_LETTERHEAD_MISSING would surface there as a generic 500.
+  // - PO_LETTERHEAD_MISSING is an AppError: liff/orders/route.ts catches it after PurchaseOrderCreationError and answers 409
+  //   (a route that creates POs must do the same, otherwise it surfaces as a generic 500).
   // - inactive_items filters master_data inside the LEFT JOIN ... ON (not in the WHERE, which has an OR).
   const query = input.storeLiffRequestId
     ? sql`
