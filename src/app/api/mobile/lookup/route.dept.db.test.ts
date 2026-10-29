@@ -128,6 +128,18 @@ describe("mobile lookup with a department scope", () => {
     expect(text).not.toContain("secret.userb");
   });
 
+  it("flag on but user without scope gives 500 and no username in the body", async () => {
+    vi.stubEnv("DEPARTMENTS_ENABLED", "true");
+    mocks.authenticateMobileLookup.mockResolvedValue({ ok: true, user: { username: "secret.noscope", name: "No Scope", role: "Operator" } });
+
+    const response = await get();
+    const text = await response.text();
+
+    expect(response.status).toBe(500);
+    expect(text).not.toContain("secret.noscope");
+    expect(text).not.toContain("MB-000001");
+  });
+
   it("500 body contains no username or SQL text", async () => {
     vi.spyOn(sql.db, "query").mockRejectedValue(new Error('relation "master_data" does not exist for secret.userb'));
 
