@@ -26,11 +26,10 @@
 3. Session that is expired / revoked / has no usable department gets **401** (go to login). Only the LINE path, whose identity and active status were verified, gets 403 for "no department".
 4. The guard test `ALLOWED` gets the helper file (the caller), not the route.
 5. After sign-in the login page always lands on `/dashboard` (`src/app/login/page.tsx:64`); a "way back" to the mobile page is not added in this change.
-6. `lookup` is **not** one of the last two pending routes (46 entries today, 45 after this). The rule "no data in a second department until `DEPARTMENT_SCOPE_PENDING` is empty" still stands; the spec text saying it was one of the last two was wrong.
 
 ## Known limits to write in the docs (not fixed here)
 - On web `/mobile`, the person who confirms is the username+PIN typed at confirm time, which can differ from the person signed in. If they have different default departments, confirm is refused (`ITEM_NOT_IN_DEPARTMENT`, safe, no leak) but may confuse the user. `confirm` is not changed (spec non-goal).
-- Barcode patterns (`loadRuntimeBarcodePatterns`) stay unscoped; `src/lib/barcode-runtime.ts` stays in `DEPARTMENT_SCOPE_PENDING`.
+- Barcode patterns (`loadRuntimeBarcodePatterns`) stay unscoped (the route passes `{ mode: "all" }`); `src/lib/barcode-runtime.ts` is already out of `DEPARTMENT_SCOPE_PENDING` (only `auth/register` remains).
 - A LINE ID token expires; reloading lookup late in a LIFF session can return 401 ("open the LIFF page again"). Same as `confirm` today.
 - Every LIFF lookup calls LINE's token-verify API. Open LIFF pages running old JS get 401 until reloaded after deploy.
 
@@ -101,7 +100,7 @@ Behaviour, in this order:
 
 **Files:**
 - Modify: `src/app/api/mobile/lookup/route.ts:5-58,114-118` (auth first, scoped queries, safe errors)
-- Modify: `src/lib/department-scope-coverage.test.ts:41` (delete the `"src/app/api/mobile/lookup/route.ts"` entry from `DEPARTMENT_SCOPE_PENDING`; list goes 46 -> 45)
+- Modify: `src/lib/department-scope-coverage.test.ts:41` (delete the `"src/app/api/mobile/lookup/route.ts"` entry from `DEPARTMENT_SCOPE_PENDING`; list goes 2 -> 1; only `auth/register` remains)
 - Test: `src/app/api/mobile/lookup/route.dept.db.test.ts` (PGlite; model on `src/app/api/reagent-loans/route.dept.db.test.ts`; mock `@/lib/mobile-lookup-auth` so the test controls the user)
 
 **Interfaces:**
@@ -136,7 +135,7 @@ Behaviour, in this order:
 
 - [ ] **Step 1:** In both web screens, when `response.status === 401`, call `window.location.assign("/login")` (neither file uses a router today). Other failures keep the current error display.
 - [ ] **Step 2:** In `liff-dispense-workflow.tsx`, `loadLookupData` is a `useCallback(..., [])` and `idToken` starts as `""`: add `idToken` to its dependency list, send `headers: { "X-Line-Id-Token": idToken }`, and make the effect at lines 169-173 run only when `user && idToken`. Reloads (lines ~404, 516, 545) then use the current token. A 401 shows the existing error text.
-- [ ] **Step 3:** Update `docs/departments-rollout.md:96`: lookup now needs sign-in and is scoped to the caller's default department; list the "Known limits" above; update the 46/45 count; keep the rule that no second-department data may be created until `DEPARTMENT_SCOPE_PENDING` is empty. Update the spec per "Deviations".
+- [ ] **Step 3:** Update `docs/departments-rollout.md:96`: lookup now needs sign-in and is scoped to the caller's default department; list the "Known limits" above; update the pending count (2 -> 1); keep the rule that no second-department data may be created until `DEPARTMENT_SCOPE_PENDING` is empty (only `auth/register` remains). Update the spec per "Deviations".
 - [ ] **Step 4: Verify** `npx tsc --noEmit -p .`, `npm run lint` (no `react-hooks/exhaustive-deps` warnings), `npx vitest run` all pass. Manual check only against a **test** database, never production (`.env.local` points at production, see AI_WORKSPACE rule 05): signed-out `/mobile` goes to `/login`; signed-in MOB user sees only MOB items; LIFF loads the list. If no test database is available, report that the manual check was not done.
 - [ ] **Step 5: Commit** components and docs: `Update: mobile screens handle sign-in for lookup`.
 

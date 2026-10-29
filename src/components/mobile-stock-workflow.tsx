@@ -87,6 +87,10 @@ export default function MobileStockWorkflow({ mode, lineApprover, lineIdToken }:
     setLoadError('');
     try {
       const response = await fetch('/api/mobile/lookup');
+      if (response.status === 401) {
+        window.location.assign('/login');
+        return;
+      }
       const data = await response.json() as MobileLookupResponse & { error?: string };
 
       if (!response.ok) {

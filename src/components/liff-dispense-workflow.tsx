@@ -147,7 +147,9 @@ export default function LiffDispenseWorkflow() {
     setLookupLoading(true);
     setLoadError("");
     try {
-      const response = await fetch("/api/mobile/lookup");
+      const response = await fetch("/api/mobile/lookup", {
+        headers: { "X-Line-Id-Token": idToken },
+      });
       const data = await response.json() as MobileLookupResponse & { error?: string };
 
       if (!response.ok) {
@@ -164,13 +166,13 @@ export default function LiffDispenseWorkflow() {
     } finally {
       setLookupLoading(false);
     }
-  }, []);
+  }, [idToken]);
 
   useEffect(() => {
-    if (user) {
+    if (user && idToken) {
       void Promise.resolve().then(loadLookupData);
     }
-  }, [loadLookupData, user]);
+  }, [loadLookupData, user, idToken]);
 
   const filteredResults = useMemo(() => {
     if (!search.trim()) return [];
