@@ -3,12 +3,13 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 // resolveDepartmentForVerifiedUser trusts that the identity was already verified (PIN / LINE) and ignores sessions,
-// tokens and requested departments. It must therefore be used by exactly one caller: /api/mobile/confirm.
+// tokens and requested departments. It must therefore be used only by /api/mobile/confirm and the mobile lookup
+// sign-in helper (src/lib/mobile-lookup-auth.ts).
 // Any other route that verified a user some other way must NOT start using it by accident.
 
 const ROOT = process.cwd();
 const NAME = "resolveDepartmentForVerifiedUser";
-const ALLOWED = ["src/app/api/mobile/confirm/route.ts", "src/lib/department-context.ts"];
+const ALLOWED = ["src/app/api/mobile/confirm/route.ts", "src/lib/department-context.ts", "src/lib/mobile-lookup-auth.ts"];
 const FORBIDDEN = [
   "src/app/api/mobile/line-link/route.ts",
   "src/app/api/stations/authorize-user/route.ts",

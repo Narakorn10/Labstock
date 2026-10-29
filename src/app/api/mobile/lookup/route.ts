@@ -1,9 +1,23 @@
 import { NextResponse } from "next/server";
 import sql from "@/lib/db";
 import { loadRuntimeBarcodePatterns } from "@/lib/barcode-runtime";
+import { isDepartmentScopeFailure, toApiError } from "@/lib/api-response";
+import { authenticateMobileLookup } from "@/lib/mobile-lookup-auth";
+import { getRequestId } from "@/lib/request-observability";
+import { andDept, getDepartmentScope } from "@/lib/scoped-db";
 
-export async function GET() {
+const LOAD_ERROR_MESSAGE = "Unable to load stock data.";
+
+export async function GET(request: Request) {
+  const requestId = getRequestId(request);
   try {
+    const auth = await authenticateMobileLookup(request);
+    if (!auth.ok) return auth.response;
+
+    const scope = await getDepartmentScope(auth.user);
+    // Mode "all" would add no department filter and expose every department; this route never serves that.
+    if (scope.mode === "all") throw new Error("Mobile lookup refuses department scope all");
+
     const formatInventoryDate = (value: unknown) => {
       if (!value) return "";
       if (value instanceof Date) {
@@ -38,8 +52,8 @@ export async function GET() {
           weekly_target as "weeklyTarget",
           vendor,
           is_active as "isActive"
-        FROM master_data
-        WHERE is_active = TRUE
+        FROM master_data m
+        WHERE is_active = TRUE${andDept(scope, "m")}
         ORDER BY item_id ASC
       `,
       sql`
@@ -50,12 +64,11 @@ export async function GET() {
           TO_CHAR(exp_date, 'YYYY-MM-DD') as "expDate",
           TO_CHAR(received_on, 'YYYY-MM-DD') as "receivedOn",
           quantity as qty
-        FROM inventory
-        WHERE quantity > 0
+        FROM inventory i
+        WHERE quantity > 0${andDept(scope, "i")}
         ORDER BY exp_date ASC NULLS LAST, received_on ASC, id ASC
       `,
-      // Still unscoped (file stays in DEPARTMENT_SCOPE_PENDING): every department's patterns, as before
-      // (accepted behavior, docs/departments-rollout.md). Literal on purpose so this file imports nothing from scoped-db.
+      // Still unscoped on purpose: every department's patterns, as before (accepted behavior, docs/departments-rollout.md).
       loadRuntimeBarcodePatterns({ mode: "all" }),
     ]);
 
@@ -107,15 +120,19 @@ export async function GET() {
       };
     });
 
-    return NextResponse.json({
-      reagents,
-      patterns: runtimePatterns.patterns,
-      v2Patterns: runtimePatterns.v2Patterns,
-      engineVersion: runtimePatterns.engineVersion,
-    });
+    return NextResponse.json(
+      {
+        reagents,
+        patterns: runtimePatterns.patterns,
+        v2Patterns: runtimePatterns.v2Patterns,
+        engineVersion: runtimePatterns.engineVersion,
+      },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   } catch (error: unknown) {
+    if (isDepartmentScopeFailure(error)) return toApiError(error, requestId).response;
+    // Fixed body on purpose: error messages can contain the username or SQL text.
     console.error("Mobile lookup error:", error);
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: errorMessage }, { status: 500 });
+    return NextResponse.json({ error: LOAD_ERROR_MESSAGE }, { status: 500 });
   }
 }

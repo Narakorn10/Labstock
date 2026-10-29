@@ -19,6 +19,10 @@ export default function MobileHome() {
 
     fetch('/api/mobile/lookup')
       .then(async (response) => {
+        if (response.status === 401) {
+          window.location.assign('/login');
+          return;
+        }
         const data = await response.json() as { reagents?: Reagent[] };
         if (!response.ok || !data.reagents) throw new Error('lookup failed');
         if (!cancelled) setReagents(data.reagents);
