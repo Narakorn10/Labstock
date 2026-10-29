@@ -110,7 +110,7 @@ export async function resolveUserDepartment(q: ResolveDepartmentQuery): Promise<
  * - token_expiry is not checked (the PIN/LINE verification is the credential here);
  * - null when there is no usable department or no active account, like resolveUserDepartment.
  *
- * Only /api/mobile/confirm may use this (see department-context.verified-usage.test.ts).
+ * Only /api/mobile/confirm and src/lib/mobile-lookup-auth.ts may use this (see department-context.verified-usage.test.ts).
  * Throws on database errors like resolveUserDepartment.
  */
 export async function resolveDepartmentForVerifiedUser(verified: AuthenticatedUser): Promise<AuthenticatedUser | null> {
