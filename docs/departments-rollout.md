@@ -139,7 +139,7 @@
 - การแจ้งเตือน "รับเข้า/เบิก" (STOCK_RECEIVED/STOCK_DISPENSED) ไม่ได้ส่งถึงใครอยู่แล้ว ไม่เปลี่ยนแปลง
 - ตัวเขียนสต็อก 4 ตัวถูกย้ายมากรองตามงานแล้ว ได้แก่ งานนับสต็อก (count-work-orders และ 4 route ของมัน),
   การยืม-คืนน้ำยา (reagent-loans), inventory/reconcile และการรับ/ยกเลิก vendor shipment ฝั่งแล็บ (vendor/shipments/[id])
-  ทำให้ `DEPARTMENT_SCOPE_PENDING` ลดจาก 50 เหลือ 46 รายการ (ตรวจนับจริงใน `department-scope-coverage.test.ts` เมื่อ 2026-10-13 ได้ 46 รายการ ไม่ใช่ 45 ที่เคยเขียนไว้; **ปัจจุบันเหลือ 1 รายการ คือ `src/lib/department-scope-coverage.test.ts` ดูหัวข้อท้ายไฟล์ "มือถือ lookup ต้องล็อกอิน"**) ที่ยังไม่ได้ย้ายและยังเขียนลงงาน CC ตามค่าเริ่มต้นของคอลัมน์
+  ทำให้ `DEPARTMENT_SCOPE_PENDING` ลดจาก 50 เหลือ 46 รายการ (ตรวจนับจริงใน `department-scope-coverage.test.ts` เมื่อ 2026-10-13 ได้ 46 รายการ ไม่ใช่ 45 ที่เคยเขียนไว้; **ปัจจุบันเหลือ 1 รายการ คือ `src/app/api/auth/register/route.ts` ดูหัวข้อท้ายไฟล์ "มือถือ lookup ต้องล็อกอิน"**) ที่ยังไม่ได้ย้ายและยังเขียนลงงาน CC ตามค่าเริ่มต้นของคอลัมน์
   จึง **ห้ามใช้ในงานที่สองจนกว่าจะย้าย** เช่น purchase-orders, master, settings (vendor/shipments ย้ายแล้วในกลุ่ม 7 ดูหัวข้อ 11)
   ข้อนี้คงกฎเดิมไว้: ห้ามสร้างข้อมูลงานที่สองก่อน `DEPARTMENT_SCOPE_PENDING` ว่าง
 
