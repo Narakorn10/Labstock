@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import sql from '@/lib/db';
 import { hashPassword } from '@/lib/auth-utils';
 import { departmentsReady } from '@/lib/departments-flag';
+import { findApprovedVendor, listApprovedVendorNames } from '@/lib/vendor-registry';
 import { defaultRoomId, listSelectableRooms, parseRoomId } from '@/lib/user-rooms';
 
 type RegistrationRequest = {
@@ -68,20 +69,14 @@ export async function GET() {
       return migrationRequiredResponse();
     }
 
-    // Deliberate (owner decision): sign-up lists/validates approved vendors of ALL departments, so this query has no department filter
-    // and the file stays in DEPARTMENT_SCOPE_PENDING. Once a 2nd department exists, other rooms' company names are publicly visible here.
-    const vendors = await sql`
-      SELECT name
-      FROM vendors
-      WHERE is_approved = TRUE
-      ORDER BY name ASC
-    `;
+    // Approved companies of every usable room (see vendor-registry).
+    const vendors = await listApprovedVendorNames();
 
     // Rooms to pick from: only when departments are enabled and ready (otherwise empty and the form shows no room field).
     const departments = await departmentsReady() ? await listSelectableRooms() : [];
 
     return NextResponse.json({
-      vendors: vendors.map((vendor) => String(vendor.name)),
+      vendors,
       departments,
       registrationMode: 'pending_approval',
     });
@@ -130,6 +125,7 @@ export async function POST(request: Request) {
     let role = 'User';
     let vendor = '';
     let vendorRequest: string | null = null;
+    let vendorMatch: { name: string; departmentId: number | null } | null = null;
 
     if (accountType === 'vendor') {
       role = 'Vendor';
@@ -143,20 +139,13 @@ export async function POST(request: Request) {
           return NextResponse.json({ error: 'กรุณาเลือกบริษัทที่ได้รับอนุมัติ' }, { status: 400 });
         }
 
-        // Deliberate (owner decision): any department's approved vendor is accepted at sign-up (no department filter, see GET).
-        const approvedVendors = await sql`
-          SELECT name
-          FROM vendors
-          WHERE LOWER(name) = LOWER(${vendorName})
-            AND is_approved = TRUE
-          LIMIT 1
-        `;
-
-        if (approvedVendors.length === 0) {
+        const match = await findApprovedVendor(vendorName);
+        if (!match) {
           return NextResponse.json({ error: 'ไม่พบบริษัทที่ได้รับอนุมัติ โปรดเลือกใหม่หรือส่งคำขอเพิ่มบริษัท' }, { status: 400 });
         }
 
-        vendor = String(approvedVendors[0].name);
+        vendorMatch = match;
+        vendor = match.name;
       } else if (vendorMode === 'request') {
         vendorRequest = textValue(body.vendorRequest);
         if (vendorRequest.length < 2 || vendorRequest.length > 120) {
@@ -167,7 +156,8 @@ export async function POST(request: Request) {
       }
     }
 
-    // Departments on: a lab account must pick an active room; a vendor account goes to the default room (CC).
+    // Departments on: a lab account must pick an active room; an existing-company vendor account goes to the room
+    // that owns the company (from the registry lookup); a request-mode vendor (no company yet) goes to the default room (CC).
     // The room is checked in the same statement that creates the user, so a bad room creates nothing.
     const useDepartments = await departmentsReady();
     let roomId: number | null = null;
@@ -177,6 +167,12 @@ export async function POST(request: Request) {
         if (roomId === null) {
           return NextResponse.json({ error: 'กรุณาเลือกห้องปฏิบัติการ' }, { status: 400 });
         }
+      } else if (vendorMatch) {
+        // The lookup said "no room" although departments are ready here (the flag changed between the two checks): stop, never guess CC.
+        if (vendorMatch.departmentId === null) {
+          return NextResponse.json({ error: 'ไม่สามารถลงทะเบียนได้ในขณะนี้ กรุณาลองใหม่อีกครั้ง' }, { status: 503 });
+        }
+        roomId = vendorMatch.departmentId;
       } else {
         roomId = await defaultRoomId();
         if (roomId === null) {

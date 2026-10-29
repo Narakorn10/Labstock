@@ -77,7 +77,7 @@ describe("flag OFF: unchanged", () => {
   });
 });
 
-describe("vendors of ALL departments (deliberate, owner decision): sign-up has no department filter", () => {
+describe("vendors of ALL usable rooms (owner decision): sign-up lists them and places the account in the company's room", () => {
   // 'MB Vendor' exists only in department B (see department-fixtures.ts).
   const vendorOf = async (username: string) =>
     (await migrated.db.query<{ vendor: string }>("SELECT vendor FROM users WHERE username = $1", [username])).rows[0].vendor;
@@ -99,10 +99,28 @@ describe("vendors of ALL departments (deliberate, owner decision): sign-up has n
     });
   }
 
-  it("flag ON: that vendor account lands in the default room (CC), not in the vendor's room B", async () => {
-    const body = lab({ accountType: "vendor", vendorMode: "existing", vendorName: "MB Vendor" });
+  it("flag on: a vendor only in room B signs up; the account and its membership are in room B and users.vendor is the exact stored name", async () => {
+    const body = lab({ accountType: "vendor", vendorMode: "existing", vendorName: "mb vendor" });
     expect((await post(body)).status).toBe(201);
-    expect((await memberships(body.username)).map((row) => (row as { department_id: number }).department_id)).toEqual([DEPT_A]);
+    expect(await memberships(body.username)).toEqual([{ department_id: DEPT_B, role: null, is_default: true }]);
+    expect(await vendorOf(body.username)).toBe("MB Vendor");
+  });
+
+  it("flag on: a vendor that exists in CC signs up into CC", async () => {
+    const body = lab({ accountType: "vendor", vendorMode: "existing", vendorName: "Vendor A" });
+    expect((await post(body)).status).toBe(201);
+    expect(await memberships(body.username)).toEqual([{ department_id: DEPT_A, role: null, is_default: true }]);
+  });
+
+  it("flag on: a vendor only in an inactive room cannot sign up (400) and nothing is created", async () => {
+    await migrated.db.exec(`UPDATE departments SET is_active = false WHERE id = ${DEPT_B}`);
+    const body = lab({ accountType: "vendor", vendorMode: "existing", vendorName: "MB Vendor" });
+    const response = await post(body);
+    expect(response.status).toBe(400);
+    expect(await userCount(migrated, body.username)).toBe(0);
+    expect(await memberships(body.username)).toEqual([]);
+    const listed = await (await GET()).json();
+    expect(listed.vendors).not.toContain("MB Vendor");
   });
 });
 
@@ -165,11 +183,11 @@ describe("flag ON", () => {
     await migrated.db.exec("DELETE FROM departments WHERE name = 'No code room'");
   });
 
-  it("a vendor account goes to the default room (CC) and ignores any room it sends", async () => {
+  it("flag on: request-mode vendor goes to the default room CC and ignores any room it sends", async () => {
     await migrated.db.exec("UPDATE vendors SET is_approved = TRUE");
     const body = lab({ accountType: "vendor", vendorMode: "request", vendorRequest: "Some Vendor Co", departmentId: DEPT_B });
     expect((await post(body)).status).toBe(201);
-    expect((await memberships(body.username)).map((row) => (row as { department_id: number }).department_id)).toEqual([DEPT_A]);
+    expect(await memberships(body.username)).toEqual([{ department_id: DEPT_A, role: null, is_default: true }]);
   });
 
   it("a duplicate username or email still answers 409 and writes no membership", async () => {
