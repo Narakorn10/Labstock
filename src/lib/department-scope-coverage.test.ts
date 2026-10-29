@@ -27,9 +27,7 @@ export const DEPARTMENT_TABLES = [
 ];
 
 // Paths are relative to the repo root, forward slashes, sorted.
-export const DEPARTMENT_SCOPE_PENDING: string[] = [
-  "src/app/api/auth/register/route.ts",
-];
+export const DEPARTMENT_SCOPE_PENDING: string[] = [];
 
 // Files under src/app (outside src/app/api) that import "@/lib/db" directly. Generated from reality: none today.
 export const APP_DB_IMPORT_ALLOWED: string[] = [];
