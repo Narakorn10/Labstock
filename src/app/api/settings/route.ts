@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import sql from "@/lib/db";
 import { getAuthenticatedUser } from "@/lib/auth-utils";
+import { departmentsReady } from "@/lib/departments-flag";
 import { andDept, andDeptWrite, deptInsert, departmentErrorResponse, getDepartmentScope, type DepartmentScope } from "@/lib/scoped-db";
 import { getRequestId, withRequestId } from "@/lib/request-observability";
 
@@ -159,6 +160,14 @@ export async function POST(request: Request) {
 
     if (action === "delete") {
       if (tableName === "departments") {
+        // With rooms on, a department row IS a room: rooms are never deleted, only closed (Super admin page "จัดการห้อง").
+        // With rooms off (legacy) this table is only a list of names and deleting from it stays as it was.
+        if (await departmentsReady()) {
+          return withRequestId(
+            NextResponse.json({ error: "ห้องลบไม่ได้ ปิดการใช้งานห้องได้ที่หน้า \"จัดการห้อง\" (เฉพาะ Super admin)", code: "ROOM_DELETE_NOT_ALLOWED" }, { status: 409 }),
+            requestId,
+          );
+        }
         await sql`DELETE FROM departments WHERE name = ${value}`;
       } else {
         const scope = await getDepartmentScope(user);

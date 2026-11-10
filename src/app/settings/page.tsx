@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { useAuth } from '@/components/auth-provider';
 import { X } from 'lucide-react';
 
 interface SettingData {
@@ -24,9 +25,11 @@ interface SectionProps {
   setNewValue: React.Dispatch<React.SetStateAction<NewValues>>;
   onAdd: (type: SettingType) => void;
   onDelete: (type: SettingType, value: string) => void;
+  /** false hides the delete buttons (rooms are never deleted, only closed by the Super admin). */
+  canDelete?: boolean;
 }
 
-const Section = ({ title, type, items, placeholder, loading, newValue, setNewValue, onAdd, onDelete }: SectionProps) => (
+const Section = ({ title, type, items, placeholder, loading, newValue, setNewValue, onAdd, onDelete, canDelete = true }: SectionProps) => (
   <section aria-label={title} className="flex min-w-0 flex-col rounded-2xl border border-line bg-white p-5">
     <h3 className="mb-3 text-[17px] font-medium">
       {title} <span className="font-normal text-gray-600">{loading ? '' : items.length}</span>
@@ -42,14 +45,16 @@ const Section = ({ title, type, items, placeholder, loading, newValue, setNewVal
           {items.map((item) => (
             <li key={item} className="flex items-center gap-2 px-3.5 py-2 text-sm hover:bg-[#fafafa]">
               <span className="min-w-0 flex-1 break-words">{item}</span>
-              <button
-                type="button"
-                onClick={() => onDelete(type, item)}
-                aria-label={`ลบ ${item}`}
-                className="inline-flex shrink-0 rounded-[8px] p-1.5 text-gray-600 hover:bg-crit-bg hover:text-crit"
-              >
-                <X size={14} />
-              </button>
+              {canDelete && (
+                <button
+                  type="button"
+                  onClick={() => onDelete(type, item)}
+                  aria-label={`ลบ ${item}`}
+                  className="inline-flex shrink-0 rounded-[8px] p-1.5 text-gray-600 hover:bg-crit-bg hover:text-crit"
+                >
+                  <X size={14} />
+                </button>
+              )}
             </li>
           ))}
         </ul>
@@ -79,6 +84,9 @@ const Section = ({ title, type, items, placeholder, loading, newValue, setNewVal
 );
 
 export default function SettingsPage() {
+  // With rooms on (the department context exists) a department is a room: rooms are never deleted, only closed by the Super admin.
+  const { departmentContext = null } = useAuth();
+  const roomsOn = departmentContext !== null;
   const [data, setData] = useState<SettingData>({
     reagentTypes: [],
     jobTypes: [],
@@ -133,8 +141,9 @@ export default function SettingsPage() {
       if (res.success) {
         fetchSettings();
       }
-    } catch {
-      alert('เกิดข้อผิดพลาดในการลบข้อมูล');
+    } catch (error) {
+      const message = (error as { response?: { data?: { error?: string } } } | null)?.response?.data?.error;
+      alert(message ?? 'เกิดข้อผิดพลาดในการลบข้อมูล');
     }
   };
 
@@ -189,6 +198,7 @@ export default function SettingsPage() {
           setNewValue={setNewValue}
           onAdd={handleAdd}
           onDelete={handleDelete}
+          canDelete={!roomsOn}
         />
       </div>
 
