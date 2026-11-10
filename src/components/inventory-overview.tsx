@@ -22,6 +22,7 @@ import {
 import { apiClient, PurchaseOrderSummary, Reagent, Shipment } from '@/lib/api-client';
 import { useAuth } from '@/components/auth-provider';
 import { ALL_LABEL } from '@/lib/department-switcher-state';
+import { lockBodyScroll } from '@/lib/body-scroll-lock';
 
 const ReportModal = dynamic(() => import('@/components/report-modal'), { ssr: false });
 const ReagentDetailModal = dynamic(() => import('@/components/reagent-detail-modal'), { ssr: false });
@@ -353,7 +354,7 @@ export default function InventoryOverview() {
 
   useEffect(() => {
     if (!selectedWork) return;
-    document.body.style.overflow = 'hidden';
+    const unlockScroll = lockBodyScroll();
     requestAnimationFrame(() => closeWorkButtonRef.current?.focus());
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setSelectedWork(null);
@@ -377,7 +378,7 @@ export default function InventoryOverview() {
     window.addEventListener('keydown', onKeyDown);
     return () => {
       window.removeEventListener('keydown', onKeyDown);
-      document.body.style.overflow = '';
+      unlockScroll();
     };
   }, [selectedWork]);
 
@@ -740,7 +741,7 @@ export default function InventoryOverview() {
             aria-modal="true"
             aria-labelledby="today-work-dialog-title"
             ref={workDialogRef}
-            className="w-full max-w-lg rounded-2xl border border-clinical-border bg-white p-5 shadow-2xl md:p-6"
+            className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto overscroll-contain rounded-2xl border border-clinical-border bg-white p-5 shadow-2xl md:p-6"
           >
             <div className="flex items-start justify-between gap-4">
               <div>

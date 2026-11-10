@@ -106,7 +106,7 @@ export function PoAddItemsDialog({ poId, vendor, existingItemIds, getAuthHeaders
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 no-print" role="dialog" aria-modal="true" aria-labelledby="po-add-items-title">
-      <div className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-xl bg-white shadow-xl">
+      <div className="flex max-h-[90dvh] w-full max-w-2xl flex-col rounded-xl bg-white shadow-xl">
         <div className="border-b border-slate-200 p-5">
           <h2 id="po-add-items-title" className="text-lg font-bold text-slate-900">เพิ่มรายการน้ำยา</h2>
           <p className="mt-1 text-sm text-slate-600">เพิ่มได้เฉพาะน้ำยาของบริษัท {vendor} ขณะที่ใบนี้ยังรอตรวจ รายการเดิมไม่ถูกแก้ไขหรือลบ และบริษัทยังไม่เห็นใบนี้จนกว่าจะกดส่ง</p>

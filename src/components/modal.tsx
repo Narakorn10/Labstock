@@ -2,6 +2,7 @@
 
 import { X } from 'lucide-react';
 import { useEffect } from 'react';
+import { lockBodyScroll } from '@/lib/body-scroll-lock';
 
 interface ModalProps {
   isOpen: boolean;
@@ -13,15 +14,14 @@ interface ModalProps {
 
 export default function Modal({ isOpen, onClose, title, children, maxWidth = 'max-w-lg' }: ModalProps) {
   useEffect(() => {
+    if (!isOpen) return;
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-      window.addEventListener('keydown', handleEsc);
-    }
+    const unlockScroll = lockBodyScroll();
+    window.addEventListener('keydown', handleEsc);
     return () => {
-      document.body.style.overflow = 'unset';
+      unlockScroll();
       window.removeEventListener('keydown', handleEsc);
     };
   }, [isOpen, onClose]);
@@ -37,7 +37,7 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = 'ma
       />
       
       {/* Modal Content */}
-      <div className={`relative bg-white w-full ${maxWidth} rounded-2xl sm:rounded-[20px] shadow-2xl overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-4 duration-300 max-h-[95vh] flex flex-col`}>
+      <div className={`relative bg-white w-full ${maxWidth} rounded-2xl sm:rounded-[20px] shadow-2xl overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-4 duration-300 max-h-[95dvh] flex flex-col`}>
         <div className="p-5 sm:p-7 border-b border-gray-100 flex items-center justify-between shrink-0">
           <h2 className="text-xl sm:text-2xl font-black text-gray-800 truncate pr-4">{title}</h2>
           <button 
