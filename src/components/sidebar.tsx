@@ -9,7 +9,7 @@ import { useAuth } from './auth-provider';
 import { DepartmentSwitcher } from './department-switcher';
 import { shouldShowLoadError, shouldShowSwitcher, type DepartmentContext } from '@/lib/department-switcher-state';
 import { apiClient } from '@/lib/api-client';
-import { NAVIGATION_GROUPS, getRoleFallbackMenus, mergeMenus, mergeRoomAdminMenus } from '@/lib/menu-config';
+import { NAVIGATION_GROUPS, getRoleFallbackMenus, mergeMenus, mergeRoomAdminMenus, mergeSuperAdminMenus } from '@/lib/menu-config';
 
 const PERMISSION_CACHE_VERSION = 'v3';
 
@@ -52,6 +52,7 @@ export default function Sidebar({ onExpandedChange }: SidebarProps) {
     onDepartmentDisabled,
     refreshDepartmentContext,
     isRoomAdmin = false,
+    isSuperAdmin = false,
   } = useAuth();
   // Desktop: a narrow icon rail that widens while hovered or focused. The drawer on small screens is always wide.
   const [expanded, setExpanded] = useState(false);
@@ -62,7 +63,10 @@ export default function Sidebar({ onExpandedChange }: SidebarProps) {
   const departmentBadge = collapsedDepartmentBadge(departmentContext);
   // Worked out while rendering, never stored: allowedMenus (and its sessionStorage copy, keyed by role) must not carry
   // room admin menus, otherwise other users of the same role on this browser would see them.
-  const visibleMenus = useMemo(() => mergeRoomAdminMenus(allowedMenus, isRoomAdmin), [allowedMenus, isRoomAdmin]);
+  const visibleMenus = useMemo(
+    () => mergeSuperAdminMenus(mergeRoomAdminMenus(allowedMenus, isRoomAdmin), isSuperAdmin),
+    [allowedMenus, isRoomAdmin, isSuperAdmin],
+  );
 
   useEffect(() => {
     onExpandedChange?.(expanded || engaged);

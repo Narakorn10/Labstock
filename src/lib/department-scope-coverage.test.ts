@@ -29,6 +29,14 @@ export const DEPARTMENT_TABLES = [
 // Paths are relative to the repo root, forward slashes, sorted.
 export const DEPARTMENT_SCOPE_PENDING: string[] = [];
 
+// Files that touch a department table ON PURPOSE across rooms, so scoped-db (which scopes to the CALLER's current room)
+// does not apply. Unlike the pending list this is not a to-do list; each entry needs a reason, and it is checked for
+// staleness below. Callers must gate on requireSuperAdmin.
+export const DEPARTMENT_SCOPE_CROSS_ROOM: Record<string, string> = {
+  "src/lib/super-admin-rooms.ts":
+    "Super admin manages every room by id; it only creates / reads the lab_profile (letterhead) row of the room being managed. Reached only through requireSuperAdmin routes.",
+};
+
 // Files under src/app (outside src/app/api) that import "@/lib/db" directly. Generated from reality: none today.
 export const APP_DB_IMPORT_ALLOWED: string[] = [];
 
@@ -99,7 +107,9 @@ describe("department scope coverage", () => {
   });
 
   it("every file touching a department table imports @/lib/scoped-db or is listed as pending", () => {
-    const unscoped = hits.filter((rel) => !SCOPED_DB_IMPORT.test(read(rel)) && !DEPARTMENT_SCOPE_PENDING.includes(rel));
+    const unscoped = hits.filter(
+      (rel) => !SCOPED_DB_IMPORT.test(read(rel)) && !DEPARTMENT_SCOPE_PENDING.includes(rel) && !(rel in DEPARTMENT_SCOPE_CROSS_ROOM),
+    );
     expect(
       unscoped,
       `These files query a department table without importing "@/lib/scoped-db". Scope the query, or (temporarily) add the file to DEPARTMENT_SCOPE_PENDING.`,
@@ -143,6 +153,30 @@ describe("department scope coverage", () => {
   it("pending list has no migrated file (it can only shrink)", () => {
     const migrated = DEPARTMENT_SCOPE_PENDING.filter((rel) => existsSync(path.join(ROOT, rel)) && SCOPED_DB_IMPORT.test(read(rel)));
     expect(migrated, "These files already import @/lib/scoped-db: remove them from DEPARTMENT_SCOPE_PENDING.").toEqual([]);
+  });
+
+  it("cross-room list is sorted, has a reason for every file, and no stale entry", () => {
+    const listed = Object.keys(DEPARTMENT_SCOPE_CROSS_ROOM);
+    expect(listed).toEqual([...listed].sort());
+    for (const [rel, reason] of Object.entries(DEPARTMENT_SCOPE_CROSS_ROOM)) {
+      expect(reason.trim().length, `${rel} needs a reason`).toBeGreaterThan(20);
+      expect(existsSync(path.join(ROOT, rel)), `${rel} no longer exists: remove it from DEPARTMENT_SCOPE_CROSS_ROOM`).toBe(true);
+      expect(hits.includes(rel), `${rel} no longer touches a department table: remove it from DEPARTMENT_SCOPE_CROSS_ROOM`).toBe(true);
+      expect(SCOPED_DB_IMPORT.test(read(rel)), `${rel} imports scoped-db: it is not cross-room, remove it from DEPARTMENT_SCOPE_CROSS_ROOM`).toBe(false);
+    }
+  });
+
+  it("every cross-room file is only imported by Super admin routes", () => {
+    const importers = candidateFiles()
+      .concat(walk(path.join(ROOT, "src", "app")).map((file) => path.relative(ROOT, file).split(path.sep).join("/")))
+      .filter((rel) => /\.tsx?$/.test(rel) && !/\.test\.tsx?$/.test(rel))
+      .filter((rel) => Object.keys(DEPARTMENT_SCOPE_CROSS_ROOM).some((target) => {
+        const base = path.posix.basename(target).replace(/\.tsx?$/, "");
+        return rel !== target && new RegExp(`from\\s+["'][^"']*/${base}["']`).test(read(rel));
+      }));
+    for (const rel of new Set(importers)) {
+      expect(rel, `${rel} imports a cross-room file but is not under a Super admin route`).toMatch(/^src\/app\/api\/super-admin\/|^src\/lib\/super-admin-rooms/);
+    }
   });
 
   it("pending list has no stale entry (file missing or no longer touching a department table)", () => {

@@ -92,6 +92,8 @@ export type MeInterpretation = {
   ctx: DepartmentContext | null;
   /** Present (true) only when /api/auth/me said the user is a room admin of the room they work in. */
   isRoomAdmin?: true;
+  /** Present (true) only when /api/auth/me said the user is the Super admin. Only decides whether a menu is shown. */
+  isSuperAdmin?: true;
 };
 
 /**
@@ -109,6 +111,7 @@ export function interpretMeResponse(ok: boolean, body: unknown): MeInterpretatio
     department,
     ctx: parseDepartmentContext(body.departmentContext),
     ...(body.isRoomAdmin === true ? { isRoomAdmin: true as const } : {}),
+    ...(body.isSuperAdmin === true ? { isSuperAdmin: true as const } : {}),
   };
 }
 
