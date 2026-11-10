@@ -12,6 +12,7 @@ vi.mock("@/lib/reagent-item-usage", () => ({ getReagentItemUsage: mocks.getReage
 vi.mock("@/lib/departments-flag", () => ({ departmentsReady: mocks.departmentsReady }));
 
 import { GET } from "./route";
+import { bangkokToday } from "@/lib/bangkok-date";
 
 const URL_OK = "http://localhost/api/usage/item?itemId=R1&startDate=2026-09-01&endDate=2026-09-30";
 const manager = { username: "mgr", name: "Manager", role: "Manager" };
@@ -55,6 +56,27 @@ describe("GET /api/usage/item", () => {
 
     expect((await get()).status).toBe(200);
     expect(mocks.getReagentItemUsage).toHaveBeenCalledWith("R1", "2026-09-01", "2026-09-30", { mode: "one", departmentId: 2 });
+  });
+
+  it("clamps an end date in the future to Thai today and rejects a start date after today", async () => {
+    mocks.getAuthenticatedUser.mockResolvedValue(manager);
+    mocks.getReagentItemUsage.mockResolvedValue(detail);
+
+    expect((await get("http://localhost/api/usage/item?itemId=R1&startDate=2026-09-01&endDate=2099-12-31")).status).toBe(200);
+    expect(mocks.getReagentItemUsage).toHaveBeenCalledWith("R1", "2026-09-01", bangkokToday(), { mode: "legacy" });
+
+    mocks.getReagentItemUsage.mockClear();
+    expect((await get("http://localhost/api/usage/item?itemId=R1&startDate=2099-01-01&endDate=2099-12-31")).status).toBe(400);
+    expect(mocks.getReagentItemUsage).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when the start year is before 2000 and never calls the lib", async () => {
+    mocks.getAuthenticatedUser.mockResolvedValue(manager);
+    expect((await get("http://localhost/api/usage/item?itemId=R1&startDate=0002-11-10&endDate=2026-09-30")).status).toBe(400);
+    expect((await get("http://localhost/api/usage/item?itemId=R1&startDate=1999-12-31&endDate=2026-09-30")).status).toBe(400);
+    expect(mocks.getReagentItemUsage).not.toHaveBeenCalled();
+    mocks.getReagentItemUsage.mockResolvedValue(detail);
+    expect((await get("http://localhost/api/usage/item?itemId=R1&startDate=2000-01-01&endDate=2026-09-30")).status).toBe(200);
   });
 
   it("returns 404 Item not found when the lib returns null", async () => {

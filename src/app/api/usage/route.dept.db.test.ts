@@ -35,6 +35,7 @@ import { GET as logsGet } from "../logs/route";
 import { GET as reorderRiskGet } from "../notifications/reorder-risk/route";
 import { getReagentUsageInsights } from "@/lib/reagent-usage-insights";
 import { resetDepartmentsFlagForTests } from "@/lib/departments-flag";
+import { bangkokToday } from "@/lib/bangkok-date";
 
 let db: PgliteSql;
 const seenSql: string[] = [];
@@ -199,6 +200,78 @@ describe("GET /api/usage", () => {
     const plain = await bodyOf(await usage());
     expect(Object.keys(plain)).toEqual(["summary"]);
     expect(plain.summary.every((row: Record<string, unknown>) => !("refill" in row) && !("usage" in row))).toBe(true);
+  });
+
+  it("merges log rows that differ only in letter case into one summary row (admin only)", async () => {
+    await db.db.exec(`
+      INSERT INTO logs (timestamp, item_id, name, lot_no, action, quantity, username, department_id) VALUES
+        ('2026-11-05 03:00+00', 'A-000002', 'Dept A extra item', 'LA1', '${DISPENSE}', 2, 'usage-case-test', ${DEPT_A}),
+        ('2026-11-06 03:00+00', 'a-000002', 'Dept A extra item', 'LA1', '${DISPENSE}', 1, 'usage-case-test', ${DEPT_A});
+      DELETE FROM logs WHERE username IN ('solo1');
+      WITH o AS (INSERT INTO count_work_orders (owner_username, job_type, status, department_id) VALUES ('usage-refill-test', '', 'CONFIRMED', ${DEPT_A}) RETURNING id),
+      i AS (INSERT INTO count_work_order_items (work_order_id, item_id, name, weekly_target, counted_qty, required_qty) SELECT id, 'A-000002', 'x', 10, 1, 0 FROM o RETURNING id, work_order_id),
+      a AS (INSERT INTO count_work_order_allocations (work_order_item_id, inventory_id, qty) SELECT id, 1, 7 FROM i)
+      INSERT INTO count_work_order_audit (work_order_id, work_order_item_id, action, actor_username, created_at)
+      SELECT work_order_id, id, 'COUNT_SAVED', 'usage-refill-test', '2026-11-10 02:00+00' FROM i;
+    `);
+    as("admin1", "Admin", DEPT_A);
+    const body = await bodyOf(await usage());
+    const rows = body.summary.filter((row: { itemId: string }) => row.itemId.toLowerCase() === "a-000002");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ itemId: "A-000002", dispensed: 3, refill: 7, usage: 10 });
+    const summaryUsage = body.summary.reduce((sum: number, row: { usage: number }) => sum + row.usage, 0);
+    const dailyUsage = body.dailyStats.reduce((sum: number, day: { totalUsage: number }) => sum + day.totalUsage, 0);
+    expect(summaryUsage).toBeCloseTo(dailyUsage, 2);
+    expect(summaryUsage).toBeCloseTo(10, 2);
+  });
+
+  it("never counts a log dated in the future and clamps the end date to Thai today (admin gets range)", async () => {
+    as("admin1", "Admin", DEPT_A);
+    await db.db.exec(`
+      INSERT INTO logs (timestamp, item_id, name, lot_no, action, quantity, username, department_id) VALUES
+        (NOW() + INTERVAL '30 days', 'A-000002', 'Dept A extra item', 'LA1', '${DISPENSE}', 50, 'usage-future-test', ${DEPT_A});
+    `);
+    const body = await bodyOf(await usage());
+    expect(body.summary.find((row: { itemId: string }) => row.itemId === "A-000002")).toMatchObject({ dispensed: 3, usage: 3 });
+    const today = bangkokToday();
+    expect(body.range).toEqual({ startDate: "2020-01-01", endDate: today, days: Math.floor((Date.parse(`${today}T00:00:00Z`) - Date.parse("2020-01-01T00:00:00Z")) / 86_400_000) + 1 });
+    expect(body.dailyStats.every((day: { date: string }) => day.date <= today)).toBe(true);
+
+    as("solo1", "User", DEPT_A);
+    const plain = await bodyOf(await usage());
+    expect(plain.summary.find((row: { itemId: string }) => row.itemId === "A-000002").dispensed).toBe(3);
+    expect(Object.keys(plain)).toEqual(["summary"]);
+  });
+
+  it("answers 400 when the start date is after today", async () => {
+    as("admin1", "Admin", DEPT_A);
+    expect((await usageGet(new Request("http://localhost/api/usage?startDate=2099-01-01&endDate=2099-12-31"))).status).toBe(400);
+  });
+
+  it("answers 400 when the start year is before 2000 (a half typed year from a date input)", async () => {
+    as("admin1", "Admin", DEPT_A);
+    for (const start of ["0002-11-10", "0202-01-01", "1999-12-31"]) {
+      const response = await usageGet(new Request(`http://localhost/api/usage?startDate=${start}&endDate=2026-11-10`));
+      expect(response.status, start).toBe(400);
+    }
+    expect((await usageGet(new Request("http://localhost/api/usage?startDate=2000-01-01&endDate=2026-11-10"))).status).toBe(200);
+  });
+
+  it("gives each room its own firstLogDate (Thai day of the oldest log), admin only", async () => {
+    // 2026-01-05 18:00Z = 6 Jan Thai time.
+    await db.db.exec(`
+      INSERT INTO logs (timestamp, item_id, name, lot_no, action, quantity, username, department_id) VALUES
+        ('2026-01-05 18:00+00', 'A-000002', 'Dept A extra item', 'LA1', '${DISPENSE}', 1, 'usage-first-test', ${DEPT_A}),
+        ('2026-02-10 03:00+00', 'MB-000001', 'Dept B item 1', 'LB1', '${DISPENSE}', 1, 'usage-first-test', ${DEPT_B});
+    `);
+    as("admin1", "Admin", DEPT_A);
+    expect((await bodyOf(await usage())).firstLogDate).toBe("2026-01-06");
+    as("admin1", "Admin", DEPT_B);
+    expect((await bodyOf(await usage())).firstLogDate).toBe("2026-02-10");
+    as("admin1", "Admin", "ALL");
+    expect((await bodyOf(await usage())).firstLogDate).toBe("2026-01-06");
+    as("solo2", "User", DEPT_B);
+    expect(Object.keys(await bodyOf(await usage()))).toEqual(["summary"]);
   });
 
   it("room B sees only its own data", async () => {

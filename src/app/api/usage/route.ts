@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import sql from "@/lib/db";
+import { clampToToday } from "@/lib/bangkok-date";
 import { getAuthenticatedUser } from "@/lib/auth-utils";
 import { getReagentUsageInsights } from "@/lib/reagent-usage-insights";
-import { getRefillInRange } from "@/lib/real-usage";
+import { getRefillOrUnavailable } from "@/lib/real-usage";
+import { isReasonableIsoDate } from "@/lib/local-date";
 import { andDept, departmentErrorResponse, getDepartmentScope } from "@/lib/scoped-db";
 import { getRequestId } from "@/lib/request-observability";
 
@@ -15,6 +17,8 @@ type SummaryItem = {
 };
 
 const round2 = (value: number) => Math.round(value * 100) / 100;
+const daysBetween = (startDate: string, endDate: string) =>
+  Math.max(1, Math.floor((Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`)) / 86_400_000) + 1);
 
 export async function GET(request: Request) {
   const requestId = getRequestId(request);
@@ -25,10 +29,18 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const startDate = (searchParams.get("startDate") || "").trim();
-    const endDate = (searchParams.get("endDate") || "").trim();
+    const requestedEnd = (searchParams.get("endDate") || "").trim();
     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-    if (!dateRegex.test(startDate) || !dateRegex.test(endDate)) {
+    if (!dateRegex.test(startDate) || !dateRegex.test(requestedEnd)) {
       return NextResponse.json({ error: "Invalid date format. Use YYYY-MM-DD" }, { status: 400 });
+    }
+    if (!isReasonableIsoDate(startDate)) {
+      return NextResponse.json({ error: "Invalid start date. Use a real date from the year 2000 on" }, { status: 400 });
+    }
+    // A day in the future has no usage yet: cut the end to today (Thai time); a start after that is an error.
+    const endDate = clampToToday(requestedEnd);
+    if (startDate > endDate) {
+      return NextResponse.json({ error: "Invalid date range. Start date is after today or after the end date" }, { status: 400 });
     }
 
     const summaryRows = await sql`
@@ -54,7 +66,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ summary });
     }
 
-    const [dailyRows, weeklyStats, slowMoving, insightData, refillResult] = await Promise.all([
+    const [dailyRows, weeklyStats, slowMoving, insightData, refillResult, firstLogRows] = await Promise.all([
       sql`
         SELECT
           TO_CHAR(timestamp AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD') AS date,
@@ -93,7 +105,12 @@ export async function GET(request: Request) {
         LIMIT 5
       `,
       getReagentUsageInsights(scope),
-      getRefillInRange(scope, startDate, endDate)
+      getRefillOrUnavailable(scope, startDate, endDate),
+      sql`
+        SELECT TO_CHAR(MIN(timestamp) AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD') AS "firstLogDate"
+        FROM logs
+        WHERE TRUE${andDept(scope)}
+      `
     ]);
 
     // Refill rows carry the master item id. Items are matched by lower-cased id and shown with that id everywhere
@@ -130,7 +147,21 @@ export async function GET(request: Request) {
     }
     for (const day of Object.values(dailyStats)) day.totalUsage = round2(day.totalDispensed + day.totalRefill);
 
-    const usageSummary = summary.map((row) => {
+    // Log rows are grouped by the exact item_id, so 'R1' and 'r1' arrive as two rows. Merge them per lower-cased id
+    // before the refill is attached, otherwise each row would get the whole refill and the usage would be counted twice.
+    const mergedSummary = new Map<string, SummaryItem & { dispensed: number; received: number; adjusted: number }>();
+    for (const row of summary) {
+      const key = row.itemId.toLowerCase();
+      const entry = mergedSummary.get(key);
+      if (entry) {
+        entry.dispensed += row.dispensed;
+        entry.received += row.received;
+        entry.adjusted += row.adjusted;
+      } else {
+        mergedSummary.set(key, { ...row });
+      }
+    }
+    const usageSummary = [...mergedSummary.values()].map((row) => {
       const refill = refillByItem.get(row.itemId.toLowerCase())?.refill ?? 0;
       return { ...row, itemId: canon(row.itemId), refill, usage: round2(row.dispensed + refill) };
     });
@@ -140,10 +171,19 @@ export async function GET(request: Request) {
       usageSummary.push({ itemId: canonicalId.get(key) ?? key, name: entry.name, dispensed: 0, received: 0, adjusted: 0, refill: entry.refill, usage: entry.refill });
     }
 
+    // "All" starts at the oldest log or at the earliest day the first count's refill was spread over, whichever is older.
+    const firstLogOnly = (firstLogRows as unknown as Array<{ firstLogDate: string | null }>)[0]?.firstLogDate ?? null;
+    const firstLogDate = firstLogOnly && refillResult.firstSpreadDate
+      ? (refillResult.firstSpreadDate < firstLogOnly ? refillResult.firstSpreadDate : firstLogOnly)
+      : firstLogOnly ?? refillResult.firstSpreadDate;
+
     return NextResponse.json({
       summary: usageSummary,
       dailyStats: Object.values(dailyStats).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)),
       lastCountDate: refillResult.lastCountDate,
+      ...(refillResult.unavailable ? { refillUnavailable: true } : {}),
+      range: { startDate, endDate, days: daysBetween(startDate, endDate) },
+      firstLogDate,
       weeklyStats,
       slowMoving,
       insights: insightData.insights,

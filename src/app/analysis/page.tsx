@@ -39,14 +39,18 @@ import {
   DailyUsageChart,
   ItemUsagePanel,
   REFILL_COLOR,
+  RefillUnavailableNotice,
   REGULAR_COLOR,
   UsageLegend,
   UsageTooltip
 } from '@/components/analysis/item-usage-panel';
-import { toLocalIsoDate } from '@/lib/local-date';
+import { ItemSummaryTable } from '@/components/analysis/item-summary-table';
+import { MonthlyUsageTable } from '@/components/analysis/monthly-usage-table';
+import { buildItemSummaryRows, buildMonthlyMatrix } from '@/lib/analysis-summary';
+import { resolveDateInput, toLocalIsoDate } from '@/lib/local-date';
 
 type RiskFilter = 'all' | ReorderStatus;
-type AnalysisTab = 'overview' | 'item';
+type AnalysisTab = 'overview' | 'item' | 'summary';
 
 const statusMeta: Record<ReorderStatus, { label: string; color: string; badge: string }> = {
   normal: { label: 'ปกติ', color: '#237a3f', badge: 'bg-ok-bg text-ok' },
@@ -67,6 +71,9 @@ export default function AnalysisPage() {
   const [insights, setInsights] = useState<ReagentUsageInsight[]>([]);
   const [expiryRisks, setExpiryRisks] = useState<ExpiryRiskInsight[]>([]);
   const [lastCountDate, setLastCountDate] = useState<string | null>(null);
+  const [range, setRange] = useState<{ startDate: string; endDate: string; days: number } | null>(null);
+  const [firstLogDate, setFirstLogDate] = useState<string | null>(null);
+  const [refillUnavailable, setRefillUnavailable] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState('TOTAL');
   const [riskFilter, setRiskFilter] = useState<RiskFilter>('all');
   const [tab, setTab] = useState<AnalysisTab>('overview');
@@ -77,6 +84,38 @@ export default function AnalysisPage() {
     return toLocalIsoDate(date);
   });
   const [endDate, setEndDate] = useState(() => toLocalIsoDate(new Date()));
+  // What the date inputs show while typing; startDate/endDate (used to fetch) only change once the draft is a real date.
+  const [startInput, setStartInput] = useState(startDate);
+  const [endInput, setEndInput] = useState(endDate);
+
+  const today = toLocalIsoDate(new Date());
+  const applyDates = (start: string, end: string) => {
+    setStartDate(start);
+    setEndDate(end);
+    setStartInput(start);
+    setEndInput(end);
+  };
+  // Days in the future have no usage: never let a date past today in, and keep start <= end.
+  // A date input also sends half typed values (e.g. year 0002 while typing 2026): show them, but do not fetch them.
+  const changeStartDate = (value: string) => {
+    setStartInput(value);
+    const { commit } = resolveDateInput(value, endDate, 'start', today);
+    if (commit) applyDates(commit.start, commit.end);
+  };
+  const changeEndDate = (value: string) => {
+    setEndInput(value);
+    const { commit } = resolveDateInput(value, startDate, 'end', today);
+    if (commit) applyDates(commit.start, commit.end);
+  };
+  const selectLast90Days = () => {
+    const date = new Date();
+    date.setDate(date.getDate() - 89);
+    applyDates(toLocalIsoDate(date), today);
+  };
+  const selectAllDays = () => {
+    if (!firstLogDate) return;
+    applyDates(firstLogDate > today ? today : firstLogDate, today);
+  };
 
   const canPlanPurchases = user?.role === 'Admin' || user?.role === 'Manager';
 
@@ -93,6 +132,9 @@ export default function AnalysisPage() {
         setInsights(response.insights || []);
         setExpiryRisks(response.expiryRisks || []);
         setLastCountDate(response.lastCountDate ?? null);
+        setRange(response.range ?? null);
+        setFirstLogDate(response.firstLogDate ?? null);
+        setRefillUnavailable(response.refillUnavailable === true);
       } catch (fetchError) {
         console.error('Usage Fetch Error:', fetchError);
         if (!cancelled) setError('ไม่สามารถดึงข้อมูลวิเคราะห์การใช้น้ำยาได้');
@@ -125,6 +167,23 @@ export default function AnalysisPage() {
     .map((row) => ({ ...row, regular: row.dispensed, refill: row.refill ?? 0, total: row.usage ?? row.dispensed }))
     .sort((left, right) => right.total - left.total)
     .slice(0, 10), [usage]);
+
+  const summaryRange = useMemo(() => {
+    if (range) return range;
+    const days = Math.max(1, Math.floor((Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`)) / 86_400_000) + 1);
+    return { startDate, endDate, days };
+  }, [endDate, range, startDate]);
+  const monthlyMatrix = useMemo(
+    () => buildMonthlyMatrix(dailyStats, { startDate: summaryRange.startDate, endDate: summaryRange.endDate }),
+    [dailyStats, summaryRange]
+  );
+  const summaryRows = useMemo(() => buildItemSummaryRows(insights, usage, summaryRange.days), [insights, summaryRange.days, usage]);
+  const itemNameOf = useMemo(() => {
+    const names = new Map<string, string>();
+    for (const row of usage) names.set(row.itemId.toLowerCase(), row.name);
+    for (const item of insights) names.set(item.itemId.toLowerCase(), item.name);
+    return (itemId: string) => names.get(itemId.toLowerCase()) ?? itemId;
+  }, [insights, usage]);
 
   const riskItems = useMemo(() => insights
     .filter((item) => item.status !== 'normal')
@@ -189,15 +248,30 @@ export default function AnalysisPage() {
           <h1 className="text-[32px] leading-tight font-medium text-ink">Dashboard การใช้น้ำยา</h1>
           <p className="mt-1.5 text-[15px] text-gray-600">จัดลำดับน้ำยาที่ควรสั่งซื้อจากยอดเบิกย้อนหลัง 90 วัน</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2 rounded-[10px] border border-line bg-white px-3 py-1.5 text-sm">
-          <Calendar size={16} className="text-gray-600" aria-hidden="true" />
-          <input type="date" aria-label="วันที่เริ่มต้น" value={startDate} onChange={(event) => setStartDate(event.target.value)} className="bg-transparent p-1 text-sm outline-none" />
-          <span className="text-gray-600">ถึง</span>
-          <input type="date" aria-label="วันที่สิ้นสุด" value={endDate} onChange={(event) => setEndDate(event.target.value)} className="bg-transparent p-1 text-sm outline-none" />
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex gap-2" role="group" aria-label="เลือกช่วงวันเร็ว ๆ">
+            <button type="button" onClick={selectLast90Days} className="rounded-full border border-line bg-white px-3.5 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50">90 วัน</button>
+            <button
+              type="button"
+              onClick={selectAllDays}
+              disabled={!firstLogDate}
+              title={firstLogDate ? undefined : 'ยังไม่มีประวัติการใช้'}
+              className="rounded-full border border-line bg-white px-3.5 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              ทั้งหมด
+            </button>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 rounded-[10px] border border-line bg-white px-3 py-1.5 text-sm">
+            <Calendar size={16} className="text-gray-600" aria-hidden="true" />
+            <input type="date" aria-label="วันที่เริ่มต้น" value={startInput} max={endDate} onChange={(event) => changeStartDate(event.target.value)} onBlur={() => setStartInput(startDate)} className="bg-transparent p-1 text-sm outline-none" />
+            <span className="text-gray-600">ถึง</span>
+            <input type="date" aria-label="วันที่สิ้นสุด" value={endInput} min={startDate} max={today} onChange={(event) => changeEndDate(event.target.value)} onBlur={() => setEndInput(endDate)} className="bg-transparent p-1 text-sm outline-none" />
+          </div>
         </div>
       </div>
 
       {error && <div role="alert" className="flex items-center gap-3 rounded-xl bg-crit-bg px-4 py-3 text-sm font-medium text-crit"><AlertTriangle size={20} />{error}</div>}
+      {refillUnavailable && <RefillUnavailableNotice />}
 
       {!canPlanPurchases ? (
         <div className="flex items-center gap-3 rounded-2xl bg-warn-bg px-6 py-5 text-[15px] font-medium text-warn">
@@ -206,7 +280,7 @@ export default function AnalysisPage() {
         </div>
       ) : <>
         <div className="flex gap-2" role="tablist" aria-label="มุมมองการวิเคราะห์">
-          {([['overview', 'ภาพรวม'], ['item', 'รายน้ำยา']] as Array<[AnalysisTab, string]>).map(([value, label]) => (
+          {([['overview', 'ภาพรวม'], ['item', 'รายน้ำยา'], ['summary', 'สรุปรายน้ำยา']] as Array<[AnalysisTab, string]>).map(([value, label]) => (
             <button
               key={value}
               type="button"
@@ -220,7 +294,27 @@ export default function AnalysisPage() {
           ))}
         </div>
 
-        {tab === 'item' ? (
+        {tab === 'summary' ? (
+          <div className="min-w-0 space-y-6">
+            <section aria-labelledby="summary-heading" className={cardClass}>
+              <h2 id="summary-heading" className="text-xl font-medium">สรุปยอดใช้ต่อน้ำยา</h2>
+              <p className="mb-3 mt-0.5 text-[13px] text-gray-600">
+                ยอดใช้จริง = เบิกไปหน้างาน + เบิกเติม ช่วง {shortDate(summaryRange.startDate)} ถึง {shortDate(summaryRange.endDate)} ({summaryRange.days} วัน) กดแถวเพื่อดูรายละเอียดน้ำยานั้น
+              </p>
+              <ItemSummaryTable rows={summaryRows} onSelectItem={openItemDetail} />
+              <p className="mt-3 text-[13px] text-gray-600">
+                ค่าเฉลี่ยต่อวันและต่อสัปดาห์ใช้ยอดใช้จริงของช่วงที่เลือก ส่วนวันจนถึง Min ใช้เกณฑ์เดียวกับแผนจัดซื้อ (เบิกไปหน้างาน 90 วันล่าสุด) จึงอาจไม่ตรงกับค่าเฉลี่ยในตาราง
+              </p>
+            </section>
+            <section aria-labelledby="monthly-heading" className={cardClass}>
+              <h2 id="monthly-heading" className="text-xl font-medium">ยอดใช้รายเดือน</h2>
+              <p className="mb-3 mt-0.5 text-[13px] text-gray-600">
+                เลื่อนตารางไปทางขวาเพื่อดูเดือนอื่น เดือนที่มีเครื่องหมาย * คือเดือนที่ไม่เต็ม (มีแค่บางวันในช่วงที่เลือก) กดแถวเพื่อดูรายละเอียดน้ำยานั้น
+              </p>
+              <MonthlyUsageTable matrix={monthlyMatrix} nameOf={itemNameOf} onSelectItem={openItemDetail} />
+            </section>
+          </div>
+        ) : tab === 'item' ? (
           <ItemUsagePanel
             items={insights}
             selectedItemId={detailItemId}

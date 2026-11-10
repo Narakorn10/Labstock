@@ -178,6 +178,24 @@ describe("getReagentItemUsage with count refills (departments off)", () => {
     expect(detail?.totals.refill).toBe(13);
   });
 
+  it("keeps the rest of the detail and flags refillUnavailable when only the count query fails", async () => {
+    await sql.db.exec(`INSERT INTO logs (timestamp, item_id, lot_no, action, quantity, username) VALUES ('2026-11-05 03:00+00','R1','L1','เบิกไปหน้างาน',2,'u1')`);
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await sql.db.exec(`ALTER TABLE count_work_order_audit RENAME TO count_work_order_audit_off`);
+    try {
+      const detail = await getReagentItemUsage("R1", ...REFILL_RANGE, { mode: "legacy" });
+      expect(detail?.refillUnavailable).toBe(true);
+      expect(detail?.totals).toMatchObject({ dispensed: 2, refill: 0, usage: 2 });
+      expect(detail?.lastCountDate).toBeNull();
+      expect(detail?.item.itemId).toBe("R1");
+      expect(errors.mock.calls.some((call) => /refill/i.test(String(call[0])))).toBe(true);
+    } finally {
+      await sql.db.exec(`ALTER TABLE count_work_order_audit_off RENAME TO count_work_order_audit`);
+      errors.mockRestore();
+    }
+    expect((await getReagentItemUsage("R1", ...REFILL_RANGE, { mode: "legacy" }))?.refillUnavailable).toBeFalsy();
+  });
+
   it("shows no refill for a count that is only a boundary or has no date", async () => {
     await seedCount({ status: "OPEN", counted: 12 }); // no allocation, no audit, no date: skipped without error
     const detail = await getReagentItemUsage("R1", ...REFILL_RANGE, { mode: "legacy" });

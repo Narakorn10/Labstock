@@ -121,6 +121,16 @@ export function UsageLegend({ shaded }: { shaded: boolean }) {
   );
 }
 
+/** Shown when the server could not read the refill from the count work orders (refillUnavailable). */
+export function RefillUnavailableNotice() {
+  return (
+    <div role="alert" className="flex items-center gap-3 rounded-xl bg-warn-bg px-4 py-3 text-sm font-medium text-warn">
+      <AlertTriangle size={20} aria-hidden="true" />
+      ยอดเบิกเติมจากใบงานนับยังโหลดไม่ได้ ตัวเลขตอนนี้เป็นเฉพาะเบิกไปหน้างาน
+    </div>
+  );
+}
+
 function thaiDate(value: string) {
   if (!value) return '-';
   const date = new Date(`${value.slice(0, 10)}T00:00:00`);
@@ -227,6 +237,7 @@ export function ItemUsagePanel({
 
       {!selectedItemId && <p className="py-10 text-center text-sm text-gray-600">ค้นหาแล้วเลือกน้ำยา 1 รายการ หรือกดรายการจากแท็บภาพรวม</p>}
       {error && <div role="alert" className="flex items-center gap-3 rounded-xl bg-crit-bg px-4 py-3 text-sm font-medium text-crit"><AlertTriangle size={20} />{error}</div>}
+      {shown?.refillUnavailable && <RefillUnavailableNotice />}
       {loading && !shown && (
         <div className="flex items-center justify-center gap-3 py-16 text-sm text-gray-600"><Loader2 className="animate-spin" size={24} />กำลังโหลด...</div>
       )}

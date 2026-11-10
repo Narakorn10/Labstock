@@ -117,6 +117,12 @@ export interface UsageResponse {
   expiryRisks?: ExpiryRiskInsight[];
   /** Thai day of the latest count work order; refill after it is not known yet */
   lastCountDate?: string | null;
+  /** Admin/Manager only: true when the refill from count work orders could not be loaded (numbers are dispense only) */
+  refillUnavailable?: boolean;
+  /** Admin/Manager only: the range the server used (end date cut to Thai today) and its number of days */
+  range?: { startDate: string; endDate: string; days: number };
+  /** Admin/Manager only: Thai day of the oldest log of the room, null when it has none */
+  firstLogDate?: string | null;
 }
 
 export type { ItemUsageDetail };

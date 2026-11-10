@@ -94,6 +94,16 @@ describe("spreadRefillEvents", () => {
     expect(map.get("r2")!.days.get("2026-11-09")).toBe(200);
   });
 
+  it("a refill smaller than the number of days only fills the last days and never stores a zero day", () => {
+    const entry = spreadRefillEvents([refill("2026-11-10", 0.03)]).get("r1")!;
+    expect([...entry.days]).toEqual([
+      ["2026-11-07", 1],
+      ["2026-11-08", 1],
+      ["2026-11-09", 1],
+    ]);
+    expect([...entry.days.values()].every((cents) => cents > 0)).toBe(true);
+  });
+
   it("skips an event whose count date is missing without throwing", () => {
     const events = [{ ...refill("2026-11-10", 7), date: null }, refill("2026-11-10", 7, "R2")] as unknown as CountEvent[];
     expect(() => spreadRefillEvents(events)).not.toThrow();

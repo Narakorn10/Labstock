@@ -70,6 +70,7 @@ export function spreadRefillEvents(events: CountEvent[]): Map<string, SpreadItem
       for (let offset = 0; offset < length; offset += 1) {
         const day = addDays(start, offset);
         const share = base + (offset >= length - extra ? 1 : 0);
+        if (share === 0) continue; // a refill smaller than its number of days leaves the early days empty
         item.days.set(day, (item.days.get(day) ?? 0) + share);
       }
     });
@@ -85,7 +86,7 @@ export async function loadCountEvents(scope: DepartmentScope, itemId?: string): 
   const itemFilter = itemId ? sql` AND LOWER(i.item_id) = LOWER(${itemId})` : sql``;
   const rows = await sql`
     SELECT
-      COALESCE((SELECT m.item_id FROM master_data m WHERE LOWER(m.item_id) = LOWER(i.item_id)${andDept(scope, "m")} LIMIT 1), i.item_id) AS "itemId",
+      COALESCE((SELECT m.item_id FROM master_data m WHERE LOWER(m.item_id) = LOWER(i.item_id)${andDept(scope, "m")} ORDER BY m.item_id LIMIT 1), i.item_id) AS "itemId",
       i.name,
       TO_CHAR(
         COALESCE(
@@ -99,7 +100,7 @@ export async function loadCountEvents(scope: DepartmentScope, itemId?: string): 
     JOIN count_work_orders w ON w.id = i.work_order_id
     LEFT JOIN count_work_order_allocations a ON a.work_order_item_id = i.id
     WHERE TRUE${andDept(scope, "w")}${itemFilter}
-    GROUP BY i.id, w.id
+    GROUP BY i.id, w.id, i.item_id, i.name, i.weekly_target, i.counted_qty, i.work_order_id, w.status
     HAVING COUNT(a.id) > 0
       OR (
         GREATEST(i.weekly_target - i.counted_qty, 0) = 0
@@ -121,18 +122,36 @@ export async function loadCountEvents(scope: DepartmentScope, itemId?: string): 
   }));
 }
 
-/** Refill per item and Thai day inside [startDate, endDate] (the part of each spread that falls in the range), plus the latest count day of the scope. */
+/**
+ * Refill per item and Thai day inside [startDate, endDate] (the part of each spread that falls in the range), plus the
+ * latest count day of the scope and firstSpreadDate: the earliest day of any spread of the scope (not limited by the range).
+ */
 export async function getRefillInRange(scope: DepartmentScope, startDate: string, endDate: string, itemId?: string) {
   const events = await loadCountEvents(scope, itemId);
   const spread = spreadRefillEvents(events);
   const rows: RefillRow[] = [];
+  let firstSpreadDate: string | null = null;
   for (const item of spread.values()) {
     for (const [date, cents] of item.days) {
+      if (!firstSpreadDate || date < firstSpreadDate) firstSpreadDate = date;
       if (date < startDate || date > endDate) continue;
       rows.push({ itemId: item.itemId, name: item.name, date, qty: cents / 100 });
     }
   }
   rows.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.itemId.localeCompare(b.itemId)));
   const lastCountDate = events.reduce<string | null>((latest, event) => (event.date && DATE_PATTERN.test(event.date) && (!latest || event.date > latest) ? event.date : latest), null);
-  return { rows, lastCountDate };
+  return { rows, lastCountDate, firstSpreadDate };
+}
+
+/**
+ * getRefillInRange that never throws: when the count tables cannot be read it logs the error and returns an empty
+ * result with unavailable = true, so the rest of the analysis (purchase plan, dispense numbers) still loads.
+ */
+export async function getRefillOrUnavailable(scope: DepartmentScope, startDate: string, endDate: string, itemId?: string) {
+  try {
+    return { ...(await getRefillInRange(scope, startDate, endDate, itemId)), unavailable: false };
+  } catch (error) {
+    console.error("Refill from count work orders unavailable, showing dispense only:", error);
+    return { rows: [] as RefillRow[], lastCountDate: null as string | null, firstSpreadDate: null as string | null, unavailable: true };
+  }
 }

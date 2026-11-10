@@ -1,7 +1,7 @@
 import sql from "@/lib/db";
 import { andDept, type DepartmentScope } from "@/lib/scoped-db";
 import { computeReorderInsight, daysFromToday, type ReorderStatus } from "@/lib/reagent-usage-insights";
-import { getRefillInRange } from "@/lib/real-usage";
+import { getRefillOrUnavailable } from "@/lib/real-usage";
 
 const DISPENSE_ACTION = "เบิกไปหน้างาน";
 const RECEIVE_ACTION = "รับเข้าสต๊อกหลัก";
@@ -43,6 +43,8 @@ export interface ItemUsageDetail {
   monthly: Array<{ month: string; qty: number; regular: number; refill: number; total: number }>;
   /** Thai day of the latest count of this reagent (the refill of days from then on is not known yet), or null */
   lastCountDate: string | null;
+  /** Only present (true) when the refill from count work orders could not be read: refill is 0 and usage is the regular dispense only */
+  refillUnavailable?: boolean;
   byLot: Array<{ lotNo: string; qty: number }>;
   byUser: Array<{ username: string; qty: number; count: number }>;
   lotsOnHand: Array<{ lotNo: string; expDate: string; receivedOn: string; quantity: number; daysUntilExpiry: number | null }>;
@@ -160,7 +162,7 @@ export async function getReagentItemUsage(itemId: string, startDate: string, end
       WHERE item_id = ${itemId} AND quantity > 0${andDept(scope)}
       ORDER BY NULLIF(exp_date::text, '') ASC NULLS LAST, received_on ASC
     `,
-    getRefillInRange(scope, startDate, endDate, row.itemId)
+    getRefillOrUnavailable(scope, startDate, endDate, row.itemId)
   ]);
 
   const refillByDay = new Map<string, number>();
@@ -211,6 +213,7 @@ export async function getReagentItemUsage(itemId: string, startDate: string, end
     monthly: mergeByKey((monthlyRows as Array<{ month: string; qty: unknown }>).map((r) => ({ key: r.month, qty: num(r.qty) })), refillByMonth)
       .map(({ key, ...rest }) => ({ month: key, ...rest })),
     lastCountDate: refillResult.lastCountDate,
+    ...(refillResult.unavailable ? { refillUnavailable: true } : {}),
     byLot: (lotRows as Array<{ lotNo: string; qty: unknown }>).map((r) => ({ lotNo: r.lotNo, qty: num(r.qty) })),
     byUser: (userRows as Array<{ username: string; qty: unknown; count: unknown }>).map((r) => ({
       username: r.username,
