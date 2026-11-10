@@ -36,8 +36,8 @@ export async function GET(request: Request) {
         SUM(CASE WHEN action = 'รับเข้าสต๊อกหลัก' THEN quantity ELSE 0 END) AS received,
         SUM(CASE WHEN action LIKE '%ปรับปรุงยอด%' THEN quantity ELSE 0 END) AS adjusted
       FROM logs
-      WHERE timestamp >= ${startDate}::date
-        AND timestamp < (${endDate}::date + INTERVAL '1 day')${andDept(scope)}
+      WHERE timestamp >= (${startDate}::date)::timestamp AT TIME ZONE 'Asia/Bangkok'
+        AND timestamp < (${endDate}::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok'${andDept(scope)}
       GROUP BY item_id
     `;
     const summary = (summaryRows as unknown as SummaryItem[]).map((row) => ({
@@ -54,13 +54,13 @@ export async function GET(request: Request) {
     const [dailyRows, weeklyStats, slowMoving, insightData] = await Promise.all([
       sql`
         SELECT
-          TO_CHAR(timestamp, 'YYYY-MM-DD') AS date,
+          TO_CHAR(timestamp AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD') AS date,
           item_id AS "itemId",
           SUM(quantity) AS qty
         FROM logs
         WHERE action = 'เบิกไปหน้างาน'
-          AND timestamp >= ${startDate}::date
-          AND timestamp < (${endDate}::date + INTERVAL '1 day')${andDept(scope)}
+          AND timestamp >= (${startDate}::date)::timestamp AT TIME ZONE 'Asia/Bangkok'
+          AND timestamp < (${endDate}::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok'${andDept(scope)}
         GROUP BY date, item_id
         ORDER BY date ASC
       `,

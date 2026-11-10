@@ -15,6 +15,7 @@ import {
 } from 'recharts';
 import { AlertTriangle, Loader2, Search } from 'lucide-react';
 import { apiClient, ItemUsageDetail, ReorderStatus } from '@/lib/api-client';
+import { toLocalIsoDate } from '@/lib/local-date';
 
 type ItemOption = { itemId: string; name: string };
 
@@ -31,10 +32,6 @@ const tdClass = 'border-b border-line px-3.5 py-2.5 text-sm';
 
 function formatNumber(value: number, maximumFractionDigits = 1) {
   return new Intl.NumberFormat('th-TH', { maximumFractionDigits }).format(value);
-}
-
-function toIsoDate(date: Date) {
-  return date.toISOString().slice(0, 10);
 }
 
 function thaiDate(value: string) {
@@ -96,7 +93,7 @@ export function ItemUsagePanel({
     const cursor = new Date(`${detail.range.startDate}T00:00:00`);
     const end = new Date(`${detail.range.endDate}T00:00:00`);
     while (cursor <= end) {
-      const used = byDate.get(toIsoDate(cursor)) || 0;
+      const used = byDate.get(toLocalIsoDate(cursor)) || 0;
       const recent = [...rows.slice(-6).map((row) => row.used), used];
       rows.push({
         displayDate: new Intl.DateTimeFormat('th-TH', { day: 'numeric', month: 'short' }).format(cursor),

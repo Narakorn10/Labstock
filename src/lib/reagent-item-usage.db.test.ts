@@ -13,7 +13,8 @@ import { getReagentItemUsage } from "./reagent-item-usage";
 const sql = dbSql as unknown as PgliteSql;
 let schemaReady = false;
 
-// R1 has two lots on hand and logs inside and outside 2026-09-01..2026-09-30. R2 is never used.
+// R1 has two lots on hand and logs inside and outside 2026-09-01..2026-09-30 (Thai days). R2 is never used.
+// 2026-09-20 20:00Z is already 21 Sep in Thailand; 2026-09-30 23:00Z is already 1 Oct.
 async function seed() {
   if (!schemaReady) {
     await sql.db.exec(PURCHASE_ORDER_TEST_SCHEMA);
@@ -35,6 +36,7 @@ async function seed() {
       ('2026-09-03 09:00+00','R1','L1','เบิกไปหน้างาน',2,'u1'),
       ('2026-09-03 15:00+00','R1','L1','เบิกไปหน้างาน',1,'u2'),
       ('2026-09-20 09:00+00','R1','L2','เบิกไปหน้างาน',3,'u1'),
+      ('2026-09-20 20:00+00','R1','L2','เบิกไปหน้างาน',1,'u3'),
       ('2026-09-25 09:00+00','R1','L2','ปรับปรุงยอด (นับสต็อก)',-1,'admin'),
       ('2026-09-30 23:00+00','R1','L2','เบิกไปหน้างาน',4,'u2'),
       ('2026-10-01 00:30+00','R1','L2','เบิกไปหน้างาน',7,'u3'),
@@ -53,9 +55,9 @@ describe("getReagentItemUsage", () => {
     const detail = await getReagentItemUsage("R1", "2026-09-01", "2026-09-30", { mode: "legacy" });
     expect(detail?.item).toMatchObject({ itemId: "R1", unit: "กล่อง", quantity: 7, minThreshold: 2, isActive: true });
     expect(detail?.range.days).toBe(30);
-    expect(detail?.totals).toMatchObject({ dispensed: 10, received: 10, adjusted: -1, dispenseCount: 4 });
-    expect(detail?.totals.averageDailyUsage).toBeCloseTo(10 / 30);
-    expect(detail?.totals.lastDispensedAt).toBe("2026-09-30T23:00:00.000Z");
+    expect(detail?.totals).toMatchObject({ dispensed: 7, received: 10, adjusted: -1, dispenseCount: 4 });
+    expect(detail?.totals.averageDailyUsage).toBeCloseTo(7 / 30);
+    expect(detail?.totals.lastDispensedAt).toBe("2026-09-20T20:00:00.000Z");
   });
 
   it("groups dispensing by day, month, lot and user", async () => {
@@ -63,14 +65,15 @@ describe("getReagentItemUsage", () => {
     expect(detail?.daily).toEqual([
       { date: "2026-09-03", qty: 3 },
       { date: "2026-09-20", qty: 3 },
-      { date: "2026-09-30", qty: 4 },
+      { date: "2026-09-21", qty: 1 },
     ]);
-    expect(detail?.monthly).toEqual([{ month: "2026-09", qty: 10 }]);
-    expect(detail?.byLot).toEqual([{ lotNo: "L2", qty: 7 }, { lotNo: "L1", qty: 3 }]);
-    expect(detail?.byUser).toHaveLength(2);
+    expect(detail?.monthly).toEqual([{ month: "2026-09", qty: 7 }]);
+    expect(detail?.byLot).toEqual([{ lotNo: "L2", qty: 4 }, { lotNo: "L1", qty: 3 }]);
+    expect(detail?.byUser).toHaveLength(3);
     expect(detail?.byUser).toEqual(expect.arrayContaining([
       { username: "u1", qty: 5, count: 2 },
-      { username: "u2", qty: 5, count: 2 },
+      { username: "u2", qty: 1, count: 1 },
+      { username: "u3", qty: 1, count: 1 },
     ]));
   });
 

@@ -129,6 +129,23 @@ describe("GET /api/usage", () => {
     expect(daysByItem["LAB-000001"]).toBeLessThanOrEqual(10);
   });
 
+  it("puts a dispense after midnight Thai time on the next day in dailyStats", async () => {
+    as("admin1", "Admin", DEPT_A);
+    try {
+      // 2026-06-01 18:00Z = 2026-06-02 01:00 in Thailand.
+      await db.db.exec(`
+        INSERT INTO logs (timestamp, item_id, name, lot_no, action, quantity, username, department_id) VALUES
+          ('2026-06-01 18:00+00', 'A-000002', 'Dept A extra item', 'LA1', '${DISPENSE}', 7, 'usage-tz-test', ${DEPT_A});
+      `);
+      const body = await bodyOf(await usage());
+      const byDate = Object.fromEntries(body.dailyStats.map((row: { date: string; items: Record<string, number> }) => [row.date, row.items]));
+      expect(byDate["2026-06-02"]).toEqual({ "A-000002": 7 });
+      expect(byDate["2026-06-01"]).toBeUndefined();
+    } finally {
+      await db.db.exec(`DELETE FROM logs WHERE username = 'usage-tz-test'`);
+    }
+  });
+
   it("room B sees only its own data", async () => {
     as("admin1", "Admin", DEPT_B);
     const body = await bodyOf(await usage());

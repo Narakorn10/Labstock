@@ -38,6 +38,7 @@ import {
 } from '@/lib/api-client';
 import { useAuth } from '@/components/auth-provider';
 import { ItemUsagePanel } from '@/components/analysis/item-usage-panel';
+import { toLocalIsoDate } from '@/lib/local-date';
 
 type RiskFilter = 'all' | ReorderStatus;
 type AnalysisTab = 'overview' | 'item';
@@ -50,10 +51,6 @@ const statusMeta: Record<ReorderStatus, { label: string; color: string; badge: s
 
 function formatNumber(value: number, maximumFractionDigits = 1) {
   return new Intl.NumberFormat('th-TH', { maximumFractionDigits }).format(value);
-}
-
-function toIsoDate(date: Date) {
-  return date.toISOString().slice(0, 10);
 }
 
 export default function AnalysisPage() {
@@ -71,9 +68,9 @@ export default function AnalysisPage() {
   const [startDate, setStartDate] = useState(() => {
     const date = new Date();
     date.setDate(date.getDate() - 89);
-    return toIsoDate(date);
+    return toLocalIsoDate(date);
   });
-  const [endDate, setEndDate] = useState(() => toIsoDate(new Date()));
+  const [endDate, setEndDate] = useState(() => toLocalIsoDate(new Date()));
 
   const canPlanPurchases = user?.role === 'Admin' || user?.role === 'Manager';
 
@@ -114,7 +111,7 @@ export default function AnalysisPage() {
     const cursor = new Date(start);
 
     while (cursor <= end) {
-      const date = toIsoDate(cursor);
+      const date = toLocalIsoDate(cursor);
       const stat = totals.get(date);
       const used = selectedItemId === 'TOTAL'
         ? stat?.totalDispensed || 0

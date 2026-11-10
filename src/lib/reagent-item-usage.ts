@@ -89,26 +89,26 @@ export async function getReagentItemUsage(itemId: string, startDate: string, end
         MAX(timestamp) FILTER (WHERE action = ${DISPENSE_ACTION}) AS "lastDispensedAt"
       FROM logs
       WHERE item_id = ${itemId}
-        AND timestamp >= ${startDate}::date
-        AND timestamp < (${endDate}::date + INTERVAL '1 day')${andDept(scope)}
+        AND timestamp >= (${startDate}::date)::timestamp AT TIME ZONE 'Asia/Bangkok'
+        AND timestamp < (${endDate}::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok'${andDept(scope)}
     `,
     sql`
-      SELECT TO_CHAR(timestamp, 'YYYY-MM-DD') AS date, SUM(quantity) AS qty
+      SELECT TO_CHAR(timestamp AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD') AS date, SUM(quantity) AS qty
       FROM logs
       WHERE item_id = ${itemId}
         AND action = ${DISPENSE_ACTION}
-        AND timestamp >= ${startDate}::date
-        AND timestamp < (${endDate}::date + INTERVAL '1 day')${andDept(scope)}
+        AND timestamp >= (${startDate}::date)::timestamp AT TIME ZONE 'Asia/Bangkok'
+        AND timestamp < (${endDate}::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok'${andDept(scope)}
       GROUP BY date
       ORDER BY date ASC
     `,
     sql`
-      SELECT TO_CHAR(timestamp, 'YYYY-MM') AS month, SUM(quantity) AS qty
+      SELECT TO_CHAR(timestamp AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM') AS month, SUM(quantity) AS qty
       FROM logs
       WHERE item_id = ${itemId}
         AND action = ${DISPENSE_ACTION}
-        AND timestamp >= ${startDate}::date
-        AND timestamp < (${endDate}::date + INTERVAL '1 day')${andDept(scope)}
+        AND timestamp >= (${startDate}::date)::timestamp AT TIME ZONE 'Asia/Bangkok'
+        AND timestamp < (${endDate}::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok'${andDept(scope)}
       GROUP BY month
       ORDER BY month ASC
     `,
@@ -117,8 +117,8 @@ export async function getReagentItemUsage(itemId: string, startDate: string, end
       FROM logs
       WHERE item_id = ${itemId}
         AND action = ${DISPENSE_ACTION}
-        AND timestamp >= ${startDate}::date
-        AND timestamp < (${endDate}::date + INTERVAL '1 day')${andDept(scope)}
+        AND timestamp >= (${startDate}::date)::timestamp AT TIME ZONE 'Asia/Bangkok'
+        AND timestamp < (${endDate}::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok'${andDept(scope)}
       GROUP BY 1
       ORDER BY qty DESC
     `,
@@ -127,8 +127,8 @@ export async function getReagentItemUsage(itemId: string, startDate: string, end
       FROM logs
       WHERE item_id = ${itemId}
         AND action = ${DISPENSE_ACTION}
-        AND timestamp >= ${startDate}::date
-        AND timestamp < (${endDate}::date + INTERVAL '1 day')${andDept(scope)}
+        AND timestamp >= (${startDate}::date)::timestamp AT TIME ZONE 'Asia/Bangkok'
+        AND timestamp < (${endDate}::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok'${andDept(scope)}
       GROUP BY 1
       ORDER BY qty DESC
       LIMIT ${TOP_USERS_LIMIT}
