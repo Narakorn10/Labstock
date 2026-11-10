@@ -654,7 +654,7 @@ export default function PurchaseOrdersPage() {
 
       {showCreateModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90dvh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-bold">{editingOrder ? `แก้ไขใบสั่งน้ำยา ${editingOrder.po_number}` : "สร้างใบสั่งน้ำยา"}</h2>
               <button onClick={resetOrderForm} className="text-gray-500 hover:text-gray-700">

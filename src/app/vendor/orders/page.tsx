@@ -329,7 +329,7 @@ export default function VendorOrdersPage() {
 
       {draftItems.length > 0 && (
         <div role="dialog" aria-modal="true" aria-labelledby="vendor-draft-title" className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-6">
+          <div className="max-h-[90dvh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-6">
             <h2 id="vendor-draft-title" className="text-[22px] font-medium">{editingOrder ? "แก้ไขรายการเพื่อส่ง Lab ตรวจสอบ" : "เสนอรายการสั่งน้ำยาให้ Lab"}</h2>
             <p className="mt-1 text-sm text-gray-600">Lab ต้องยืนยันก่อนรายการนี้จะเป็นคำสั่งซื้อที่ตกลงแล้ว</p>
             <div className="mt-4 space-y-2">

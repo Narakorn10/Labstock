@@ -65,6 +65,7 @@ export default function ReagentDetailModal({
 
   if (!reagent) return null;
 
+  const lots = reagent.lots ?? [];
   const isLow = reagent.quantity <= reagent.minThreshold;
   const now = new Date();
   const thirtyDays = new Date();
@@ -100,8 +101,9 @@ export default function ReagentDetailModal({
         return;
       }
 
-      setEditingLot(null);
+      // Reload first and keep the dialog open, so the saved lot, expiry and quantity stay in view.
       await onInventoryUpdated?.();
+      setEditingLot(null);
     } catch (error: unknown) {
       const appError = error as { response?: { data?: { error?: string } }; message?: string };
       alert(appError.response?.data?.error || appError.message || 'Unable to update inventory.');
@@ -206,8 +208,8 @@ export default function ReagentDetailModal({
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {reagent.lots && reagent.lots.length > 0 ? (
-                  reagent.lots.map((lot) => {
+                {lots.length > 0 ? (
+                  lots.map((lot) => {
                     const expDate = new Date(lot.expDate);
                     const isExpired = expDate < now;
                     const isNear = expDate < thirtyDays && !isExpired;

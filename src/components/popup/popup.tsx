@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { CircleCheck, Info, OctagonAlert, TriangleAlert } from 'lucide-react';
+import { lockBodyScroll } from '@/lib/body-scroll-lock';
 
 export type PopupSeverity = 'info' | 'warning' | 'danger' | 'success';
 
@@ -63,8 +64,7 @@ export function Popup({
     if (!open) return;
 
     const previouslyFocused = document.activeElement as HTMLElement | null;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    const unlockScroll = lockBodyScroll();
 
     // Destructive actions start on the safe choice: prefer the data-autofocus button, else the first one.
     const card = cardRef.current;
@@ -97,7 +97,7 @@ export function Popup({
 
     return () => {
       document.removeEventListener('keydown', onKeyDown, true);
-      document.body.style.overflow = previousOverflow;
+      unlockScroll();
       previouslyFocused?.focus?.();
     };
   }, [open]);

@@ -9,6 +9,7 @@ import { useAuth } from './auth-provider';
 import { DepartmentSwitcher } from './department-switcher';
 import { shouldShowLoadError, shouldShowSwitcher, type DepartmentContext } from '@/lib/department-switcher-state';
 import { apiClient } from '@/lib/api-client';
+import { lockBodyScroll } from '@/lib/body-scroll-lock';
 import { NAVIGATION_GROUPS, getRoleFallbackMenus, mergeMenus, mergeRoomAdminMenus, mergeSuperAdminMenus } from '@/lib/menu-config';
 
 const PERMISSION_CACHE_VERSION = 'v3';
@@ -115,7 +116,6 @@ export default function Sidebar({ onExpandedChange }: SidebarProps) {
     const previouslyFocused = document.activeElement instanceof HTMLElement
       ? document.activeElement
       : null;
-    const originalOverflow = document.body.style.overflow;
     const focusFrame = window.requestAnimationFrame(() => closeButtonRef.current?.focus());
     const focusableSelector = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
@@ -148,12 +148,12 @@ export default function Sidebar({ onExpandedChange }: SidebarProps) {
       }
     };
 
-    document.body.style.overflow = 'hidden';
+    const unlockScroll = lockBodyScroll();
     document.addEventListener('keydown', handleKeyDown);
 
     return () => {
       window.cancelAnimationFrame(focusFrame);
-      document.body.style.overflow = originalOverflow;
+      unlockScroll();
       document.removeEventListener('keydown', handleKeyDown);
       previouslyFocused?.focus();
     };

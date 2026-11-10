@@ -26,6 +26,7 @@ export default function TrackingBoardPage() {
   const router = useRouter();
   const [shipments, setShipments] = useState<ShipmentBoardItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
   const getAuthHeaders = (): Record<string, string> => {
     const token = localStorage.getItem("labstock_token");
     return token ? { Authorization: `Bearer ${token}` } : {};
@@ -81,20 +82,35 @@ export default function TrackingBoardPage() {
     { id: "Cancelled", title: "❌ ยกเลิก (Cancelled)" },
   ];
 
+  const keyword = search.trim().toLocaleLowerCase();
+  const visibleShipments = keyword
+    ? shipments.filter((shipment) =>
+        [shipment.reference_no, shipment.reagent_name, shipment.vendor, shipment.po_number, shipment.tracking_no]
+          .some((value) => (value ?? "").toLocaleLowerCase().includes(keyword)))
+    : shipments;
+
   if (loading) return <div className="p-6">Loading tracking board...</div>;
 
   return (
     <div className="p-6 h-screen flex flex-col bg-gray-50">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">📦 Shipment Tracking Board</h1>
-        <button onClick={() => router.push("/orders")} className="text-indigo-600">
+        <h1 className="mr-4 text-2xl font-bold">📦 Shipment Tracking Board</h1>
+        <input
+          type="search"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="ค้นหาเลขอ้างอิง ชื่อน้ำยา บริษัท เลข PO หรือเลขพัสดุ"
+          aria-label="ค้นหารายการจัดส่ง"
+          className="mr-auto min-h-[38px] w-full max-w-sm rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm"
+        />
+        <button onClick={() => router.push("/orders")} className="ml-4 shrink-0 text-indigo-600">
           ← กลับไปหน้าระบบสั่งซื้อ
         </button>
       </div>
 
       <div className="flex-1 flex gap-6 overflow-x-auto pb-4">
         {columns.map((column) => {
-          const columnShipments = shipments.filter((shipment) => shipment.status === column.id);
+          const columnShipments = visibleShipments.filter((shipment) => shipment.status === column.id);
           return (
             <div key={column.id} className="w-80 flex-shrink-0 bg-gray-200 rounded-lg p-4 flex flex-col max-h-full">
               <div className="flex justify-between items-center mb-4 px-1">
