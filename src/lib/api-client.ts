@@ -117,6 +117,8 @@ export interface UsageResponse {
   expiryRisks?: ExpiryRiskInsight[];
   /** Thai day of the latest count work order; refill after it is not known yet */
   lastCountDate?: string | null;
+  /** Admin/Manager only: Thai day of the latest count of each item (keyed by item id); an item that is not in it was never counted */
+  lastCountByItem?: Record<string, string>;
   /** Admin/Manager only: true when the refill from count work orders could not be loaded (numbers are dispense only) */
   refillUnavailable?: boolean;
   /** Admin/Manager only: the range the server used (end date cut to Thai today) and its number of days */
