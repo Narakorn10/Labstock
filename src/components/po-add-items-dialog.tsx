@@ -7,7 +7,7 @@ import { buildAddItemsBody, canSubmitLines, type NewLine } from "@/lib/po-add-it
 // shown for editing here. The server checks everything again (same company, active reagent of this room, not already
 // on the order, reason for a manual quantity, order still in review) and answers with the reason when it refuses.
 
-type CatalogReagent = { itemId: string; name: string; unit: string; quantity: number; minThreshold: number; vendor?: string; reagentType?: string };
+type CatalogReagent = { itemId: string; name: string; unit: string; quantity: number; minThreshold: number; vendor?: string; reagentType?: string; isActive?: boolean };
 
 type Props = {
   poId: number;
@@ -49,13 +49,22 @@ export function PoAddItemsDialog({ poId, vendor, existingItemIds, getAuthHeaders
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Esc closes the dialog (nothing is sent until the button is pressed).
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !submitting) onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, submitting]);
+
   const onOrder = useMemo(() => new Set(existingItemIds), [existingItemIds]);
   const chosen = useMemo(() => new Set(lines.map((line) => line.item_id)), [lines]);
 
   const choices = useMemo(() => {
     const term = search.trim().toLocaleLowerCase();
     return catalog
-      .filter((reagent) => reagent.vendor === vendor)
+      .filter((reagent) => reagent.vendor === vendor && reagent.isActive !== false)
       .filter((reagent) => !term || reagent.name.toLocaleLowerCase().includes(term) || reagent.itemId.toLocaleLowerCase().includes(term))
       .sort((left, right) => left.name.localeCompare(right.name, "th"))
       .slice(0, 50);

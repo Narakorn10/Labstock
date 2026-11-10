@@ -610,7 +610,9 @@ export default function PODetailPage() {
           existingItemIds={(po.items ?? []).map((item) => item.item_id)}
           getAuthHeaders={getAuthHeaders}
           onAdded={async (order) => {
-            setPo(order as PurchaseOrderDetail);
+            // The PATCH answer is the raw row (no current stock, no print details): read the order again like the first load does.
+            const fresh = await fetch(`/api/purchase-orders/${po.id}`, { headers: getAuthHeaders() }).catch(() => null);
+            setPo(fresh?.ok ? (await fresh.json()) as PurchaseOrderDetail : order as PurchaseOrderDetail);
             const eventRes = await fetch(`/api/purchase-orders/${po.id}/events`, { headers: getAuthHeaders() });
             if (eventRes.ok) setEvents(((await eventRes.json()) as { items?: PurchaseOrderEvent[] }).items ?? []);
             void notify({ title: "เพิ่มรายการแล้ว", description: "เพิ่มรายการน้ำยาเข้าใบนี้แล้ว บริษัทยังไม่เห็นใบนี้จนกว่าจะกดส่ง", severity: "success" });

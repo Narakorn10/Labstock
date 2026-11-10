@@ -231,6 +231,18 @@ describe("an order still waiting for the manager's review is not the Vendor's ye
     expect(await listPurchaseOrderEvents(pending, lab, { mode: "all" })).toMatchObject({ items: [expect.objectContaining({ event_type: "PO_REVIEW_REQUIRED" })] });
   });
 
+  it("'manager added lines' stays Lab-only even when the order was approved between the add and the record", async () => {
+    await sql.db.query("UPDATE purchase_orders SET status = 'SUBMITTED' WHERE id = $1", [pending]);
+    await recordPurchaseOrderCommunication({
+      poId: pending, eventType: "PO_ITEMS_ADDED", actor: { username: "adminA", role: "Admin" },
+      metadata: { fromStatus: "PENDING_MANAGER_REVIEW", action: "ADD_ITEMS_TO_MANAGER_REVIEW", items: [{ item_id: "X", reason: "INTERNAL LAB REASON" }] },
+    });
+    expect(await rows("SELECT visibility FROM purchase_order_events WHERE po_id = $1", [pending])).toEqual([{ visibility: "LAB" }]);
+    expect(JSON.stringify(await listPurchaseOrderEvents(pending, vendor, { mode: "legacy" }))).not.toContain("INTERNAL LAB REASON");
+    expect(await outbox(pending)).toEqual([]);
+    expect(JSON.stringify(await listPurchaseOrderEvents(pending, lab, { mode: "all" }))).toContain("INTERNAL LAB REASON");
+  });
+
   it("does not change what the Vendor gets for orders that are already sent", async () => {
     await recordPurchaseOrderCommunication({ poId: poA, eventType: "PO_STATUS_UPDATED", actor: { username: "adminA", role: "Admin" } });
     expect((await outbox(poA)).some((row) => row.recipient_role === "Vendor")).toBe(true);

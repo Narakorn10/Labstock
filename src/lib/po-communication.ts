@@ -100,7 +100,9 @@ export async function recordPurchaseOrderCommunication(input: {
   // /api/purchase-orders/[id] answers 403). Its events are for the Lab only, and nothing about it may reach the Vendor on
   // any channel, until it is approved and becomes SUBMITTED (that approval event is PO_CREATED with the new status).
   const hiddenFromVendor = isHiddenFromVendor(toStatus);
-  const visibility = hiddenFromVendor ? "LAB" : eventVisibility(input.actor?.role);
+  // PO_ITEMS_ADDED is Lab-only history whatever the status is when it gets written: the add commits first and the event is
+  // recorded after, so an approval in between must not turn it into something the Vendor can read (it carries internal reasons).
+  const visibility = hiddenFromVendor || input.eventType === "PO_ITEMS_ADDED" ? "LAB" : eventVisibility(input.actor?.role);
   // Decided before inserting anything. null = legacy (flag off). Ready but the PO has no valid department: fail closed
   // (timeline row only, nobody is notified) rather than throwing, so the caller's business action is not broken.
   const ready = await departmentsReady();
