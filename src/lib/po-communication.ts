@@ -14,6 +14,7 @@ export type PurchaseOrderCommunicationEvent =
   | "PO_RECEIVED"
   | "PO_CANCELLED"
   | "PO_LAB_RECEIPT_CONFIRMED"
+  | "PO_ITEMS_ADDED"
   | "SHIPMENT_REPLACEMENT_REQUIRED"
   | "VENDOR_RESPONSE_OVERDUE"
   | "DELIVERY_OVERDUE";
@@ -47,6 +48,8 @@ export function shouldNotifyRecipient(event: PurchaseOrderCommunicationEvent, ac
   const vendorRecipient = recipientRole === "Vendor";
   // Lab confirming receipt is recorded in the timeline only; nobody is notified.
   if (event === "PO_LAB_RECEIPT_CONFIRMED") return false;
+  // A manager adding reagent lines to an order still in review is history for the Lab only (owner decision: no notice to anyone).
+  if (event === "PO_ITEMS_ADDED") return false;
   // Late-Vendor reminders go to the Lab only; the Lab decides whether to chase or cancel.
   if (event === "VENDOR_RESPONSE_OVERDUE" || event === "DELIVERY_OVERDUE") return labRecipient;
   if (event === "PO_REVIEW_REQUIRED" || event === "SHIPMENT_REPLACEMENT_REQUIRED") return labRecipient || (event === "SHIPMENT_REPLACEMENT_REQUIRED" && vendorRecipient);
@@ -97,7 +100,9 @@ export async function recordPurchaseOrderCommunication(input: {
   // /api/purchase-orders/[id] answers 403). Its events are for the Lab only, and nothing about it may reach the Vendor on
   // any channel, until it is approved and becomes SUBMITTED (that approval event is PO_CREATED with the new status).
   const hiddenFromVendor = isHiddenFromVendor(toStatus);
-  const visibility = hiddenFromVendor ? "LAB" : eventVisibility(input.actor?.role);
+  // PO_ITEMS_ADDED is Lab-only history whatever the status is when it gets written: the add commits first and the event is
+  // recorded after, so an approval in between must not turn it into something the Vendor can read (it carries internal reasons).
+  const visibility = hiddenFromVendor || input.eventType === "PO_ITEMS_ADDED" ? "LAB" : eventVisibility(input.actor?.role);
   // Decided before inserting anything. null = legacy (flag off). Ready but the PO has no valid department: fail closed
   // (timeline row only, nobody is notified) rather than throwing, so the caller's business action is not broken.
   const ready = await departmentsReady();

@@ -15,6 +15,15 @@ describe("PO communication recipients", () => {
     }
   });
 
+  it("never notifies anyone when a manager adds lines to an order in review (history for the Lab only)", () => {
+    for (const recipientRole of ["Admin", "Manager", "Vendor", "User"]) {
+      for (const actorRole of ["Admin", "Manager", "Vendor", undefined]) {
+        expect(shouldNotifyRecipient("PO_ITEMS_ADDED", actorRole, recipientRole)).toBe(false);
+      }
+    }
+    for (const role of ["Admin", "Manager", "Vendor"]) expect(shouldSendLine("PO_ITEMS_ADDED", role, "ADD_ITEMS_TO_MANAGER_REVIEW")).toBe(false);
+  });
+
   it("still notifies the Vendor about the existing received event", () => {
     expect(shouldNotifyRecipient("PO_RECEIVED", "Manager", "Vendor")).toBe(true);
   });

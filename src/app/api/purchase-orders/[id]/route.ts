@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import sql from "@/lib/db";
 import { getAuthenticatedUser } from "@/lib/auth-utils";
 import { recordPurchaseOrderCommunication } from "@/lib/po-communication";
+import { addItemsToManagerReviewOrder } from "@/lib/purchase-order-add-items";
 import { applyLabReviewDecision, closePurchaseOrder, runGuardedPurchaseOrderUpdate } from "@/lib/purchase-order-review";
 import { confirmLabReceipt } from "@/lib/purchase-order-receipt";
 import { isLabPurchasingRole, validatePurchaseOrderItems } from "@/lib/purchase-order-workflow";
@@ -179,6 +180,33 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
           fromStatus: po.status,
           action,
           items: receipt.items.map(({ item_id, item_name, qty }) => ({ item_id, item_name, qty })),
+        },
+      });
+      const updatedRows = await sql`SELECT * FROM purchase_orders WHERE id = ${po.id}`;
+      const items = await sql`SELECT * FROM purchase_order_items WHERE po_id = ${po.id} ORDER BY id`;
+      return NextResponse.json({ ...updatedRows[0], items });
+    }
+
+    // A manager adds reagent lines to an order that is still waiting for their review (add only; see purchase-order-add-items.ts).
+    if (action === "ADD_ITEMS_TO_MANAGER_REVIEW") {
+      if (!isLab) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      const added = await addItemsToManagerReviewOrder(sql, {
+        po: { id: Number(po.id), vendor: String(po.vendor), status: String(po.status), proposal_origin: String(po.proposal_origin) },
+        items: body.items,
+        scope,
+      });
+      if (!added.ok) return NextResponse.json({ error: added.error }, { status: added.httpStatus });
+
+      await recordPurchaseOrderCommunication({
+        poId: Number(po.id),
+        eventType: "PO_ITEMS_ADDED",
+        actor: user,
+        source: "WEB",
+        note,
+        metadata: {
+          fromStatus: po.status,
+          action,
+          items: added.items.map(({ item_id, item_name, quantity, unit, override_reason }) => ({ item_id, item_name, quantity, unit, reason: override_reason })),
         },
       });
       const updatedRows = await sql`SELECT * FROM purchase_orders WHERE id = ${po.id}`;
