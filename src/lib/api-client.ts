@@ -539,6 +539,8 @@ export const apiClient = {
     newLotNo: string;
     newExpDate?: string;
     newQty: number;
+    /** The quantity of the lot the user saw: if it changed meanwhile the server answers 409 and writes nothing */
+    expectedQty: number;
     /** Optional reason, kept in the adjustment log */
     reason?: string;
   }) => {

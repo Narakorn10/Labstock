@@ -95,6 +95,7 @@ export default function ReagentDetailModal({
         newLotNo,
         newExpDate,
         newQty,
+        expectedQty: editingLot.qty,
         reason,
       });
 
@@ -107,8 +108,14 @@ export default function ReagentDetailModal({
       await onInventoryUpdated?.();
       setEditingLot(null);
     } catch (error: unknown) {
-      const appError = error as { response?: { data?: { error?: string } }; message?: string };
+      const appError = error as { response?: { status?: number; data?: { error?: string; currentQty?: number } }; message?: string };
       alert(appError.response?.data?.error || appError.message || 'Unable to update inventory.');
+      // The quantity changed while the dialog was open (the server sends currentQty only then): show the new numbers
+      // and close the form, so the user adjusts from the current quantity. A duplicate lot (also 409) keeps the form.
+      if (appError.response?.status === 409 && typeof appError.response?.data?.currentQty === 'number') {
+        await onInventoryUpdated?.();
+        setEditingLot(null);
+      }
     } finally {
       setSubmitting(false);
     }

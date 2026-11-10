@@ -6,6 +6,10 @@ import { getRequestId } from '@/lib/request-observability';
 import { andDept, andDeptWrite, deptInsert, getDepartmentScope, writeDepartmentId } from '@/lib/scoped-db';
 import { buildAdjustmentAction } from '@/lib/stock-adjustment-log';
 
+function quantityChangedMessage(currentQty: number) {
+  return `ยอดของ Lot นี้เปลี่ยนไปแล้ว (ปัจจุบัน ${currentQty}) อาจมีการเบิก รับเข้า หรือปรับยอดระหว่างที่เปิดหน้าต่างนี้ กรุณาปิดแล้วเปิดใหม่ก่อนปรับ`;
+}
+
 export async function POST(request: Request) {
   const requestId = getRequestId(request);
   try {
@@ -23,6 +27,13 @@ export async function POST(request: Request) {
 
     if (!Number.isInteger(inventoryId) || inventoryId <= 0 || !itemId || !newLotNo || Number.isNaN(newQty) || newQty < 0) {
       return NextResponse.json({ error: 'ข้อมูลไม่ครบหรือไม่ถูกต้อง' }, { status: 400 });
+    }
+
+    // The quantity the user saw when the dialog was opened. Without it (an old page) the adjustment is refused instead
+    // of silently overwriting a dispense or receipt made in between. A missing value must not turn into 0.
+    const expectedQty = body.expectedQty;
+    if (typeof expectedQty !== 'number' || !Number.isFinite(expectedQty) || expectedQty < 0) {
+      return NextResponse.json({ error: 'ข้อมูลไม่ครบ กรุณารีเฟรชหน้าแล้วลองใหม่' }, { status: 400 });
     }
 
     const scope = await getDepartmentScope(user);
@@ -46,7 +57,14 @@ export async function POST(request: Request) {
     const targetRow = targetRows[0];
     const itemName = targetRow.name || 'Unknown';
 
+    // Checked before the duplicate-lot check, so a page with old numbers is told to reopen first.
     const currentQty = Number(targetRow.quantity);
+    if (currentQty !== expectedQty) {
+      return NextResponse.json(
+        { error: quantityChangedMessage(currentQty), currentQty },
+        { status: 409 }
+      );
+    }
 
     // Deliberately NOT department-filtered: inventory is UNIQUE (item_id, lot_no, received_on) across ALL departments,
     // so a row of another department would still make the UPDATE fail with 23505 (a 500). Checking everything keeps the 409.
@@ -77,6 +95,9 @@ export async function POST(request: Request) {
       reason: body.reason,
     });
 
+    // The UPDATE only happens while the stored quantity is still the one that was checked above (compared as the
+    // exact NUMERIC text from the database, not as a JS number which rounds long decimals). A dispense or receipt
+    // that got in between makes it match no row: nothing is written and no log row is made.
     const result = await sql`
       WITH updated AS (
         UPDATE inventory
@@ -85,7 +106,8 @@ export async function POST(request: Request) {
           exp_date = ${newExpDate},
           quantity = ${newQty}
         WHERE id = ${inventoryId}
-          AND LOWER(item_id) = LOWER(${itemId})${andDeptWrite(scope)}
+          AND LOWER(item_id) = LOWER(${itemId})
+          AND quantity = ${String(targetRow.quantity)}::numeric${andDeptWrite(scope)}
         RETURNING item_id, lot_no
       )
       INSERT INTO logs (item_id, name, lot_no, action, quantity, username${d.column})
@@ -95,6 +117,18 @@ export async function POST(request: Request) {
     `;
 
     if (result.length === 0) {
+      // The row was found above, so no match means the quantity changed in between (same department scope as above).
+      const nowRows = await sql`
+        SELECT i.quantity
+        FROM inventory i
+        WHERE i.id = ${inventoryId}
+          AND LOWER(i.item_id) = LOWER(${itemId})${andDept(scope, 'i')}
+        LIMIT 1
+      `;
+      if (nowRows.length > 0) {
+        const nowQty = Number(nowRows[0].quantity);
+        return NextResponse.json({ error: quantityChangedMessage(nowQty), currentQty: nowQty }, { status: 409 });
+      }
       return NextResponse.json({ error: `ไม่พบรายการ ${itemName} ในสต๊อก` }, { status: 404 });
     }
 
