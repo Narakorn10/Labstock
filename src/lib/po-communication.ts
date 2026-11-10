@@ -37,6 +37,11 @@ function eventVisibility(actorRole?: string, recipientRole?: string) {
   return "BOTH";
 }
 
+/** True while the Vendor must not see the order or anything about it: the Lab's manager has not approved it yet. */
+export function isHiddenFromVendor(status: string | null | undefined) {
+  return status === "PENDING_MANAGER_REVIEW";
+}
+
 export function shouldNotifyRecipient(event: PurchaseOrderCommunicationEvent, actorRole: string | undefined, recipientRole: string) {
   const labRecipient = recipientRole === "Admin" || recipientRole === "Manager";
   const vendorRecipient = recipientRole === "Vendor";
@@ -88,7 +93,11 @@ export async function recordPurchaseOrderCommunication(input: {
   const poNumber = asString(po.po_number);
   const fromStatus = input.metadata?.fromStatus ? asString(input.metadata.fromStatus) : null;
   const toStatus = asString(po.status);
-  const visibility = eventVisibility(input.actor?.role);
+  // A Lab order waiting for the manager's review has not been sent to the Vendor yet (the Vendor cannot open it: GET
+  // /api/purchase-orders/[id] answers 403). Its events are for the Lab only, and nothing about it may reach the Vendor on
+  // any channel, until it is approved and becomes SUBMITTED (that approval event is PO_CREATED with the new status).
+  const hiddenFromVendor = isHiddenFromVendor(toStatus);
+  const visibility = hiddenFromVendor ? "LAB" : eventVisibility(input.actor?.role);
   // Decided before inserting anything. null = legacy (flag off). Ready but the PO has no valid department: fail closed
   // (timeline row only, nobody is notified) rather than throwing, so the caller's business action is not broken.
   const ready = await departmentsReady();
@@ -149,6 +158,7 @@ export async function recordPurchaseOrderCommunication(input: {
   const seenAddresses = new Set<string>();
   for (const recipient of recipients as Row[]) {
     const role = asString(recipient.role);
+    if (role === "Vendor" && hiddenFromVendor) continue;
     if (!shouldNotifyRecipient(input.eventType, input.actor?.role, role)) continue;
     if (!notificationEnabled(input.eventType, recipient)) continue;
     const payload = JSON.stringify({
@@ -208,9 +218,11 @@ export async function recordPurchaseOrderCommunication(input: {
 
 export async function listPurchaseOrderEvents(poId: number, user: AuthenticatedUser, scope: DepartmentScope, before?: number, limit = 50) {
   assertPurchaseOrderScope(scope, "listPurchaseOrderEvents"); // before any SQL
-  const poRows = await sql`SELECT vendor FROM purchase_orders WHERE id = ${poId}${andDept(scope)} LIMIT 1`;
+  const poRows = await sql`SELECT vendor, status FROM purchase_orders WHERE id = ${poId}${andDept(scope)} LIMIT 1`;
   if (!poRows.length) return null;
   if (user.role === "Vendor" && poRows[0].vendor !== user.vendor) return "FORBIDDEN" as const;
+  // Same rule as GET /api/purchase-orders/[id]: an order still waiting for the manager's review is not the Vendor's yet.
+  if (user.role === "Vendor" && isHiddenFromVendor(asString(poRows[0].status))) return "FORBIDDEN" as const;
   const safeLimit = Math.min(Math.max(limit, 1), 100);
   const rows = user.role === "Vendor"
     ? await sql`
