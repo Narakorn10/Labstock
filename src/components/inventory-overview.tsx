@@ -897,12 +897,11 @@ export default function InventoryOverview() {
           key={selectedReagent.itemId}
           isOpen
           onClose={() => setSelectedReagent(null)}
-          reagent={selectedReagent}
+          // The open reagent follows the reloaded list, so lot, expiry and quantity show the saved values
+          // while the dialog stays open after an adjustment.
+          reagent={reagents.find((item) => item.itemId === selectedReagent.itemId) ?? selectedReagent}
           canReconcile={isPowerUser}
-          onInventoryUpdated={async () => {
-            setSelectedReagent(null);
-            await fetchData();
-          }}
+          onInventoryUpdated={fetchData}
         />
       )}
     </div>

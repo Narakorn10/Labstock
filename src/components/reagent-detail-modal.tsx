@@ -32,6 +32,9 @@ export default function ReagentDetailModal({
 }: ReagentDetailModalProps) {
   const [editingLot, setEditingLot] = useState<Lot | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Lots adjusted while this dialog is open. The list only holds lots with stock, so a lot adjusted to 0
+  // would vanish; it is kept here (quantity 0) until the dialog closes.
+  const [adjustedLots, setAdjustedLots] = useState<Lot[]>([]);
 
   const formatThaiDate = (value?: string) => {
     if (!value) return '-';
@@ -65,6 +68,16 @@ export default function ReagentDetailModal({
 
   if (!reagent) return null;
 
+  const listedLots = reagent.lots ?? [];
+  const keptLots = adjustedLots.filter(
+    (adjusted) => adjusted.qty <= 0 && !listedLots.some((lot) => lot.inventoryId === adjusted.inventoryId),
+  );
+  const lots = [...listedLots, ...keptLots].sort(
+    (a, b) =>
+      (a.expDate || '9999-12-31').localeCompare(b.expDate || '9999-12-31') ||
+      (a.receivedOn || '').localeCompare(b.receivedOn || '') ||
+      a.inventoryId - b.inventoryId,
+  );
   const isLow = reagent.quantity <= reagent.minThreshold;
   const now = new Date();
   const thirtyDays = new Date();
@@ -100,8 +113,13 @@ export default function ReagentDetailModal({
         return;
       }
 
-      setEditingLot(null);
+      setAdjustedLots((previous) => [
+        ...previous.filter((lot) => lot.inventoryId !== editingLot.inventoryId),
+        { ...editingLot, lotNo: newLotNo, expDate: newExpDate, qty: newQty },
+      ]);
+      // Reload first and keep the dialog open, so the saved lot, expiry and quantity stay in view.
       await onInventoryUpdated?.();
+      setEditingLot(null);
     } catch (error: unknown) {
       const appError = error as { response?: { data?: { error?: string } }; message?: string };
       alert(appError.response?.data?.error || appError.message || 'Unable to update inventory.');
@@ -206,8 +224,8 @@ export default function ReagentDetailModal({
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {reagent.lots && reagent.lots.length > 0 ? (
-                  reagent.lots.map((lot) => {
+                {lots.length > 0 ? (
+                  lots.map((lot) => {
                     const expDate = new Date(lot.expDate);
                     const isExpired = expDate < now;
                     const isNear = expDate < thirtyDays && !isExpired;
@@ -262,6 +280,11 @@ export default function ReagentDetailModal({
               </tbody>
             </table>
           </div>
+          {keptLots.length > 0 && (
+            <p className="text-xs font-bold text-gray-500">
+              Lot ที่ปรับยอดเป็น 0 จะแสดงค้างไว้จนกว่าจะปิดหน้าต่างนี้ เปิดใหม่แล้วจะแสดงเฉพาะ Lot ที่ยังมีของ
+            </p>
+          )}
         </div>
 
         {canReconcile && editingLot && (
