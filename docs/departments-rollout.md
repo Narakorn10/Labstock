@@ -581,3 +581,18 @@ SELECT conname, conrelid::regclass FROM pg_constraint WHERE confrelid = 'public.
 
 **ความมั่นใจ:** ตรวจด้วย unit test และฐานข้อมูลจำลองในหน่วยความจำ (PGlite) เท่านั้น **ยังไม่ได้ลองสมัครจริงบนฐานข้อมูลจริง**
 ไม่มี migration และไม่มีตัวแปร env ใหม่ ไม่แตะ `account-status`, `members` หรือ route ของ Vendor
+
+## Super admin (v37) — ลำดับปล่อยระบบ
+
+Super admin = ผู้ใช้ที่ `role = 'Admin'` และ `users.is_super_admin = true` และ active (ตรวจจากฐานข้อมูลทุกครั้ง) ตอนนี้กำหนดให้ `5783` คนเดียว ยังไม่มีหน้าจอตั้ง Super admin (ตั้งด้วย SQL เท่านั้น)
+
+ลำดับ (ทุกขั้นที่เขียน production ต้องขออนุมัติเจ้าของ และเจ้าของรันเอง):
+
+1. Deploy โค้ด (ปลอดภัย: ถ้ายังไม่มีคอลัมน์ ระบบตอบว่า "ไม่ใช่ Super admin" ไม่ error)
+2. ซ้อม `upgrade_v37_super_admin.sql` แล้ว `upgrade_v37_super_admin_grant.sql` บน Neon branch แยก (ห้ามซ้อมบน `production`)
+3. snapshot แล้วรัน `node scripts/apply-migration.mjs upgrade_v37_super_admin.sql --confirm-host=<non-pooler host>` บน production
+4. รัน `upgrade_v37_super_admin_grant.sql` ด้วยวิธีเดียวกัน
+5. ตรวจแบบอ่านอย่างเดียว: `SELECT username, role, is_super_admin FROM users WHERE is_super_admin;` ต้องได้เฉพาะ `5783`
+6. ล็อกอินเป็น `5783` เรียก `GET /api/super-admin/status` ต้องได้ 200 `{"superAdmin":true}`; ล็อกอินเป็น Admin อื่นต้องได้ 403; ไม่ล็อกอินต้องได้ 401
+
+ย้อนกลับ: ส่งออกรายชื่อก่อน (`SELECT username FROM users WHERE is_super_admin;`) แล้วรัน `upgrade_v37_super_admin_rollback.sql` (โค้ดยังทำงานได้ปกติโดยไม่มีคอลัมน์)
