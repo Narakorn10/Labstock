@@ -4,11 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Bar,
   BarChart,
-  CartesianGrid,
   Cell,
   LabelList,
-  Line,
-  LineChart,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -37,10 +34,23 @@ import {
   UsageData
 } from '@/lib/api-client';
 import { useAuth } from '@/components/auth-provider';
-import { ItemUsagePanel } from '@/components/analysis/item-usage-panel';
+import {
+  buildUsageRows,
+  DailyUsageChart,
+  ItemUsagePanel,
+  REFILL_COLOR,
+  RefillUnavailableNotice,
+  REGULAR_COLOR,
+  UsageLegend,
+  UsageTooltip
+} from '@/components/analysis/item-usage-panel';
+import { ItemSummaryTable } from '@/components/analysis/item-summary-table';
+import { MonthlyUsageTable } from '@/components/analysis/monthly-usage-table';
+import { buildItemSummaryRows, buildMonthlyMatrix } from '@/lib/analysis-summary';
+import { resolveDateInput, toLocalIsoDate } from '@/lib/local-date';
 
 type RiskFilter = 'all' | ReorderStatus;
-type AnalysisTab = 'overview' | 'item';
+type AnalysisTab = 'overview' | 'item' | 'summary';
 
 const statusMeta: Record<ReorderStatus, { label: string; color: string; badge: string }> = {
   normal: { label: 'ปกติ', color: '#237a3f', badge: 'bg-ok-bg text-ok' },
@@ -52,10 +62,6 @@ function formatNumber(value: number, maximumFractionDigits = 1) {
   return new Intl.NumberFormat('th-TH', { maximumFractionDigits }).format(value);
 }
 
-function toIsoDate(date: Date) {
-  return date.toISOString().slice(0, 10);
-}
-
 export default function AnalysisPage() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -64,6 +70,10 @@ export default function AnalysisPage() {
   const [dailyStats, setDailyStats] = useState<DailyStat[]>([]);
   const [insights, setInsights] = useState<ReagentUsageInsight[]>([]);
   const [expiryRisks, setExpiryRisks] = useState<ExpiryRiskInsight[]>([]);
+  const [lastCountDate, setLastCountDate] = useState<string | null>(null);
+  const [range, setRange] = useState<{ startDate: string; endDate: string; days: number } | null>(null);
+  const [firstLogDate, setFirstLogDate] = useState<string | null>(null);
+  const [refillUnavailable, setRefillUnavailable] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState('TOTAL');
   const [riskFilter, setRiskFilter] = useState<RiskFilter>('all');
   const [tab, setTab] = useState<AnalysisTab>('overview');
@@ -71,9 +81,41 @@ export default function AnalysisPage() {
   const [startDate, setStartDate] = useState(() => {
     const date = new Date();
     date.setDate(date.getDate() - 89);
-    return toIsoDate(date);
+    return toLocalIsoDate(date);
   });
-  const [endDate, setEndDate] = useState(() => toIsoDate(new Date()));
+  const [endDate, setEndDate] = useState(() => toLocalIsoDate(new Date()));
+  // What the date inputs show while typing; startDate/endDate (used to fetch) only change once the draft is a real date.
+  const [startInput, setStartInput] = useState(startDate);
+  const [endInput, setEndInput] = useState(endDate);
+
+  const today = toLocalIsoDate(new Date());
+  const applyDates = (start: string, end: string) => {
+    setStartDate(start);
+    setEndDate(end);
+    setStartInput(start);
+    setEndInput(end);
+  };
+  // Days in the future have no usage: never let a date past today in, and keep start <= end.
+  // A date input also sends half typed values (e.g. year 0002 while typing 2026): show them, but do not fetch them.
+  const changeStartDate = (value: string) => {
+    setStartInput(value);
+    const { commit } = resolveDateInput(value, endDate, 'start', today);
+    if (commit) applyDates(commit.start, commit.end);
+  };
+  const changeEndDate = (value: string) => {
+    setEndInput(value);
+    const { commit } = resolveDateInput(value, startDate, 'end', today);
+    if (commit) applyDates(commit.start, commit.end);
+  };
+  const selectLast90Days = () => {
+    const date = new Date();
+    date.setDate(date.getDate() - 89);
+    applyDates(toLocalIsoDate(date), today);
+  };
+  const selectAllDays = () => {
+    if (!firstLogDate) return;
+    applyDates(firstLogDate > today ? today : firstLogDate, today);
+  };
 
   const canPlanPurchases = user?.role === 'Admin' || user?.role === 'Manager';
 
@@ -89,6 +131,10 @@ export default function AnalysisPage() {
         setDailyStats(response.dailyStats || []);
         setInsights(response.insights || []);
         setExpiryRisks(response.expiryRisks || []);
+        setLastCountDate(response.lastCountDate ?? null);
+        setRange(response.range ?? null);
+        setFirstLogDate(response.firstLogDate ?? null);
+        setRefillUnavailable(response.refillUnavailable === true);
       } catch (fetchError) {
         console.error('Usage Fetch Error:', fetchError);
         if (!cancelled) setError('ไม่สามารถดึงข้อมูลวิเคราะห์การใช้น้ำยาได้');
@@ -108,32 +154,36 @@ export default function AnalysisPage() {
 
   const dailyTrend = useMemo(() => {
     const totals = new Map(dailyStats.map((stat) => [stat.date, stat]));
-    const start = new Date(`${startDate}T00:00:00`);
-    const end = new Date(`${endDate}T00:00:00`);
-    const rows: Array<{ date: string; displayDate: string; used: number; average7Days: number }> = [];
-    const cursor = new Date(start);
-
-    while (cursor <= end) {
-      const date = toIsoDate(cursor);
+    return buildUsageRows(startDate, endDate, (date) => {
       const stat = totals.get(date);
-      const used = selectedItemId === 'TOTAL'
-        ? stat?.totalDispensed || 0
-        : stat?.items[selectedItemId] || 0;
-      const recentValues = [...rows.slice(-6).map((row) => row.used), used];
-      rows.push({
-        date,
-        displayDate: new Intl.DateTimeFormat('th-TH', { day: 'numeric', month: 'short' }).format(cursor),
-        used,
-        average7Days: recentValues.reduce((sum, value) => sum + value, 0) / recentValues.length
-      });
-      cursor.setDate(cursor.getDate() + 1);
-    }
-    return rows;
+      return selectedItemId === 'TOTAL'
+        ? { regular: stat?.totalDispensed || 0, refill: stat?.totalRefill || 0 }
+        : { regular: stat?.items[selectedItemId] || 0, refill: stat?.itemsRefill?.[selectedItemId] || 0 };
+    });
   }, [dailyStats, endDate, selectedItemId, startDate]);
 
-  const topUsage = useMemo(() => [...usage]
-    .sort((left, right) => right.dispensed - left.dispensed)
+  // Top 10 by real usage (regular dispense + refill); an account without refill data falls back to the regular dispense.
+  const topUsage = useMemo(() => usage
+    .map((row) => ({ ...row, regular: row.dispensed, refill: row.refill ?? 0, total: row.usage ?? row.dispensed }))
+    .sort((left, right) => right.total - left.total)
     .slice(0, 10), [usage]);
+
+  const summaryRange = useMemo(() => {
+    if (range) return range;
+    const days = Math.max(1, Math.floor((Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`)) / 86_400_000) + 1);
+    return { startDate, endDate, days };
+  }, [endDate, range, startDate]);
+  const monthlyMatrix = useMemo(
+    () => buildMonthlyMatrix(dailyStats, { startDate: summaryRange.startDate, endDate: summaryRange.endDate }),
+    [dailyStats, summaryRange]
+  );
+  const summaryRows = useMemo(() => buildItemSummaryRows(insights, usage, summaryRange.days), [insights, summaryRange.days, usage]);
+  const itemNameOf = useMemo(() => {
+    const names = new Map<string, string>();
+    for (const row of usage) names.set(row.itemId.toLowerCase(), row.name);
+    for (const item of insights) names.set(item.itemId.toLowerCase(), item.name);
+    return (itemId: string) => names.get(itemId.toLowerCase()) ?? itemId;
+  }, [insights, usage]);
 
   const riskItems = useMemo(() => insights
     .filter((item) => item.status !== 'normal')
@@ -186,9 +236,8 @@ export default function AnalysisPage() {
     );
   }
 
-  const peakUsage = dailyTrend.reduce((max, row) => Math.max(max, row.used), 0);
+  const peakUsage = dailyTrend.reduce((max, row) => Math.max(max, row.total), 0);
   const cardClass = 'rounded-2xl border border-line bg-white p-5';
-  const axisTick = { fontSize: 12, fill: '#6b6e72' };
   const nameTick = { fontSize: 12, fill: '#1d1f20' };
   const shortDate = (value: string) => new Date(`${value.slice(0, 10)}T00:00:00`).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
@@ -199,15 +248,30 @@ export default function AnalysisPage() {
           <h1 className="text-[32px] leading-tight font-medium text-ink">Dashboard การใช้น้ำยา</h1>
           <p className="mt-1.5 text-[15px] text-gray-600">จัดลำดับน้ำยาที่ควรสั่งซื้อจากยอดเบิกย้อนหลัง 90 วัน</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2 rounded-[10px] border border-line bg-white px-3 py-1.5 text-sm">
-          <Calendar size={16} className="text-gray-600" aria-hidden="true" />
-          <input type="date" aria-label="วันที่เริ่มต้น" value={startDate} onChange={(event) => setStartDate(event.target.value)} className="bg-transparent p-1 text-sm outline-none" />
-          <span className="text-gray-600">ถึง</span>
-          <input type="date" aria-label="วันที่สิ้นสุด" value={endDate} onChange={(event) => setEndDate(event.target.value)} className="bg-transparent p-1 text-sm outline-none" />
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex gap-2" role="group" aria-label="เลือกช่วงวันเร็ว ๆ">
+            <button type="button" onClick={selectLast90Days} className="rounded-full border border-line bg-white px-3.5 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50">90 วัน</button>
+            <button
+              type="button"
+              onClick={selectAllDays}
+              disabled={!firstLogDate}
+              title={firstLogDate ? undefined : 'ยังไม่มีประวัติการใช้'}
+              className="rounded-full border border-line bg-white px-3.5 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              ทั้งหมด
+            </button>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 rounded-[10px] border border-line bg-white px-3 py-1.5 text-sm">
+            <Calendar size={16} className="text-gray-600" aria-hidden="true" />
+            <input type="date" aria-label="วันที่เริ่มต้น" value={startInput} max={endDate} onChange={(event) => changeStartDate(event.target.value)} onBlur={() => setStartInput(startDate)} className="bg-transparent p-1 text-sm outline-none" />
+            <span className="text-gray-600">ถึง</span>
+            <input type="date" aria-label="วันที่สิ้นสุด" value={endInput} min={startDate} max={today} onChange={(event) => changeEndDate(event.target.value)} onBlur={() => setEndInput(endDate)} className="bg-transparent p-1 text-sm outline-none" />
+          </div>
         </div>
       </div>
 
       {error && <div role="alert" className="flex items-center gap-3 rounded-xl bg-crit-bg px-4 py-3 text-sm font-medium text-crit"><AlertTriangle size={20} />{error}</div>}
+      {refillUnavailable && <RefillUnavailableNotice />}
 
       {!canPlanPurchases ? (
         <div className="flex items-center gap-3 rounded-2xl bg-warn-bg px-6 py-5 text-[15px] font-medium text-warn">
@@ -216,7 +280,7 @@ export default function AnalysisPage() {
         </div>
       ) : <>
         <div className="flex gap-2" role="tablist" aria-label="มุมมองการวิเคราะห์">
-          {([['overview', 'ภาพรวม'], ['item', 'รายน้ำยา']] as Array<[AnalysisTab, string]>).map(([value, label]) => (
+          {([['overview', 'ภาพรวม'], ['item', 'รายน้ำยา'], ['summary', 'สรุปรายน้ำยา']] as Array<[AnalysisTab, string]>).map(([value, label]) => (
             <button
               key={value}
               type="button"
@@ -230,7 +294,27 @@ export default function AnalysisPage() {
           ))}
         </div>
 
-        {tab === 'item' ? (
+        {tab === 'summary' ? (
+          <div className="min-w-0 space-y-6">
+            <section aria-labelledby="summary-heading" className={cardClass}>
+              <h2 id="summary-heading" className="text-xl font-medium">สรุปยอดใช้ต่อน้ำยา</h2>
+              <p className="mb-3 mt-0.5 text-[13px] text-gray-600">
+                ยอดใช้จริง = เบิกไปหน้างาน + เบิกเติม ช่วง {shortDate(summaryRange.startDate)} ถึง {shortDate(summaryRange.endDate)} ({summaryRange.days} วัน) กดแถวเพื่อดูรายละเอียดน้ำยานั้น
+              </p>
+              <ItemSummaryTable rows={summaryRows} onSelectItem={openItemDetail} />
+              <p className="mt-3 text-[13px] text-gray-600">
+                ค่าเฉลี่ยต่อวันและต่อสัปดาห์ใช้ยอดใช้จริงของช่วงที่เลือก ส่วนวันจนถึง Min ใช้เกณฑ์เดียวกับแผนจัดซื้อ (เบิกไปหน้างาน 90 วันล่าสุด) จึงอาจไม่ตรงกับค่าเฉลี่ยในตาราง
+              </p>
+            </section>
+            <section aria-labelledby="monthly-heading" className={cardClass}>
+              <h2 id="monthly-heading" className="text-xl font-medium">ยอดใช้รายเดือน</h2>
+              <p className="mb-3 mt-0.5 text-[13px] text-gray-600">
+                เลื่อนตารางไปทางขวาเพื่อดูเดือนอื่น เดือนที่มีเครื่องหมาย * คือเดือนที่ไม่เต็ม (มีแค่บางวันในช่วงที่เลือก) กดแถวเพื่อดูรายละเอียดน้ำยานั้น
+              </p>
+              <MonthlyUsageTable matrix={monthlyMatrix} nameOf={itemNameOf} onSelectItem={openItemDetail} />
+            </section>
+          </div>
+        ) : tab === 'item' ? (
           <ItemUsagePanel
             items={insights}
             selectedItemId={detailItemId}
@@ -297,43 +381,32 @@ export default function AnalysisPage() {
             <div className="mb-3 flex flex-wrap items-start gap-2.5">
               <TrendingUp className="mt-0.5 text-blue-800" size={20} strokeWidth={1.5} aria-hidden="true" />
               <div className="mr-auto">
-                <h2 id="trend-heading" className="text-xl font-medium">แนวโน้มการใช้รายวัน</h2>
-                <p className="mt-0.5 text-[13px] text-gray-600">{selectedItem ? selectedItem.name : 'ภาพรวมทุกน้ำยา'} พร้อมค่าเฉลี่ยเคลื่อนที่ 7 วัน</p>
+                <h2 id="trend-heading" className="text-xl font-medium">แนวโน้มยอดใช้จริงรายวัน</h2>
+                <p className="mt-0.5 text-[13px] text-gray-600">{selectedItem ? selectedItem.name : 'ภาพรวมทุกน้ำยา'} · เบิกไปหน้างาน + เบิกเติม พร้อมค่าเฉลี่ยเคลื่อนที่ 7 วัน</p>
               </div>
               {selectedItemId !== 'TOTAL' && (
                 <button type="button" onClick={() => setSelectedItemId('TOTAL')} className="rounded-[10px] border border-line bg-white px-3 py-1.5 text-[13px] font-medium text-ink hover:bg-gray-50">ดูภาพรวม</button>
               )}
             </div>
-            <div className="mb-2 flex items-center gap-4 text-[13px] text-gray-600">
-              <span className="inline-flex items-center gap-1.5"><span className="h-0.5 w-3.5 bg-[#3f5f80]" aria-hidden="true" />ยอดเบิก</span>
-              <span className="inline-flex items-center gap-1.5"><span className="w-3.5 border-t-2 border-dashed border-[#a5670f]" aria-hidden="true" />เฉลี่ย 7 วัน</span>
-              <span className="ml-auto">สูงสุด {formatNumber(peakUsage, 0)} / วัน</span>
+            <p className="mb-2 text-right text-[13px] text-gray-600">สูงสุด {formatNumber(peakUsage, 1)} / วัน</p>
+            <div className="h-64" role="img" aria-label="กราฟแท่งยอดใช้จริงรายวัน แยกเบิกไปหน้างานและเบิกเติม">
+              <DailyUsageChart rows={dailyTrend} lastCountDate={lastCountDate} />
             </div>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={dailyTrend} margin={{ left: 0, right: 8 }}>
-                  <CartesianGrid stroke="#dcdcdf" strokeDasharray="0" vertical={false} />
-                  <XAxis dataKey="displayDate" minTickGap={60} tick={axisTick} tickLine={false} axisLine={false} />
-                  <YAxis hide />
-                  <Tooltip />
-                  <Line type="linear" dataKey="used" name="ยอดเบิก" stroke="#3f5f80" strokeWidth={1.5} dot={false} />
-                  <Line type="linear" dataKey="average7Days" name="เฉลี่ย 7 วัน" stroke="#a5670f" strokeWidth={1.5} strokeDasharray="4 3" dot={false} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
+            <UsageLegend shaded={Boolean(lastCountDate && lastCountDate < endDate)} />
           </section>
 
           <section aria-labelledby="top-heading" className={cardClass}>
             <h2 id="top-heading" className="text-xl font-medium">Top 10 น้ำยาที่ใช้มากสุด</h2>
-            <p className="mb-3 mt-0.5 text-[13px] text-gray-600">ตามช่วงวันที่เลือก กดแท่งเพื่อดูแนวโน้ม</p>
+            <p className="mb-3 mt-0.5 text-[13px] text-gray-600">ยอดใช้จริง (เบิกไปหน้างาน + เบิกเติม) ตามช่วงวันที่เลือก กดแท่งเพื่อดูแนวโน้ม</p>
             <div className="h-[22rem]">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={topUsage} layout="vertical" margin={{ left: 8, right: 28 }} onClick={selectChartItem}>
                   <XAxis type="number" hide />
                   <YAxis type="category" dataKey="name" width={205} tick={nameTick} tickLine={false} axisLine={false} />
-                  <Tooltip />
-                  <Bar dataKey="dispensed" name="ยอดเบิก" fill="#5980a6" barSize={16} radius={[0, 4, 4, 0]} cursor="pointer">
-                    <LabelList dataKey="dispensed" position="right" style={{ fontSize: 12, fontWeight: 600, fill: '#1d1f20' }} />
+                  <Tooltip content={<UsageTooltip />} />
+                  <Bar dataKey="regular" name="เบิกไปหน้างาน" stackId="usage" fill={REGULAR_COLOR} barSize={16} cursor="pointer" />
+                  <Bar dataKey="refill" name="เบิกเติม" stackId="usage" fill={REFILL_COLOR} barSize={16} radius={[0, 4, 4, 0]} cursor="pointer">
+                    <LabelList dataKey="total" position="right" style={{ fontSize: 12, fontWeight: 600, fill: '#1d1f20' }} />
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>

@@ -1,6 +1,7 @@
 import sql from "@/lib/db";
 import { andDept, type DepartmentScope } from "@/lib/scoped-db";
 import { computeReorderInsight, daysFromToday, type ReorderStatus } from "@/lib/reagent-usage-insights";
+import { getRefillOrUnavailable } from "@/lib/real-usage";
 
 const DISPENSE_ACTION = "เบิกไปหน้างาน";
 const RECEIVE_ACTION = "รับเข้าสต๊อกหลัก";
@@ -24,6 +25,11 @@ export interface ItemUsageDetail {
     averageDailyUsage: number;
     averageWeeklyUsage: number;
     lastDispensedAt: string | null;
+    /** refill from count work orders spread over the days it covers (see real-usage.ts), and dispensed + refill */
+    refill: number;
+    usage: number;
+    averageDailyTotal: number;
+    averageWeeklyTotal: number;
   };
   reorder: {
     dispensedLast90Days: number;
@@ -32,8 +38,13 @@ export interface ItemUsageDetail {
     status: ReorderStatus;
     recommendedOrderQty: number;
   };
-  daily: Array<{ date: string; qty: number }>;
-  monthly: Array<{ month: string; qty: number }>;
+  /** qty is the regular dispense (as before); regular is the same number; total = regular + refill */
+  daily: Array<{ date: string; qty: number; regular: number; refill: number; total: number }>;
+  monthly: Array<{ month: string; qty: number; regular: number; refill: number; total: number }>;
+  /** Thai day of the latest count of this reagent (the refill of days from then on is not known yet), or null */
+  lastCountDate: string | null;
+  /** Only present (true) when the refill from count work orders could not be read: refill is 0 and usage is the regular dispense only */
+  refillUnavailable?: boolean;
   byLot: Array<{ lotNo: string; qty: number }>;
   byUser: Array<{ username: string; qty: number; count: number }>;
   lotsOnHand: Array<{ lotNo: string; expDate: string; receivedOn: string; quantity: number; daysUntilExpiry: number | null }>;
@@ -50,6 +61,18 @@ type ItemRow = {
 };
 
 const num = (value: unknown) => Number(value) || 0;
+const round2 = (value: number) => Math.round(value * 100) / 100;
+
+/** Regular and refill quantities per key (day or month), keys in ascending order. */
+function mergeByKey(regular: Array<{ key: string; qty: number }>, refill: Map<string, number>) {
+  const regularByKey = new Map(regular.map((row) => [row.key, row.qty]));
+  const keys = [...new Set([...regularByKey.keys(), ...refill.keys()])].sort();
+  return keys.map((key) => {
+    const regularQty = regularByKey.get(key) ?? 0;
+    const refillQty = round2(refill.get(key) ?? 0);
+    return { key, qty: regularQty, regular: regularQty, refill: refillQty, total: round2(regularQty + refillQty) };
+  });
+}
 
 function daysInRange(startDate: string, endDate: string) {
   const start = Date.parse(`${startDate}T00:00:00Z`);
@@ -79,7 +102,7 @@ export async function getReagentItemUsage(itemId: string, startDate: string, end
   const row = (itemRows as unknown as ItemRow[])[0];
   if (!row) return null;
 
-  const [totalRows, dailyRows, monthlyRows, lotRows, userRows, onHandRows] = await Promise.all([
+  const [totalRows, dailyRows, monthlyRows, lotRows, userRows, onHandRows, refillResult] = await Promise.all([
     sql`
       SELECT
         SUM(CASE WHEN action = ${DISPENSE_ACTION} THEN quantity ELSE 0 END) AS dispensed,
@@ -89,26 +112,26 @@ export async function getReagentItemUsage(itemId: string, startDate: string, end
         MAX(timestamp) FILTER (WHERE action = ${DISPENSE_ACTION}) AS "lastDispensedAt"
       FROM logs
       WHERE item_id = ${itemId}
-        AND timestamp >= ${startDate}::date
-        AND timestamp < (${endDate}::date + INTERVAL '1 day')${andDept(scope)}
+        AND timestamp >= (${startDate}::date)::timestamp AT TIME ZONE 'Asia/Bangkok'
+        AND timestamp < (${endDate}::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok'${andDept(scope)}
     `,
     sql`
-      SELECT TO_CHAR(timestamp, 'YYYY-MM-DD') AS date, SUM(quantity) AS qty
+      SELECT TO_CHAR(timestamp AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD') AS date, SUM(quantity) AS qty
       FROM logs
       WHERE item_id = ${itemId}
         AND action = ${DISPENSE_ACTION}
-        AND timestamp >= ${startDate}::date
-        AND timestamp < (${endDate}::date + INTERVAL '1 day')${andDept(scope)}
+        AND timestamp >= (${startDate}::date)::timestamp AT TIME ZONE 'Asia/Bangkok'
+        AND timestamp < (${endDate}::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok'${andDept(scope)}
       GROUP BY date
       ORDER BY date ASC
     `,
     sql`
-      SELECT TO_CHAR(timestamp, 'YYYY-MM') AS month, SUM(quantity) AS qty
+      SELECT TO_CHAR(timestamp AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM') AS month, SUM(quantity) AS qty
       FROM logs
       WHERE item_id = ${itemId}
         AND action = ${DISPENSE_ACTION}
-        AND timestamp >= ${startDate}::date
-        AND timestamp < (${endDate}::date + INTERVAL '1 day')${andDept(scope)}
+        AND timestamp >= (${startDate}::date)::timestamp AT TIME ZONE 'Asia/Bangkok'
+        AND timestamp < (${endDate}::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok'${andDept(scope)}
       GROUP BY month
       ORDER BY month ASC
     `,
@@ -117,8 +140,8 @@ export async function getReagentItemUsage(itemId: string, startDate: string, end
       FROM logs
       WHERE item_id = ${itemId}
         AND action = ${DISPENSE_ACTION}
-        AND timestamp >= ${startDate}::date
-        AND timestamp < (${endDate}::date + INTERVAL '1 day')${andDept(scope)}
+        AND timestamp >= (${startDate}::date)::timestamp AT TIME ZONE 'Asia/Bangkok'
+        AND timestamp < (${endDate}::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok'${andDept(scope)}
       GROUP BY 1
       ORDER BY qty DESC
     `,
@@ -127,8 +150,8 @@ export async function getReagentItemUsage(itemId: string, startDate: string, end
       FROM logs
       WHERE item_id = ${itemId}
         AND action = ${DISPENSE_ACTION}
-        AND timestamp >= ${startDate}::date
-        AND timestamp < (${endDate}::date + INTERVAL '1 day')${andDept(scope)}
+        AND timestamp >= (${startDate}::date)::timestamp AT TIME ZONE 'Asia/Bangkok'
+        AND timestamp < (${endDate}::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok'${andDept(scope)}
       GROUP BY 1
       ORDER BY qty DESC
       LIMIT ${TOP_USERS_LIMIT}
@@ -138,12 +161,24 @@ export async function getReagentItemUsage(itemId: string, startDate: string, end
       FROM inventory
       WHERE item_id = ${itemId} AND quantity > 0${andDept(scope)}
       ORDER BY NULLIF(exp_date::text, '') ASC NULLS LAST, received_on ASC
-    `
+    `,
+    getRefillOrUnavailable(scope, startDate, endDate, row.itemId)
   ]);
+
+  const refillByDay = new Map<string, number>();
+  const refillByMonth = new Map<string, number>();
+  let refill = 0;
+  for (const r of refillResult.rows) {
+    refillByDay.set(r.date, (refillByDay.get(r.date) ?? 0) + r.qty);
+    refillByMonth.set(r.date.slice(0, 7), (refillByMonth.get(r.date.slice(0, 7)) ?? 0) + r.qty);
+    refill += r.qty;
+  }
+  refill = round2(refill);
 
   const totals = (totalRows as Array<Record<string, unknown>>)[0] || {};
   const days = daysInRange(startDate, endDate);
   const dispensed = num(totals.dispensed);
+  const usage = round2(dispensed + refill);
   const quantity = num(row.quantity);
   const minThreshold = num(row.minThreshold);
   const { dispensedLast90Days, averageDailyUsage, daysUntilMin, status, recommendedOrderQty } =
@@ -166,11 +201,19 @@ export async function getReagentItemUsage(itemId: string, startDate: string, end
       dispenseCount: num(totals.dispenseCount),
       averageDailyUsage: dispensed / days,
       averageWeeklyUsage: (dispensed / days) * 7,
-      lastDispensedAt: totals.lastDispensedAt ? new Date(String(totals.lastDispensedAt)).toISOString() : null
+      lastDispensedAt: totals.lastDispensedAt ? new Date(String(totals.lastDispensedAt)).toISOString() : null,
+      refill,
+      usage,
+      averageDailyTotal: usage / days,
+      averageWeeklyTotal: (usage / days) * 7
     },
     reorder: { dispensedLast90Days, averageDailyUsage, daysUntilMin, status, recommendedOrderQty },
-    daily: (dailyRows as Array<{ date: string; qty: unknown }>).map((r) => ({ date: r.date, qty: num(r.qty) })),
-    monthly: (monthlyRows as Array<{ month: string; qty: unknown }>).map((r) => ({ month: r.month, qty: num(r.qty) })),
+    daily: mergeByKey((dailyRows as Array<{ date: string; qty: unknown }>).map((r) => ({ key: r.date, qty: num(r.qty) })), refillByDay)
+      .map(({ key, ...rest }) => ({ date: key, ...rest })),
+    monthly: mergeByKey((monthlyRows as Array<{ month: string; qty: unknown }>).map((r) => ({ key: r.month, qty: num(r.qty) })), refillByMonth)
+      .map(({ key, ...rest }) => ({ month: key, ...rest })),
+    lastCountDate: refillResult.lastCountDate,
+    ...(refillResult.unavailable ? { refillUnavailable: true } : {}),
     byLot: (lotRows as Array<{ lotNo: string; qty: unknown }>).map((r) => ({ lotNo: r.lotNo, qty: num(r.qty) })),
     byUser: (userRows as Array<{ username: string; qty: unknown; count: unknown }>).map((r) => ({
       username: r.username,

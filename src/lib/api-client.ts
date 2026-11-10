@@ -65,12 +65,19 @@ export interface UsageData {
   dispensed: number;
   adjusted: number;
   received: number;
+  /** Admin/Manager only: refill from count work orders (spread over the period it covers) and dispensed + refill */
+  refill?: number;
+  usage?: number;
 }
 
 export interface DailyStat {
   date: string;
   totalDispensed: number;
   items: Record<string, number>;
+  /** Admin/Manager only; itemsRefill lists non-zero items only */
+  totalRefill?: number;
+  totalUsage?: number;
+  itemsRefill?: Record<string, number>;
 }
 
 export type ReorderStatus = 'normal' | 'reorder' | 'critical';
@@ -108,6 +115,14 @@ export interface UsageResponse {
   slowMoving?: { itemId: string; name: string; stock: number }[];
   insights?: ReagentUsageInsight[];
   expiryRisks?: ExpiryRiskInsight[];
+  /** Thai day of the latest count work order; refill after it is not known yet */
+  lastCountDate?: string | null;
+  /** Admin/Manager only: true when the refill from count work orders could not be loaded (numbers are dispense only) */
+  refillUnavailable?: boolean;
+  /** Admin/Manager only: the range the server used (end date cut to Thai today) and its number of days */
+  range?: { startDate: string; endDate: string; days: number };
+  /** Admin/Manager only: Thai day of the oldest log of the room, null when it has none */
+  firstLogDate?: string | null;
 }
 
 export type { ItemUsageDetail };
