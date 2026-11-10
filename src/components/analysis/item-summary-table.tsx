@@ -40,8 +40,13 @@ export function ItemSummaryTable({ rows, onSelectItem }: { rows: ItemSummaryRow[
               <td className={`${tdClass} text-right font-semibold`}>{formatNumber(row.usage, 2)}</td>
               <td className={`${tdClass} text-right`}>{formatNumber(row.dispensed, 2)}</td>
               <td className={`${tdClass} text-right`}>{formatNumber(row.refill, 2)}</td>
-              <td className={`${tdClass} text-right`}>{formatNumber(row.averagePerDay, 2)}</td>
-              <td className={`${tdClass} text-right`}>{formatNumber(row.averagePerWeek, 2)}</td>
+              <td className={`${tdClass} text-right`}>
+                {row.averagePerDay === null ? '-' : formatNumber(row.averagePerDay, 2)}
+                {row.averageDays !== null && row.averageDays < row.rangeDays && (
+                  <span className="block text-xs font-normal text-gray-600">คิด {row.averageDays} วัน</span>
+                )}
+              </td>
+              <td className={`${tdClass} text-right`}>{row.averagePerWeek === null ? '-' : formatNumber(row.averagePerWeek, 2)}</td>
               <td className={`${tdClass} text-right`}>{row.quantity === null ? '-' : `${formatNumber(row.quantity)} ${row.unit}`}</td>
               <td className={`${tdClass} text-right`}>{row.minThreshold === null ? '-' : formatNumber(row.minThreshold)}</td>
               <td className={`${tdClass} text-right`}>{row.daysUntilMin === null ? 'ข้อมูลไม่พอ' : `${formatNumber(row.daysUntilMin)} วัน`}</td>

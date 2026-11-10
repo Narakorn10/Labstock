@@ -27,6 +27,7 @@ vi.mock("@/lib/auth-utils", () => ({
 import { GET as usageGet } from "./route";
 import { resetDepartmentsFlagForTests } from "@/lib/departments-flag";
 import { buildItemSummaryRows, buildMonthlyMatrix } from "@/lib/analysis-summary";
+import type { UsageResponse } from "@/lib/api-client";
 
 let db: PgliteSql;
 const DISPENSE = "เบิกไปหน้างาน";
@@ -154,6 +155,30 @@ describe("GET /api/usage -> buildMonthlyMatrix / buildItemSummaryRows", () => {
     expect(a.dispensed).toBe(1);
   });
 
+  it("sends the latest count day of each reagent, only to Admin/Manager, and the summary average stops the day before it", async () => {
+    const body = await get("2026-09-10", "2026-11-10");
+    // the OPEN order waiting for the stock (20 Oct) is not a count; the latest counts are 2 Nov (A) and 15 Oct (LAB)
+    expect(body.lastCountByItem).toEqual({ [A]: "2026-11-02", [LAB]: "2026-10-15" });
+
+    const response = body as UsageResponse;
+    const rows = buildItemSummaryRows(response.insights ?? [], response.summary, response.range!.days, {
+      dailyStats: response.dailyStats ?? [],
+      lastCountByItem: response.lastCountByItem ?? {},
+      range: response.range!,
+    });
+    const a = rows.find((row) => row.itemId === A)!;
+    expect(a.averageDays).toBe(53); // 10 Sep - 1 Nov
+    // 14 dispensed up to 1 Nov, minus the log of 1 Nov Thai time? it is 4 (18:00Z on 31 Oct): all inside; refill 6.55 + 14 + 31
+    expect(a.averagePerDay).toBeCloseTo((2 + 3 + 4 + 6.55 + 14 + 31) / 53, 2);
+    const lab = rows.find((row) => row.itemId === LAB)!;
+    expect(lab.averageDays).toBe(35); // 10 Sep - 14 Oct
+    expect(lab.averagePerDay).toBeCloseTo(2.5 / 35, 2);
+
+    h.user = { username: "user1", name: "user1", role: "User", scope: DEPT_A };
+    const plain = await get("2026-09-10", "2026-11-10");
+    expect(Object.keys(plain)).toEqual(["summary"]);
+  });
+
   it("firstLogDate stays the oldest log when no spread reaches further back", async () => {
     expect((await get("2020-01-01", "2099-12-31")).firstLogDate).toBe("2026-09-10");
   });
@@ -174,6 +199,7 @@ describe("GET /api/usage -> buildMonthlyMatrix / buildItemSummaryRows", () => {
       expect(body.expiryRisks).toBeDefined();
       expect(body.dailyStats.every((day: { totalRefill: number }) => day.totalRefill === 0)).toBe(true);
       expect(body.lastCountDate).toBeNull();
+      expect(body.lastCountByItem).toEqual({});
       expect(errors.mock.calls.some((call) => /refill/i.test(String(call[0])))).toBe(true);
     } finally {
       h.target = real as unknown as Impl;

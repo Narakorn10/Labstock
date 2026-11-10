@@ -71,6 +71,7 @@ export default function AnalysisPage() {
   const [insights, setInsights] = useState<ReagentUsageInsight[]>([]);
   const [expiryRisks, setExpiryRisks] = useState<ExpiryRiskInsight[]>([]);
   const [lastCountDate, setLastCountDate] = useState<string | null>(null);
+  const [lastCountByItem, setLastCountByItem] = useState<Record<string, string>>({});
   const [range, setRange] = useState<{ startDate: string; endDate: string; days: number } | null>(null);
   const [firstLogDate, setFirstLogDate] = useState<string | null>(null);
   const [refillUnavailable, setRefillUnavailable] = useState(false);
@@ -132,6 +133,7 @@ export default function AnalysisPage() {
         setInsights(response.insights || []);
         setExpiryRisks(response.expiryRisks || []);
         setLastCountDate(response.lastCountDate ?? null);
+        setLastCountByItem(response.lastCountByItem ?? {});
         setRange(response.range ?? null);
         setFirstLogDate(response.firstLogDate ?? null);
         setRefillUnavailable(response.refillUnavailable === true);
@@ -152,6 +154,14 @@ export default function AnalysisPage() {
     [insights, selectedItemId]
   );
 
+  // The refill is known only up to the day before a count: for one reagent that is its own latest count, for the
+  // overview it is the latest count of the room. A reagent that was never counted has nothing to cut.
+  const chartCountDate = useMemo(() => {
+    if (selectedItemId === 'TOTAL') return lastCountDate;
+    const own = Object.entries(lastCountByItem).find(([itemId]) => itemId.toLowerCase() === selectedItemId.toLowerCase());
+    return own ? own[1] : null;
+  }, [lastCountByItem, lastCountDate, selectedItemId]);
+
   const dailyTrend = useMemo(() => {
     const totals = new Map(dailyStats.map((stat) => [stat.date, stat]));
     return buildUsageRows(startDate, endDate, (date) => {
@@ -159,8 +169,8 @@ export default function AnalysisPage() {
       return selectedItemId === 'TOTAL'
         ? { regular: stat?.totalDispensed || 0, refill: stat?.totalRefill || 0 }
         : { regular: stat?.items[selectedItemId] || 0, refill: stat?.itemsRefill?.[selectedItemId] || 0 };
-    });
-  }, [dailyStats, endDate, selectedItemId, startDate]);
+    }, chartCountDate);
+  }, [chartCountDate, dailyStats, endDate, selectedItemId, startDate]);
 
   // Top 10 by real usage (regular dispense + refill); an account without refill data falls back to the regular dispense.
   const topUsage = useMemo(() => usage
@@ -177,7 +187,10 @@ export default function AnalysisPage() {
     () => buildMonthlyMatrix(dailyStats, { startDate: summaryRange.startDate, endDate: summaryRange.endDate }),
     [dailyStats, summaryRange]
   );
-  const summaryRows = useMemo(() => buildItemSummaryRows(insights, usage, summaryRange.days), [insights, summaryRange.days, usage]);
+  const summaryRows = useMemo(
+    () => buildItemSummaryRows(insights, usage, summaryRange.days, { dailyStats, lastCountByItem, range: summaryRange }),
+    [dailyStats, insights, lastCountByItem, summaryRange, usage]
+  );
   const itemNameOf = useMemo(() => {
     const names = new Map<string, string>();
     for (const row of usage) names.set(row.itemId.toLowerCase(), row.name);
@@ -303,7 +316,7 @@ export default function AnalysisPage() {
               </p>
               <ItemSummaryTable rows={summaryRows} onSelectItem={openItemDetail} />
               <p className="mt-3 text-[13px] text-gray-600">
-                ค่าเฉลี่ยต่อวันและต่อสัปดาห์ใช้ยอดใช้จริงของช่วงที่เลือก ส่วนวันจนถึง Min ใช้เกณฑ์เดียวกับแผนจัดซื้อ (เบิกไปหน้างาน 90 วันล่าสุด) จึงอาจไม่ตรงกับค่าเฉลี่ยในตาราง
+                ค่าเฉลี่ยต่อวันและต่อสัปดาห์คิดจากยอดใช้จริงเฉพาะวันที่รู้ยอดครบ คือถึงวันก่อนวันนับล่าสุดของน้ำยาแต่ละตัว (น้ำยาที่ไม่เคยนับคิดทั้งช่วง และถ้าคิดไม่ครบทั้งช่วงจะมีบอกจำนวนวันที่ใช้คิดไว้ใต้ตัวเลข ส่วนเครื่องหมาย - คือยังไม่มีวันที่รู้ยอดครบ) ส่วนวันจนถึง Min ใช้เกณฑ์เดียวกับแผนจัดซื้อ (เบิกไปหน้างาน 90 วันล่าสุด) จึงอาจไม่ตรงกับค่าเฉลี่ยในตาราง
               </p>
             </section>
             <section aria-labelledby="monthly-heading" className={cardClass}>
@@ -390,9 +403,9 @@ export default function AnalysisPage() {
             </div>
             <p className="mb-2 text-right text-[13px] text-gray-600">สูงสุด {formatNumber(peakUsage, 1)} / วัน</p>
             <div className="h-64" role="img" aria-label="กราฟแท่งยอดใช้จริงรายวัน แยกเบิกไปหน้างานและเบิกเติม">
-              <DailyUsageChart rows={dailyTrend} lastCountDate={lastCountDate} />
+              <DailyUsageChart rows={dailyTrend} lastCountDate={chartCountDate} />
             </div>
-            <UsageLegend shaded={Boolean(lastCountDate && lastCountDate < endDate)} />
+            <UsageLegend shaded={Boolean(chartCountDate && chartCountDate < endDate)} />
           </section>
 
           <section aria-labelledby="top-heading" className={cardClass}>
