@@ -2,6 +2,7 @@ import sql from "@/lib/db";
 import { andDept, type DepartmentScope } from "@/lib/scoped-db";
 import { computeReorderInsight, daysFromToday, type ReorderStatus } from "@/lib/reagent-usage-insights";
 import { getRefillOrUnavailable } from "@/lib/real-usage";
+import { knownUsageWindow, type KnownWindow } from "@/lib/usage-average";
 
 const DISPENSE_ACTION = "เบิกไปหน้างาน";
 const RECEIVE_ACTION = "รับเข้าสต๊อกหลัก";
@@ -28,8 +29,15 @@ export interface ItemUsageDetail {
     /** refill from count work orders spread over the days it covers (see real-usage.ts), and dispensed + refill */
     refill: number;
     usage: number;
-    averageDailyTotal: number;
-    averageWeeklyTotal: number;
+    /**
+     * Average of dispensed + refill per day over averageWindow: the days up to the day before this item's latest
+     * count (its refill is not known after that). The whole range when the item was never counted.
+     * Null when no day of the range qualifies.
+     */
+    averageDailyTotal: number | null;
+    averageWeeklyTotal: number | null;
+    averageDays: number | null;
+    averageWindow: KnownWindow | null;
   };
   reorder: {
     dispensedLast90Days: number;
@@ -179,6 +187,12 @@ export async function getReagentItemUsage(itemId: string, startDate: string, end
   const days = daysInRange(startDate, endDate);
   const dispensed = num(totals.dispensed);
   const usage = round2(dispensed + refill);
+  const averageWindow = knownUsageWindow(startDate, endDate, refillResult.lastCountDate);
+  let windowUsage = 0;
+  if (averageWindow) {
+    for (const r of dailyRows as Array<{ date: string; qty: unknown }>) if (r.date <= averageWindow.endDate) windowUsage += num(r.qty);
+    for (const [date, qty] of refillByDay) if (date <= averageWindow.endDate) windowUsage += qty;
+  }
   const quantity = num(row.quantity);
   const minThreshold = num(row.minThreshold);
   const { dispensedLast90Days, averageDailyUsage, daysUntilMin, status, recommendedOrderQty } =
@@ -204,8 +218,10 @@ export async function getReagentItemUsage(itemId: string, startDate: string, end
       lastDispensedAt: totals.lastDispensedAt ? new Date(String(totals.lastDispensedAt)).toISOString() : null,
       refill,
       usage,
-      averageDailyTotal: usage / days,
-      averageWeeklyTotal: (usage / days) * 7
+      averageDailyTotal: averageWindow ? windowUsage / averageWindow.days : null,
+      averageWeeklyTotal: averageWindow ? (windowUsage / averageWindow.days) * 7 : null,
+      averageDays: averageWindow ? averageWindow.days : null,
+      averageWindow
     },
     reorder: { dispensedLast90Days, averageDailyUsage, daysUntilMin, status, recommendedOrderQty },
     daily: mergeByKey((dailyRows as Array<{ date: string; qty: unknown }>).map((r) => ({ key: r.date, qty: num(r.qty) })), refillByDay)
