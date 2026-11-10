@@ -3,6 +3,7 @@ import sql from '@/lib/db';
 import { hasMenuPermission } from '@/lib/auth-utils';
 import { andDept, departmentErrorResponse, getDepartmentScope } from '@/lib/scoped-db';
 import { getRequestId } from '@/lib/request-observability';
+import { ADJUSTMENT_ACTION_LIKE, ADJUST_FILTER } from '@/lib/stock-adjustment-log';
 
 export async function GET(request: Request) {
   const requestId = getRequestId(request);
@@ -21,6 +22,8 @@ export async function GET(request: Request) {
     const limit = parseInt(searchParams.get('limit') || '200');
     const searchTerm = searchParams.get('search') || '';
     const action = searchParams.get('action') || '';
+    // The adjustment filter matches every text the system has written for an adjustment, not one exact text.
+    const isAdjustFilter = action === ADJUST_FILTER;
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
     
@@ -36,7 +39,7 @@ export async function GET(request: Request) {
         username as user
       FROM logs
       WHERE (name ILIKE ${'%' + searchTerm + '%'} OR item_id ILIKE ${'%' + searchTerm + '%'} OR lot_no ILIKE ${'%' + searchTerm + '%'})
-      AND (${action === '' ? true : false} OR action = ${action})
+      AND (${action === '' ? true : false} OR (${isAdjustFilter} AND action LIKE ${ADJUSTMENT_ACTION_LIKE}) OR (${!isAdjustFilter} AND action = ${action}))
       AND (${startDate ? true : false} = false OR timestamp >= ${startDate || '1970-01-01'})
       AND (${endDate ? true : false} = false OR timestamp <= ${endDate ? endDate + ' 23:59:59' : '9999-12-31'})${andDept(scope)}
       ORDER BY timestamp DESC, id DESC

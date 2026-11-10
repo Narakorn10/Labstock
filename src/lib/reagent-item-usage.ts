@@ -115,7 +115,7 @@ export async function getReagentItemUsage(itemId: string, startDate: string, end
       SELECT
         SUM(CASE WHEN action = ${DISPENSE_ACTION} THEN quantity ELSE 0 END) AS dispensed,
         SUM(CASE WHEN action = ${RECEIVE_ACTION} THEN quantity ELSE 0 END) AS received,
-        SUM(CASE WHEN action LIKE '%ปรับปรุงยอด%' THEN quantity ELSE 0 END) AS adjusted,
+        SUM(CASE WHEN action LIKE 'ปรับปรุงยอด%' THEN quantity ELSE 0 END) AS adjusted,
         COUNT(*) FILTER (WHERE action = ${DISPENSE_ACTION}) AS "dispenseCount",
         MAX(timestamp) FILTER (WHERE action = ${DISPENSE_ACTION}) AS "lastDispensedAt"
       FROM logs

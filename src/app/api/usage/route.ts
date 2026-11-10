@@ -49,7 +49,7 @@ export async function GET(request: Request) {
         MAX(name) AS name,
         SUM(CASE WHEN action = 'เบิกไปหน้างาน' THEN quantity ELSE 0 END) AS dispensed,
         SUM(CASE WHEN action = 'รับเข้าสต๊อกหลัก' THEN quantity ELSE 0 END) AS received,
-        SUM(CASE WHEN action LIKE '%ปรับปรุงยอด%' THEN quantity ELSE 0 END) AS adjusted
+        SUM(CASE WHEN action LIKE 'ปรับปรุงยอด%' THEN quantity ELSE 0 END) AS adjusted
       FROM logs
       WHERE timestamp >= (${startDate}::date)::timestamp AT TIME ZONE 'Asia/Bangkok'
         AND timestamp < (${endDate}::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok'${andDept(scope)}

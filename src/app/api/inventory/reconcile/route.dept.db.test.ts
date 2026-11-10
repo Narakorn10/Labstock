@@ -53,7 +53,7 @@ const rows = async <T>(query: string) => (await sql.db.query<T>(query)).rows;
 const lots = async () => (await rows<{ id: number; lot_no: string; quantity: string }>("SELECT id, lot_no, quantity FROM inventory ORDER BY id"))
   .map((row) => `${row.id}/${row.lot_no}=${Number(row.quantity)}`);
 
-const bBody = { inventoryId: 202, itemId: "MB-000001", newLotNo: "LB1-FIXED", newExpDate: "2028-01-01", newQty: 7 };
+const bBody = { inventoryId: 202, itemId: "MB-000001", newLotNo: "LB1-FIXED", newExpDate: "2028-01-01", newQty: 7, expectedQty: 10 };
 
 describe("reconcile route with a department scope", () => {
   it("fixes a row of the user's own department and logs the department", async () => {
@@ -65,11 +65,33 @@ describe("reconcile route with a department scope", () => {
   });
 
   it("answers 404 for a row of another department and changes nothing", async () => {
-    const response = await reconcile({ inventoryId: 201, itemId: "A-000002", newLotNo: "HACK", newExpDate: null, newQty: 1 });
+    const response = await reconcile({ inventoryId: 201, itemId: "A-000002", newLotNo: "HACK", newExpDate: null, newQty: 1, expectedQty: 10 });
 
     expect(response.status).toBe(404);
     expect(await lots()).toEqual(["201/LA1=10", "202/LB1=10"]);
     expect(await rows("SELECT 1 FROM logs")).toHaveLength(0);
+  });
+
+  it("answers 404 (not 409) for a row of another department even when the quantity the user sends is wrong, and reveals nothing", async () => {
+    const response = await reconcile({ inventoryId: 201, itemId: "A-000002", newLotNo: "HACK", newExpDate: null, newQty: 1, expectedQty: 3 });
+
+    expect(response.status).toBe(404);
+    const text = await response.text();
+    expect(text).not.toContain("currentQty");
+    expect(text).not.toContain("เปลี่ยนไปแล้ว");
+    expect(await lots()).toEqual(["201/LA1=10", "202/LB1=10"]);
+  });
+
+  it("answers 409 when the quantity of the user's own row changed, and a good fix logs the department and the details", async () => {
+    await sql.db.exec("UPDATE inventory SET quantity = 9 WHERE id = 202");
+    expect((await reconcile(bBody)).status).toBe(409);
+    expect(await rows("SELECT 1 FROM logs")).toHaveLength(0);
+
+    const ok = await reconcile({ ...bBody, expectedQty: 9, reason: "นับจริง" });
+    expect(ok.status).toBe(200);
+    expect(await rows("SELECT department_id, action FROM logs")).toEqual([
+      { department_id: DEPT_B, action: "ปรับปรุง lot/exp/qty (Reconciliation) | ยอด 9 → 7 | Lot LB1 → LB1-FIXED | EXP 2027-01-01 → 2028-01-01 | เหตุผล: นับจริง" },
+    ]);
   });
 
   it("answers 409 (not 500) when the new lot collides with a row of another department", async () => {

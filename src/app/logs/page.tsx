@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { Download, Loader2, RefreshCw, Calendar } from 'lucide-react';
+import { ADJUST_FILTER, describeAdjustment, isAdjustmentAction, parseAdjustmentAction } from '@/lib/stock-adjustment-log';
 
 interface LogEntry {
   id: number;
@@ -19,7 +20,7 @@ const LOG_ACTION_CHIPS = [
   { label: 'ทั้งหมด', value: '' },
   { label: 'รับเข้า', value: 'รับเข้าสต๊อกหลัก' },
   { label: 'เบิกไปหน้างาน', value: 'เบิกไปหน้างาน' },
-  { label: 'ปรับยอด', value: 'ปรับปรุงยอดสต๊อก (Reconciliation)' },
+  { label: 'ปรับยอด', value: ADJUST_FILTER },
 ];
 
 function sortLogsNewestFirst(entries: LogEntry[]) {
@@ -28,6 +29,9 @@ function sortLogsNewestFirst(entries: LogEntry[]) {
     return timeDiff || b.id - a.id;
   });
 }
+
+// A text cell of the CSV: wrapped in quotes, a quote inside the text is doubled (so a reason with " cannot shift the columns).
+const csvCell = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
 
 export default function LogsPage() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -72,13 +76,13 @@ export default function LogsPage() {
     const csvContent = [
       headers.join(','),
       ...logs.map(log => [
-        `"${log.timestamp}"`,
-        `"${log.itemId}"`,
-        `"${log.name}"`,
-        `"${log.lotNo}"`,
-        `"${log.action}"`,
+        csvCell(log.timestamp),
+        csvCell(log.itemId),
+        csvCell(log.name),
+        csvCell(log.lotNo),
+        csvCell(log.action),
         log.qty,
-        `"${log.user}"`
+        csvCell(log.user)
       ].join(','))
     ].join('\n');
 
@@ -100,6 +104,8 @@ export default function LogsPage() {
     return 'bg-gray-200 text-gray-800';
   };
   const signedQty = (log: LogEntry) => {
+    // Checked first: the text of an adjustment can contain the words เบิก / รับเข้า (a reason), it is neither.
+    if (isAdjustmentAction(log.action)) return { text: String(log.qty), tone: 'text-ink' };
     const isReceive = log.action.includes('รับเข้า');
     const isIssue = log.action.includes('เบิก');
     if (isReceive) return { text: `+${Math.abs(log.qty)}`, tone: 'text-ok' };
@@ -195,7 +201,12 @@ export default function LogsPage() {
                 </thead>
                 <tbody>
                   {logs.map((log) => {
-                    const isReconcile = log.action.includes('ปรับปรุงยอด');
+                    const isReconcile = isAdjustmentAction(log.action);
+                    const adjustment = isReconcile ? describeAdjustment(log.action, log.qty) : null;
+                    const adjustmentInfo = isReconcile ? parseAdjustmentAction(log.action) : null;
+                    const adjustmentNote = adjustmentInfo
+                      ? [...adjustmentInfo.changes, adjustmentInfo.reason ? `เหตุผล: ${adjustmentInfo.reason}` : ''].filter(Boolean).join(' · ')
+                      : '';
                     const qty = signedQty(log);
                     return (
                       <tr key={log.id} className="transition-colors hover:bg-[#fafafa]">
@@ -208,13 +219,17 @@ export default function LogsPage() {
                         <td className={cellClass}>
                           <div className="font-medium">{log.name}</div>
                           <div className="text-xs text-gray-600">{log.itemId} · Lot {log.lotNo}</div>
+                          {adjustmentNote && <div className="mt-0.5 text-xs text-gray-600">{adjustmentNote}</div>}
                         </td>
                         <td className={`${cellClass} text-center`}>
                           <span className={`inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-[3px] text-xs font-medium ${logTone(log.action)}`}>
                             {isReconcile ? 'ปรับยอด' : log.action.includes('รับเข้า') ? 'รับเข้า' : log.action.split(' ')[0]}
                           </span>
                         </td>
-                        <td className={`${cellClass} text-center font-semibold ${qty.tone}`}>{qty.text}</td>
+                        <td className={`${cellClass} text-center font-semibold ${qty.tone}`}>
+                          {adjustment ? (adjustment.deltaText ?? adjustment.rangeText) : qty.text}
+                          {adjustment?.deltaText != null && <span className="block text-xs font-normal text-gray-600">{adjustment.rangeText}</span>}
+                        </td>
                         <td className={`${cellClass} text-right`}>{log.user}</td>
                       </tr>
                     );

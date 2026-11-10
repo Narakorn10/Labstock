@@ -149,6 +149,9 @@ type LogDigestEntry = {
   user: string;
 };
 
+// The message is sent with parse_mode HTML; text typed by users (names, lots, an adjustment reason) must not be read as tags.
+const escapeHtml = (value: unknown) => String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
 export function formatRecentLogsTelegramDigest(logs: LogDigestEntry[]) {
   if (logs.length === 0) {
     return "<b>LabStock Recent Logs</b>\nNo recent log entries found.";
@@ -165,7 +168,7 @@ export function formatRecentLogsTelegramDigest(logs: LogDigestEntry[]) {
       timeZone: "Asia/Bangkok",
     });
 
-    return `- ${stamp} | ${log.action} | ${log.name} (${log.itemId}) | Lot ${log.lotNo} | Qty ${log.qty} | ${log.user}`;
+    return `- ${stamp} | ${escapeHtml(log.action)} | ${escapeHtml(log.name)} (${escapeHtml(log.itemId)}) | Lot ${escapeHtml(log.lotNo)} | Qty ${log.qty} | ${escapeHtml(log.user)}`;
   });
 
   return `<b>LabStock Recent Logs</b>\n${lines.join("\n")}`;
