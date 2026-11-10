@@ -33,12 +33,7 @@ beforeAll(async () => {
   resetDepartmentsFlagForTests();
   await seedTwoDepartments(sql);
   await addPurchaseOrderTables(sql);
-  // The shared production DDL keeps purchase_order_events minimal; these are the columns recordPurchaseOrderCommunication writes.
   await sql.db.exec(`
-    ALTER TABLE purchase_order_events
-      ADD COLUMN from_status TEXT, ADD COLUMN to_status TEXT, ADD COLUMN actor_username TEXT, ADD COLUMN actor_role TEXT,
-      ADD COLUMN source TEXT NOT NULL DEFAULT 'WEB', ADD COLUMN visibility TEXT NOT NULL DEFAULT 'BOTH',
-      ADD COLUMN note TEXT, ADD COLUMN metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
     CREATE TABLE notification_settings (
       username TEXT PRIMARY KEY, email TEXT, line_user_id TEXT,
       notify_po_created BOOLEAN, notify_po_confirmed BOOLEAN, notify_po_shipped BOOLEAN,
@@ -241,6 +236,48 @@ describe("an order still waiting for the manager's review is not the Vendor's ye
     expect(JSON.stringify(await listPurchaseOrderEvents(pending, vendor, { mode: "legacy" }))).not.toContain("INTERNAL LAB REASON");
     expect(await outbox(pending)).toEqual([]);
     expect(JSON.stringify(await listPurchaseOrderEvents(pending, lab, { mode: "all" }))).toContain("INTERNAL LAB REASON");
+  });
+
+  it("when the manager rejects the order in review, the Vendor gets no notice and cannot read the history (it was never sent)", async () => {
+    await sql.db.query("UPDATE purchase_orders SET status = 'REJECTED' WHERE id = $1", [pending]);
+    await recordPurchaseOrderCommunication({
+      poId: pending, eventType: "PO_STATUS_UPDATED", actor: { username: "adminA", role: "Admin" }, note: "สั่งซ้ำ",
+      metadata: { fromStatus: "PENDING_MANAGER_REVIEW", action: "REJECT_MANAGER_REVIEW" },
+    });
+    expect((await outbox(pending)).filter((row) => row.recipient_role === "Vendor")).toEqual([]);
+    expect(await rows("SELECT visibility FROM purchase_order_events WHERE po_id = $1", [pending])).toEqual([{ visibility: "LAB" }]);
+    expect(await listPurchaseOrderEvents(pending, vendor, { mode: "legacy" })).toBe("FORBIDDEN");
+    expect(await listPurchaseOrderEvents(pending, lab, { mode: "all" })).toMatchObject({ items: [expect.objectContaining({ event_type: "PO_STATUS_UPDATED" })] });
+  });
+
+  it("the LINE bot lookup does not give the Vendor an order the manager rejected in review, but gives the Lab and the Vendor's other orders", async () => {
+    const { findPurchaseOrderForLine } = await import("./line-bot-queries");
+    await sql.db.query("UPDATE purchase_orders SET status = 'REJECTED' WHERE id = $1", [pending]);
+    await sql.db.query(
+      "INSERT INTO purchase_order_events (po_id, po_number, event_type, from_status, to_status) VALUES ($1, 'PO-PENDING', 'PO_STATUS_UPDATED', 'PENDING_MANAGER_REVIEW', 'REJECTED')",
+      [pending],
+    );
+    expect(await findPurchaseOrderForLine("PO-PENDING", { kind: "vendor", vendor: "PCL" })).toBeNull();
+    expect(await findPurchaseOrderForLine("PO-PENDING", { kind: "lab", scope: { mode: "one", departmentId: DEPT_A } })).toMatchObject({ po_number: "PO-PENDING" });
+    expect(await findPurchaseOrderForLine("PO-A", { kind: "vendor", vendor: "PCL" })).toMatchObject({ po_number: "PO-A" });
+  });
+
+  it("a rejection of a sent order (by the Vendor, or the Lab's own proposal flow) is still told to the Vendor and stays readable", async () => {
+    const sent = (await insertPurchaseOrder(sql, { poNumber: "PO-SENT", departmentId: DEPT_A, status: "REJECTED", vendor: "PCL" })).poId;
+    await recordPurchaseOrderCommunication({
+      poId: sent, eventType: "PO_STATUS_UPDATED", actor: { username: "adminA", role: "Admin" },
+      metadata: { fromStatus: "REVISION_REQUESTED", action: "REJECT_REVISION" },
+    });
+    expect((await outbox(sent)).some((row) => row.recipient_role === "Vendor")).toBe(true);
+    expect(await listPurchaseOrderEvents(sent, vendor, { mode: "legacy" })).toMatchObject({ items: expect.any(Array) });
+
+    const proposal = (await insertPurchaseOrder(sql, { poNumber: "PO-PROPOSAL", departmentId: DEPT_A, status: "REJECTED", vendor: "PCL", proposalOrigin: "VENDOR" })).poId;
+    await recordPurchaseOrderCommunication({
+      poId: proposal, eventType: "PO_STATUS_UPDATED", actor: { username: "adminA", role: "Admin" },
+      metadata: { fromStatus: "PENDING_LAB_REVIEW", action: "REJECT" },
+    });
+    expect((await outbox(proposal)).some((row) => row.recipient_role === "Vendor")).toBe(true);
+    expect(await listPurchaseOrderEvents(proposal, vendor, { mode: "legacy" })).toMatchObject({ items: expect.any(Array) });
   });
 
   it("does not change what the Vendor gets for orders that are already sent", async () => {

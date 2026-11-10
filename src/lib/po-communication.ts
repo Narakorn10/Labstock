@@ -38,9 +38,27 @@ function eventVisibility(actorRole?: string, recipientRole?: string) {
   return "BOTH";
 }
 
-/** True while the Vendor must not see the order or anything about it: the Lab's manager has not approved it yet. */
-export function isHiddenFromVendor(status: string | null | undefined) {
-  return status === "PENDING_MANAGER_REVIEW";
+/**
+ * True while the Vendor must not see the order or anything about it: the Lab's manager has not approved it yet, or the
+ * manager rejected it in that review (it was never sent to the Vendor). `fromStatus` is the status before the change
+ * being recorded: the rejection itself is PENDING_MANAGER_REVIEW -> REJECTED.
+ */
+export function isHiddenFromVendor(status: string | null | undefined, fromStatus?: string | null) {
+  return status === "PENDING_MANAGER_REVIEW" || (fromStatus === "PENDING_MANAGER_REVIEW" && status === "REJECTED");
+}
+
+/**
+ * True for a Lab order the manager rejected in review (PENDING_MANAGER_REVIEW -> REJECTED): it was never sent to the
+ * Vendor, so the Vendor must not read it either. A Vendor's own proposal that the Lab rejects, and an order the Vendor
+ * rejected after it was sent, never went through that transition and stay visible. The marker is the recorded event.
+ */
+export async function wasRejectedInManagerReview(poId: number): Promise<boolean> {
+  const rows = await sql`
+    SELECT 1 AS found FROM purchase_order_events
+    WHERE po_id = ${poId} AND from_status = 'PENDING_MANAGER_REVIEW' AND to_status = 'REJECTED'
+    LIMIT 1
+  `;
+  return rows.length > 0;
 }
 
 export function shouldNotifyRecipient(event: PurchaseOrderCommunicationEvent, actorRole: string | undefined, recipientRole: string) {
@@ -99,7 +117,7 @@ export async function recordPurchaseOrderCommunication(input: {
   // A Lab order waiting for the manager's review has not been sent to the Vendor yet (the Vendor cannot open it: GET
   // /api/purchase-orders/[id] answers 403). Its events are for the Lab only, and nothing about it may reach the Vendor on
   // any channel, until it is approved and becomes SUBMITTED (that approval event is PO_CREATED with the new status).
-  const hiddenFromVendor = isHiddenFromVendor(toStatus);
+  const hiddenFromVendor = isHiddenFromVendor(toStatus, fromStatus);
   // PO_ITEMS_ADDED is Lab-only history whatever the status is when it gets written: the add commits first and the event is
   // recorded after, so an approval in between must not turn it into something the Vendor can read (it carries internal reasons).
   const visibility = hiddenFromVendor || input.eventType === "PO_ITEMS_ADDED" ? "LAB" : eventVisibility(input.actor?.role);
@@ -227,7 +245,9 @@ export async function listPurchaseOrderEvents(poId: number, user: AuthenticatedU
   if (!poRows.length) return null;
   if (user.role === "Vendor" && poRows[0].vendor !== user.vendor) return "FORBIDDEN" as const;
   // Same rule as GET /api/purchase-orders/[id]: an order still waiting for the manager's review is not the Vendor's yet.
-  if (user.role === "Vendor" && isHiddenFromVendor(asString(poRows[0].status))) return "FORBIDDEN" as const;
+  if (user.role === "Vendor" && (isHiddenFromVendor(asString(poRows[0].status)) || (asString(poRows[0].status) === "REJECTED" && await wasRejectedInManagerReview(poId)))) {
+    return "FORBIDDEN" as const;
+  }
   const safeLimit = Math.min(Math.max(limit, 1), 100);
   const rows = user.role === "Vendor"
     ? await sql`

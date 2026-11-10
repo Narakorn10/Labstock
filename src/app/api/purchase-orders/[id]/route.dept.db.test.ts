@@ -13,7 +13,10 @@ vi.mock("@/lib/db", async () => {
   return { default: createPgliteSql() };
 });
 vi.mock("@/lib/auth-utils", () => ({ getAuthenticatedUser: mocks.getAuthenticatedUser }));
-vi.mock("@/lib/po-communication", () => ({ recordPurchaseOrderCommunication: mocks.recordPurchaseOrderCommunication }));
+vi.mock("@/lib/po-communication", async (importActual) => ({
+  ...(await importActual<typeof import("@/lib/po-communication")>()),
+  recordPurchaseOrderCommunication: mocks.recordPurchaseOrderCommunication,
+}));
 
 import dbSql from "@/lib/db";
 import { resetDepartmentsFlagForTests } from "@/lib/departments-flag";
@@ -40,7 +43,7 @@ beforeEach(async () => {
   vi.clearAllMocks();
   vi.spyOn(console, "error").mockImplementation(() => undefined);
   mocks.getAuthenticatedUser.mockResolvedValue(labA);
-  await sql.db.exec(`TRUNCATE shipments, shipment_batches, purchase_order_items, purchase_orders, inventory RESTART IDENTITY CASCADE;`);
+  await sql.db.exec(`TRUNCATE shipments, shipment_batches, purchase_order_items, purchase_orders, inventory, purchase_order_events RESTART IDENTITY CASCADE;`);
 });
 
 afterEach(() => {
@@ -136,6 +139,34 @@ describe("GET /api/purchase-orders/[id]", () => {
     const response = await get(2); // PO-B belongs to department B, the Vendor's resolved scope is A
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ po_number: "PO-B" });
+  });
+});
+
+describe("GET /api/purchase-orders/[id] (Vendor): orders the manager rejected in review were never sent", () => {
+  const vendorUser = { username: "vendor1", name: "Vendor One", role: "Vendor", vendor: "Vendor A", scope: DEPT_A };
+  const rejected = async (poNumber: string, origin: "LAB" | "VENDOR", from: string) => {
+    const { poId } = await insertPurchaseOrder(sql, { poNumber, departmentId: DEPT_A, status: "REJECTED", itemId: "A-000002", proposalOrigin: origin });
+    await sql.db.query(
+      "INSERT INTO purchase_order_events (po_id, po_number, event_type, from_status, to_status) VALUES ($1, $2, 'PO_STATUS_UPDATED', $3, 'REJECTED')",
+      [poId, poNumber, from],
+    );
+    return poId;
+  };
+
+  it("403 for a Lab order rejected in the manager's review; 200 for the Vendor's own rejected proposal and for an order it rejected itself", async () => {
+    const neverSent = await rejected("PO-R1", "LAB", "PENDING_MANAGER_REVIEW");
+    const ownProposal = await rejected("PO-R2", "VENDOR", "PENDING_LAB_REVIEW");
+    const sentThenRejected = await rejected("PO-R3", "LAB", "ACKNOWLEDGED");
+    mocks.getAuthenticatedUser.mockResolvedValue(vendorUser);
+    expect((await get(neverSent)).status).toBe(403);
+    expect((await get("PO-R1")).status).toBe(403);
+    expect((await get(ownProposal)).status).toBe(200);
+    expect((await get(sentThenRejected)).status).toBe(200);
+  });
+
+  it("the Lab still reads the rejected order", async () => {
+    const neverSent = await rejected("PO-R1", "LAB", "PENDING_MANAGER_REVIEW");
+    expect((await get(neverSent)).status).toBe(200);
   });
 });
 

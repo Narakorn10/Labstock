@@ -30,12 +30,6 @@ const get = (id: number | string) =>
 beforeAll(async () => {
   await seedTwoDepartments(sql);
   await addPurchaseOrderTables(sql);
-  await sql.db.exec(`
-    ALTER TABLE purchase_order_events
-      ADD COLUMN from_status TEXT, ADD COLUMN to_status TEXT, ADD COLUMN actor_username TEXT, ADD COLUMN actor_role TEXT,
-      ADD COLUMN source TEXT NOT NULL DEFAULT 'WEB', ADD COLUMN visibility TEXT NOT NULL DEFAULT 'BOTH',
-      ADD COLUMN note TEXT, ADD COLUMN metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
-  `);
 }, 60_000);
 
 afterAll(async () => {
