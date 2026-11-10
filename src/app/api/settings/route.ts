@@ -131,6 +131,15 @@ export async function POST(request: Request) {
 
     if (action === "add") {
       if (tableName === "departments") {
+        // With rooms on, rooms are made only on the Super admin page "จัดการห้อง": it creates a CLOSED room with its own
+        // letterhead, while a row added here would be an open room without a code or a letterhead. With rooms off (legacy)
+        // this table is only a list of names and adding to it stays as it was.
+        if (await departmentsReady()) {
+          return withRequestId(
+            NextResponse.json({ error: "เพิ่มห้องได้ที่หน้า \"จัดการห้อง\" (เฉพาะ Super admin)", code: "ROOM_ADD_NOT_ALLOWED" }, { status: 409 }),
+            requestId,
+          );
+        }
         await sql`INSERT INTO departments (name) VALUES (${value}) ON CONFLICT (name) DO NOTHING`;
       } else {
         // The room is only worked out for the category lists: adding a department itself is not room-scoped, so an

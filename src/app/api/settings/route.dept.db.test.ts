@@ -143,21 +143,26 @@ describe("POST with a room (Admin only)", () => {
     expect(await room("reagent_types", "RT-shared")).toBe(DEPT_B);
   });
 
-  it("Admin viewing ALL rooms cannot change categories (409) but can still add a department; a room is never deleted from here", async () => {
+  it("Admin viewing ALL rooms cannot change categories (409)", async () => {
     as("admin1", "Admin", "ALL");
     const blocked = await post({ action: "add", type: "reagent", value: "RT-all" });
     expect(blocked!.status).toBe(409);
     expect((await blocked!.json()).code).toBe("DEPARTMENT_READ_ONLY");
     expect(await room("reagent_types", "RT-all")).toBeUndefined();
-    expect((await post({ action: "add", type: "department", value: "Temp room" }))!.status).toBe(200);
-    try {
-      const refused = await post({ action: "delete", type: "department", value: "Temp room" });
-      expect(refused!.status).toBe(409);
-      expect(await refused!.json()).toMatchObject({ code: "ROOM_DELETE_NOT_ALLOWED" });
-      expect((await db.db.query("SELECT 1 FROM departments WHERE name = 'Temp room'")).rows).toHaveLength(1);
-    } finally {
-      await db.db.exec("DELETE FROM departments WHERE name = 'Temp room'"); // cleanup only: the app never deletes a room
+  });
+
+  it("with rooms on, no Admin can add a room from here: it is made on the Super admin page (409, nothing is created)", async () => {
+    const before = (await db.db.query("SELECT id, name FROM departments ORDER BY id")).rows;
+    for (const scope of [DEPT_A, DEPT_B, "ALL"] as const) {
+      as("admin1", "Admin", scope);
+      const refused = await post({ action: "add", type: "department", value: `Room via settings ${scope}` });
+      expect(refused!.status, String(scope)).toBe(409);
+      expect(await refused!.json()).toMatchObject({ code: "ROOM_ADD_NOT_ALLOWED" });
     }
+    expect((await db.db.query("SELECT id, name FROM departments ORDER BY id")).rows).toEqual(before);
+    expect((await db.db.query("SELECT 1 FROM lab_profile WHERE department_name LIKE 'Room via settings%'")).rows).toHaveLength(0);
+    as("solo2", "User", DEPT_B);
+    expect((await post({ action: "add", type: "department", value: "Room by a user" }))!.status).toBe(403);
   });
 
   it("with rooms on, no Admin can delete a room (an empty one, one with members and data, CC), in a room or viewing all", async () => {
@@ -184,8 +189,10 @@ describe("POST with a room (Admin only)", () => {
     expect((await post({ action: "delete", type: "department", value: "Empty room" }))!.status).toBe(403);
   });
 
-  it("the other lists are unaffected: an Admin can still delete a category of the room", async () => {
+  it("the other lists are unaffected: an Admin can still add and delete a category of the room", async () => {
     as("admin1", "Admin", DEPT_A);
+    expect((await post({ action: "add", type: "job", value: "JT-new" }))!.status).toBe(200);
+    expect(await room("job_types", "JT-new")).toBe(DEPT_A);
     expect((await post({ action: "delete", type: "job", value: "JT-A" }))!.status).toBe(200);
     expect(await room("job_types", "JT-A")).toBeUndefined();
   });

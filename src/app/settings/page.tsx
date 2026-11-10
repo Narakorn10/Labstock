@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import { apiClient } from '@/lib/api-client';
 import { useAuth } from '@/components/auth-provider';
 import { X } from 'lucide-react';
@@ -27,9 +28,12 @@ interface SectionProps {
   onDelete: (type: SettingType, value: string) => void;
   /** false hides the delete buttons (rooms are never deleted, only closed by the Super admin). */
   canDelete?: boolean;
+  /** false replaces the add form with `readOnlyNote` (rooms are made only on the room management page). */
+  canAdd?: boolean;
+  readOnlyNote?: React.ReactNode;
 }
 
-const Section = ({ title, type, items, placeholder, loading, newValue, setNewValue, onAdd, onDelete, canDelete = true }: SectionProps) => (
+const Section = ({ title, type, items, placeholder, loading, newValue, setNewValue, onAdd, onDelete, canDelete = true, canAdd = true, readOnlyNote }: SectionProps) => (
   <section aria-label={title} className="flex min-w-0 flex-col rounded-2xl border border-line bg-white p-5">
     <h3 className="mb-3 text-[17px] font-medium">
       {title} <span className="font-normal text-gray-600">{loading ? '' : items.length}</span>
@@ -61,7 +65,8 @@ const Section = ({ title, type, items, placeholder, loading, newValue, setNewVal
       )}
     </div>
 
-    <form
+    {!canAdd && <p className="mt-auto text-sm text-gray-600">{readOnlyNote}</p>}
+    {canAdd && <form
       className="mt-auto flex gap-2"
       onSubmit={(e) => {
         e.preventDefault();
@@ -79,13 +84,14 @@ const Section = ({ title, type, items, placeholder, loading, newValue, setNewVal
       <button type="submit" className="inline-flex items-center rounded-[10px] border border-line bg-white px-4 py-[9px] text-sm font-medium text-ink transition hover:bg-gray-50">
         เพิ่ม
       </button>
-    </form>
+    </form>}
   </section>
 );
 
 export default function SettingsPage() {
-  // With rooms on (the department context exists) a department is a room: rooms are never deleted, only closed by the Super admin.
-  const { departmentContext = null } = useAuth();
+  // With rooms on (the department context exists) a department is a room: rooms are made and closed only on the Super
+  // admin page "จัดการห้อง" and never deleted, so this card is a read-only list.
+  const { departmentContext = null, isSuperAdmin = false } = useAuth();
   const roomsOn = departmentContext !== null;
   const [data, setData] = useState<SettingData>({
     reagentTypes: [],
@@ -199,6 +205,10 @@ export default function SettingsPage() {
           onAdd={handleAdd}
           onDelete={handleDelete}
           canDelete={!roomsOn}
+          canAdd={!roomsOn}
+          readOnlyNote={isSuperAdmin
+            ? <>เพิ่ม ตั้งรหัส เปลี่ยนชื่อ และปิดห้องได้ที่หน้า <Link href="/super-admin/rooms" className="font-medium text-ink underline">จัดการห้อง</Link></>
+            : 'การเพิ่มและปิดห้องทำโดย Super admin ที่หน้า "จัดการห้อง"'}
         />
       </div>
 
