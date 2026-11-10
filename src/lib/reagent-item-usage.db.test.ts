@@ -129,6 +129,16 @@ async function seedCount(opts: { status?: string; counted: number; alloc?: numbe
 describe("getReagentItemUsage with count refills (departments off)", () => {
   beforeEach(seed);
 
+  it("the adjusted figure follows the start of the action text, not words the user typed in the reason", async () => {
+    await sql.db.exec(`INSERT INTO logs (timestamp, item_id, lot_no, action, quantity, username) VALUES
+      ('2026-09-26 09:00+00','R1','L2','ปรับปรุง lot/exp/qty (Reconciliation) | ยอด 5 → 9 | เหตุผล: ปรับปรุงยอดตามนับจริง',9,'admin'),
+      ('2026-09-27 09:00+00','R1','L2','ปรับปรุง lot/exp/qty (Reconciliation) | ยอด 9 → 4 | เหตุผล: นับจริง',4,'admin')`);
+
+    const detail = await getReagentItemUsage("R1", "2026-09-01", "2026-09-30", { mode: "legacy" });
+
+    expect(detail?.totals.adjusted).toBe(-1); // only the old-style row of the seed ("ปรับปรุงยอด (นับสต็อก)"), as before
+  });
+
   it("adds the refill spread back to the previous count to the regular usage (user example)", async () => {
     await seedCount({ counted: 4, alloc: 6, auditAt: "2026-11-03 02:00+00" });
     await seedCount({ counted: 3, alloc: 7, auditAt: "2026-11-10 02:00+00" });

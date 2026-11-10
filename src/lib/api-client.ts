@@ -539,6 +539,8 @@ export const apiClient = {
     newLotNo: string;
     newExpDate?: string;
     newQty: number;
+    /** Optional reason, kept in the adjustment log */
+    reason?: string;
   }) => {
     const res = await instance.post<ApiResponse>('/api/inventory/reconcile', data);
     return res.data;

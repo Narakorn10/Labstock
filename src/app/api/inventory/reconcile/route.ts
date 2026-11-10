@@ -4,6 +4,7 @@ import { getAuthenticatedUser } from '@/lib/auth-utils';
 import { isDepartmentScopeFailure, toApiError } from '@/lib/api-response';
 import { getRequestId } from '@/lib/request-observability';
 import { andDept, andDeptWrite, deptInsert, getDepartmentScope, writeDepartmentId } from '@/lib/scoped-db';
+import { buildAdjustmentAction } from '@/lib/stock-adjustment-log';
 
 export async function POST(request: Request) {
   const requestId = getRequestId(request);
@@ -30,7 +31,7 @@ export async function POST(request: Request) {
     const d = deptInsert(scope);
 
     const targetRows = await sql`
-      SELECT i.id, i.item_id, i.lot_no, i.received_on, m.name
+      SELECT i.id, i.item_id, i.lot_no, i.received_on, i.quantity, i.exp_date::text AS exp_date_text, m.name
       FROM inventory i
       LEFT JOIN master_data m ON LOWER(m.item_id) = LOWER(i.item_id)${andDept(scope, 'm')}
       WHERE i.id = ${inventoryId}
@@ -44,6 +45,8 @@ export async function POST(request: Request) {
 
     const targetRow = targetRows[0];
     const itemName = targetRow.name || 'Unknown';
+
+    const currentQty = Number(targetRow.quantity);
 
     // Deliberately NOT department-filtered: inventory is UNIQUE (item_id, lot_no, received_on) across ALL departments,
     // so a row of another department would still make the UPDATE fail with 23505 (a 500). Checking everything keeps the 409.
@@ -64,9 +67,19 @@ export async function POST(request: Request) {
       );
     }
 
+    const action = buildAdjustmentAction({
+      oldQty: currentQty,
+      newQty,
+      oldLot: targetRow.lot_no,
+      newLot: newLotNo,
+      oldExp: (targetRow.exp_date_text || '').slice(0, 10),
+      newExp: (newExpDate || '').slice(0, 10),
+      reason: body.reason,
+    });
+
     const result = await sql`
       WITH updated AS (
-        UPDATE inventory 
+        UPDATE inventory
         SET
           lot_no = ${newLotNo},
           exp_date = ${newExpDate},
@@ -76,7 +89,7 @@ export async function POST(request: Request) {
         RETURNING item_id, lot_no
       )
       INSERT INTO logs (item_id, name, lot_no, action, quantity, username${d.column})
-      SELECT item_id, ${itemName}, lot_no, 'ปรับปรุง lot/exp/qty (Reconciliation)', ${newQty}, ${user.name + ' (' + user.role + ')'}${d.value}
+      SELECT item_id, ${itemName}, lot_no, ${action}, ${newQty}, ${user.name + ' (' + user.role + ')'}${d.value}
       FROM updated
       RETURNING *
     `;

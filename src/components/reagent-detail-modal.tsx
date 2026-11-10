@@ -80,6 +80,7 @@ export default function ReagentDetailModal({
     const submittedExpDate = String(formData.get('expDate') || '').trim();
     const newExpDate = submittedExpDate || formatDateForInput(editingLot.expDate);
     const newQty = Number(formData.get('newQty'));
+    const reason = String(formData.get('reason') || '').trim();
 
     if (!newLotNo) {
       alert('กรุณากรอก Lot Number');
@@ -94,6 +95,7 @@ export default function ReagentDetailModal({
         newLotNo,
         newExpDate,
         newQty,
+        reason,
       });
 
       if (!result.success) {
@@ -308,6 +310,18 @@ export default function ReagentDetailModal({
                 autoFocus
                 defaultValue={editingLot.qty}
                 className="w-full border-2 border-blue-600 rounded-2xl px-6 py-4 text-center font-black text-3xl text-blue-600 focus:bg-white transition outline-none"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="reconcile-reason" className="text-sm font-black text-gray-700 uppercase tracking-widest">เหตุผล (ไม่บังคับ)</label>
+              <input
+                id="reconcile-reason"
+                name="reason"
+                type="text"
+                maxLength={120}
+                placeholder="เช่น นับจริง, น้ำยาหยดหาย"
+                className="w-full border border-blue-200 rounded-2xl px-4 py-3 font-bold text-gray-800 focus:bg-white transition outline-none"
               />
             </div>
 

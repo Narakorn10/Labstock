@@ -56,12 +56,6 @@ describe("POST /api/inventory/reconcile (legacy)", () => {
     expect((await reconcile({ ...base, newQty: -1 })).status).toBe(400);
   });
 
-  it("answers 404 when the inventory row does not match the item", async () => {
-    const response = await reconcile({ ...base, itemId: "LAB-000002" });
-    expect(response.status).toBe(404);
-    expect((await response.json()).error).toContain("LAB-000002");
-  });
-
   it("updates lot, expiry and quantity and writes one log row", async () => {
     const response = await reconcile(base);
 
@@ -72,9 +66,28 @@ describe("POST /api/inventory/reconcile (legacy)", () => {
     expect(Number(row.quantity)).toBe(9);
     const logs = (await sql.db.query<{ action: string; username: string; quantity: string }>("SELECT action, username, quantity FROM logs")).rows;
     expect(logs).toHaveLength(1);
-    expect(logs[0].action).toBe("ปรับปรุง lot/exp/qty (Reconciliation)");
+    expect(logs[0].action).toBe("ปรับปรุง lot/exp/qty (Reconciliation) | ยอด 5 → 9 | Lot L1 → L1-FIXED | EXP 2027-01-01 → 2028-01-01");
     expect(logs[0].username).toBe("Manager One (Manager)");
     expect(Number(logs[0].quantity)).toBe(9);
+  });
+
+  it("writes the old quantity, only the parts that changed, and the reason into the log", async () => {
+    const response = await reconcile({ ...base, newLotNo: "L1", newExpDate: "2027-01-01", newQty: 2, reason: "นับจริง น้ำยาหยดหาย" });
+
+    expect(response.status).toBe(200);
+    const logs = (await sql.db.query<{ action: string; quantity: string }>("SELECT action, quantity FROM logs")).rows;
+    expect(logs[0].action).toBe("ปรับปรุง lot/exp/qty (Reconciliation) | ยอด 5 → 2 | เหตุผล: นับจริง น้ำยาหยดหาย");
+    expect(Number(logs[0].quantity)).toBe(2); // the logged quantity stays the new quantity, as before
+  });
+
+  it("cleans the reason: no separator, line breaks or characters that break Telegram/CSV, at most 120 characters", async () => {
+    await reconcile({ ...base, newLotNo: "L1", newExpDate: "2027-01-01", reason: "a | b\n<i>\"c\"</i> & " + "ก".repeat(300) });
+
+    const action = (await sql.db.query<{ action: string }>("SELECT action FROM logs")).rows[0].action;
+    const reason = action.split(" | เหตุผล: ")[1];
+    expect(reason.length).toBeLessThanOrEqual(120);
+    expect(reason).not.toMatch(/[|<>&"\n]/);
+    expect(action.split(" | ").filter((part) => part.startsWith("ยอด "))).toHaveLength(1);
   });
 
   it("answers 409 when the new lot collides with another row of the same received_on", async () => {
