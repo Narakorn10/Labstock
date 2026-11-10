@@ -20,6 +20,7 @@ import {
   ShieldCheck,
   ShoppingCart,
   UsersRound,
+  Building2,
 } from "lucide-react";
 import { SHIPMENTS_ENABLED } from "@/lib/feature-flags";
 
@@ -89,6 +90,7 @@ const ALL_NAVIGATION_GROUPS: NavigationGroup[] = [
       { id: "barcodes", name: "สอนอ่านบาร์โค้ด", label: "Barcode Learning", href: "/settings/barcodes", icon: ScanLine },
       { id: "reagent_order_policies", name: "ตั้งค่านโยบายสั่งซื้อน้ำยา", label: "Reagent Order Policies", href: "/settings/reagent-orders", icon: ClipboardList },
       { id: "room_admin", name: "ห้องของฉัน (ผู้ดูแลห้อง)", label: "My Room", href: "/settings/room", icon: UsersRound },
+      { id: "super_admin_rooms", name: "จัดการห้อง (Super admin)", label: "Manage Rooms", href: "/super-admin/rooms", icon: Building2 },
     ],
   },
 ];
@@ -121,4 +123,12 @@ export const ROOM_ADMIN_MENUS = ["room_admin", "reagent_order_policies", "master
 /** Pure: adds the room admin menus when the user is a room admin, otherwise returns the same list. */
 export function mergeRoomAdminMenus(menus: string[], isRoomAdmin: boolean) {
   return isRoomAdmin ? mergeMenus(menus, ROOM_ADMIN_MENUS) : menus;
+}
+
+/** Menus only the Super admin gets. Never stored in the role permissions; the page and its APIs check the flag again. */
+export const SUPER_ADMIN_MENUS = ["super_admin_rooms"];
+
+/** Pure: adds the Super admin menus when the user is the Super admin, otherwise returns the same list. */
+export function mergeSuperAdminMenus(menus: string[], isSuperAdmin: boolean) {
+  return isSuperAdmin ? mergeMenus(menus, SUPER_ADMIN_MENUS) : menus;
 }

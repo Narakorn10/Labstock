@@ -5,6 +5,7 @@ import { listUserDepartments } from '@/lib/department-switch';
 import type { DepartmentContext } from '@/lib/department-switcher-types';
 import { isMissingDepartmentSchemaError, markDepartmentsNotReady } from '@/lib/departments-flag';
 import { hasRoomAdminSlot } from '@/lib/room-admin';
+import { isSuperAdmin } from '@/lib/super-admin';
 
 /** Context used when the department list cannot be built: no options, active taken from the user as resolved. Pure. */
 function fallbackDepartmentContext(user: AuthenticatedUser): DepartmentContext {
@@ -106,11 +107,23 @@ export async function GET(request: Request) {
       }
     }
 
+    // Super admin (v37) decides only whether the "จัดการห้อง" menu is shown. Same rule as above: the key is added only
+    // when true, a failed lookup means "no", and this endpoint must never turn into a 500. The Super admin APIs check again.
+    let superAdmin = false;
+    if (user.role === 'Admin') {
+      try {
+        superAdmin = await isSuperAdmin(user.username);
+      } catch (error) {
+        console.error('Auth me super admin lookup failed:', error);
+      }
+    }
+
     return NextResponse.json({
       success: true,
       user: { ...user, department },
       ...(departmentContext ? { departmentContext } : {}),
-      ...(isRoomAdmin ? { isRoomAdmin: true } : {})
+      ...(isRoomAdmin ? { isRoomAdmin: true } : {}),
+      ...(superAdmin ? { isSuperAdmin: true } : {})
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);

@@ -40,6 +40,8 @@ interface AuthContextType {
   refreshDepartmentContext?: () => Promise<void>;
   /** The user is a room admin of the room they are working in (from /api/auth/me). Not part of `user` on purpose. */
   isRoomAdmin?: boolean;
+  /** The user is the Super admin (from /api/auth/me). Only decides whether a menu is shown; the APIs check again. */
+  isSuperAdmin?: boolean;
   /** /api/auth/me has answered for this user (so `isRoomAdmin` is known). False while it is still loading. */
   accountContextLoaded?: boolean;
 }
@@ -50,9 +52,10 @@ interface DepartmentState {
   notice: string | null;
   error: string | null;
   isRoomAdmin: boolean;
+  isSuperAdmin: boolean;
 }
 
-const EMPTY_DEPARTMENT_STATE: DepartmentState = { owner: null, ctx: null, notice: null, error: null, isRoomAdmin: false };
+const EMPTY_DEPARTMENT_STATE: DepartmentState = { owner: null, ctx: null, notice: null, error: null, isRoomAdmin: false, isSuperAdmin: false };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -133,6 +136,7 @@ function AuthStateProvider({ children }: { children: React.ReactNode }) {
             owner: username,
             ctx: result.ctx,
             isRoomAdmin: result.isRoomAdmin === true,
+            isSuperAdmin: result.isSuperAdmin === true,
             // Keep the one-shot message / error across a later re-run of this effect; replace only on a new result.
             notice: pendingResult === 'ok' ? `สลับไปงาน ${result.ctx?.active?.name ?? ALL_LABEL} แล้ว` : (prev.owner === username ? prev.notice : null),
             error: pendingResult === 'failed' ? 'สลับงานไม่สำเร็จ' : (prev.owner === username ? prev.error : null),
@@ -202,6 +206,7 @@ function AuthStateProvider({ children }: { children: React.ReactNode }) {
         onDepartmentDisabled,
         refreshDepartmentContext,
         isRoomAdmin: dept.isRoomAdmin,
+        isSuperAdmin: dept.isSuperAdmin,
         accountContextLoaded: dept.owner !== null && dept.owner === username,
       }}
     >
