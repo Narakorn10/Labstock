@@ -61,6 +61,12 @@ function BarcodeLearningV2Panel() {
   const [notice, setNotice] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
   const [editingPatternId, setEditingPatternId] = useState<number | null>(null);
+  const [patternSearch, setPatternSearch] = useState('');
+  const patternKeyword = patternSearch.trim().toLocaleLowerCase();
+  const visiblePatterns = patternKeyword
+    ? patterns.filter((pattern) => [pattern.name, pattern.fixed_item_id, pattern.status]
+      .some((value) => (value ?? '').toLocaleLowerCase().includes(patternKeyword)))
+    : patterns;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -426,7 +432,7 @@ function BarcodeLearningV2Panel() {
         </div>
 
         <div className="space-y-4">
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="text-lg font-black">รูปแบบ V2 ที่สอนแล้ว</h2><p className="mt-1 text-sm text-slate-500">การเปิดใช้และปิดใช้จะถูกบันทึก Audit ทุกครั้ง</p>{loading ? <div className="flex items-center gap-2 py-8 text-sm text-slate-500"><Loader2 className="animate-spin" size={18} /> กำลังโหลด</div> : <div className="mt-4 space-y-3">{patterns.map((pattern) => <article key={pattern.id} className="rounded-2xl border border-slate-200 p-4"><div className="flex items-start justify-between gap-3"><div><h3 className="font-black">{pattern.name}</h3><p className="mt-1 text-xs text-slate-500">{pattern.mapping_mode === 'FIXED_REAGENT' ? `ผูกกับ ${pattern.fixed_item_id}` : 'ดึงรหัสจาก QR'} · {pattern.examples.length}/2 ตัวอย่าง</p></div><V2StatusLabel status={pattern.status} /></div>{pattern.verification?.errors?.length ? <p className="mt-3 text-xs text-rose-700">ยังไม่ผ่าน: {pattern.verification.errors[0]}</p> : <p className="mt-3 text-xs text-emerald-700">ตรวจสอบล่าสุดผ่าน</p>}<div className="mt-3 flex flex-wrap gap-2">{pattern.status === 'VERIFIED' && <button type="button" onClick={() => activate(pattern.id)} className="inline-flex min-h-10 items-center gap-1 rounded-lg bg-emerald-700 px-3 text-xs font-bold text-white"><Power size={14} /> เปิดใช้</button>}{pattern.status === 'ACTIVE' && <button type="button" onClick={() => deactivate(pattern.id)} className="inline-flex min-h-10 items-center gap-1 rounded-lg border border-rose-200 px-3 text-xs font-bold text-rose-700"><PowerOff size={14} /> ปิดใช้</button>}{(pattern.status === 'DRAFT' || pattern.status === 'VERIFIED') && <button type="button" onClick={() => startEditingDraft(pattern)} className="min-h-10 rounded-lg border border-slate-300 px-3 text-xs font-bold">แก้ไข</button>}{pattern.status !== 'ACTIVE' && !pattern.activated_at && <button type="button" onClick={() => remove(pattern)} className="inline-flex min-h-10 items-center gap-1 rounded-lg px-3 text-xs font-bold text-slate-400 hover:text-rose-700"><Trash2 size={14} /> ลบ</button>}</div></article>)}{patterns.length === 0 && <p className="py-8 text-center text-sm text-slate-400">ยังไม่มีรูปแบบ V2</p>}</div>}</div>
+          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="text-lg font-black">รูปแบบ V2 ที่สอนแล้ว</h2><p className="mt-1 text-sm text-slate-500">การเปิดใช้และปิดใช้จะถูกบันทึก Audit ทุกครั้ง</p><input type="search" value={patternSearch} onChange={(event) => setPatternSearch(event.target.value)} placeholder="ค้นหาชื่อรูปแบบ รหัสน้ำยา หรือสถานะ" aria-label="ค้นหารูปแบบ V2" className="mt-3 min-h-[38px] w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" />{loading ? <div className="flex items-center gap-2 py-8 text-sm text-slate-500"><Loader2 className="animate-spin" size={18} /> กำลังโหลด</div> : <div className="mt-4 space-y-3">{visiblePatterns.map((pattern) => <article key={pattern.id} className="rounded-2xl border border-slate-200 p-4"><div className="flex items-start justify-between gap-3"><div><h3 className="font-black">{pattern.name}</h3><p className="mt-1 text-xs text-slate-500">{pattern.mapping_mode === 'FIXED_REAGENT' ? `ผูกกับ ${pattern.fixed_item_id}` : 'ดึงรหัสจาก QR'} · {pattern.examples.length}/2 ตัวอย่าง</p></div><V2StatusLabel status={pattern.status} /></div>{pattern.verification?.errors?.length ? <p className="mt-3 text-xs text-rose-700">ยังไม่ผ่าน: {pattern.verification.errors[0]}</p> : <p className="mt-3 text-xs text-emerald-700">ตรวจสอบล่าสุดผ่าน</p>}<div className="mt-3 flex flex-wrap gap-2">{pattern.status === 'VERIFIED' && <button type="button" onClick={() => activate(pattern.id)} className="inline-flex min-h-10 items-center gap-1 rounded-lg bg-emerald-700 px-3 text-xs font-bold text-white"><Power size={14} /> เปิดใช้</button>}{pattern.status === 'ACTIVE' && <button type="button" onClick={() => deactivate(pattern.id)} className="inline-flex min-h-10 items-center gap-1 rounded-lg border border-rose-200 px-3 text-xs font-bold text-rose-700"><PowerOff size={14} /> ปิดใช้</button>}{(pattern.status === 'DRAFT' || pattern.status === 'VERIFIED') && <button type="button" onClick={() => startEditingDraft(pattern)} className="min-h-10 rounded-lg border border-slate-300 px-3 text-xs font-bold">แก้ไข</button>}{pattern.status !== 'ACTIVE' && !pattern.activated_at && <button type="button" onClick={() => remove(pattern)} className="inline-flex min-h-10 items-center gap-1 rounded-lg px-3 text-xs font-bold text-slate-400 hover:text-rose-700"><Trash2 size={14} /> ลบ</button>}</div></article>)}{patterns.length === 0 && <p className="py-8 text-center text-sm text-slate-400">ยังไม่มีรูปแบบ V2</p>}{patterns.length > 0 && visiblePatterns.length === 0 && <p className="py-8 text-center text-sm text-slate-400">ไม่พบรูปแบบที่ตรงกับคำค้นหา</p>}</div>}</div>
           <div className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900"><p className="font-black">หลักประกันความปลอดภัย</p><p className="mt-2">V2 จะทำงานเฉพาะ QR ที่ V1 หา Master ไม่พบเท่านั้น หาก validator, cache หรือ runtime มีปัญหา ระบบกลับไปใช้ manual/V1 เดิมโดยอัตโนมัติ</p></div>
         </div>
       </section>
@@ -454,6 +460,12 @@ export default function BarcodeSettingsPage() {
   
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<'v2' | 'legacy'>('v2');
+  const [patternSearch, setPatternSearch] = useState('');
+  const legacyKeyword = patternSearch.trim().toLocaleLowerCase();
+  const legacyVisiblePatterns = legacyKeyword
+    ? patterns.filter((pattern) => [pattern.name, pattern.regex_pattern]
+      .some((value) => (value ?? '').toLocaleLowerCase().includes(legacyKeyword)))
+    : patterns;
   
   // Assistant Mode States
   const [assistantMode, setAssistantMode] = useState(false);
@@ -866,8 +878,16 @@ export default function BarcodeSettingsPage() {
 
       <div className="space-y-4">
         <h2 className="text-xl font-bold">รูปแบบที่เรียนรู้แล้ว ({patterns.length})</h2>
+        <input
+          type="search"
+          value={patternSearch}
+          onChange={(event) => setPatternSearch(event.target.value)}
+          placeholder="ค้นหาชื่อรูปแบบ หรือ regex"
+          aria-label="ค้นหารูปแบบที่เรียนรู้แล้ว"
+          className="min-h-[38px] w-full rounded-xl border border-gray-300 bg-white px-3 text-sm"
+        />
         <div className="grid gap-4">
-          {patterns.map(p => (
+          {legacyVisiblePatterns.map(p => (
             <div key={p.id} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between">
               <div>
                 <h3 className="font-bold text-gray-900">{p.name}</h3>
@@ -885,6 +905,9 @@ export default function BarcodeSettingsPage() {
           ))}
           {patterns.length === 0 && (
             <div className="text-center p-8 text-gray-400 bg-gray-50 rounded-2xl">ยังไม่มีรูปแบบที่บันทึกไว้</div>
+          )}
+          {patterns.length > 0 && legacyVisiblePatterns.length === 0 && (
+            <div className="text-center p-8 text-gray-400 bg-gray-50 rounded-2xl">ไม่พบรูปแบบที่ตรงกับคำค้นหา</div>
           )}
         </div>
       </div>

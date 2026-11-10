@@ -13,6 +13,7 @@ import {
   Loader2,
   Package,
   RefreshCw,
+  Search,
   ShieldAlert,
   ShoppingCart,
   Truck,
@@ -97,19 +98,6 @@ export default function InventoryOverview() {
   const [error, setError] = useState<string | null>(null);
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-
-  // Search handed over from the header (?q=... on arrival, or an event when already on this page).
-  useEffect(() => {
-    const initial = new URLSearchParams(window.location.search).get('q');
-    // Deferred so the state update is not synchronous inside the effect.
-    const timer = initial ? window.setTimeout(() => setSearchTerm(initial), 0) : undefined;
-    const onSearch = (event: Event) => setSearchTerm(String((event as CustomEvent<string>).detail ?? ''));
-    window.addEventListener('labstock:search', onSearch);
-    return () => {
-      if (timer) window.clearTimeout(timer);
-      window.removeEventListener('labstock:search', onSearch);
-    };
-  }, []);
   const [selectedJobType, setSelectedJobType] = useState<string>('ทั้งหมด');
   const [selectedReagentType, setSelectedReagentType] = useState<string>('ทั้งหมด');
   const [selectedVendor, setSelectedVendor] = useState<string>('ทั้งหมด');
@@ -520,11 +508,17 @@ export default function InventoryOverview() {
             {statusFilter === 'all' ? 'รายการคงคลังปัจจุบัน' : `คิว: ${activeQueue?.name}`}{' '}
             <span className="font-normal text-gray-600" aria-live="polite">{filteredItems.length.toLocaleString('th-TH')}</span>
           </h2>
-          {searchTerm.trim() !== '' && (
-            <button type="button" onClick={() => setSearchTerm('')} className="inline-flex items-center gap-1.5 rounded-full border border-line bg-white px-3 py-1 text-[13px] text-gray-700 hover:bg-gray-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400">
-              ค้นหา: {searchTerm.trim()} <X size={14} aria-hidden="true" /><span className="sr-only">ล้างคำค้นหา</span>
-            </button>
-          )}
+          <div className="relative w-full sm:w-[280px]">
+            <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" aria-hidden="true" />
+            <input
+              type="search"
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="ค้นหารหัส หรือชื่อน้ำยา"
+              aria-label="ค้นหารหัส หรือชื่อน้ำยา"
+              className="min-h-[38px] w-full rounded-[10px] border border-line bg-white py-[7px] pl-9 pr-3 text-sm text-ink placeholder:text-ink-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+            />
+          </div>
           {statusFilter !== 'all' && (
             <button type="button" onClick={() => setStatusFilter('all')} className="inline-flex items-center gap-2 rounded-[10px] border border-transparent px-2.5 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400">
               ล้างคิว <X size={14} aria-hidden="true" />
