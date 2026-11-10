@@ -183,3 +183,57 @@ describe("listPurchaseOrderEvents with a department scope", () => {
     }
   });
 });
+
+describe("an order still waiting for the manager's review is not the Vendor's yet", () => {
+  const vendor = { username: "vendorP", role: "Vendor", vendor: "PCL" } as unknown as AuthenticatedUser;
+  const lab = { username: "adminA", role: "Admin" } as unknown as AuthenticatedUser;
+  let pending: number;
+
+  beforeEach(async () => {
+    pending = (await insertPurchaseOrder(sql, { poNumber: "PO-PENDING", departmentId: DEPT_A, status: "PENDING_MANAGER_REVIEW", vendor: "PCL" })).poId;
+  });
+
+  it("queues nothing for the Vendor, on any channel, when the manager edits the pending order", async () => {
+    await recordPurchaseOrderCommunication({
+      poId: pending, eventType: "PO_STATUS_UPDATED", actor: { username: "adminA", role: "Admin" },
+      metadata: { fromStatus: "PENDING_MANAGER_REVIEW", action: "UPDATE_UNACKNOWLEDGED_LAB_ORDER" },
+    });
+    expect((await outbox(pending)).filter((row) => row.recipient_role === "Vendor")).toEqual([]);
+  });
+
+  it("records the event for the Lab only, so the Vendor cannot read it later either", async () => {
+    await recordPurchaseOrderCommunication({
+      poId: pending, eventType: "PO_STATUS_UPDATED", actor: { username: "adminA", role: "Admin" }, note: "internal note",
+      metadata: { fromStatus: "PENDING_MANAGER_REVIEW", action: "UPDATE_UNACKNOWLEDGED_LAB_ORDER" },
+    });
+    expect(await rows("SELECT visibility FROM purchase_order_events WHERE po_id = $1", [pending])).toEqual([{ visibility: "LAB" }]);
+
+    // after the approval the Vendor sees the approval, but not what happened before it
+    await sql.db.query("UPDATE purchase_orders SET status = 'SUBMITTED' WHERE id = $1", [pending]);
+    await recordPurchaseOrderCommunication({ poId: pending, eventType: "PO_CREATED", actor: { username: "adminA", role: "Admin" }, metadata: { fromStatus: "PENDING_MANAGER_REVIEW", action: "APPROVE_MANAGER_REVIEW" } });
+    const seen = await listPurchaseOrderEvents(pending, vendor, { mode: "legacy" });
+    expect(seen).toMatchObject({ items: [expect.objectContaining({ event_type: "PO_CREATED" })] });
+    expect((seen as { items: unknown[] }).items).toHaveLength(1);
+    const labSeen = await listPurchaseOrderEvents(pending, lab, { mode: "all" });
+    expect((labSeen as { items: unknown[] }).items).toHaveLength(2);
+  });
+
+  it("still notifies the Vendor when the manager approves (the order becomes SUBMITTED)", async () => {
+    await sql.db.query("UPDATE purchase_orders SET status = 'SUBMITTED' WHERE id = $1", [pending]);
+    await recordPurchaseOrderCommunication({ poId: pending, eventType: "PO_CREATED", actor: { username: "adminA", role: "Admin" }, metadata: { fromStatus: "PENDING_MANAGER_REVIEW", action: "APPROVE_MANAGER_REVIEW" } });
+    const vendorRows = (await outbox(pending)).filter((row) => row.recipient_role === "Vendor");
+    expect(vendorRows.map((row) => row.recipient_username)).toEqual(["vendorP"]);
+  });
+
+  it("the Vendor's events endpoint answers FORBIDDEN while the order is pending, like GET /api/purchase-orders/[id]", async () => {
+    await recordPurchaseOrderCommunication({ poId: pending, eventType: "PO_REVIEW_REQUIRED", actor: { username: "adminA", role: "Admin" } });
+    expect(await listPurchaseOrderEvents(pending, vendor, { mode: "legacy" })).toBe("FORBIDDEN");
+    expect(await listPurchaseOrderEvents(pending, lab, { mode: "all" })).toMatchObject({ items: [expect.objectContaining({ event_type: "PO_REVIEW_REQUIRED" })] });
+  });
+
+  it("does not change what the Vendor gets for orders that are already sent", async () => {
+    await recordPurchaseOrderCommunication({ poId: poA, eventType: "PO_STATUS_UPDATED", actor: { username: "adminA", role: "Admin" } });
+    expect((await outbox(poA)).some((row) => row.recipient_role === "Vendor")).toBe(true);
+    expect(await listPurchaseOrderEvents(poA, vendor, { mode: "legacy" })).toMatchObject({ items: expect.any(Array) });
+  });
+});
