@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import sql from "@/lib/db";
 import { getAuthenticatedUser } from "@/lib/auth-utils";
-import { recordPurchaseOrderCommunication } from "@/lib/po-communication";
+import { recordPurchaseOrderCommunication, wasRejectedInManagerReview } from "@/lib/po-communication";
 import { addItemsToManagerReviewOrder } from "@/lib/purchase-order-add-items";
 import { applyLabReviewDecision, closePurchaseOrder, runGuardedPurchaseOrderUpdate } from "@/lib/purchase-order-review";
 import { confirmLabReceipt } from "@/lib/purchase-order-receipt";
@@ -47,7 +47,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     if (poData.length === 0) return NextResponse.json({ error: "Purchase order not found" }, { status: 404 });
 
     const po = poData[0];
-    if (user.role === "Vendor" && (po.vendor !== user.vendor || po.status === "PENDING_MANAGER_REVIEW")) {
+    // Not the Vendor's yet (waiting for the manager's review) or never sent (the manager rejected it in that review).
+    if (user.role === "Vendor" && (
+      po.vendor !== user.vendor
+      || po.status === "PENDING_MANAGER_REVIEW"
+      || (po.status === "REJECTED" && po.proposal_origin === "LAB" && await wasRejectedInManagerReview(Number(po.id)))
+    )) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     const items = user.role === "Vendor"

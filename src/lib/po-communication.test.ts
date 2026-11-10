@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({ sql: vi.fn() }));
 vi.mock("@/lib/db", () => ({ default: mocks.sql }));
 vi.mock("next/server", () => ({ after: () => { throw new Error("no request scope"); } }));
 
-import { recordPurchaseOrderCommunication, shouldNotifyRecipient, shouldSendLine } from "./po-communication";
+import { isHiddenFromVendor, recordPurchaseOrderCommunication, shouldNotifyRecipient, shouldSendLine } from "./po-communication";
 
 describe("PO communication recipients", () => {
   it("never notifies anyone when the Lab confirms receipt", () => {
@@ -22,6 +22,21 @@ describe("PO communication recipients", () => {
       }
     }
     for (const role of ["Admin", "Manager", "Vendor"]) expect(shouldSendLine("PO_ITEMS_ADDED", role, "ADD_ITEMS_TO_MANAGER_REVIEW")).toBe(false);
+  });
+
+  it("hides an order from the Vendor while it waits for review and when the manager rejected it in that review", () => {
+    expect(isHiddenFromVendor("PENDING_MANAGER_REVIEW")).toBe(true);
+    expect(isHiddenFromVendor("REJECTED", "PENDING_MANAGER_REVIEW")).toBe(true);
+    for (const [status, from] of [
+      ["SUBMITTED", "PENDING_MANAGER_REVIEW"], // the approval: the Vendor must hear about it
+      ["REJECTED", "PENDING_LAB_REVIEW"], // the Vendor's own proposal
+      ["REJECTED", "REVISION_REQUESTED"],
+      ["REJECTED", "SUBMITTED"],
+      ["REJECTED", undefined],
+      ["CONFIRMED", "ACKNOWLEDGED"],
+    ] as const) {
+      expect(isHiddenFromVendor(status, from), `${from} -> ${status}`).toBe(false);
+    }
   });
 
   it("still notifies the Vendor about the existing received event", () => {

@@ -156,6 +156,14 @@ export const PROD_SCHEMA_DDL = `
     po_number TEXT NOT NULL,
     shipment_id BIGINT,
     event_type TEXT NOT NULL,
+    from_status TEXT,
+    to_status TEXT,
+    actor_username TEXT,
+    actor_role TEXT,
+    source TEXT NOT NULL DEFAULT 'WEB',
+    visibility TEXT NOT NULL DEFAULT 'BOTH' CHECK (visibility IN ('LAB', 'VENDOR', 'BOTH')),
+    note TEXT,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
   );
 

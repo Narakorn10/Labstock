@@ -50,7 +50,7 @@ beforeEach(async () => {
   vi.clearAllMocks();
   vi.spyOn(console, "error").mockImplementation(() => undefined);
   mocks.getAuthenticatedUser.mockResolvedValue(labA);
-  await sql.db.exec(`TRUNCATE shipments, shipment_batches, purchase_order_items, purchase_orders RESTART IDENTITY CASCADE;`);
+  await sql.db.exec(`TRUNCATE shipments, shipment_batches, purchase_order_items, purchase_orders, purchase_order_events RESTART IDENTITY CASCADE;`);
   await insertPurchaseOrder(sql, { poNumber: "PO-A1", departmentId: DEPT_A, status: "SUBMITTED", itemId: "A-000002" });
   await insertPurchaseOrder(sql, { poNumber: "PO-A2", departmentId: DEPT_A, status: "PENDING_MANAGER_REVIEW", itemId: "A-000002" });
   await insertPurchaseOrder(sql, { poNumber: "PO-B1", departmentId: DEPT_B, status: "SUBMITTED", itemId: "MB-000001", vendor: "Vendor A" });
@@ -102,6 +102,29 @@ describe("GET /api/purchase-orders (Lab)", () => {
     const response = await GET(new Request("http://localhost/api/purchase-orders"));
     expect(response.status).toBe(404);
     expect(await response.json()).toMatchObject({ code: "DEPARTMENT_NOT_FOUND" });
+  });
+});
+
+describe("GET /api/purchase-orders (Vendor): orders the manager rejected in review were never sent", () => {
+  const rejected = async (poNumber: string, origin: "LAB" | "VENDOR", from: string) => {
+    const { poId } = await insertPurchaseOrder(sql, { poNumber, departmentId: DEPT_A, status: "REJECTED", itemId: "A-000002", proposalOrigin: origin });
+    await sql.db.query(
+      "INSERT INTO purchase_order_events (po_id, po_number, event_type, from_status, to_status) VALUES ($1, $2, 'PO_STATUS_UPDATED', $3, 'REJECTED')",
+      [poId, poNumber, from],
+    );
+  };
+
+  it("hides a Lab order rejected in the manager's review; still shows a Vendor's own rejected proposal and an order the Vendor rejected itself", async () => {
+    await rejected("PO-R1", "LAB", "PENDING_MANAGER_REVIEW"); // never sent to the Vendor
+    await rejected("PO-R2", "VENDOR", "PENDING_LAB_REVIEW"); // the Vendor's own proposal, rejected by the Lab
+    await rejected("PO-R3", "LAB", "ACKNOWLEDGED"); // sent, then rejected afterwards
+    mocks.getAuthenticatedUser.mockResolvedValue({ username: "vendor1", name: "Vendor One", role: "Vendor", vendor: "Vendor A", scope: DEPT_A });
+    expect(numbers((await list()).body)).toEqual(["PO-A1", "PO-B1", "PO-R2", "PO-R3"]);
+  });
+
+  it("the Lab still sees the rejected order", async () => {
+    await rejected("PO-R1", "LAB", "PENDING_MANAGER_REVIEW");
+    expect(numbers((await list()).body)).toContain("PO-R1");
   });
 });
 

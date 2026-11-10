@@ -82,7 +82,14 @@ export async function findPurchaseOrderForLine(poNumber: string, actor: LineBotA
   }
   // Vendor: blank name matches nothing (never vendor = ''); the query keeps the untrimmed value like vendor/shipments/route.ts.
   if (!actor.vendor.trim()) return null;
-  const rows = await sql`SELECT * FROM purchase_orders WHERE po_number = ${poNumber} AND vendor = ${actor.vendor} AND status <> 'PENDING_MANAGER_REVIEW'`;
+  const rows = await sql`
+    SELECT * FROM purchase_orders po
+    WHERE po.po_number = ${poNumber} AND po.vendor = ${actor.vendor} AND po.status <> 'PENDING_MANAGER_REVIEW'
+      AND NOT (po.status = 'REJECTED' AND po.proposal_origin = 'LAB' AND EXISTS (
+        SELECT 1 FROM purchase_order_events e
+        WHERE e.po_id = po.id AND e.from_status = 'PENDING_MANAGER_REVIEW' AND e.to_status = 'REJECTED'
+      ))
+  `;
   return (rows[0] as Record<string, unknown> | undefined) ?? null;
 }
 

@@ -62,6 +62,10 @@ export async function GET(request: Request) {
           FROM purchase_orders po
           WHERE po.vendor = ${vendor}
             AND po.status <> 'PENDING_MANAGER_REVIEW'
+            AND NOT (po.status = 'REJECTED' AND po.proposal_origin = 'LAB' AND EXISTS (
+              SELECT 1 FROM purchase_order_events e
+              WHERE e.po_id = po.id AND e.from_status = 'PENDING_MANAGER_REVIEW' AND e.to_status = 'REJECTED'
+            ))
           ORDER BY po.created_at DESC
         `
       : vendor

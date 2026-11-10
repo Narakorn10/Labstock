@@ -37,10 +37,6 @@ beforeAll(async () => {
     CREATE TABLE purchase_order_items (
       id SERIAL PRIMARY KEY, po_id INT REFERENCES purchase_orders(id), item_id TEXT, item_name TEXT, quantity NUMERIC, unit TEXT
     );
-    ALTER TABLE purchase_order_events
-      ADD COLUMN from_status TEXT, ADD COLUMN to_status TEXT, ADD COLUMN actor_username TEXT, ADD COLUMN actor_role TEXT,
-      ADD COLUMN source TEXT NOT NULL DEFAULT 'WEB', ADD COLUMN visibility TEXT NOT NULL DEFAULT 'BOTH',
-      ADD COLUMN note TEXT, ADD COLUMN metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
     CREATE TABLE notification_settings (
       username TEXT PRIMARY KEY, email TEXT, line_user_id TEXT,
       notify_po_created BOOLEAN, notify_po_confirmed BOOLEAN, notify_po_shipped BOOLEAN,
