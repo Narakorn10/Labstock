@@ -30,6 +30,9 @@ function sortLogsNewestFirst(entries: LogEntry[]) {
   });
 }
 
+// A text cell of the CSV: wrapped in quotes, a quote inside the text is doubled (so a reason with " cannot shift the columns).
+const csvCell = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+
 export default function LogsPage() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -73,13 +76,13 @@ export default function LogsPage() {
     const csvContent = [
       headers.join(','),
       ...logs.map(log => [
-        `"${log.timestamp}"`,
-        `"${log.itemId}"`,
-        `"${log.name}"`,
-        `"${log.lotNo}"`,
-        `"${log.action}"`,
+        csvCell(log.timestamp),
+        csvCell(log.itemId),
+        csvCell(log.name),
+        csvCell(log.lotNo),
+        csvCell(log.action),
         log.qty,
-        `"${log.user}"`
+        csvCell(log.user)
       ].join(','))
     ].join('\n');
 
