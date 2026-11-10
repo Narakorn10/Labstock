@@ -5,9 +5,10 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  ComposedChart,
   LabelList,
   Line,
-  LineChart,
+  ReferenceArea,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -32,6 +33,92 @@ const tdClass = 'border-b border-line px-3.5 py-2.5 text-sm';
 
 function formatNumber(value: number, maximumFractionDigits = 1) {
   return new Intl.NumberFormat('th-TH', { maximumFractionDigits }).format(value);
+}
+
+export const REGULAR_COLOR = 'var(--accent)';
+export const REFILL_COLOR = 'var(--ok)';
+const AVERAGE_COLOR = 'var(--warn)';
+
+export type UsageRow = { date: string; regular: number; refill: number; total: number; average7Days: number };
+
+/** One row per day from startDate to endDate (days without usage are 0) with the 7-day moving average of the total. */
+export function buildUsageRows(
+  startDate: string,
+  endDate: string,
+  pick: (date: string) => { regular: number; refill: number }
+): UsageRow[] {
+  const rows: UsageRow[] = [];
+  const cursor = new Date(`${startDate}T00:00:00`);
+  const end = new Date(`${endDate}T00:00:00`);
+  while (cursor <= end) {
+    const date = toLocalIsoDate(cursor);
+    const { regular, refill } = pick(date);
+    const total = regular + refill;
+    const recent = [...rows.slice(-6).map((row) => row.total), total];
+    rows.push({ date, regular, refill, total, average7Days: recent.reduce((sum, value) => sum + value, 0) / recent.length });
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return rows;
+}
+
+const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
+const shortThaiDate = (date: string) => new Intl.DateTimeFormat('th-TH', { day: 'numeric', month: 'short' }).format(new Date(`${date}T00:00:00`));
+
+type TooltipPayload = { payload?: Record<string, number | string> };
+
+/** Tooltip that shows the regular dispense, the refill and the total of the hovered bar. */
+export function UsageTooltip({ active, payload, label }: { active?: boolean; payload?: TooltipPayload[]; label?: string | number }) {
+  const row = payload?.[0]?.payload;
+  if (!active || !row) return null;
+  const title = typeof row.name === 'string' ? row.name : typeof label === 'string' && DATE_KEY.test(label) ? shortThaiDate(label) : String(label ?? '');
+  const regular = Number(row.regular ?? row.dispensed) || 0;
+  const refill = Number(row.refill) || 0;
+  return (
+    <div className="rounded-[10px] border border-line bg-white px-3 py-2 text-[13px] shadow-sm">
+      <p className="font-medium text-ink">{title}</p>
+      <p className="mt-1 text-gray-700"><span className="mr-1.5 inline-block size-2 rounded-full" style={{ background: REGULAR_COLOR }} aria-hidden="true" />เบิกไปหน้างาน {formatNumber(regular, 2)}</p>
+      <p className="text-gray-700"><span className="mr-1.5 inline-block size-2 rounded-full" style={{ background: REFILL_COLOR }} aria-hidden="true" />เบิกเติม {formatNumber(refill, 2)}</p>
+      <p className="mt-1 font-semibold text-ink">รวม {formatNumber(regular + refill, 2)}</p>
+      {typeof row.average7Days === 'number' && <p className="text-xs text-gray-600">เฉลี่ย 7 วัน {formatNumber(row.average7Days, 2)}</p>}
+    </div>
+  );
+}
+
+/** Stacked daily bars (regular + refill) with the 7-day average line; days from the latest count on are shaded. */
+export function DailyUsageChart({ rows, lastCountDate }: { rows: UsageRow[]; lastCountDate?: string | null }) {
+  const shadeFrom = lastCountDate ? rows.find((row) => row.date >= lastCountDate)?.date : undefined;
+  const shadeTo = rows.length ? rows[rows.length - 1].date : undefined;
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <ComposedChart data={rows} margin={{ left: 0, right: 8 }}>
+        <CartesianGrid stroke="#dcdcdf" vertical={false} />
+        <XAxis dataKey="date" tickFormatter={shortThaiDate} minTickGap={60} tick={axisTick} tickLine={false} axisLine={false} />
+        <YAxis hide />
+        <Tooltip content={<UsageTooltip />} />
+        {shadeFrom && shadeTo && shadeFrom !== shadeTo && (
+          <ReferenceArea x1={shadeFrom} x2={shadeTo} fill="var(--line)" fillOpacity={0.5} stroke="none" ifOverflow="hidden" />
+        )}
+        <Bar dataKey="regular" name="เบิกไปหน้างาน" stackId="usage" fill={REGULAR_COLOR} />
+        <Bar dataKey="refill" name="เบิกเติม" stackId="usage" fill={REFILL_COLOR} />
+        <Line type="linear" dataKey="average7Days" name="เฉลี่ย 7 วัน" stroke={AVERAGE_COLOR} strokeWidth={1.5} strokeDasharray="4 3" dot={false} />
+      </ComposedChart>
+    </ResponsiveContainer>
+  );
+}
+
+/** Colour key and the two notes that explain how the refill is spread. Used under every chart that stacks refill. */
+export function UsageLegend({ shaded }: { shaded: boolean }) {
+  return (
+    <div className="mt-2 space-y-1 text-xs text-gray-600">
+      <div className="flex flex-wrap items-center gap-4 text-[13px]">
+        <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-sm" style={{ background: REGULAR_COLOR }} aria-hidden="true" />เบิกไปหน้างาน</span>
+        <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-sm" style={{ background: REFILL_COLOR }} aria-hidden="true" />เบิกเติมจากใบงานนับสต็อก</span>
+        <span className="inline-flex items-center gap-1.5"><span className="w-3.5 border-t-2 border-dashed" style={{ borderColor: AVERAGE_COLOR }} aria-hidden="true" />เฉลี่ย 7 วัน (รวมทั้งสอง)</span>
+      </div>
+      <p>ยอดเบิกเติมถูกกระจายย้อนไปในช่วงระหว่างวันนับครั้งก่อนถึงวันก่อนวันนับครั้งนี้ (นับครั้งแรกกระจาย 7 วัน){shaded ? ' ช่วงที่แรเงาคือตั้งแต่วันนับล่าสุดเป็นต้นไป จึงยังไม่มียอดเบิกเติม และจะเพิ่มเมื่อนับครั้งถัดไป' : ''}</p>
+      <p>ถ้าเปลี่ยนค่า Max (เป้าสัปดาห์) ระหว่างรอบนับ ยอดเบิกเติมของรอบนั้นอาจคลาดเคลื่อนเล็กน้อย</p>
+    </div>
+  );
 }
 
 function thaiDate(value: string) {
@@ -85,28 +172,19 @@ export function ItemUsagePanel({
       .slice(0, 12);
   }, [items, search]);
 
-  // Fill days without dispensing with 0 so the trend line is continuous.
+  // Fill days without usage with 0 so the bars and the average line are continuous.
   const dailyTrend = useMemo(() => {
     if (!detail) return [];
-    const byDate = new Map(detail.daily.map((row) => [row.date, row.qty]));
-    const rows: Array<{ displayDate: string; used: number; average7Days: number }> = [];
-    const cursor = new Date(`${detail.range.startDate}T00:00:00`);
-    const end = new Date(`${detail.range.endDate}T00:00:00`);
-    while (cursor <= end) {
-      const used = byDate.get(toLocalIsoDate(cursor)) || 0;
-      const recent = [...rows.slice(-6).map((row) => row.used), used];
-      rows.push({
-        displayDate: new Intl.DateTimeFormat('th-TH', { day: 'numeric', month: 'short' }).format(cursor),
-        used,
-        average7Days: recent.reduce((sum, value) => sum + value, 0) / recent.length
-      });
-      cursor.setDate(cursor.getDate() + 1);
-    }
-    return rows;
+    const byDate = new Map(detail.daily.map((row) => [row.date, row]));
+    return buildUsageRows(detail.range.startDate, detail.range.endDate, (date) => ({
+      regular: byDate.get(date)?.regular ?? 0,
+      refill: byDate.get(date)?.refill ?? 0
+    }));
   }, [detail]);
 
   const monthly = useMemo(() => (detail?.monthly || []).map((row) => ({
     ...row,
+    name: new Date(`${row.month}-01T00:00:00`).toLocaleDateString('th-TH', { month: 'long', year: 'numeric' }),
     label: new Date(`${row.month}-01T00:00:00`).toLocaleDateString('th-TH', { month: 'short', year: '2-digit' })
   })), [detail]);
 
@@ -164,21 +242,25 @@ export function ItemUsagePanel({
 
           <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4">
             {[
-              { label: 'ยอดเบิกช่วงนี้', value: formatNumber(shown.totals.dispensed), sub: `${shown.totals.dispenseCount} ครั้ง · ${shown.range.days} วัน` },
-              { label: 'เฉลี่ยต่อวัน', value: formatNumber(shown.totals.averageDailyUsage, 2), sub: `≈ ${formatNumber(shown.totals.averageWeeklyUsage)} ${unit}/สัปดาห์` },
+              {
+                label: 'ยอดใช้จริงช่วงนี้',
+                value: formatNumber(shown.totals.usage, 2),
+                sub: `เบิกไปหน้างาน ${formatNumber(shown.totals.dispensed, 2)} + เบิกเติม ${formatNumber(shown.totals.refill, 2)} · ${shown.range.days} วัน`
+              },
+              { label: 'เฉลี่ยต่อวัน', value: formatNumber(shown.totals.averageDailyTotal, 2), sub: `≈ ${formatNumber(shown.totals.averageWeeklyTotal)} ${unit}/สัปดาห์` },
               { label: 'รับเข้าช่วงนี้', value: formatNumber(shown.totals.received), sub: shown.totals.adjusted ? `ปรับยอด ${formatNumber(shown.totals.adjusted)}` : unit },
               { label: 'คงเหลือตอนนี้', value: formatNumber(shown.item.quantity), sub: `Min ${formatNumber(shown.item.minThreshold)} ${unit}` },
               {
                 label: 'ใช้ได้อีกก่อนถึง Min',
                 value: shown.reorder.daysUntilMin === null ? '-' : `${formatNumber(shown.reorder.daysUntilMin)} วัน`,
-                sub: shown.reorder.recommendedOrderQty ? `แนะนำสั่ง ${formatNumber(shown.reorder.recommendedOrderQty, 0)} ${unit}` : 'คิดจากการเบิก 90 วันล่าสุด'
+                sub: `ตามเกณฑ์จัดซื้อ: เบิกไปหน้างาน 90 วันล่าสุด${shown.reorder.recommendedOrderQty ? ` · แนะนำสั่ง ${formatNumber(shown.reorder.recommendedOrderQty, 0)} ${unit}` : ''}`
               },
               {
-                label: 'เบิกล่าสุด',
+                label: 'เบิกไปหน้างานล่าสุด',
                 value: shown.totals.lastDispensedAt
                   ? new Date(shown.totals.lastDispensedAt).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' })
                   : '-',
-                sub: 'ในช่วงวันที่เลือก'
+                sub: `เบิกไปหน้างาน ${shown.totals.dispenseCount} ครั้งในช่วงที่เลือก`
               }
             ].map(({ label, value, sub }) => (
               <div key={label} className={cardClass}>
@@ -191,24 +273,16 @@ export function ItemUsagePanel({
 
           <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
             <section className={cardClass} aria-labelledby="item-daily-heading">
-              <h3 id="item-daily-heading" className="text-lg font-medium">ยอดเบิกรายวัน</h3>
-              <p className="mb-3 mt-0.5 text-[13px] text-gray-600">เส้นประ = ค่าเฉลี่ยเคลื่อนที่ 7 วัน</p>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={dailyTrend} margin={{ left: 0, right: 8 }}>
-                    <CartesianGrid stroke="#dcdcdf" vertical={false} />
-                    <XAxis dataKey="displayDate" minTickGap={60} tick={axisTick} tickLine={false} axisLine={false} />
-                    <YAxis hide />
-                    <Tooltip />
-                    <Line type="linear" dataKey="used" name="ยอดเบิก" stroke="#3f5f80" strokeWidth={1.5} dot={false} />
-                    <Line type="linear" dataKey="average7Days" name="เฉลี่ย 7 วัน" stroke="#a5670f" strokeWidth={1.5} strokeDasharray="4 3" dot={false} />
-                  </LineChart>
-                </ResponsiveContainer>
+              <h3 id="item-daily-heading" className="text-lg font-medium">ยอดใช้จริงรายวัน</h3>
+              <p className="mb-3 mt-0.5 text-[13px] text-gray-600">เบิกไปหน้างาน + เบิกเติม (กระจายตามช่วงที่ใช้) · เอาเมาส์ชี้ดูยอดรวม</p>
+              <div className="h-64" role="img" aria-label="กราฟแท่งยอดใช้จริงรายวัน แยกเบิกไปหน้างานและเบิกเติม">
+                <DailyUsageChart rows={dailyTrend} lastCountDate={shown.lastCountDate} />
               </div>
+              <UsageLegend shaded={Boolean(shown.lastCountDate && shown.lastCountDate < shown.range.endDate)} />
             </section>
 
             <section className={cardClass} aria-labelledby="item-monthly-heading">
-              <h3 id="item-monthly-heading" className="text-lg font-medium">ยอดเบิกรายเดือน</h3>
+              <h3 id="item-monthly-heading" className="text-lg font-medium">ยอดใช้จริงรายเดือน</h3>
               <p className="mb-3 mt-0.5 text-[13px] text-gray-600">หน่วย: {unit}</p>
               <div className="h-64">
                 {monthly.length === 0 ? <p className="py-20 text-center text-sm text-gray-600">ไม่มีการเบิกในช่วงนี้</p> : (
@@ -217,9 +291,10 @@ export function ItemUsagePanel({
                       <CartesianGrid stroke="#dcdcdf" vertical={false} />
                       <XAxis dataKey="label" tick={axisTick} tickLine={false} axisLine={false} />
                       <YAxis hide />
-                      <Tooltip />
-                      <Bar dataKey="qty" name="ยอดเบิก" fill="#5980a6" radius={[4, 4, 0, 0]} maxBarSize={40}>
-                        <LabelList dataKey="qty" position="top" style={{ fontSize: 12, fontWeight: 600, fill: '#1d1f20' }} />
+                      <Tooltip content={<UsageTooltip />} />
+                      <Bar dataKey="regular" name="เบิกไปหน้างาน" stackId="usage" fill={REGULAR_COLOR} maxBarSize={40} />
+                      <Bar dataKey="refill" name="เบิกเติม" stackId="usage" fill={REFILL_COLOR} radius={[4, 4, 0, 0]} maxBarSize={40}>
+                        <LabelList dataKey="total" position="top" style={{ fontSize: 12, fontWeight: 600, fill: '#1d1f20' }} />
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import sql from "@/lib/db";
 import { getAuthenticatedUser } from "@/lib/auth-utils";
 import { getReagentUsageInsights } from "@/lib/reagent-usage-insights";
+import { getRefillInRange } from "@/lib/real-usage";
 import { andDept, departmentErrorResponse, getDepartmentScope } from "@/lib/scoped-db";
 import { getRequestId } from "@/lib/request-observability";
 
@@ -12,6 +13,8 @@ type SummaryItem = {
   received: string | number;
   adjusted: string | number;
 };
+
+const round2 = (value: number) => Math.round(value * 100) / 100;
 
 export async function GET(request: Request) {
   const requestId = getRequestId(request);
@@ -51,7 +54,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ summary });
     }
 
-    const [dailyRows, weeklyStats, slowMoving, insightData] = await Promise.all([
+    const [dailyRows, weeklyStats, slowMoving, insightData, refillResult] = await Promise.all([
       sql`
         SELECT
           TO_CHAR(timestamp AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD') AS date,
@@ -89,20 +92,58 @@ export async function GET(request: Request) {
         ORDER BY stock DESC
         LIMIT 5
       `,
-      getReagentUsageInsights(scope)
+      getReagentUsageInsights(scope),
+      getRefillInRange(scope, startDate, endDate)
     ]);
 
-    const dailyStats: Record<string, { date: string; totalDispensed: number; items: Record<string, number> }> = {};
+    // Refill rows carry the master item id. Items are matched by lower-cased id and shown with that id everywhere
+    // (summary, items and itemsRefill), so a reagent never appears twice because of letter case.
+    const canonicalId = new Map<string, string>();
+    for (const refillRow of refillResult.rows) canonicalId.set(refillRow.itemId.toLowerCase(), refillRow.itemId);
+    const canon = (itemId: string) => canonicalId.get(itemId.toLowerCase()) ?? itemId;
+
+    type DayStat = {
+      date: string;
+      totalDispensed: number;
+      totalRefill: number;
+      totalUsage: number;
+      items: Record<string, number>;
+      itemsRefill: Record<string, number>;
+    };
+    const dailyStats: Record<string, DayStat> = {};
+    const dayOf = (date: string) => (dailyStats[date] ??= { date, totalDispensed: 0, totalRefill: 0, totalUsage: 0, items: {}, itemsRefill: {} });
     for (const row of dailyRows as Array<{ date: string; itemId: string; qty: string | number }>) {
-      if (!dailyStats[row.date]) dailyStats[row.date] = { date: row.date, totalDispensed: 0, items: {} };
+      const day = dayOf(row.date);
       const qty = Number(row.qty) || 0;
-      dailyStats[row.date].totalDispensed += qty;
-      dailyStats[row.date].items[row.itemId] = (dailyStats[row.date].items[row.itemId] || 0) + qty;
+      const itemId = canon(row.itemId);
+      day.totalDispensed += qty;
+      day.items[itemId] = (day.items[itemId] || 0) + qty;
+    }
+    const refillByItem = new Map<string, { name: string; refill: number }>();
+    for (const refillRow of refillResult.rows) {
+      const day = dayOf(refillRow.date);
+      day.totalRefill = round2(day.totalRefill + refillRow.qty);
+      day.itemsRefill[refillRow.itemId] = round2((day.itemsRefill[refillRow.itemId] || 0) + refillRow.qty);
+      const entry = refillByItem.get(refillRow.itemId.toLowerCase()) ?? { name: refillRow.name, refill: 0 };
+      entry.refill = round2(entry.refill + refillRow.qty);
+      refillByItem.set(refillRow.itemId.toLowerCase(), entry);
+    }
+    for (const day of Object.values(dailyStats)) day.totalUsage = round2(day.totalDispensed + day.totalRefill);
+
+    const usageSummary = summary.map((row) => {
+      const refill = refillByItem.get(row.itemId.toLowerCase())?.refill ?? 0;
+      return { ...row, itemId: canon(row.itemId), refill, usage: round2(row.dispensed + refill) };
+    });
+    const summarized = new Set(summary.map((row) => row.itemId.toLowerCase()));
+    for (const [key, entry] of refillByItem) {
+      if (summarized.has(key)) continue; // refill of an item with no log in range still gets a row
+      usageSummary.push({ itemId: canonicalId.get(key) ?? key, name: entry.name, dispensed: 0, received: 0, adjusted: 0, refill: entry.refill, usage: entry.refill });
     }
 
     return NextResponse.json({
-      summary,
-      dailyStats: Object.values(dailyStats),
+      summary: usageSummary,
+      dailyStats: Object.values(dailyStats).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)),
+      lastCountDate: refillResult.lastCountDate,
       weeklyStats,
       slowMoving,
       insights: insightData.insights,

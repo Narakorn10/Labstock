@@ -65,12 +65,19 @@ export interface UsageData {
   dispensed: number;
   adjusted: number;
   received: number;
+  /** Admin/Manager only: refill from count work orders (spread over the period it covers) and dispensed + refill */
+  refill?: number;
+  usage?: number;
 }
 
 export interface DailyStat {
   date: string;
   totalDispensed: number;
   items: Record<string, number>;
+  /** Admin/Manager only; itemsRefill lists non-zero items only */
+  totalRefill?: number;
+  totalUsage?: number;
+  itemsRefill?: Record<string, number>;
 }
 
 export type ReorderStatus = 'normal' | 'reorder' | 'critical';
@@ -108,6 +115,8 @@ export interface UsageResponse {
   slowMoving?: { itemId: string; name: string; stock: number }[];
   insights?: ReagentUsageInsight[];
   expiryRisks?: ExpiryRiskInsight[];
+  /** Thai day of the latest count work order; refill after it is not known yet */
+  lastCountDate?: string | null;
 }
 
 export type { ItemUsageDetail };

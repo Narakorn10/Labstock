@@ -4,11 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Bar,
   BarChart,
-  CartesianGrid,
   Cell,
   LabelList,
-  Line,
-  LineChart,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -37,7 +34,15 @@ import {
   UsageData
 } from '@/lib/api-client';
 import { useAuth } from '@/components/auth-provider';
-import { ItemUsagePanel } from '@/components/analysis/item-usage-panel';
+import {
+  buildUsageRows,
+  DailyUsageChart,
+  ItemUsagePanel,
+  REFILL_COLOR,
+  REGULAR_COLOR,
+  UsageLegend,
+  UsageTooltip
+} from '@/components/analysis/item-usage-panel';
 import { toLocalIsoDate } from '@/lib/local-date';
 
 type RiskFilter = 'all' | ReorderStatus;
@@ -61,6 +66,7 @@ export default function AnalysisPage() {
   const [dailyStats, setDailyStats] = useState<DailyStat[]>([]);
   const [insights, setInsights] = useState<ReagentUsageInsight[]>([]);
   const [expiryRisks, setExpiryRisks] = useState<ExpiryRiskInsight[]>([]);
+  const [lastCountDate, setLastCountDate] = useState<string | null>(null);
   const [selectedItemId, setSelectedItemId] = useState('TOTAL');
   const [riskFilter, setRiskFilter] = useState<RiskFilter>('all');
   const [tab, setTab] = useState<AnalysisTab>('overview');
@@ -86,6 +92,7 @@ export default function AnalysisPage() {
         setDailyStats(response.dailyStats || []);
         setInsights(response.insights || []);
         setExpiryRisks(response.expiryRisks || []);
+        setLastCountDate(response.lastCountDate ?? null);
       } catch (fetchError) {
         console.error('Usage Fetch Error:', fetchError);
         if (!cancelled) setError('ไม่สามารถดึงข้อมูลวิเคราะห์การใช้น้ำยาได้');
@@ -105,31 +112,18 @@ export default function AnalysisPage() {
 
   const dailyTrend = useMemo(() => {
     const totals = new Map(dailyStats.map((stat) => [stat.date, stat]));
-    const start = new Date(`${startDate}T00:00:00`);
-    const end = new Date(`${endDate}T00:00:00`);
-    const rows: Array<{ date: string; displayDate: string; used: number; average7Days: number }> = [];
-    const cursor = new Date(start);
-
-    while (cursor <= end) {
-      const date = toLocalIsoDate(cursor);
+    return buildUsageRows(startDate, endDate, (date) => {
       const stat = totals.get(date);
-      const used = selectedItemId === 'TOTAL'
-        ? stat?.totalDispensed || 0
-        : stat?.items[selectedItemId] || 0;
-      const recentValues = [...rows.slice(-6).map((row) => row.used), used];
-      rows.push({
-        date,
-        displayDate: new Intl.DateTimeFormat('th-TH', { day: 'numeric', month: 'short' }).format(cursor),
-        used,
-        average7Days: recentValues.reduce((sum, value) => sum + value, 0) / recentValues.length
-      });
-      cursor.setDate(cursor.getDate() + 1);
-    }
-    return rows;
+      return selectedItemId === 'TOTAL'
+        ? { regular: stat?.totalDispensed || 0, refill: stat?.totalRefill || 0 }
+        : { regular: stat?.items[selectedItemId] || 0, refill: stat?.itemsRefill?.[selectedItemId] || 0 };
+    });
   }, [dailyStats, endDate, selectedItemId, startDate]);
 
-  const topUsage = useMemo(() => [...usage]
-    .sort((left, right) => right.dispensed - left.dispensed)
+  // Top 10 by real usage (regular dispense + refill); an account without refill data falls back to the regular dispense.
+  const topUsage = useMemo(() => usage
+    .map((row) => ({ ...row, regular: row.dispensed, refill: row.refill ?? 0, total: row.usage ?? row.dispensed }))
+    .sort((left, right) => right.total - left.total)
     .slice(0, 10), [usage]);
 
   const riskItems = useMemo(() => insights
@@ -183,9 +177,8 @@ export default function AnalysisPage() {
     );
   }
 
-  const peakUsage = dailyTrend.reduce((max, row) => Math.max(max, row.used), 0);
+  const peakUsage = dailyTrend.reduce((max, row) => Math.max(max, row.total), 0);
   const cardClass = 'rounded-2xl border border-line bg-white p-5';
-  const axisTick = { fontSize: 12, fill: '#6b6e72' };
   const nameTick = { fontSize: 12, fill: '#1d1f20' };
   const shortDate = (value: string) => new Date(`${value.slice(0, 10)}T00:00:00`).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
@@ -294,43 +287,32 @@ export default function AnalysisPage() {
             <div className="mb-3 flex flex-wrap items-start gap-2.5">
               <TrendingUp className="mt-0.5 text-blue-800" size={20} strokeWidth={1.5} aria-hidden="true" />
               <div className="mr-auto">
-                <h2 id="trend-heading" className="text-xl font-medium">แนวโน้มการใช้รายวัน</h2>
-                <p className="mt-0.5 text-[13px] text-gray-600">{selectedItem ? selectedItem.name : 'ภาพรวมทุกน้ำยา'} พร้อมค่าเฉลี่ยเคลื่อนที่ 7 วัน</p>
+                <h2 id="trend-heading" className="text-xl font-medium">แนวโน้มยอดใช้จริงรายวัน</h2>
+                <p className="mt-0.5 text-[13px] text-gray-600">{selectedItem ? selectedItem.name : 'ภาพรวมทุกน้ำยา'} · เบิกไปหน้างาน + เบิกเติม พร้อมค่าเฉลี่ยเคลื่อนที่ 7 วัน</p>
               </div>
               {selectedItemId !== 'TOTAL' && (
                 <button type="button" onClick={() => setSelectedItemId('TOTAL')} className="rounded-[10px] border border-line bg-white px-3 py-1.5 text-[13px] font-medium text-ink hover:bg-gray-50">ดูภาพรวม</button>
               )}
             </div>
-            <div className="mb-2 flex items-center gap-4 text-[13px] text-gray-600">
-              <span className="inline-flex items-center gap-1.5"><span className="h-0.5 w-3.5 bg-[#3f5f80]" aria-hidden="true" />ยอดเบิก</span>
-              <span className="inline-flex items-center gap-1.5"><span className="w-3.5 border-t-2 border-dashed border-[#a5670f]" aria-hidden="true" />เฉลี่ย 7 วัน</span>
-              <span className="ml-auto">สูงสุด {formatNumber(peakUsage, 0)} / วัน</span>
+            <p className="mb-2 text-right text-[13px] text-gray-600">สูงสุด {formatNumber(peakUsage, 1)} / วัน</p>
+            <div className="h-64" role="img" aria-label="กราฟแท่งยอดใช้จริงรายวัน แยกเบิกไปหน้างานและเบิกเติม">
+              <DailyUsageChart rows={dailyTrend} lastCountDate={lastCountDate} />
             </div>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={dailyTrend} margin={{ left: 0, right: 8 }}>
-                  <CartesianGrid stroke="#dcdcdf" strokeDasharray="0" vertical={false} />
-                  <XAxis dataKey="displayDate" minTickGap={60} tick={axisTick} tickLine={false} axisLine={false} />
-                  <YAxis hide />
-                  <Tooltip />
-                  <Line type="linear" dataKey="used" name="ยอดเบิก" stroke="#3f5f80" strokeWidth={1.5} dot={false} />
-                  <Line type="linear" dataKey="average7Days" name="เฉลี่ย 7 วัน" stroke="#a5670f" strokeWidth={1.5} strokeDasharray="4 3" dot={false} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
+            <UsageLegend shaded={Boolean(lastCountDate && lastCountDate < endDate)} />
           </section>
 
           <section aria-labelledby="top-heading" className={cardClass}>
             <h2 id="top-heading" className="text-xl font-medium">Top 10 น้ำยาที่ใช้มากสุด</h2>
-            <p className="mb-3 mt-0.5 text-[13px] text-gray-600">ตามช่วงวันที่เลือก กดแท่งเพื่อดูแนวโน้ม</p>
+            <p className="mb-3 mt-0.5 text-[13px] text-gray-600">ยอดใช้จริง (เบิกไปหน้างาน + เบิกเติม) ตามช่วงวันที่เลือก กดแท่งเพื่อดูแนวโน้ม</p>
             <div className="h-[22rem]">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={topUsage} layout="vertical" margin={{ left: 8, right: 28 }} onClick={selectChartItem}>
                   <XAxis type="number" hide />
                   <YAxis type="category" dataKey="name" width={205} tick={nameTick} tickLine={false} axisLine={false} />
-                  <Tooltip />
-                  <Bar dataKey="dispensed" name="ยอดเบิก" fill="#5980a6" barSize={16} radius={[0, 4, 4, 0]} cursor="pointer">
-                    <LabelList dataKey="dispensed" position="right" style={{ fontSize: 12, fontWeight: 600, fill: '#1d1f20' }} />
+                  <Tooltip content={<UsageTooltip />} />
+                  <Bar dataKey="regular" name="เบิกไปหน้างาน" stackId="usage" fill={REGULAR_COLOR} barSize={16} cursor="pointer" />
+                  <Bar dataKey="refill" name="เบิกเติม" stackId="usage" fill={REFILL_COLOR} barSize={16} radius={[0, 4, 4, 0]} cursor="pointer">
+                    <LabelList dataKey="total" position="right" style={{ fontSize: 12, fontWeight: 600, fill: '#1d1f20' }} />
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>

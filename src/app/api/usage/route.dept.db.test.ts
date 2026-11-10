@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { PGlite, types } from "@electric-sql/pglite";
 import { DEPT_A, DEPT_B, seedTwoDepartments } from "@/test/department-fixtures";
 import { createPgliteSql, type PgliteSql } from "@/test/pglite-sql";
+import { COUNT_WORK_ORDER_CHILD_DDL } from "@/test/count-work-order-tables";
 
 // /api/usage (summary, daily, weekly, slow-moving, insights, expiry lots), /api/logs and the cron reorder-risk route per
 // department, against a real in-memory Postgres with the production schema + v30-v35.
@@ -63,6 +64,7 @@ beforeAll(async () => {
       username TEXT PRIMARY KEY, email TEXT, line_user_id TEXT, notify_reorder_risk BOOLEAN DEFAULT TRUE
     );
   `);
+  await db.db.exec(COUNT_WORK_ORDER_CHILD_DDL);
 }, 120_000);
 
 afterAll(async () => {
@@ -78,6 +80,10 @@ beforeEach(async () => {
   resetDepartmentsFlagForTests();
   process.env.DEPARTMENTS_ENABLED = "true";
   await db.db.exec(`
+    DELETE FROM count_work_order_audit WHERE work_order_id IN (SELECT id FROM count_work_orders WHERE owner_username = 'usage-refill-test');
+    DELETE FROM count_work_order_allocations WHERE work_order_item_id IN (SELECT i.id FROM count_work_order_items i JOIN count_work_orders w ON w.id = i.work_order_id WHERE w.owner_username = 'usage-refill-test');
+    DELETE FROM count_work_order_items WHERE work_order_id IN (SELECT id FROM count_work_orders WHERE owner_username = 'usage-refill-test');
+    DELETE FROM count_work_orders WHERE owner_username = 'usage-refill-test';
     DELETE FROM logs;
     DELETE FROM inventory;
     DELETE FROM notification_settings;
@@ -144,6 +150,55 @@ describe("GET /api/usage", () => {
     } finally {
       await db.db.exec(`DELETE FROM logs WHERE username = 'usage-tz-test'`);
     }
+  });
+
+  it("adds the count refill of the room's own items to summary and dailyStats (admin only)", async () => {
+    // Room A counted A-000002 (refill 5) and LAB-000001 (refill 2, no dispensing at all); room B counted MB-000001 (refill 9).
+    // Each count is the first of its item, saved 3 Nov 09:00 Thai time, so it spreads over 27 Oct - 2 Nov.
+    const seedCount = async (departmentId: number, itemId: string, qty: number) => {
+      await db.db.exec(`
+        WITH o AS (INSERT INTO count_work_orders (owner_username, job_type, status, department_id) VALUES ('usage-refill-test', '', 'CONFIRMED', ${departmentId}) RETURNING id),
+        i AS (INSERT INTO count_work_order_items (work_order_id, item_id, name, weekly_target, counted_qty, required_qty) SELECT id, '${itemId}', 'x', 10, 1, 0 FROM o RETURNING id, work_order_id),
+        a AS (INSERT INTO count_work_order_allocations (work_order_item_id, inventory_id, qty) SELECT id, 1, ${qty} FROM i)
+        INSERT INTO count_work_order_audit (work_order_id, work_order_item_id, action, actor_username, created_at)
+        SELECT work_order_id, id, 'COUNT_SAVED', 'usage-refill-test', '2026-11-03 02:00+00' FROM i;
+      `);
+    };
+    await seedCount(DEPT_A, "A-000002", 5);
+    await seedCount(DEPT_A, "LAB-000001", 2);
+    await seedCount(DEPT_B, "MB-000001", 9);
+
+    as("admin1", "Admin", DEPT_A);
+    const bodyA = await bodyOf(await usage());
+    const rowA = (id: string) => bodyA.summary.find((row: { itemId: string }) => row.itemId === id);
+    expect(rowA("A-000002")).toMatchObject({ dispensed: 3, refill: 5, usage: 8 });
+    expect(rowA("LAB-000001")).toMatchObject({ dispensed: 0, refill: 2, usage: 2 }); // refill-only item still gets a row
+    expect(ids(bodyA.summary)).toEqual(["A-000002", "LAB-000001"]);
+    const refillByItem: Record<string, number> = {};
+    let totalRefill = 0;
+    for (const day of bodyA.dailyStats) {
+      totalRefill += day.totalRefill ?? 0;
+      for (const [id, qty] of Object.entries(day.itemsRefill ?? {})) refillByItem[id] = (refillByItem[id] ?? 0) + (qty as number);
+    }
+    expect(totalRefill).toBeCloseTo(7, 2);
+    expect(refillByItem["A-000002"]).toBeCloseTo(5, 2);
+    expect(refillByItem["LAB-000001"]).toBeCloseTo(2, 2);
+    expect(JSON.stringify(bodyA)).not.toContain("MB-000001");
+    const spread = bodyA.dailyStats.filter((day: { totalRefill?: number }) => day.totalRefill).map((day: { date: string }) => day.date);
+    expect(spread[0]).toBe("2026-10-27");
+    expect(spread.at(-1)).toBe("2026-11-02");
+
+    as("admin1", "Admin", DEPT_B);
+    const bodyB = await bodyOf(await usage());
+    expect(bodyB.summary.find((row: { itemId: string }) => row.itemId === "MB-000001")).toMatchObject({ dispensed: 2, refill: 9, usage: 11 });
+    expect(JSON.stringify(bodyB)).not.toContain("A-000002");
+    expect(JSON.stringify(bodyB)).not.toContain("LAB-000001");
+
+    // A non-staff user keeps the old summary: no refill fields at all.
+    as("solo2", "User", DEPT_B);
+    const plain = await bodyOf(await usage());
+    expect(Object.keys(plain)).toEqual(["summary"]);
+    expect(plain.summary.every((row: Record<string, unknown>) => !("refill" in row) && !("usage" in row))).toBe(true);
   });
 
   it("room B sees only its own data", async () => {
@@ -270,6 +325,7 @@ describe("flag OFF (legacy): unchanged and never mentions department_id", () => 
       vi.unstubAllEnvs();
     }
 
+    expect(seenSql.some((text) => /count_work_order_items/.test(text))).toBe(true); // the refill query ran, without department_id
     expect(seenSql.length).toBeGreaterThan(8);
     expect(seenSql.filter((text) => /department_id/i.test(text))).toEqual([]);
   });
