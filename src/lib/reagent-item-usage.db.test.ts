@@ -137,14 +137,53 @@ describe("getReagentItemUsage with count refills (departments off)", () => {
     const detail = await getReagentItemUsage("R1", ...REFILL_RANGE, { mode: "legacy" });
 
     expect(detail?.totals).toMatchObject({ dispensed: 2, refill: 7, usage: 9 });
-    expect(detail?.totals.averageDailyTotal).toBeCloseTo(9 / 8);
-    expect(detail?.totals.averageWeeklyTotal).toBeCloseTo((9 / 8) * 7);
+    // The refill is known up to 9 Nov (the day before the latest count), so the average is over those 7 days: 9 / 7.
+    expect(detail?.totals.averageDailyTotal).toBeCloseTo(9 / 7);
+    expect(detail?.totals.averageWeeklyTotal).toBeCloseTo(9);
+    expect(detail?.totals.averageWindow).toEqual({ startDate: "2026-11-03", endDate: "2026-11-09", days: 7 });
     expect(detail?.daily.map((d) => d.date)).toEqual(["2026-11-03", "2026-11-04", "2026-11-05", "2026-11-06", "2026-11-07", "2026-11-08", "2026-11-09"]);
     expect(detail?.daily.every((d) => d.refill === 1)).toBe(true);
     expect(detail?.daily.find((d) => d.date === "2026-11-05")).toEqual({ date: "2026-11-05", qty: 2, regular: 2, refill: 1, total: 3 });
     expect(detail?.daily.find((d) => d.date === "2026-11-10")).toBeUndefined(); // nothing stacked on the count day
     expect(detail?.monthly).toEqual([{ month: "2026-11", qty: 2, regular: 2, refill: 7, total: 9 }]);
     expect(detail?.lastCountDate).toBe("2026-11-10");
+  });
+
+  it("leaves the dispense of the days from the latest count on out of the average, but keeps it in the total", async () => {
+    await seedCount({ counted: 4, alloc: 6, auditAt: "2026-11-03 02:00+00" });
+    await seedCount({ counted: 3, alloc: 7, auditAt: "2026-11-10 02:00+00" });
+    await sql.db.exec(`INSERT INTO logs (timestamp, item_id, lot_no, action, quantity, username) VALUES
+      ('2026-11-05 03:00+00','R1','L1','เบิกไปหน้างาน',2,'u1'),
+      ('2026-11-10 06:00+00','R1','L1','เบิกไปหน้างาน',3,'u1')`);
+
+    const detail = await getReagentItemUsage("R1", ...REFILL_RANGE, { mode: "legacy" });
+
+    expect(detail?.totals).toMatchObject({ dispensed: 5, refill: 7, usage: 12 });
+    expect(detail?.totals.averageDailyTotal).toBeCloseTo(9 / 7); // 10 Nov (3 dispensed, refill not known yet) is not in it
+    expect(detail?.totals.averageDays).toBe(7);
+  });
+
+  it("averages over the whole range for an item that was never counted", async () => {
+    await sql.db.exec(`INSERT INTO logs (timestamp, item_id, lot_no, action, quantity, username) VALUES ('2026-11-05 03:00+00','R1','L1','เบิกไปหน้างาน',4,'u1')`);
+
+    const detail = await getReagentItemUsage("R1", ...REFILL_RANGE, { mode: "legacy" });
+
+    expect(detail?.lastCountDate).toBeNull();
+    expect(detail?.totals.averageDailyTotal).toBeCloseTo(4 / 8);
+    expect(detail?.totals.averageWindow).toEqual({ startDate: "2026-11-03", endDate: "2026-11-10", days: 8 });
+  });
+
+  it("gives no average when the latest count is on the first day of the range", async () => {
+    await seedCount({ counted: 4, alloc: 6, auditAt: "2026-11-03 02:00+00" });
+    await sql.db.exec(`INSERT INTO logs (timestamp, item_id, lot_no, action, quantity, username) VALUES ('2026-11-05 03:00+00','R1','L1','เบิกไปหน้างาน',2,'u1')`);
+
+    const detail = await getReagentItemUsage("R1", ...REFILL_RANGE, { mode: "legacy" });
+
+    expect(detail?.totals.usage).toBe(2); // the refill spread lies before the range
+    expect(detail?.totals.averageDailyTotal).toBeNull();
+    expect(detail?.totals.averageWeeklyTotal).toBeNull();
+    expect(detail?.totals.averageDays).toBeNull();
+    expect(detail?.totals.averageWindow).toBeNull();
   });
 
   it("counts a refill of an item with no regular usage at all", async () => {

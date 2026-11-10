@@ -39,13 +39,17 @@ export const REGULAR_COLOR = 'var(--accent)';
 export const REFILL_COLOR = 'var(--ok)';
 const AVERAGE_COLOR = 'var(--warn)';
 
-export type UsageRow = { date: string; regular: number; refill: number; total: number; average7Days: number };
+export type UsageRow = { date: string; regular: number; refill: number; total: number; average7Days: number | null };
 
-/** One row per day from startDate to endDate (days without usage are 0) with the 7-day moving average of the total. */
+/**
+ * One row per day from startDate to endDate (days without usage are 0) with the 7-day moving average of the total.
+ * From the latest count day on the refill is not known yet, so the average line stops there (average7Days is null).
+ */
 export function buildUsageRows(
   startDate: string,
   endDate: string,
-  pick: (date: string) => { regular: number; refill: number }
+  pick: (date: string) => { regular: number; refill: number },
+  lastCountDate?: string | null
 ): UsageRow[] {
   const rows: UsageRow[] = [];
   const cursor = new Date(`${startDate}T00:00:00`);
@@ -55,7 +59,8 @@ export function buildUsageRows(
     const { regular, refill } = pick(date);
     const total = regular + refill;
     const recent = [...rows.slice(-6).map((row) => row.total), total];
-    rows.push({ date, regular, refill, total, average7Days: recent.reduce((sum, value) => sum + value, 0) / recent.length });
+    const refillKnown = !lastCountDate || date < lastCountDate;
+    rows.push({ date, regular, refill, total, average7Days: refillKnown ? recent.reduce((sum, value) => sum + value, 0) / recent.length : null });
     cursor.setDate(cursor.getDate() + 1);
   }
   return rows;
@@ -115,7 +120,7 @@ export function UsageLegend({ shaded }: { shaded: boolean }) {
         <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-sm" style={{ background: REFILL_COLOR }} aria-hidden="true" />เบิกเติมจากใบงานนับสต็อก</span>
         <span className="inline-flex items-center gap-1.5"><span className="w-3.5 border-t-2 border-dashed" style={{ borderColor: AVERAGE_COLOR }} aria-hidden="true" />เฉลี่ย 7 วัน (รวมทั้งสอง)</span>
       </div>
-      <p>ยอดเบิกเติมถูกกระจายย้อนไปในช่วงระหว่างวันนับครั้งก่อนถึงวันก่อนวันนับครั้งนี้ (นับครั้งแรกกระจาย 7 วัน){shaded ? ' ช่วงที่แรเงาคือตั้งแต่วันนับล่าสุดเป็นต้นไป จึงยังไม่มียอดเบิกเติม และจะเพิ่มเมื่อนับครั้งถัดไป' : ''}</p>
+      <p>ยอดเบิกเติมถูกกระจายย้อนไปในช่วงระหว่างวันนับครั้งก่อนถึงวันก่อนวันนับครั้งนี้ (นับครั้งแรกกระจาย 7 วัน){shaded ? ' ช่วงที่แรเงาคือตั้งแต่วันนับล่าสุดเป็นต้นไป จึงยังไม่มียอดเบิกเติม และจะเพิ่มเมื่อนับครั้งถัดไป เส้นเฉลี่ยและค่าเฉลี่ยต่อวันจึงนับถึงวันก่อนวันนับล่าสุดเท่านั้น' : ''}</p>
       <p>ถ้าเปลี่ยนค่า Max (เป้าสัปดาห์) ระหว่างรอบนับ ยอดเบิกเติมของรอบนั้นอาจคลาดเคลื่อนเล็กน้อย</p>
     </div>
   );
@@ -189,7 +194,7 @@ export function ItemUsagePanel({
     return buildUsageRows(detail.range.startDate, detail.range.endDate, (date) => ({
       regular: byDate.get(date)?.regular ?? 0,
       refill: byDate.get(date)?.refill ?? 0
-    }));
+    }), detail.lastCountDate);
   }, [detail]);
 
   const monthly = useMemo(() => (detail?.monthly || []).map((row) => ({
@@ -258,7 +263,13 @@ export function ItemUsagePanel({
                 value: formatNumber(shown.totals.usage, 2),
                 sub: `เบิกไปหน้างาน ${formatNumber(shown.totals.dispensed, 2)} + เบิกเติม ${formatNumber(shown.totals.refill, 2)} · ${shown.range.days} วัน`
               },
-              { label: 'เฉลี่ยต่อวัน', value: formatNumber(shown.totals.averageDailyTotal, 2), sub: `≈ ${formatNumber(shown.totals.averageWeeklyTotal)} ${unit}/สัปดาห์` },
+              {
+                label: 'เฉลี่ยต่อวัน',
+                value: shown.totals.averageDailyTotal === null ? '-' : formatNumber(shown.totals.averageDailyTotal, 2),
+                sub: shown.totals.averageDailyTotal === null
+                  ? 'ยังไม่มีวันที่รู้ยอดครบในช่วงนี้ (นับล่าสุดตรงวันแรกของช่วง)'
+                  : `≈ ${formatNumber(shown.totals.averageWeeklyTotal ?? 0)} ${unit}/สัปดาห์${shown.totals.averageDays !== null && shown.totals.averageDays < shown.range.days ? ` · คิด ${shown.totals.averageDays} วัน ถึงวันก่อนนับล่าสุด` : ''}`
+              },
               { label: 'รับเข้าช่วงนี้', value: formatNumber(shown.totals.received), sub: shown.totals.adjusted ? `ปรับยอด ${formatNumber(shown.totals.adjusted)}` : unit },
               { label: 'คงเหลือตอนนี้', value: formatNumber(shown.item.quantity), sub: `Min ${formatNumber(shown.item.minThreshold)} ${unit}` },
               {

@@ -105,4 +105,61 @@ describe("buildItemSummaryRows", () => {
   it("never divides by less than one day", () => {
     expect(buildItemSummaryRows([], [{ itemId: "R1", name: "x", dispensed: 6, adjusted: 0, received: 0 }], 0)[0].averagePerDay).toBe(6);
   });
+
+  describe("average over the days where the usage is known (up to the day before each item's latest count)", () => {
+    const range = { startDate: "2026-11-03", endDate: "2026-11-10" };
+    // R1: refill 1 per day on 3-9 Nov, dispensed 2 on 5 Nov and 3 on 10 Nov (the count day: its refill is not known yet).
+    // R2: never counted, dispensed 4 on 5 Nov. R3: its latest count is the first day of the range.
+    const dailyStats: DailyStat[] = [
+      { date: "2026-11-03", totalDispensed: 0, items: {}, itemsRefill: { R1: 1 } },
+      { date: "2026-11-04", totalDispensed: 0, items: {}, itemsRefill: { R1: 1 } },
+      { date: "2026-11-05", totalDispensed: 6, items: { R1: 2, R2: 4 }, itemsRefill: { R1: 1 } },
+      { date: "2026-11-06", totalDispensed: 0, items: {}, itemsRefill: { R1: 1 } },
+      { date: "2026-11-07", totalDispensed: 0, items: {}, itemsRefill: { R1: 1 } },
+      { date: "2026-11-08", totalDispensed: 0, items: {}, itemsRefill: { R1: 1 } },
+      { date: "2026-11-09", totalDispensed: 0, items: {}, itemsRefill: { R1: 1 } },
+      { date: "2026-11-10", totalDispensed: 3, items: { R1: 3 } },
+    ];
+    const usage: UsageData[] = [
+      { itemId: "R1", name: "r1", dispensed: 5, adjusted: 0, received: 0, refill: 7, usage: 12 },
+      { itemId: "R2", name: "r2", dispensed: 4, adjusted: 0, received: 0, refill: 0, usage: 4 },
+      { itemId: "R3", name: "r3", dispensed: 1, adjusted: 0, received: 0, refill: 0, usage: 1 },
+    ];
+    const lastCountByItem: Record<string, string> = { R1: "2026-11-10", R3: "2026-11-03" };
+    const options = { dailyStats, lastCountByItem, range };
+    const rowOf = (itemId: string, opts = options) => buildItemSummaryRows([], usage, 8, opts).find((row) => row.itemId === itemId)!;
+
+    it("takes the user's example: 9 over the 7 days up to 9 Nov, not 12 over 8 days", () => {
+      const r1 = rowOf("R1");
+      expect(r1.usage).toBe(12); // the total of the range is not changed
+      expect(r1.averageDays).toBe(7);
+      expect(r1.averagePerDay).toBeCloseTo(9 / 7);
+      expect(r1.averagePerWeek).toBeCloseTo(9);
+    });
+
+    it("uses the whole range for an item that was never counted", () => {
+      const r2 = rowOf("R2");
+      expect(r2.averageDays).toBe(8);
+      expect(r2.averagePerDay).toBeCloseTo(4 / 8);
+    });
+
+    it("gives no average when no whole day before the latest count is in the range", () => {
+      const r3 = rowOf("R3");
+      expect(r3.averagePerDay).toBeNull();
+      expect(r3.averagePerWeek).toBeNull();
+      expect(r3.averageDays).toBeNull();
+      expect(r3.usage).toBe(1);
+    });
+
+    it("matches the item ids of the last count by letter case", () => {
+      const r1 = rowOf("R1", { ...options, lastCountByItem: { r1: "2026-11-10" } });
+      expect(r1.averageDays).toBe(7);
+    });
+
+    it("keeps the old average (usage / days of the range) when the extra data is not given", () => {
+      const r1 = buildItemSummaryRows([], usage, 8).find((row) => row.itemId === "R1")!;
+      expect(r1.averagePerDay).toBeCloseTo(12 / 8);
+      expect(r1.averageDays).toBe(8);
+    });
+  });
 });

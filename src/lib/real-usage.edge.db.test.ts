@@ -123,9 +123,25 @@ describe("getRefillInRange edge cases", () => {
     expect(result.lastCountDate).toBe("2026-11-10");
   });
 
+  it("gives the latest count day of each item separately (the department-wide date is only the latest of them)", async () => {
+    await seedCount({ counted: 4, alloc: 6, savedAt: "2026-11-03 02:00+00" });
+    await seedCount({ counted: 3, alloc: 7, savedAt: "2026-11-10 02:00+00" });
+    await seedCount({ itemId: "MB-000002", counted: 5, alloc: 5, savedAt: "2026-11-05 02:00+00" });
+    await seedCount({ itemId: "MB-000002", counted: 10, target: 10, savedAt: "2026-11-07 02:00+00" }); // no refill: still a count
+    const result = await getRefillInRange(ONE_B, "2026-11-01", "2026-11-30");
+    expect(result.lastCountDate).toBe("2026-11-10");
+    expect(result.lastCountByItem).toEqual({ "MB-000001": "2026-11-10", "MB-000002": "2026-11-07" });
+  });
+
+  it("lastCountByItem is not cut by the requested range (a count after the range still ends its period)", async () => {
+    await seedCount({ counted: 3, alloc: 7, savedAt: "2026-11-20 02:00+00" });
+    const result = await getRefillInRange(ONE_B, "2026-11-01", "2026-11-10");
+    expect(result.lastCountByItem).toEqual({ "MB-000001": "2026-11-20" });
+  });
+
   it("an OPEN pending order alone gives no refill and no last count date", async () => {
     await seedCount({ status: "OPEN", counted: 4, required: 6, savedAt: "2026-11-06 02:00+00" });
-    await expect(getRefillInRange(ONE_B, "2026-01-01", "2026-12-31")).resolves.toEqual({ rows: [], lastCountDate: null, firstSpreadDate: null });
+    await expect(getRefillInRange(ONE_B, "2026-01-01", "2026-12-31")).resolves.toEqual({ rows: [], lastCountDate: null, firstSpreadDate: null, lastCountByItem: {} });
   });
 
   it("firstSpreadDate is the earliest day of any spread of the scope, whatever the asked range is", async () => {
@@ -149,6 +165,6 @@ describe("getRefillInRange edge cases", () => {
   });
 
   it("an empty department gives empty rows and null lastCountDate", async () => {
-    await expect(getRefillInRange(ONE_B, "2026-01-01", "2026-12-31")).resolves.toEqual({ rows: [], lastCountDate: null, firstSpreadDate: null });
+    await expect(getRefillInRange(ONE_B, "2026-01-01", "2026-12-31")).resolves.toEqual({ rows: [], lastCountDate: null, firstSpreadDate: null, lastCountByItem: {} });
   });
 });

@@ -181,6 +181,7 @@ export async function GET(request: Request) {
       summary: usageSummary,
       dailyStats: Object.values(dailyStats).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)),
       lastCountDate: refillResult.lastCountDate,
+      lastCountByItem: refillResult.lastCountByItem,
       ...(refillResult.unavailable ? { refillUnavailable: true } : {}),
       range: { startDate, endDate, days: daysBetween(startDate, endDate) },
       firstLogDate,

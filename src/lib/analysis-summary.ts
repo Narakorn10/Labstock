@@ -1,4 +1,5 @@
 import type { DailyStat, ReagentUsageInsight, UsageData } from "@/lib/api-client";
+import { knownUsageWindow } from "@/lib/usage-average";
 
 // Pure helpers for the Analysis "สรุปรายน้ำยา" tab. No database here: the page already has the numbers.
 
@@ -90,20 +91,45 @@ export type ItemSummaryRow = {
   dispensed: number;
   refill: number;
   usage: number;
-  averagePerDay: number;
-  averagePerWeek: number;
+  /** Average per day / week over averageDays days: the days up to the day before the item's latest count (see usage-average.ts). Null when no day qualifies. */
+  averagePerDay: number | null;
+  averagePerWeek: number | null;
+  averageDays: number | null;
+  /** Days of the selected range, to show when the average covers fewer */
+  rangeDays: number;
   /** Purchase plan values (insights); null when the item is not in the plan */
   quantity: number | null;
   minThreshold: number | null;
   daysUntilMin: number | null;
 };
 
+export type AverageOptions = {
+  dailyStats: DailyStat[];
+  /** Latest count day of each item (any letter case); an item that is not in it was never counted */
+  lastCountByItem: Record<string, string>;
+  range: { startDate: string; endDate: string };
+};
+
+/** Usage (dispensed + refill) of one item on the days of dailyStats up to endDate, ids matched by lower case. */
+function usageUntil(dailyStats: DailyStat[], key: string, endDate: string) {
+  let total = 0;
+  for (const stat of dailyStats) {
+    if (stat.date > endDate) continue;
+    for (const [itemId, qty] of Object.entries(stat.items)) if (itemId.toLowerCase() === key) total += qty;
+    for (const [itemId, qty] of Object.entries(stat.itemsRefill ?? {})) if (itemId.toLowerCase() === key) total += qty;
+  }
+  return round2(total);
+}
+
 /**
  * One row per reagent: real usage of the selected days next to the purchase plan values.
  * daysUntilMin is copied from insights as is (same number as the purchase plan), never recomputed.
+ * With options, the averages cover only the days where the item's usage is fully known (up to the day before its
+ * latest count) and use the usage of those days; without them they are usage / days of the range.
  */
-export function buildItemSummaryRows(insights: ReagentUsageInsight[], summary: UsageData[], days: number): ItemSummaryRow[] {
+export function buildItemSummaryRows(insights: ReagentUsageInsight[], summary: UsageData[], days: number, options?: AverageOptions): ItemSummaryRow[] {
   const divisor = Math.max(1, days);
+  const lastCountByKey = new Map(Object.entries(options?.lastCountByItem ?? {}).map(([itemId, date]) => [itemId.toLowerCase(), date]));
   const insightByKey = new Map(insights.map((item) => [item.itemId.toLowerCase(), item]));
   const usageByKey = new Map(summary.map((row) => [row.itemId.toLowerCase(), row]));
   const keys = new Set([...insightByKey.keys(), ...usageByKey.keys()]);
@@ -115,6 +141,13 @@ export function buildItemSummaryRows(insights: ReagentUsageInsight[], summary: U
     const dispensed = used?.dispensed ?? 0;
     const refill = used?.refill ?? 0;
     const usage = used?.usage ?? round2(dispensed + refill);
+    let averagePerDay: number | null = usage / divisor;
+    let averageDays: number | null = divisor;
+    if (options) {
+      const window = knownUsageWindow(options.range.startDate, options.range.endDate, lastCountByKey.get(key));
+      averageDays = window ? window.days : null;
+      averagePerDay = window ? usageUntil(options.dailyStats, key, window.endDate) / window.days : null;
+    }
     rows.push({
       itemId: insight?.itemId ?? used!.itemId,
       name: insight?.name ?? used!.name,
@@ -122,8 +155,10 @@ export function buildItemSummaryRows(insights: ReagentUsageInsight[], summary: U
       dispensed,
       refill,
       usage,
-      averagePerDay: usage / divisor,
-      averagePerWeek: (usage / divisor) * 7,
+      averagePerDay,
+      averagePerWeek: averagePerDay === null ? null : averagePerDay * 7,
+      averageDays,
+      rangeDays: divisor,
       quantity: insight ? insight.quantity : null,
       minThreshold: insight ? insight.minThreshold : null,
       daysUntilMin: insight ? insight.daysUntilMin : null,

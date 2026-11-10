@@ -140,7 +140,14 @@ export async function getRefillInRange(scope: DepartmentScope, startDate: string
   }
   rows.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.itemId.localeCompare(b.itemId)));
   const lastCountDate = events.reduce<string | null>((latest, event) => (event.date && DATE_PATTERN.test(event.date) && (!latest || event.date > latest) ? event.date : latest), null);
-  return { rows, lastCountDate, firstSpreadDate };
+  // Latest count day of every item (any date, not cut by the range): its real usage is known only up to the day before.
+  const lastCountByItem: Record<string, string> = {};
+  for (const event of events) {
+    if (!event.date || !DATE_PATTERN.test(event.date)) continue;
+    const key = spread.get(String(event.itemId).toLowerCase())?.itemId ?? event.itemId;
+    if (!lastCountByItem[key] || event.date > lastCountByItem[key]) lastCountByItem[key] = event.date;
+  }
+  return { rows, lastCountDate, firstSpreadDate, lastCountByItem };
 }
 
 /**
@@ -152,6 +159,6 @@ export async function getRefillOrUnavailable(scope: DepartmentScope, startDate: 
     return { ...(await getRefillInRange(scope, startDate, endDate, itemId)), unavailable: false };
   } catch (error) {
     console.error("Refill from count work orders unavailable, showing dispense only:", error);
-    return { rows: [] as RefillRow[], lastCountDate: null as string | null, firstSpreadDate: null as string | null, unavailable: true };
+    return { rows: [] as RefillRow[], lastCountDate: null as string | null, firstSpreadDate: null as string | null, lastCountByItem: {} as Record<string, string>, unavailable: true };
   }
 }
