@@ -43,6 +43,8 @@ interface PurchaseOrderDetail {
   issuer_phone?: string | null;
   issuer_email?: string | null;
   vendor_note?: string | null;
+  /** Only for an order in manager review: sent back with "approve", so an approval covers exactly what was on screen. */
+  review_token?: string;
   items?: PurchaseOrderDetailItem[];
 }
 
@@ -231,10 +233,19 @@ export default function PODetailPage() {
       const res = await fetch(`/api/purchase-orders/${po.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify({ action, note: reviewNote.trim() || undefined }),
+        body: JSON.stringify({ action, note: reviewNote.trim() || undefined, review_token: approving ? po.review_token : undefined }),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
+        if (data?.code === "PO_REVIEW_CHANGED") {
+          // Someone added or changed a line after this page was opened: show the order as it is now before anyone approves it.
+          const fresh = await fetch(`/api/purchase-orders/${po.id}`, { headers: getAuthHeaders() }).catch(() => null);
+          if (fresh?.ok) setPo((await fresh.json()) as PurchaseOrderDetail);
+          const eventRes = await fetch(`/api/purchase-orders/${po.id}/events`, { headers: getAuthHeaders() }).catch(() => null);
+          if (eventRes?.ok) setEvents(((await eventRes.json()) as { items?: PurchaseOrderEvent[] }).items ?? []);
+          void notify({ title: "ใบสั่งซื้อมีการเปลี่ยนแปลง", description: data.error, severity: "warning" });
+          return;
+        }
         void notify({ title: "เกิดข้อผิดพลาด", description: data?.error ?? "ไม่สามารถบันทึกการตรวจสอบได้", severity: "danger" });
         return;
       }

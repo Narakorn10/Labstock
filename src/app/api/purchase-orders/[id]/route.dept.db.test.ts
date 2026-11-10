@@ -20,6 +20,7 @@ vi.mock("@/lib/po-communication", async (importActual) => ({
 
 import dbSql from "@/lib/db";
 import { resetDepartmentsFlagForTests } from "@/lib/departments-flag";
+import { getReviewToken } from "@/lib/purchase-order-review-token";
 import { DEPT_A, DEPT_B, seedTwoDepartments } from "@/test/department-fixtures";
 import { addPurchaseOrderTables, insertPurchaseOrder } from "@/test/purchase-order-dept-fixtures";
 import { GET, PATCH } from "./route";
@@ -65,7 +66,7 @@ async function snapshot(poId: number) {
 }
 
 // Every Lab write action of the route, each with the PO status it needs.
-type Case = { name: string; status: string; acceptedQty?: number; body: (itemRowId: number) => Record<string, unknown> };
+type Case = { name: string; status: string; acceptedQty?: number; body: (itemRowId: number, poId: number) => Record<string, unknown> | Promise<Record<string, unknown>> };
 const LAB_ACTIONS: Case[] = [
   { name: "CONFIRM_LAB_RECEIPT", status: "CONFIRMED", body: (item) => ({ action: "CONFIRM_LAB_RECEIPT", item_ids: [item] }) },
   { name: "CANCEL", status: "SUBMITTED", body: () => ({ action: "CANCEL", vendor_note: "not needed" }) },
@@ -74,7 +75,8 @@ const LAB_ACTIONS: Case[] = [
     name: "UPDATE_UNACKNOWLEDGED_LAB_ORDER", status: "SUBMITTED",
     body: () => ({ action: "UPDATE_UNACKNOWLEDGED_LAB_ORDER", note: "edited", items: [{ item_id: "MB-000001", item_name: "Dept B item 1", quantity: 9, unit: "box", override_reason: "fewer" }] }),
   },
-  { name: "APPROVE_MANAGER_REVIEW", status: "PENDING_MANAGER_REVIEW", body: () => ({ action: "APPROVE_MANAGER_REVIEW" }) },
+  // Approving needs the review token the page got with the order (see purchase-order-review-token.ts).
+  { name: "APPROVE_MANAGER_REVIEW", status: "PENDING_MANAGER_REVIEW", body: async (_item, poId) => ({ action: "APPROVE_MANAGER_REVIEW", review_token: await getReviewToken(sql as never, poId) }) },
   { name: "REJECT_MANAGER_REVIEW", status: "PENDING_MANAGER_REVIEW", body: () => ({ action: "REJECT_MANAGER_REVIEW", vendor_note: "no" }) },
   { name: "Lab review CONFIRMED", status: "PENDING_LAB_REVIEW", body: () => ({ status: "CONFIRMED" }) },
   { name: "Lab review REJECTED", status: "PENDING_LAB_REVIEW", body: () => ({ status: "REJECTED" }) },
@@ -175,7 +177,7 @@ describe.each(LAB_ACTIONS)("PATCH /api/purchase-orders/[id] $name", (testCase) =
     const { poId, itemRowId } = await seedFor(testCase, DEPT_B);
     mocks.getAuthenticatedUser.mockResolvedValue(labB);
     const before = await snapshot(poId);
-    const response = await patch(poId, testCase.body(itemRowId));
+    const response = await patch(poId, await testCase.body(itemRowId, poId));
     expect(response.status).toBe(200);
     expect(await snapshot(poId)).not.toBe(before);
   });
@@ -183,7 +185,7 @@ describe.each(LAB_ACTIONS)("PATCH /api/purchase-orders/[id] $name", (testCase) =
   it("answers 404 for a purchase order of another department and changes nothing", async () => {
     const { poId, itemRowId } = await seedFor(testCase, DEPT_B);
     const before = await snapshot(poId);
-    const response = await patch(poId, testCase.body(itemRowId)); // user is in department A
+    const response = await patch(poId, await testCase.body(itemRowId, poId)); // user is in department A
     expect(response.status).toBe(404);
     expect(await snapshot(poId)).toBe(before);
     expect(mocks.recordPurchaseOrderCommunication).not.toHaveBeenCalled();
@@ -193,7 +195,7 @@ describe.each(LAB_ACTIONS)("PATCH /api/purchase-orders/[id] $name", (testCase) =
     const { poId, itemRowId } = await seedFor(testCase, DEPT_B);
     mocks.getAuthenticatedUser.mockResolvedValue(adminAll);
     const before = await snapshot(poId);
-    const response = await patch(poId, testCase.body(itemRowId));
+    const response = await patch(poId, await testCase.body(itemRowId, poId));
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ code: "DEPARTMENT_READ_ONLY" });
     expect(await snapshot(poId)).toBe(before);
@@ -213,7 +215,7 @@ describe("PATCH /api/purchase-orders/[id] scope handling", () => {
     const { poId, itemRowId } = await seedFor(LAB_ACTIONS[0], DEPT_A);
     mocks.getAuthenticatedUser.mockResolvedValue({ ...labA, departmentDenied: true });
     const before = await snapshot(poId);
-    const response = await patch(poId, LAB_ACTIONS[0].body(itemRowId));
+    const response = await patch(poId, await LAB_ACTIONS[0].body(itemRowId, poId));
     expect(response.status).toBe(404);
     expect(await response.json()).toMatchObject({ code: "DEPARTMENT_NOT_FOUND" });
     expect(await snapshot(poId)).toBe(before);

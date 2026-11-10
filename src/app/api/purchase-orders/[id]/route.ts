@@ -5,6 +5,7 @@ import { recordPurchaseOrderCommunication, wasRejectedInManagerReview } from "@/
 import { addItemsToManagerReviewOrder } from "@/lib/purchase-order-add-items";
 import { applyLabReviewDecision, closePurchaseOrder, runGuardedPurchaseOrderUpdate } from "@/lib/purchase-order-review";
 import { confirmLabReceipt } from "@/lib/purchase-order-receipt";
+import { approveManagerReview, getReviewToken } from "@/lib/purchase-order-review-token";
 import { isLabPurchasingRole, validatePurchaseOrderItems } from "@/lib/purchase-order-workflow";
 import { getRequestId } from "@/lib/request-observability";
 import { andDept, andDeptWrite, departmentErrorResponse, getDepartmentScope, writeDepartmentId, type DepartmentScope } from "@/lib/scoped-db";
@@ -118,7 +119,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       });
     }
 
-    return NextResponse.json({ ...po, ...printDetails, items });
+    // The approver sends this back with "approve and send": the approval only goes through for what they were looking at.
+    const reviewToken = po.status === "PENDING_MANAGER_REVIEW" ? await getReviewToken(sql, Number(po.id)) : null;
+    return NextResponse.json({ ...po, ...printDetails, items, ...(reviewToken ? { review_token: reviewToken } : {}) });
   } catch (error: unknown) {
     const departmentResponse = departmentErrorResponse(error, requestId);
     if (departmentResponse) return departmentResponse;
@@ -398,17 +401,23 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         }
 
         status = approvingManagerReview ? "SUBMITTED" : "REJECTED";
-        const updated = await sql`
-          UPDATE purchase_orders
-          SET status = ${status}, reviewed_at = NOW(), reviewed_by = ${user.username},
-              review_requested_at = COALESCE(review_requested_at, NOW()),
-              vendor_note = ${rejectingManagerReview ? note : po.vendor_note},
-              vendor_response_due_at = ${approvingManagerReview ? new Date(Date.now() + 5 * 86400000).toISOString() : po.vendor_response_due_at},
-              updated_at = NOW()
-          WHERE id = ${po.id} AND status = 'PENDING_MANAGER_REVIEW'${andDeptWrite(scope)}
-          RETURNING *
-        `;
-        if (!updated.length) return NextResponse.json({ error: "This order was already reviewed." }, { status: 409 });
+        if (approvingManagerReview) {
+          // Sends the order to the Vendor, so it only goes through for what the approver was looking at (see
+          // purchase-order-review-token.ts): a line added or changed by someone else in the meantime answers 409 and writes nothing.
+          const approved = await approveManagerReview(sql, { po: { id: Number(po.id) }, reviewer: user.username, expectedToken: body.review_token, scope });
+          if (!approved.ok) return NextResponse.json({ error: approved.error, code: approved.code }, { status: 409 });
+        } else {
+          const updated = await sql`
+            UPDATE purchase_orders
+            SET status = ${status}, reviewed_at = NOW(), reviewed_by = ${user.username},
+                review_requested_at = COALESCE(review_requested_at, NOW()),
+                vendor_note = ${note},
+                updated_at = NOW()
+            WHERE id = ${po.id} AND status = 'PENDING_MANAGER_REVIEW'${andDeptWrite(scope)}
+            RETURNING *
+          `;
+          if (!updated.length) return NextResponse.json({ error: "This order was already reviewed." }, { status: 409 });
+        }
 
         notificationEvent = approvingManagerReview ? "PO_CREATED" : "PO_STATUS_UPDATED";
       } else {
