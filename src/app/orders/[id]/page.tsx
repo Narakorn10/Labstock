@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth-provider";
+import { PoAddItemsDialog } from "@/components/po-add-items-dialog";
 import { usePopup } from "@/components/popup/popup-provider";
 import { exportPurchaseOrderCsv, printPurchaseOrderPdf } from "@/lib/purchase-order-export";
 import { CANCELLABLE_STATUSES, CLOSE_SHORT_STATUSES, LAB_RECEIPT_STATUSES } from "@/lib/purchase-order-workflow";
@@ -77,6 +78,7 @@ interface PurchaseOrderEvent {
 }
 
 const eventLabels: Record<string, string> = {
+  PO_ITEMS_ADDED: "หัวหน้าเพิ่มรายการน้ำยา",
   PO_LAB_RECEIPT_CONFIRMED: "แล็บยืนยันรับของ",
   PO_CREATED: "ส่งใบสั่งซื้อให้บริษัท",
   PO_REVIEW_REQUIRED: "รอตรวจรายการ",
@@ -116,6 +118,7 @@ export default function PODetailPage() {
   const [loading, setLoading] = useState(true);
   const [reviewNote, setReviewNote] = useState("");
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [showAddItems, setShowAddItems] = useState(false);
   const [receiptNote, setReceiptNote] = useState("");
   const [receiptSkipped, setReceiptSkipped] = useState<number[]>([]);
   const showInternalColumns = user?.role !== "Vendor";
@@ -414,6 +417,13 @@ export default function PODetailPage() {
           <section className="mb-6 rounded-xl border border-teal-200 bg-teal-50 p-5">
             <h2 className="text-lg font-bold text-teal-950">ตรวจสอบก่อนส่งให้บริษัท</h2>
             <p className="mt-1 text-sm text-teal-900">ระบบจะส่ง PO ให้บริษัทหลังหัวหน้ายืนยันเท่านั้น กรุณาตรวจสอบปริมาณคงเหลือและเหตุผลของแต่ละรายการ</p>
+            <button
+              type="button"
+              onClick={() => setShowAddItems(true)}
+              className="no-print mt-3 rounded-lg border border-teal-300 bg-white px-4 py-2 text-sm font-semibold text-teal-900 hover:bg-teal-100"
+            >
+              + เพิ่มรายการน้ำยา
+            </button>
           </section>
         )}
 
@@ -592,6 +602,22 @@ export default function PODetailPage() {
           {events.length === 0 && <p className="text-sm text-slate-500">ยังไม่มีประวัติการสื่อสาร</p>}
         </div>
       </section>
+
+      {showAddItems && po && po.status === "PENDING_MANAGER_REVIEW" && canManageLabOrders && (
+        <PoAddItemsDialog
+          poId={po.id}
+          vendor={po.vendor}
+          existingItemIds={(po.items ?? []).map((item) => item.item_id)}
+          getAuthHeaders={getAuthHeaders}
+          onAdded={async (order) => {
+            setPo(order as PurchaseOrderDetail);
+            const eventRes = await fetch(`/api/purchase-orders/${po.id}/events`, { headers: getAuthHeaders() });
+            if (eventRes.ok) setEvents(((await eventRes.json()) as { items?: PurchaseOrderEvent[] }).items ?? []);
+            void notify({ title: "เพิ่มรายการแล้ว", description: "เพิ่มรายการน้ำยาเข้าใบนี้แล้ว บริษัทยังไม่เห็นใบนี้จนกว่าจะกดส่ง", severity: "success" });
+          }}
+          onClose={() => setShowAddItems(false)}
+        />
+      )}
 
       <style jsx global>{`
         @media print {

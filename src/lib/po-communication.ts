@@ -14,6 +14,7 @@ export type PurchaseOrderCommunicationEvent =
   | "PO_RECEIVED"
   | "PO_CANCELLED"
   | "PO_LAB_RECEIPT_CONFIRMED"
+  | "PO_ITEMS_ADDED"
   | "SHIPMENT_REPLACEMENT_REQUIRED"
   | "VENDOR_RESPONSE_OVERDUE"
   | "DELIVERY_OVERDUE";
@@ -47,6 +48,8 @@ export function shouldNotifyRecipient(event: PurchaseOrderCommunicationEvent, ac
   const vendorRecipient = recipientRole === "Vendor";
   // Lab confirming receipt is recorded in the timeline only; nobody is notified.
   if (event === "PO_LAB_RECEIPT_CONFIRMED") return false;
+  // A manager adding reagent lines to an order still in review is history for the Lab only (owner decision: no notice to anyone).
+  if (event === "PO_ITEMS_ADDED") return false;
   // Late-Vendor reminders go to the Lab only; the Lab decides whether to chase or cancel.
   if (event === "VENDOR_RESPONSE_OVERDUE" || event === "DELIVERY_OVERDUE") return labRecipient;
   if (event === "PO_REVIEW_REQUIRED" || event === "SHIPMENT_REPLACEMENT_REQUIRED") return labRecipient || (event === "SHIPMENT_REPLACEMENT_REQUIRED" && vendorRecipient);
