@@ -212,7 +212,10 @@ export default function HelpPage() {
           /* แต่ละส่วนเริ่มหน้าใหม่ */
           .manual-group { break-before: page; }
           .manual-print-area h2 { margin: 0 0 8pt; font-size: 17pt; break-after: avoid; }
-          .manual-chapter { break-inside: avoid; border: 0 !important; padding: 0 !important; margin-bottom: 10pt; }
+          .manual-chapter { border: 0 !important; padding: 0 !important; margin-bottom: 14pt; }
+          .manual-chapter h3 { break-after: avoid; }
+          .manual-figure, .manual-note, .manual-steps li { break-inside: avoid; }
+          .manual-figure img { max-width: 100%; max-height: 110mm; width: auto; margin: 0 auto; display: block; }
         }
       `}</style>
     </div>

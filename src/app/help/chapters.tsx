@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { Figure, LifecycleDiagram } from './diagrams';
 
 /**
  * เนื้อหาคู่มือการใช้งาน LabStock
@@ -33,12 +34,38 @@ function Btn({ children }: { children: ReactNode }) {
 
 export const CHAPTERS: Chapter[] = [
   {
+    id: 'overview',
+    audience: 'all',
+    title: 'ภาพรวม: น้ำยาเดินทางอย่างไรในระบบ',
+    routes: ['/orders', '/receive', '/dispense', '/dashboard', '/logs'],
+    body: (
+      <div className="space-y-3">
+        <p>
+          LabStock ติดตามน้ำยาทุกขวด/กล่องตั้งแต่สั่งซื้อจนเบิกใช้ โดยแยกตาม <strong>Lot</strong> และ
+          <strong>วันหมดอายุ</strong> งานประจำวันวนอยู่ 4 ขั้นตามภาพนี้
+        </p>
+        <LifecycleDiagram />
+        <Note>
+          ในหน้ารายละเอียดใบสั่งน้ำยา การยืนยันว่า “ได้รับของ” เป็นแค่การปิดยอดค้างของใบสั่ง
+          <strong> ไม่เพิ่มยอดคลัง</strong> (ระบบเตือนว่า “ไม่มีการเพิ่มสต๊อก ต้องรับเข้าที่หน้า Receive”) —
+          ต้องทำ <Btn>Receive (รับเข้า)</Btn> ทุกครั้งที่ของมาถึง ยอดคลังจึงจะเพิ่ม
+        </Note>
+      </div>
+    ),
+  },
+  {
     id: 'sign-in',
     audience: 'all',
     title: 'เข้าสู่ระบบและออกจากระบบ',
     routes: ['/login'],
     body: (
       <div className="space-y-3">
+        <Figure
+          src="/help/login.png"
+          alt="หน้าเข้าสู่ระบบ มีช่องอีเมลหรือชื่อผู้ใช้ ช่องรหัสผ่าน ลิงก์ลืมรหัสผ่าน ปุ่มเข้าสู่ระบบ และปุ่มเข้าสู่ระบบด้วย Google"
+          caption="หน้าเข้าสู่ระบบ"
+          narrow
+        />
         <Steps>
           <li>เปิดหน้า <Btn>เข้าสู่ระบบ</Btn> (ถ้ายังไม่ได้ล็อกอิน ระบบจะพามาที่หน้านี้เอง)</li>
           <li>กรอก <Btn>อีเมลหรือชื่อผู้ใช้</Btn> และ <Btn>รหัสผ่าน</Btn> แล้วกดปุ่ม <Btn>เข้าสู่ระบบ</Btn></li>

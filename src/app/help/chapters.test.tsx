@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { CHAPTERS } from "./chapters";
 
 const APP_DIR = path.resolve(__dirname, "..");
+const PUBLIC_DIR = path.resolve(__dirname, "../../../public");
 
 describe("user manual chapters", () => {
   it("has unique chapter ids", () => {
@@ -33,6 +34,19 @@ describe("user manual chapters", () => {
     const menuChapter = CHAPTERS.find((chapter) => chapter.id === "menu-and-permissions");
     expect(menuChapter).toBeDefined();
     expect(renderToStaticMarkup(<>{menuChapter?.body}</>)).toContain("ผู้ดูแลระบบ");
+  });
+
+  it("every screenshot the manual shows exists in public/help", () => {
+    const html = CHAPTERS.map((chapter) => renderToStaticMarkup(<>{chapter.body}</>)).join("\n");
+    const sources = [...html.matchAll(/<img[^>]*src="([^"]+)"/g)].map((match) => match[1]);
+    expect(sources.length).toBeGreaterThan(0);
+    const missing = sources.filter((src) => !existsSync(path.join(PUBLIC_DIR, src)));
+    expect(missing).toEqual([]);
+  });
+
+  it("every screenshot has Thai alt text", () => {
+    const html = CHAPTERS.map((chapter) => renderToStaticMarkup(<>{chapter.body}</>)).join("\n");
+    for (const img of html.match(/<img[^>]*>/g) ?? []) expect(img).toMatch(/alt="[^"]*[฀-๿][^"]*"/);
   });
 
   it("every chapter names at least one page", () => {
