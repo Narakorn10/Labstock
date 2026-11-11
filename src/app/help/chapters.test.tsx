@@ -49,6 +49,19 @@ describe("user manual chapters", () => {
     for (const img of html.match(/<img[^>]*>/g) ?? []) expect(img).toMatch(/alt="[^"]*[฀-๿][^"]*"/);
   });
 
+  it("every chapter for a role says who to ask when the menu is missing", () => {
+    const missing = CHAPTERS.filter((chapter) => chapter.audience !== "all")
+      .filter((chapter) => !renderToStaticMarkup(<>{chapter.body}</>).includes("ผู้ดูแลระบบ"))
+      .map((chapter) => chapter.id);
+    expect(missing).toEqual([]);
+  });
+
+  it("never mentions Shipments (the feature is switched off: SHIPMENTS_ENABLED = false)", () => {
+    for (const chapter of CHAPTERS) {
+      expect(renderToStaticMarkup(<>{chapter.body}</>), chapter.id).not.toMatch(/shipment|receive\/vendor/i);
+    }
+  });
+
   it("every chapter names at least one page", () => {
     for (const chapter of CHAPTERS) expect(chapter.routes.length).toBeGreaterThan(0);
   });
