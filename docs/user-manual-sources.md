@@ -466,6 +466,63 @@
 10. ภาพ `orders.png`, `vendor-orders.png`, `activity.png` ถูกจับหลังแก้ข้อมูลสมมติในฐาน demo (หน่วยของรายการใบสั่ง) และสร้างเหตุการณ์ "จำนวนคงเหลือไม่พอ" 3 รายการจากการเรียก API ที่ถูกปฏิเสธ (ไม่มีการตัดสต๊อก) เพื่อให้หน้า Activity มีข้อมูลตัวอย่าง
 11. ฐาน demo: แก้บั๊ก seed (`ψ/manual-demo/seed-demo.mjs` ใช้ `[5]` แทน `[6]` เป็นหน่วยของรายการใบสั่ง) และ UPDATE หน่วยของ `purchase_order_items` ในฐาน demo ให้ถูก
 
+### บท "ใช้งานผ่าน LINE (LIFF): เปิดเมนู ผูกบัญชี เบิกจ่าย และถามบอท" (`id: liff`)
+
+ไม่มีภาพหน้าจอในบทนี้ เพราะหน้า LIFF ต้องเปิดในแอป LINE (ต้องมี LIFF ID และบัญชี LINE) ทดสอบบนฐาน demo ไม่ได้
+
+| ข้อความในคู่มือ | ที่มาในโค้ด |
+|---|---|
+| มี 2 หน้า LIFF: เบิกจ่าย `/liff/dispense` และสั่งน้ำยา `/liff/orders` | `src/app/liff/dispense/page.tsx`, `src/app/liff/orders/page.tsx`; ลิงก์ที่บอทส่ง `src/lib/line-bot.ts:36-53` (`getLineDispenseUrl`, `getLineOrderUrl`) |
+| เมนูด้านล่างแชทตามบทบาท: Admin/Manager = purchasing; อื่น ๆ = receive (ถ้ามีสิทธิ์รับเข้า) หรือ dispense | `src/lib/line-bot.ts:118-130` (`resolveRichMenuId`) |
+| ปุ่มของแต่ละเมนู: (สั่งน้ำยา, รับเข้า, เบิกน้ำยา, เปิด LabStock) / (รับเข้า, เบิกน้ำยา, เปิด LabStock) / (เบิกน้ำยา, เปิด LabStock); ปุ่ม "รับเข้า" → `/mobile/receive`; ข้อความแถบเมนู "เมนู" | `scripts/setup-line-rich-menu.mjs:111,157-192` |
+| ระบบผูกเมนูให้หลังผูกบัญชีสำเร็จ | `src/app/api/mobile/line-link/route.ts:51` (`linkLineRichMenuForRole`); ทำเมื่อมี `LINE_CHANNEL_ACCESS_TOKEN` `src/lib/line-bot.ts:133-139` |
+| พิมพ์ เบิก / เบิกน้ำยา / เบิกจ่าย / เมนูเบิก / dispense → การ์ด "เปิดเมนูเบิก" | `src/app/api/line-webhook/route.ts:87,167`; `line-bot.ts:205-222` |
+| พิมพ์ order → การ์ด "เปิดเมนูสั่งน้ำยา"; พิมพ์ "สั่งซื้อ" → ลิงก์ไปหน้าใบสั่งบนเว็บ | `line-webhook/route.ts:172,297`; `line-bot.ts:224-239` |
+| ผูกบัญชีครั้งแรก: หัวข้อ "ผูกบัญชี LINE ครั้งแรก", username (ตัวอย่าง "เช่น staff01"), "PIN 4-6 หลัก", ปุ่ม "ยืนยันและผูกบัญชี", "ผูกได้ 1 บัญชี LINE ต่อ 1 ผู้ใช้ LabStock", ป้าย "ผูก LINE แล้ว" | `src/components/liff-dispense-workflow.tsx:454-455,483,488-489,496,498,515` |
+| ผูกซ้ำไม่ได้ ถ้า LINE ถูกผูกไว้แล้ว | `src/app/api/mobile/line-link/route.ts:17-19` (ข้อความฝั่งเซิร์ฟเวอร์เป็นอังกฤษ "already linked to another user") |
+| PIN ผิดเกิน 5 ครั้ง รอ 15 นาที / "ระบบตรวจ PIN ไม่พร้อม" | `line-link/route.ts:32-36`; `src/lib/pin-attempts.ts:13` |
+| Vendor ผูกในหน้านี้ไม่ได้ | `line-link/route.ts:42-43`; `src/app/api/mobile/line-auth/route.ts:16-17` |
+| เบิกจ่าย 3 ขั้น: "ขั้นตอนที่ 1" สแกนหรือค้นหา, "ขั้นตอนที่ 2" รายการที่เลือก, "ขั้นตอนที่ 3" ยืนยันการเบิกจ่าย | `liff-dispense-workflow.tsx:554-555,620-621,768-769` |
+| ช่อง "ค้นหาน้ำยา", "ไม่พบรายการที่ตรงกับคำค้น" | `liff-dispense-workflow.tsx:581,604` |
+| ป้าย "FEFO แนะนำ"/"เลือกล็อตอื่น", "ล็อตที่เลือก", "จำนวนที่เบิก" | `liff-dispense-workflow.tsx:650,676,693` |
+| วัตถุประสงค์: งานประจำวัน/QC/Calibrate/อื่น ๆ (พิมพ์เอง) และแสดงในสรุป | `liff-dispense-workflow.tsx:50,707-739,801-802` |
+| ปุ่ม "ตรวจทานก่อนยืนยัน (n รายการ)" | `liff-dispense-workflow.tsx:755` |
+| หน้ายืนยัน: "สรุปรายการ", "ยืนยันผ่าน LINE" / "ยืนยันด้วยบัญชี LabStock" + PIN, ปุ่ม "แก้ไข" และ "ยืนยันเบิกจ่าย" | `liff-dispense-workflow.tsx:780,787,809-811,819,823` |
+| ข้อความสำเร็จ "เบิกจ่าย … รายการเรียบร้อย อนุมัติโดย …" | `liff-dispense-workflow.tsx:399` |
+| คำสั่งในแชท: help/เมนู, id/ลงทะเบียน, stock/สต๊อก (+คำค้น, สูงสุด 10), สต๊อกงาน, จำนวนสต๊อกคงเหลือ/…เหลือเท่าไหร่, PO-… | `line-webhook/route.ts:42-73,177,182,195-228,229`; ข้อความ help `line-bot.ts:266-282` |
+| ข้อความ "ขณะนี้ไม่มีรายการน้ำยาที่ต่ำกว่าระดับ Min Stock ค่ะ" | `line-webhook/route.ts:222` |
+| กติกาสิทธิ์: ต้องผูกบัญชี; ใบสั่งเฉพาะ Admin/Manager (Vendor เฉพาะของตน); Vendor ค้นสต๊อกไม่ได้; "ยังไม่มีงานที่ใช้งานได้" | `src/lib/line-bot-queries.ts:20-61` (`LINE_BOT_MESSAGES`, `decideLineBotCommand`) — **ใช้เมื่อเปิดระบบหลายห้อง** ดูข้อสังเกตข้อ 12 |
+| ปุ่มบนการ์ดใบสั่ง (รับทราบ/ยืนยัน/ปฏิเสธ) ไม่เปลี่ยนสถานะ บอทตอบให้ไปเปิดเว็บ | `line-webhook/route.ts:321,329,337` |
+| สั่งน้ำยาผ่าน LIFF ใบจะรอหัวหน้ายืนยัน | `src/components/liff-order-workflow.tsx:285` |
+
+### บท "รับการแจ้งเตือนผ่าน LINE" (`id: line-notifications`, ส่วนที่ 1.7)
+
+| ข้อความในคู่มือ | ที่มาในโค้ด |
+|---|---|
+| ต้องเพิ่มเพื่อนบอท + พิมพ์ id/ลงทะเบียน เพื่อรับ User ID; บอทตอบ "LINE User ID ของคุณคือ: …" | `src/app/settings/notifications/page.tsx:228-230`; `line-webhook/route.ts:182-188` |
+| ช่อง LINE (กล่อง "LINE Bot Notification"), ปุ่ม "ทดสอบ" กดได้เมื่อกรอกแล้ว, ข้อความทดสอบ | `notifications/page.tsx:213,219`; `src/lib/notifications.ts:189` |
+| สวิตช์เหตุการณ์และ "บันทึกการตั้งค่าทั้งหมด" | `notifications/page.tsx:147-154,271` |
+| ผู้รับต้องมี `line_user_id` และเปิดสวิตช์ของเหตุการณ์นั้น | `src/lib/notifications.ts:165-183` (`notifyUsers` เช็ก `notify_*` แล้วส่ง LINE ถ้ามี `line_user_id`) |
+| **น้ำยาต่ำกว่าระดับสำรอง:** ส่งหลังรับเข้า/เบิกจ่ายที่ทำให้ ≤ Min; เจ้าหน้าที่เห็นทุกรายการ Vendor เห็นเฉพาะของตน; ข้อความ "⚠️ แจ้งเตือนสต็อกต่ำ", สูงสุด 15 รายการ + "และอีก N รายการ" | `src/lib/stock-transactions.ts:35-85,188,333`; `src/lib/notifications.ts:133-142` (`notifyUsersVendorScoped`); `src/lib/line-bot.ts:64-73,167-169` |
+| การยืม/ให้ยืมไม่ทำให้เกิดแจ้งเตือนสต็อกต่ำ | `notifyLowStockForAffectedItems` ถูกเรียกเฉพาะ `stock-transactions.ts:188,333` (ไม่พบในเส้นทาง `reagent-loans`) |
+| **ใกล้หมดอายุ 30 วัน:** การ์ด "แจ้งเตือนน้ำยาใกล้หมดอายุ", ปุ่ม "รับทราบ" → บอทตอบ "รับทราบน้ำยา Lot … เรียบร้อยแล้ว" และบันทึกผู้รับทราบ | `src/lib/line-flex-templates.ts:481-556` (`:546-547`); `line-webhook/route.ts:345-366`; หน้าต่างเวลา 30 วัน `src/app/api/notifications/expiring-soon/route.ts:12` |
+| **ไม่พบตารางเวลาอัตโนมัติของแจ้งเตือนใกล้หมดอายุ** ใน `vercel.json` (route ต้องใช้ cron secret หรือ Admin เรียก) | `vercel.json` (ไม่มี `expiring-soon`); `expiring-soon/route.ts:49-60` |
+| **สรุปรายสัปดาห์:** ทุกวันจันทร์ 08:00 UTC; เจ้าหน้าที่ได้การ์ดสรุปความเสี่ยง; Vendor ได้การ์ดเดียวกันเฉพาะของตน | `vercel.json:5-6`; `src/app/api/notifications/weekly-stock-summary/route.ts:148-166`; การ์ด `line-flex-templates.ts:206-242` |
+| **ความเสี่ยงสั่งซื้อ:** ทุกวันจันทร์ 01:00 UTC เฉพาะ Admin/Manager; ข้อความ "📦 สรุปความเสี่ยงจัดซื้อน้ำยา" สูงสุด 8 รายการ | `vercel.json:9-10`; `reorder-risk/route.ts:51`; `notifications.ts:202-208` |
+| **ใบสั่งใหม่ถึงบริษัท:** เป็นเรื่องเดียวของใบสั่งที่ส่ง LINE ให้ Vendor เมื่อหัวหน้ายืนยันส่ง; การ์ด "ใบสั่งซื้อใหม่" ปุ่ม "เปิดเว็บดำเนินการ" | `src/lib/po-communication.ts:82-87` (`shouldSendLine`), `:196-198`; `line-flex-templates.ts:263-294` |
+| เหตุการณ์ใบสั่งอื่นไปทางอีเมล/ประวัติเว็บ | `po-communication.ts:196-206` (ช่อง EMAIL เสมอถ้ามีอีเมล) |
+| การรับเข้า/เบิกจ่ายไม่มีข้อความแจ้งใคร | `notifications.ts:165-178` (`switch` ไม่มี case ของ `STOCK_RECEIVED`/`STOCK_DISPENSED` จึงไม่ส่ง); เรียกที่ `stock-transactions.ts:179,324` |
+| ยังต้องเป็นเพื่อนกับบอท (ข้อความบนหน้าจอ) | `notifications/page.tsx:230` |
+
+**ข้อสังเกตสำหรับผู้ตรวจ (บท LINE):**
+12. **เมื่อ `DEPARTMENTS_ENABLED` ปิด (สถานะปัจจุบัน) บอทตอบคำสั่งสต๊อก/ใบสั่งโดยไม่ตรวจการผูกบัญชี** — `line-webhook/route.ts:195,229` ใช้ `legacyAccess` (`:18`) ซึ่ง `decideLineBotCommand` อนุญาตทุกคำสั่ง (`line-bot-queries.ts:29-32`) ใครที่เป็นเพื่อนกับบอทพิมพ์ `stock` หรือ `PO-…` ได้คำตอบ ข้อความ "ต้องผูกบัญชีก่อน" มีผลเมื่อเปิดระบบหลายห้องเท่านั้น คู่มือเขียนสองกรณีตามกติกาของโค้ด ควรให้ผู้พัฒนาพิจารณาเรื่องสิทธิ์
+13. **ข้อความ help ของบอทขัดกับโค้ด:** บรรทัด "สำหรับ Vendor สามารถกดยืนยัน/ปฏิเสธ PO จากการ์ดแจ้งเตือนได้เลย" (`line-bot.ts:279`) แต่ webhook ตอบให้ไปเปิดเว็บและไม่เปลี่ยนสถานะ (`line-webhook/route.ts:321`) คู่มือเขียนตามโค้ด
+14. **คำสั่งเลขพัสดุ (ตรวจ tracking) ทางบอท** มีในโค้ด (`line-webhook/route.ts:268-295`) แต่ผูกกับระบบ Shipment ที่ปิดอยู่ — คู่มือไม่ใส่ตามกฎ "ไม่พูดถึง Shipments"
+15. **แจ้งเตือนใกล้หมดอายุ** ไม่พบตารางเวลาอัตโนมัติใน `vercel.json` (มีเฉพาะ weekly-stock-summary, reorder-risk, purchase-order-overdue, outbox) ต้องถามผู้พัฒนาว่ามีตัวเรียกจากภายนอก (GitHub Actions/Cron อื่น) หรือไม่ ถ้าไม่มี แจ้งเตือนนี้จะไม่ถูกส่ง
+16. เวลาของ cron ใน `vercel.json` เป็น UTC (ตามมาตรฐาน Vercel) คู่มือแปลงเป็นเวลาไทย (+7 ชม.): สรุปรายสัปดาห์ 08:00 UTC ≈ 15:00 น. ส่วนความเสี่ยงสั่งซื้อ 01:00 UTC ≈ 08:00 น. (ตรงกับป้าย "Monday 08:00" ในหน้า Notifications) ยังไม่ได้ตรวจเวลาจริงบน Vercel
+17. ตอบข้อสงสัยที่ค้างจากบท Receive: หลังรับเข้า ระบบเรียก `notifyUsers("STOCK_RECEIVED")` (`stock-transactions.ts:178`) แต่ `notifyUsers` ไม่มี case ให้เหตุการณ์นี้ จึง**ไม่มีใครได้รับแจ้ง** (เหมือน `STOCK_DISPENSED`) ส่วนแจ้งเตือนสต๊อกต่ำหลังรับเข้ายังทำงานตามปกติ
+18. ภาพหน้าจอของบท LINE: ไม่มี (ต้องใช้แอป LINE) ภาพเมนู Rich Menu ใน `scripts/line-rich-menu/*.png` ใช้ไม่ได้เพราะมีโลโก้จริงของโรงพยาบาล
+
 ## ข้อสังเกตที่ผู้ตรวจควรรู้
 
 1. **ข้อความในหน้าสมัครขัดกับโค้ด:** `register/page.tsx:363` เขียนว่า "ในระยะนี้ยังไม่มีการยืนยันอีเมลหรือการรีเซ็ตรหัสผ่าน"
