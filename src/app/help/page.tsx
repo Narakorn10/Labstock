@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { BookOpen, Printer } from 'lucide-react';
 import { useAuth } from '@/components/auth-provider';
@@ -9,7 +9,12 @@ import { buildOutline, type OutlineChapter, type OutlineGroup } from './outline'
 
 type Tab = Exclude<Audience, 'all'>;
 /** Where a chapter is drawn: on the page or in the print-only copy. Keeps element ids unique. */
-type Scope = 'screen' | 'print';
+type Scope = 'screen' | 'print' | 'measure';
+/** เลขหน้าที่แต่ละหัวข้อไปขึ้นในไฟล์ PDF (key = id ของบท หรือ `group-<ส่วน>`) */
+type PageMap = Record<string, number>;
+
+/** ความกว้าง/สูงของพื้นที่เนื้อหาในหน้า A4 หลังเว้นขอบ 15 มม. (ใช้จำลองการแบ่งหน้าเพื่อหาเลขหน้าในสารบัญ) */
+const PAGE_CONTENT_MM = { width: 180, height: 267 };
 
 const TABS: Array<{ id: Tab; label: string; description: string }> = [
   { id: 'staff', label: 'เจ้าหน้าที่แล็บ', description: 'เบิก รับเข้า ตรวจนับ ยืม/ให้ยืม และงานประจำวัน' },
@@ -33,7 +38,7 @@ function defaultTab(role: string | undefined): Tab {
 function ChapterView({ item, scope }: { item: OutlineChapter; scope: Scope }) {
   const { chapter, number } = item;
   return (
-    <section id={`${scope}-chapter-${chapter.id}`} aria-labelledby={`${scope}-heading-${chapter.id}`} className="manual-chapter scroll-mt-24 space-y-3 rounded-2xl border border-line bg-white p-5">
+    <section id={`${scope}-chapter-${chapter.id}`} data-page-key={chapter.id} aria-labelledby={`${scope}-heading-${chapter.id}`} className="manual-chapter scroll-mt-24 space-y-3 rounded-2xl border border-line bg-white p-5">
       <h3 id={`${scope}-heading-${chapter.id}`} className="text-xl font-medium text-ink">{number} {chapter.title}</h3>
       <div className="text-[15px] leading-7 text-gray-800">{chapter.body}</div>
     </section>
@@ -48,7 +53,7 @@ function Group({ audience, scope }: { audience: Audience; scope: Scope }) {
   const group = groupOf(audience);
   return (
     <div className="manual-group space-y-4">
-      <h2 className="text-2xl font-medium text-ink">{group.number}. {group.title}</h2>
+      <h2 data-page-key={`group-${audience}`} className="text-2xl font-medium text-ink">{group.number}. {group.title}</h2>
       {group.chapters.length === 0
         ? <EmptyAudience />
         : group.chapters.map((item) => <ChapterView key={item.chapter.id} item={item} scope={scope} />)}
@@ -57,20 +62,21 @@ function Group({ audience, scope }: { audience: Audience; scope: Scope }) {
 }
 
 /** สารบัญ: ทุกส่วนและทุกบท. `onPick` (หน้าจอ) เปิดแท็บของบทนั้นก่อนเลื่อนไปหา; ฉบับพิมพ์ใช้ลิงก์ธรรมดา */
-function TableOfContents({ scope, onPick }: { scope: Scope; onPick?: (item: OutlineChapter) => void }) {
+function TableOfContents({ scope, onPick, pages }: { scope: Scope; onPick?: (item: OutlineChapter) => void; pages?: PageMap }) {
+  const pageOf = (key: string) => (pages ? <span className="manual-toc-page">{pages[key] ?? ''}</span> : null);
   return (
     <nav aria-label="สารบัญ" className="manual-toc rounded-2xl border border-line bg-white p-5">
       <h2 className="text-xl font-medium text-ink">สารบัญ</h2>
       <ol className="mt-3 space-y-3">
         {OUTLINE.map((group) => (
           <li key={group.audience}>
-            <p className="font-medium text-ink">{group.number}. {group.title}</p>
+            <p className="manual-toc-row font-medium text-ink"><span className="manual-toc-title">{group.number}. {group.title}</span>{pageOf(`group-${group.audience}`)}</p>
             {group.chapters.length === 0
               ? <p className="manual-toc-empty pl-6 text-sm text-gray-500">(กำลังจัดทำ)</p>
               : (
                 <ol className="mt-1 space-y-1 pl-6 text-[15px]">
                   {group.chapters.map((item) => (
-                    <li key={item.chapter.id}>
+                    <li key={item.chapter.id} className="manual-toc-row">
                       <a
                         href={`#${scope}-chapter-${item.chapter.id}`}
                         onClick={onPick ? (event) => { event.preventDefault(); onPick(item); } : undefined}
@@ -78,6 +84,7 @@ function TableOfContents({ scope, onPick }: { scope: Scope; onPick?: (item: Outl
                       >
                         {item.number} {item.chapter.title}
                       </a>
+                      {pageOf(item.chapter.id)}
                     </li>
                   ))}
                 </ol>
@@ -116,6 +123,38 @@ export default function HelpPage() {
   const tab = picked ?? defaultTab(user?.role);
   // The full manual is portaled to <body> for printing so the print CSS can drop the whole app shell (same as /labels).
   const isClient = useSyncExternalStore(() => () => {}, () => true, () => false);
+
+  const measureRef = useRef<HTMLDivElement>(null);
+  const [pages, setPages] = useState<PageMap>({});
+
+  // หาเลขหน้าของแต่ละบทใน PDF: วางเนื้อหาชุดเดียวกันในกล่องที่กว้าง/สูงเท่าพื้นที่เนื้อหา A4
+  // โดยให้ CSS columns ทำหน้าที่ "ตัดหน้า" (1 คอลัมน์ = 1 หน้า) แล้วดูว่าหัวข้อไปอยู่คอลัมน์ที่เท่าไร
+  useEffect(() => {
+    const root = measureRef.current;
+    if (!root) return;
+    const measure = () => {
+      const pageWidth = root.clientWidth;
+      if (!pageWidth) return;
+      const rootLeft = root.getBoundingClientRect().left;
+      const next: PageMap = {};
+      root.querySelectorAll<HTMLElement>('[data-page-key]').forEach((el) => {
+        next[el.dataset.pageKey as string] = Math.floor((el.getBoundingClientRect().left - rootLeft + 1) / pageWidth) + 1;
+      });
+      setPages((prev) => {
+        const keys = Object.keys(next);
+        return keys.length === Object.keys(prev).length && keys.every((key) => prev[key] === next[key]) ? prev : next;
+      });
+    };
+    measure();
+    // ภาพโหลดเสร็จ/ฟอนต์พร้อม/กำลังจะพิมพ์ → ความสูงเปลี่ยน ต้องวัดใหม่
+    root.addEventListener('load', measure, true);
+    window.addEventListener('beforeprint', measure);
+    document.fonts?.ready.then(measure);
+    return () => {
+      root.removeEventListener('load', measure, true);
+      window.removeEventListener('beforeprint', measure);
+    };
+  }, [isClient]);
 
   function goToChapter(item: OutlineChapter) {
     const { audience, id } = item.chapter;
@@ -177,22 +216,71 @@ export default function HelpPage() {
       </div>
 
       {isClient && createPortal(
-        <div className="manual-print-area" aria-hidden="true">
-          <PrintCover />
-          <TableOfContents scope="print" />
-          <Group audience="all" scope="print" />
-          {TABS.map((item) => <Group key={item.id} audience={item.id} scope="print" />)}
-        </div>,
+        <>
+          <div className="manual-print-area" aria-hidden="true">
+            <PrintCover />
+            <TableOfContents scope="print" pages={pages} />
+            <Group audience="all" scope="print" />
+            {TABS.map((item) => <Group key={item.id} audience={item.id} scope="print" />)}
+          </div>
+          {/* สำเนาที่มองไม่เห็น ใช้วัดเลขหน้า (ไม่ใช้ id ซ้ำกับฉบับพิมพ์) */}
+          <div ref={measureRef} className="manual-measure manual-print-area" aria-hidden="true">
+            <PrintCover />
+            <TableOfContents scope="measure" pages={pages} />
+            <Group audience="all" scope="measure" />
+            {TABS.map((item) => <Group key={item.id} audience={item.id} scope="measure" />)}
+          </div>
+        </>,
         document.body
       )}
 
       <style jsx global>{`
         .manual-print-area { display: none; }
+
+        /* กล่องวัดเลขหน้า: ขนาดเท่าพื้นที่เนื้อหา A4, 1 คอลัมน์ = 1 หน้า, อยู่นอกจอและมองไม่เห็น */
+        .manual-print-area.manual-measure {
+          display: block; position: absolute; top: 0; left: -10000px; visibility: hidden; pointer-events: none;
+          width: ${PAGE_CONTENT_MM.width}mm; height: ${PAGE_CONTENT_MM.height}mm;
+          columns: ${PAGE_CONTENT_MM.width}mm; column-gap: 0; column-fill: auto;
+          color: #111; font-size: 12pt; line-height: 1.6;
+        }
+        .manual-measure .manual-cover { min-height: ${PAGE_CONTENT_MM.height - 17}mm; display: flex; flex-direction: column; justify-content: center; break-after: column; padding: 0 10mm; }
+        .manual-measure .manual-cover-title { font-size: 44pt; line-height: 1.1; }
+        .manual-measure .manual-toc { padding: 0; break-after: column; }
+        .manual-measure .manual-group, .manual-measure .manual-chapter { break-before: column; }
+        .manual-measure .manual-group > h2 + .manual-chapter { break-before: auto; }
+
+        /* ส่วนที่ใช้ร่วมกันทั้งฉบับพิมพ์และกล่องวัด (ต้องเหมือนกัน ไม่งั้นเลขหน้าเพี้ยน) */
+        .manual-print-area .manual-toc h2 { margin: 0 0 10pt; font-size: 20pt; }
+        .manual-print-area .manual-toc ol { list-style: none; }
+        /* สารบัญกระชับ ให้พอดี 1 หน้า (ระยะห่างของ Tailwind space-y ถูกปิดเฉพาะฉบับพิมพ์) */
+        .manual-print-area .manual-toc { font-size: 11pt; line-height: 1.45; }
+        .manual-print-area .manual-toc li, .manual-print-area .manual-toc ol > li > p { margin: 0 !important; }
+        .manual-print-area .manual-toc ol > li:not(:first-child) { margin-top: 5pt !important; }
+        .manual-print-area .manual-toc ol ol { margin-top: 1pt !important; padding-left: 14pt; }
+        .manual-print-area .manual-toc-row { display: flex; align-items: baseline; gap: 6pt; }
+        .manual-print-area .manual-toc-title, .manual-print-area .manual-toc-row > a { flex: 0 1 auto; }
+        .manual-print-area .manual-toc-page { flex: 1 1 auto; display: flex; align-items: baseline; justify-content: flex-end; gap: 4pt; font-variant-numeric: tabular-nums; }
+        .manual-print-area .manual-toc-page::before { content: ''; flex: 1 1 auto; border-bottom: 1.5pt dotted #888; transform: translateY(-3pt); }
+        .manual-print-area .manual-group > h2 { margin: 0 0 12pt; padding-bottom: 6pt; border-bottom: 3pt solid #1d1f20; font-size: 22pt; break-after: avoid; }
+        .manual-print-area .manual-chapter { border: 0; padding: 0; margin-bottom: 14pt; }
+        .manual-print-area .manual-chapter h3 { margin: 0 0 10pt; padding-bottom: 4pt; border-bottom: 1pt solid #999; font-size: 18pt; break-after: avoid; }
+        .manual-print-area .manual-figure, .manual-print-area .manual-note, .manual-print-area .manual-steps li { break-inside: avoid; }
+        /* หัวตารางไม่พิมพ์ซ้ำทุกหน้า และแถวไม่ถูกตัดกลาง — ให้การแบ่งหน้าตรงกับกล่องวัดเลขหน้า */
+        /* กล่องเลื่อนแนวนอนของตารางต้องตัดข้ามหน้าได้เหมือนกันทั้งสองแบบ (กล่อง overflow เป็นก้อนเดียวในกล่องวัด) */
+        .manual-print-area div { overflow: visible !important; }
+        .manual-print-area thead { display: table-row-group; }
+        .manual-print-area tr { break-inside: avoid; }
+        .manual-print-area .manual-figure img { max-width: 100%; max-height: 110mm; width: auto; margin: 0 auto; display: block; }
+
         @media print {
-          @page { size: A4; margin: 15mm; }
+          /* เลขหน้าที่ท้ายกระดาษทุกหน้า (หน้าปกไม่แสดง) — Chrome 131 ขึ้นไป */
+          @page { size: A4; margin: 15mm; @bottom-center { content: "หน้า " counter(page); font-size: 10pt; color: #555; } }
+          @page :first { @bottom-center { content: none; } }
           html, body { background: #fff !important; margin: 0 !important; padding: 0 !important; }
           body > *:not(.manual-print-area) { display: none !important; }
           .manual-print-area { display: block; color: #111; font-size: 12pt; line-height: 1.6; }
+          .manual-print-area.manual-measure { display: none !important; }
           .manual-print-area a { color: inherit; text-decoration: none; }
 
           /* หน้าปก: เต็มหน้าแรก แล้วขึ้นหน้าใหม่ */
@@ -204,18 +292,13 @@ export default function HelpPage() {
           .manual-cover-audience ul { margin: 0; padding-left: 16pt; list-style: disc; }
           .manual-cover-date { margin-top: 48pt; color: #555; }
 
-          /* สารบัญ: หน้าเดียวของตัวเอง */
+          /* สารบัญ: หน้าเดียวของตัวเอง แล้วขึ้นหน้าใหม่ */
           .manual-toc { border: 0 !important; padding: 0 !important; }
-          .manual-toc h2 { margin: 0 0 10pt; font-size: 20pt; }
-          .manual-toc ol { list-style: none; }
 
-          /* แต่ละส่วนเริ่มหน้าใหม่ */
-          .manual-group { break-before: page; }
-          .manual-print-area h2 { margin: 0 0 8pt; font-size: 17pt; break-after: avoid; }
-          .manual-chapter { border: 0 !important; padding: 0 !important; margin-bottom: 14pt; }
-          .manual-chapter h3 { break-after: avoid; }
-          .manual-figure, .manual-note, .manual-steps li { break-inside: avoid; }
-          .manual-figure img { max-width: 100%; max-height: 110mm; width: auto; margin: 0 auto; display: block; }
+          /* ทุกส่วนและ "ทุกบท" เริ่มหน้าใหม่ (บทแรกของส่วนอยู่หน้าเดียวกับหัวข้อส่วน) */
+          .manual-print-area:not(.manual-measure) .manual-group,
+          .manual-print-area:not(.manual-measure) .manual-chapter { break-before: page; }
+          .manual-print-area:not(.manual-measure) .manual-group > h2 + .manual-chapter { break-before: auto; }
         }
       `}</style>
     </div>
